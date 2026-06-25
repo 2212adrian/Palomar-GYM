@@ -183,28 +183,30 @@ export const Login: React.FC = () => {
       if (error) throw error;
 
       await checkSession();
-      const userProfile = useAuthStore.getState().profile;
+      const loggedInUser = useAuthStore.getState().user;
 
       // Handle the block condition manually if session check didn't route first
-      if (!userProfile) {
+      if (!loggedInUser) {
         setIsSubmitting(false);
         return;
       }
 
+      // Fetch fallback metadata directly from Auth record since profiles table is removed
+      const displayName = loggedInUser.user_metadata?.full_name || 
+                          loggedInUser.user_metadata?.name || 
+                          loggedInUser.email?.split('@')[0] || 
+                          'Authorized User';
+
       setWelcomeUser({
-        name: userProfile.username,
+        name: displayName,
         email: authData.user?.email || '',
-        avatar: userProfile.avatar_url,
+        avatar: loggedInUser.user_metadata?.avatar_url || undefined,
       });
       setShowWelcomeOverlay(true);
 
       setTimeout(() => {
         toast.success('System coordinates loaded.');
-        if (userProfile.role === 'staff') {
-          navigate('/sales/register', { replace: true });
-        } else {
-          navigate(from, { replace: true });
-        }
+        navigate(from, { replace: true });
       }, 2500);
 
     } catch (err: any) {
@@ -265,7 +267,7 @@ export const Login: React.FC = () => {
         className="absolute top-4 right-4 z-50 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95"
       >
         {/* Colors displayed as touching, contiguous squares */}
-        <div className="flex border border-slate-300 dark:border-white/15 rounded-[4px] overflow-hidden" aria-hidden="true">
+        <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
           {theme === 'dark' ? (
             <>
               <span className="w-3.5 h-3.5 bg-[#0f1012]" title="Bg: Black" />
@@ -495,22 +497,22 @@ export const Login: React.FC = () => {
         </div>
 
         {/* RIGHT SIDE CAROUSEL & TYPING TEXT */}
-        <div className="auth-right flex-0 opacity-0 relative overflow-hidden hidden lg:block shrink-0 w-[650px]">
+        <div className="auth-right flex-0 opacity-0 relative overflow-hidden hidden lg:block shrink-0 w-162.5">
           <div className="carousel-bg-wrapper absolute inset-0">
             {carouselImages.map((image, index) => (
-              <div
+              <img
                 key={index}
-                className="slide absolute inset-0 bg-cover bg-center transition-opacity duration-[1500ms]"
-                style={{
-                  backgroundImage: `url(${image})`,
-                  opacity: activeSlide === index ? 1 : 0,
-                }}
+                src={image}
+                alt={`Gym slide view ${index + 1}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
+                  activeSlide === index ? 'opacity-100' : 'opacity-0'
+                }`}
               />
             ))}
           </div>
           <div className="carousel-overlay absolute inset-0 z-2" />
           
-          <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-[650px] shrink-0 select-none">
+          <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
             <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
               BEYOND <br />
               <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
@@ -535,7 +537,7 @@ export const Login: React.FC = () => {
 
       {/* --- EXIT RECOVERY MODAL --- */}
       {showExitConfirm && (
-        <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-12000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowExitConfirm(false)} />
           <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4 font-body">
             {/* Modal Titles use standard Freshman, but buttons use standard readable Inter to eliminate text compression */}
@@ -563,7 +565,7 @@ export const Login: React.FC = () => {
 
       {/* --- SUCCESS MODAL --- */}
       {showSuccessModal && (
-        <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-12000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
           <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-6 font-body">
             <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
@@ -588,7 +590,7 @@ export const Login: React.FC = () => {
 
       {/* --- SUCCESS WELCOME OVERLAY --- */}
       {showWelcomeOverlay && welcomeUser && (
-        <div className="fixed inset-0 z-[13000] flex items-center justify-center bg-black/90 backdrop-blur-xl">
+        <div className="fixed inset-0 z-13000 flex items-center justify-center bg-black/90 backdrop-blur-xl">
           <div className="welcome-box max-w-sm w-full text-center p-8 space-y-6">
             <div className="w-20 h-20 mx-auto rounded-full border-2 border-indigo-500/50 p-1 bg-neutral-900 shadow-xl">
               {welcomeUser.avatar ? (
