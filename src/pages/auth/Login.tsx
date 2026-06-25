@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,14 +44,26 @@ export const Login: React.FC = () => {
   const { checkSession, user, initialized, error: storeError, setError } = useAuthStore();
 
   // Layout & UI States
-  const [isReady, setIsReady] = useState(false); // Controls the contraction intro animation
+  const [isReady, setIsReady] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
-  const [isRecoverySubmitting, setIsRecoverySubmitting] = useState(false);
   
-  // Theme Management with 3-Color Preview Sync
+  // Custom High-Fidelity Video Recovery States
+  const [recoveryStep, setRecoveryStep] = useState<'email' | 'otp'>('email');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryStatusText, setRecoveryStatusText] = useState('Establishing connection to server...');
+  const [isRecoverySubmitting, setIsRecoverySubmitting] = useState(false);
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [newPassword, setNewPassword] = useState('');
+  const [resendTimer, setResendTimer] = useState(60);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Theme Management
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme');
@@ -96,6 +108,26 @@ export const Login: React.FC = () => {
     defaultValues: { email: '' },
   });
 
+  // Theme Sync effect
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    } else {
+      root.classList.add('light');
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  // Session Protection check
+  useEffect(() => {
+    if (initialized && user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [initialized, user, navigate]);
+
   // Capture forwarded OAuth errors from URL query/hash parameters
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
@@ -110,39 +142,16 @@ export const Login: React.FC = () => {
         friendlyError = 'ACCESS DENIED: This account has not been registered. Please contact an administrator.';
       }
       
-      // Fire the toast alert
       toast.error(friendlyError, { toastId: 'unauthorized-access-toast' });
-      
-      // Clean up the browser address bar cleanly
       window.history.replaceState(null, '', window.location.pathname);
     }
   }, []);
 
-  // Theme Sync effect
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-      root.classList.remove('light');
-    } else {
-      root.classList.add('light');
-      root.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  // Session Protection check (Forces logged-in users back to dashboard)
-  useEffect(() => {
-    if (initialized && user) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [initialized, user, navigate]);
-
-  // Deduplicates "ACCESS DENIED" alerts using a static toastId
+  // Deduplicates "ACCESS DENIED" alerts
   useEffect(() => {
     if (storeError) {
       toast.error(storeError, { toastId: 'unauthorized-access-toast' });
-      setError(null); // Clear error flag after alerting
+      setError(null);
       setIsGoogleSubmitting(false);
     }
   }, [storeError, setError]);
@@ -162,6 +171,14 @@ export const Login: React.FC = () => {
     }, 5000);
     return () => clearInterval(slideTimer);
   }, []);
+
+  // One minute countdown timer for resending OTP code
+  useEffect(() => {
+    if (resendTimer > 0 && recoveryStep === 'otp') {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendTimer, recoveryStep]);
 
   // Typewriter Loop Script
   useEffect(() => {
@@ -191,6 +208,24 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [typewriterText, isDeleting, phraseIndex]);
 
+  // Google OAuth Handshake Initiation
+  const handleGoogleLogin = async () => {
+    setIsGoogleSubmitting(true);
+    try {
+      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${appUrl}/dashboard`,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      toast.error(err.message || 'OAuth handshake parameters invalid.');
+      setIsGoogleSubmitting(false);
+    }
+  };
+
   // Native Credentials Login submission
   const onLoginSubmit = async (data: LoginFormValues) => {
     if (isSubmitting) return;
@@ -207,13 +242,11 @@ export const Login: React.FC = () => {
       await checkSession();
       const loggedInUser = useAuthStore.getState().user;
 
-      // Handle the block condition manually if session check didn't route first
       if (!loggedInUser) {
         setIsSubmitting(false);
         return;
       }
 
-      // Fetch fallback metadata directly from Auth record since profiles table is removed
       const displayName = loggedInUser.user_metadata?.full_name || 
                           loggedInUser.user_metadata?.name || 
                           loggedInUser.email?.split('@')[0] || 
@@ -237,58 +270,168 @@ export const Login: React.FC = () => {
       setIsSubmitting(false);
     }
   };
-
-  // Recovery submission
-  const onRecoverySubmit = async (data: RecoveryFormValues) => {
+  //Request OTP from Serverless Function
+  const requestOtp = async (email: string) => {
+    setRecoveryError(null);
     setIsRecoverySubmitting(true);
+    setRecoveryStatusText('Establishing connection to server...');
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    setRecoveryStatusText('Checking existing email...');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+      const response = await fetch('/.netlify/functions/auth-recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-otp', email }),
       });
-      if (error) throw error;
-      setShowSuccessModal(true);
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Local dev server proxy error: Please start your local app using "netlify dev" instead of "npm run dev".');
+      }
+
+      const resData = await response.json();
+
+      // Catch backend rate-limit, sync the timer, and route them directly to OTP verification
+      if (response.status === 429) {
+        setRecoveryEmail(email);
+        setRecoveryStep('otp');
+        setResendTimer(resData.remaining_seconds || 60);
+        throw new Error(resData.error || 'Rate limit active. Please use your existing key.');
+      }
+
+      if (!response.ok) {
+        throw new Error(resData.error || 'Identity verification sequence failed.');
+      }
+
+      setRecoveryEmail(email);
+      setRecoveryStep('otp');
+      setResendTimer(60);
+      setOtpDigits(['', '', '', '', '', '']); // Clear digits on success
+      toast.info('Security key transmitted to registered terminal.');
     } catch (err: any) {
-      toast.error(err.message || 'Unable to register recovery request.');
+      setRecoveryError(err.message);
     } finally {
       setIsRecoverySubmitting(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setIsGoogleSubmitting(true);
-    try {
-      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${appUrl}/dashboard`,
-        },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      toast.error(err.message || 'OAuth handshake parameters invalid.');
-      setIsGoogleSubmitting(false);
+  // Form submit for Recovery
+  const onRecoverySubmit = async (data: RecoveryFormValues) => {
+    await requestOtp(data.email);
+  };
+
+  // Handle Verification Input Digits
+  const handleOtpChange = (index: number, val: string) => {
+    if (!/^\d*$/.test(val)) return;
+    const nextDigits = [...otpDigits];
+    nextDigits[index] = val.slice(-1);
+    setOtpDigits(nextDigits);
+
+    if (val && index < 5) {
+      otpRefs.current[index + 1]?.focus();
     }
   };
 
-  // Prevent flash of screen before session initialization checks complete
-  if (!initialized) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent"></div>
-      </div>
-    );
-  }
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').trim();
+    if (!/^\d{6}$/.test(pastedData)) return; // Ensure exactly 6 digits
+
+    const nextDigits = pastedData.split('');
+    setOtpDigits(nextDigits);
+
+    // Focus last input and update state
+    otpRefs.current[5]?.focus();
+  };
+
+  // Validate OTP and update credentials
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+    setIsRecoverySubmitting(true);
+    setRecoveryStatusText('Verifying OTP Credential...');
+
+    const completeOtp = otpDigits.join('');
+
+    if (completeOtp.length !== 6 || !newPassword) {
+      setRecoveryError('[ERR_400] REQUEST_INVALID: Email, OTP, and new password required.');
+      setIsRecoverySubmitting(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/.netlify/functions/auth-recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify-otp',
+          email: recoveryEmail,
+          otp: completeOtp,
+          new_password: newPassword,
+        }),
+      });
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Local dev server proxy error: Please start your local app using "netlify dev" instead of "npm run dev".');
+      }
+
+      const resData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(resData.error || 'OTP verification declined.');
+      }
+
+      setShowSuccessModal(true);
+    } catch (err: any) {
+      setRecoveryError(err.message || '[ERR_400] REQUEST_INVALID: Invalid email, OTP, and new password required.');
+      
+      // Auto-clear logic: empty inputs and auto-focus back to digit 1 (Fixes user feedback)
+      setOtpDigits(['', '', '', '', '', '']);
+      otpRefs.current[0]?.focus();
+    } finally {
+      setIsRecoverySubmitting(false);
+    }
+  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-white dark:bg-[#0f1012] select-none font-sans text-slate-900 dark:text-slate-100">
       
-      {/* FLOATING CORNER THEME CONTROLLER & COLOR PREVIEW SQUARES */}
+      {/* INJECT ANIMATION KEYFRAMES DIRECTLY (Zero compile config required) */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-slide-up {
+          animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}} />
+
+      {/* FLOATING CORNER THEME CONTROLLER */}
       <button
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         className="absolute top-4 right-4 z-50 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95"
       >
-        {/* Colors displayed as touching, contiguous squares */}
         <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
           {theme === 'dark' ? (
             <>
@@ -326,14 +469,14 @@ export const Login: React.FC = () => {
         {/* LEFT OPERATIVE INTERFACE */}
         <div className="auth-left flex flex-col items-center justify-center z-10 px-4">
           
-          {/* MOBILE LOGO (outside of card boundary with curved edges) */}
+          {/* MOBILE LOGO */}
           <img 
             src="/favicon.svg" 
             alt="Palomar Logo" 
             className="block lg:hidden w-28 h-28 object-contain rounded-3xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#141414] p-3 shadow-xl mb-6 mx-auto" 
           />
 
-          {/* DESKTOP LOGO (placed above card with clean breathing room, not stuck) */}
+          {/* DESKTOP LOGO */}
           <div className="hidden lg:block mb-8 shrink-0 relative z-20">
             <img 
               src={landscapeLogo} 
@@ -346,7 +489,6 @@ export const Login: React.FC = () => {
             <div className={`flip-card-inner ${isFlipped ? 'flipped' : ''}`}>
               
               {/* CARD FRONT: LOGIN SECTION */}
-              {/* Responsive toggle: containerless on mobile (transparent, borderless, shadowless) */}
               <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
                 <div>
                   <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
@@ -362,7 +504,6 @@ export const Login: React.FC = () => {
                   </div>
 
                   <form onSubmit={handleLoginSubmit(onLoginSubmit)} className="space-y-4 font-body">
-                    {/* Email Input */}
                     <div className="field-wrap">
                       <input
                         {...registerLogin('email')}
@@ -377,7 +518,6 @@ export const Login: React.FC = () => {
                       </label>
                     </div>
 
-                    {/* Password Input */}
                     <div className="field-wrap relative">
                       <input
                         {...registerLogin('password')}
@@ -399,7 +539,6 @@ export const Login: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Checkbox agreement fields */}
                     <div className="flex items-start gap-2.5 my-2">
                       <input
                         type="checkbox"
@@ -415,12 +554,10 @@ export const Login: React.FC = () => {
                       </label>
                     </div>
 
-                    {/* Sign In Button */}
                     <button type="submit" disabled={isSubmitting || isGoogleSubmitting} className="w-full font-heading text-white bg-[#1b365d] hover:bg-[#112246] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] disabled:opacity-50 py-3.5 rounded-xl uppercase tracking-wider text-sm transition-all duration-200">
                       {isSubmitting ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'Login Now'}
                     </button>
 
-                    {/* Google Sign In */}
                     <button
                       type="button"
                       onClick={handleGoogleLogin}
@@ -438,10 +575,9 @@ export const Login: React.FC = () => {
                   </form>
                 </div>
 
-                {/* Bottom navigation links and notification parameters */}
                 <div className="space-y-4 mt-4 font-body">
                   <div className="flex items-center justify-center text-xs font-bold text-slate-400">
-                    <button onClick={() => setIsFlipped(true)} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all">
+                    <button onClick={() => { setIsFlipped(true); setRecoveryStep('email'); setRecoveryError(null); }} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all">
                       Forgot Password?
                     </button>
                   </div>
@@ -462,51 +598,179 @@ export const Login: React.FC = () => {
                 </div>
               </div>
 
-              {/* CARD BACK: PASSWORD RECOVERY SECTION */}
+              {/* CARD BACK: PASSWORD RECOVERY SECTION (HIGH FIDELITY) */}
               <div className="flip-card-back flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
                 <div>
                   <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
                     RECOVERY MODE
                   </div>
-                  <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
-                    Enter authorized email coordinates to request administrative authentication.
-                  </p>
 
-                  <form onSubmit={handleRecoverySubmit(onRecoverySubmit)} className="space-y-4 font-body">
-                    <div className="field-wrap">
-                      <input
-                        {...registerRecovery('email')}
-                        type="email"
-                        className={`field-input ${recoveryErrors.email ? 'shake-error' : ''}`}
-                        placeholder=" "
-                        autoComplete="email"
-                      />
-                      <label className="field-label">
-                        <Mail className="w-4 h-4 text-slate-400" />
-                        <span>Email Address</span>
-                      </label>
+                  {recoveryStep === 'email' ? (
+                    <div className="animate-slide-up"> {/* Elegant Slide up transition */}
+                      <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
+                        Enter authorized email to receive security key.
+                      </p>
+
+                      <form onSubmit={handleRecoverySubmit(onRecoverySubmit)} className="space-y-4 font-body">
+                        <div className="field-wrap">
+                          <input
+                            {...registerRecovery('email')}
+                            type="email"
+                            className={`field-input ${recoveryErrors.email ? 'shake-error' : ''}`}
+                            placeholder=" "
+                            autoComplete="email"
+                          />
+                          <label className="field-label">
+                            <Mail className="w-4 h-4 text-slate-400" />
+                            <span>Email Address</span>
+                          </label>
+                        </div>
+
+                        {recoveryError && (
+                          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
+                            {recoveryError}
+                          </div>
+                        )}
+
+                        <button 
+                          type="submit" 
+                          disabled={isRecoverySubmitting} 
+                          className="w-full font-heading text-white bg-[#1b365d] hover:bg-[#112246] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] disabled:opacity-50 py-3.5 rounded-xl uppercase tracking-wider text-sm transition-all duration-200"
+                        >
+                          {isRecoverySubmitting ? (
+                            <div className="flex flex-col items-center justify-center py-1">
+                              <span className="animate-pulse tracking-widest text-xs">TRANSMITTING...</span>
+                              <span className="text-[8px] opacity-75 lowercase tracking-wider font-sans mt-0.5">{recoveryStatusText}</span>
+                            </div>
+                          ) : (
+                            'Send Security OTP'
+                          )}
+                        </button>
+                      </form>
                     </div>
+                  ) : (
+                    /* Step 2: High-Fidelity 6-Digit OTP & Password Form */
+                    <form onSubmit={handlePasswordChange} className="space-y-4 font-body animate-slide-up"> {/* Added slide-up wrapper */}
+                      <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-2 leading-relaxed font-bold">
+                        Enter the 6-digit code sent to your email.
+                      </p>
 
-                    <button type="submit" disabled={isRecoverySubmitting} className="w-full font-heading text-white bg-[#1b365d] hover:bg-[#112246] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] disabled:opacity-50 py-3.5 rounded-xl uppercase tracking-wider text-sm transition-all duration-200">
-                      {isRecoverySubmitting ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'Send Security OTP'}
-                    </button>
-                  </form>
+                      {/* 6-digit OTP grid boxes with paste support, focus-selectors, arrow navigation, and autocomplete properties */}
+                      <div className="flex justify-between gap-1.5 px-2 my-3">
+                        {otpDigits.map((digit, idx) => (
+                          <input
+                            key={idx}
+                            ref={(el) => { otpRefs.current[idx] = el; }} // Returns void (Fixes TS error)
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            autoComplete="one-time-code" // Mobile autofill prompt compatible
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handleOtpChange(idx, e.target.value)}
+                            onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                            onPaste={handleOtpPaste} // Dynamic clipboard support
+                            onFocus={(e) => e.target.select()} // Text focus-replacement
+                            placeholder="0"
+                            aria-label={`Security OTP Digit ${idx + 1}`}
+                            className="w-10 h-12 text-center text-xl font-bold bg-slate-200 dark:bg-neutral-800 text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:border-[#1b365d] dark:focus:border-[#bf0202]"
+                          />
+                        ))}
+                      </div>
+
+                      <div className="field-wrap relative">
+                        <input
+                          id="recoveryNewPassword"
+                          type={showNewPassword ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="field-input"
+                          placeholder=" "
+                          aria-label="Enter your new password"
+                          required
+                        />
+                        <label htmlFor="recoveryNewPassword" className="field-label">
+                          <Lock className="w-4 h-4 text-slate-400" />
+                          <span>Enter your new password</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="field-visibility-toggle"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                        </button>
+                      </div>
+
+                      {recoveryError && (
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
+                          {recoveryError}
+                        </div>
+                      )}
+
+                      <button 
+                        type="submit" 
+                        disabled={isRecoverySubmitting} 
+                        className="w-full font-heading text-white bg-[#1b365d] hover:bg-[#112246] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] disabled:opacity-50 py-3.5 rounded-xl uppercase tracking-wider text-sm transition-all duration-200"
+                      >
+                        {isRecoverySubmitting ? (
+                          <div className="flex flex-col items-center justify-center py-1">
+                            <span className="animate-pulse tracking-widest text-xs">TRANSMITTING...</span>
+                            <span className="text-[8px] opacity-75 lowercase tracking-wider font-sans mt-0.5">{recoveryStatusText}</span>
+                          </div>
+                        ) : (
+                          'Restore System Access'
+                        )}
+                      </button>
+                    </form>
+                  )}
                 </div>
 
-                <div className="space-y-4 font-body">
-                  <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-                    <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
-                      <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                      <span>RECOVERY PROTOCOL</span>
+                <div className="space-y-4 font-body mt-4">
+                  {recoveryStep === 'email' ? (
+                    <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up">
+                      <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+                        <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+                        <span>RECOVERY PROTOCOL</span>
+                      </div>
+                      <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+                        Recovery Mode transmits a secure OTP (One-Time Password) to your registered email address. This is used to request password changes and restore access to your account.
+                      </p>
                     </div>
-                    <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                      Recovery Mode transmits a secure password reset hyperlink directly to your documented dashboard.
-                    </p>
-                  </div>
+                  ) : (
+                    /* Verification Step Context Box */
+                    <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up">
+                      <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+                        <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+                        <span>VERIFICATION STEP</span>
+                      </div>
+                      <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+                        Enter the 6-digit code sent to your email. This is Step 2 of password recovery - verify the code first, then enter your new password below to complete the reset.
+                      </p>
+                    </div>
+                  )}
 
-                  <button onClick={() => setShowExitConfirm(true)} className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">
-                    Already have credentials? Back to Login
-                  </button>
+                  <div className="flex flex-col items-center gap-2">
+                    {recoveryStep === 'otp' && (
+                      <div className="text-center text-[11px] font-bold animate-slide-up">
+                        {resendTimer > 0 ? (
+                          <span className="text-slate-400">Wait for {resendTimer}s to resend code</span>
+                        ) : (
+                          <button 
+                            type="button" 
+                            onClick={() => requestOtp(recoveryEmail)} 
+                            className="text-[#1b365d] dark:text-[#bf0202] hover:underline cursor-pointer"
+                          >
+                            Resend code
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <button onClick={() => setShowExitConfirm(true)} className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                      Already have credentials? Back to Login
+                    </button>
+                  </div>
 
                   <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
                     © {new Date().getFullYear()} WOLF PALOMAR.
@@ -562,7 +826,6 @@ export const Login: React.FC = () => {
         <div className="fixed inset-0 z-12000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowExitConfirm(false)} />
           <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4 font-body">
-            {/* Modal Titles use standard Freshman, but buttons use standard readable Inter to eliminate text compression */}
             <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">Abandon Recovery?</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
               If you leave recovery, you must re-verify credentials. Are you sure you want to discard this operation?
@@ -575,6 +838,9 @@ export const Login: React.FC = () => {
                 onClick={() => {
                   setShowExitConfirm(false);
                   setIsFlipped(false);
+                  setRecoveryStep('email');
+                  setOtpDigits(['', '', '', '', '', '']);
+                  setNewPassword('');
                 }}
                 className="flex-1 bg-[#031d7d] dark:bg-[#bf0202] text-white py-3.5 rounded-xl font-bold font-body text-xs uppercase tracking-widest hover:opacity-95 transition-all cursor-pointer shadow-lg"
               >
@@ -592,15 +858,18 @@ export const Login: React.FC = () => {
           <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-6 font-body">
             <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
             <div className="space-y-2">
-              <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">Link Transmitted</h3>
+              <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">Access Restored</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                If the email coordinate exists, reset parameters have been successfully sent.
+                Your administrative terminal passwords have been successfully reconfigured.
               </p>
             </div>
             <button
               onClick={() => {
                 setShowSuccessModal(false);
                 setIsFlipped(false);
+                setRecoveryStep('email');
+                setOtpDigits(['', '', '', '', '', '']);
+                setNewPassword('');
               }}
               className="w-full font-body bg-[#031d7d] dark:bg-[#bf0202] text-white py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs hover:opacity-90 transition-all cursor-pointer"
             >
