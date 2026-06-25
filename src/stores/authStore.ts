@@ -26,11 +26,37 @@ export const useAuthStore = create<AuthState>((set) => ({
   checkSession: async () => {
     try {
       set({ loading: true, error: null });
+
+      // 1. Intercept OAuth error parameters from hash or query string
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const queryParams = new URLSearchParams(window.location.search);
+      
+      const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
+      const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
+
+      if (errorDesc) {
+        // Clean the URL immediately so the hash parameters don't linger in the browser bar
+        window.history.replaceState(null, '', window.location.pathname);
+        
+        let friendlyError = errorDesc.replace(/\+/g, ' ');
+        if (errorCode === 'signup_disabled') {
+          friendlyError = 'ACCESS DENIED: This account has not been registered. Please contact an administrator.';
+        }
+        
+        set({ 
+          user: null, 
+          loading: false, 
+          initialized: true, 
+          error: friendlyError 
+        });
+        return;
+      }
+
+      // 2. Proceed with standard Supabase session check if no URL error exists
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
 
-      // Purely checks if the user session exists natively in Supabase Auth
       if (session?.user) {
         set({
           user: session.user,
@@ -57,7 +83,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       if (error) throw error;
     } catch (err: any) {
-      // If signups are disabled in the dashboard, Google OAuth will throw an error here
       set({ loading: false, error: err.message });
     }
   },
