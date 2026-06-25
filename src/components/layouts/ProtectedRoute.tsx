@@ -3,11 +3,11 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 
 interface ProtectedRouteProps {
-  allowedRoles?: ('admin' | 'staff')[];
+  allowedRoles?: ('admin' | 'staff')[]; // Kept in interface to prevent compilation breaks elsewhere
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
-  const { user, profile, loading, initialized } = useAuthStore();
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = () => {
+  const { user, loading, initialized } = useAuthStore();
   const location = useLocation();
 
   if (!initialized || loading) {
@@ -18,18 +18,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     );
   }
 
-  // Redirect to login if user is not authenticated
+  // Redirect to login if user is not authenticated in Supabase
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  // Check if role is authorized to view this page
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
-    // If Staff is trying to reach Admin, redirect to their allowed start page
-    if (profile.role === 'staff') {
-      return <Navigate to="/sales/register" replace />;
-    }
-    return <Navigate to="/login" replace />;
   }
 
   return <Outlet />;
