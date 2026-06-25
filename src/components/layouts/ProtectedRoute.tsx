@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 
 interface ProtectedRouteProps {
-  allowedRoles?: ('admin' | 'staff')[]; // Kept in interface to prevent compilation breaks elsewhere
+  allowedRoles?: ('admin' | 'staff')[];
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = () => {
@@ -18,9 +18,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = () => {
     );
   }
 
-  // Redirect to login if user is not authenticated in Supabase
+  // Redirect to login if user is not authenticated, preserving the query/hash parameters
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    const redirectTarget = `/login${location.search}${location.hash}`;
+    return <Navigate to={redirectTarget} state={{ from: location }} replace />;
   }
 
   return <Outlet />;

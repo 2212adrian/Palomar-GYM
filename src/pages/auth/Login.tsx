@@ -96,6 +96,28 @@ export const Login: React.FC = () => {
     defaultValues: { email: '' },
   });
 
+  // Capture forwarded OAuth errors from URL query/hash parameters
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const queryParams = new URLSearchParams(window.location.search);
+    
+    const errorDesc = hashParams.get('error_description') || queryParams.get('error_description');
+    const errorCode = hashParams.get('error_code') || queryParams.get('error_code');
+
+    if (errorDesc) {
+      let friendlyError = errorDesc.replace(/\+/g, ' ');
+      if (errorCode === 'signup_disabled') {
+        friendlyError = 'ACCESS DENIED: This account has not been registered. Please contact an administrator.';
+      }
+      
+      // Fire the toast alert
+      toast.error(friendlyError, { toastId: 'unauthorized-access-toast' });
+      
+      // Clean up the browser address bar cleanly
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
   // Theme Sync effect
   useEffect(() => {
     const root = document.documentElement;
