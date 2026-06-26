@@ -41,12 +41,6 @@ export const SystemLayout: React.FC = () => {
     }, 1500);
   };
 
-  const getSidebarWidth = () => {
-    // Uses the same slideOut state to manage the sidebar's width contract smoothly
-    if (!slideOut) return '100%'; 
-    return desktopCollapsed ? '5rem' : '18rem'; 
-  };
-
  return (
     <div className="relative h-screen overflow-hidden bg-[var(--bg-page)] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
       
