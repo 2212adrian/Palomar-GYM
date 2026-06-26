@@ -1,3 +1,5 @@
+// src/App.tsx
+
 import React, { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { AppRoutes } from './routes';
@@ -21,6 +23,7 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Automatically retrieve the session state on page load/mount
     checkSession();
   }, [checkSession]);
 

@@ -7,10 +7,14 @@ import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'l
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
+
+// Reusable UI Components from src/components/ui/
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
+
+// Dynamic version retrieval from package.json
 import pkg from '../../../package.json';
 
 // ─── Asset Imports ────────────────────────────────────────────────────────────
@@ -42,7 +46,7 @@ const recoverySchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 type RecoveryFormValues = z.infer<typeof recoverySchema>;
 
-// ─── Theme initialiser (runs once, before first render) ──────────────────────
+// ─── Theme initializer (runs once, before first render) ──────────────────────
 function getInitialTheme(): 'dark' | 'light' {
   if (typeof window === 'undefined') return 'dark';
   const saved = localStorage.getItem('theme');
@@ -54,14 +58,26 @@ function getInitialTheme(): 'dark' | 'light' {
 export const Login: React.FC = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { checkSession, user, initialized, error: storeError, setError } = useAuthStore();
+  const { checkSession, user, initialized, error: storeError, setError } = useAuthStore() as any;
 
   const from = (location.state as any)?.from?.pathname || '/dashboard';
 
   // ── Layout / reveal ──────────────────────────────────────────────────────
-  const [isReady,       setIsReady]       = useState(false);
-  const [isFlipped,     setIsFlipped]     = useState(false);
-  const [isLoggingIn,   setIsLoggingIn]   = useState(false); // locks redirect, triggers outro
+  // Layout & UI States (Session-locked to control one-time transition limits)
+  const [isReady, setIsReady] = useState(() => {
+    const introDone = sessionStorage.getItem('loginIntroDone') === '1';
+    const outroActive = sessionStorage.getItem('outroActive') === 'true';
+    
+    if (introDone) return true; // If already run once, start ready immediately (no transition)
+    if (outroActive) return false;
+    return false;
+  });
+
+  const [isLoggingIn, setIsLoggingIn] = useState(() => {
+    return sessionStorage.getItem('outroActive') === 'true';
+  });
+
+  const [isFlipped, setIsFlipped] = useState(false);
 
   // ── Auth submit states ───────────────────────────────────────────────────
   const [isSubmitting,       setIsSubmitting]       = useState(false);
@@ -91,9 +107,6 @@ export const Login: React.FC = () => {
   const [showExitConfirm,  setShowExitConfirm]  = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // ── Welcome overlay ──────────────────────────────────────────────────────
-  // (removed — Dashboard replays the login intro animation instead)
-
   // ── Carousel ─────────────────────────────────────────────────────────────
   const [activeSlide, setActiveSlide] = useState(0);
 
@@ -117,10 +130,13 @@ export const Login: React.FC = () => {
 
   // Session guard — skip redirect while outro animation is running
   useEffect(() => {
-    if (initialized && user && !isLoggingIn) {
-      navigate('/dashboard', { replace: true });
+    const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
+    if (initialized && user && !isLoggingIn && !isOutroActive) {
+      const userProfile = (useAuthStore.getState() as any).profile;
+      const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : from;
+      navigate(targetRoute, { replace: true });
     }
-  }, [initialized, user, navigate, isLoggingIn]);
+  }, [initialized, user, navigate, isLoggingIn, from]);
 
   // Capture forwarded OAuth errors from URL hash / query params
   useEffect(() => {
@@ -148,10 +164,19 @@ export const Login: React.FC = () => {
     }
   }, [storeError, setError]);
 
-  // Shrink-reveal on mount
+  // One-time shrink-reveal transition on mount
   useEffect(() => {
-    const t = setTimeout(() => setIsReady(true), 150);
-    return () => clearTimeout(t);
+    const introDone = sessionStorage.getItem('loginIntroDone') === '1';
+    
+    if (introDone) {
+      setIsReady(true);
+    } else {
+      const t = setTimeout(() => {
+        setIsReady(true);
+        sessionStorage.setItem('loginIntroDone', '1');
+      }, 150);
+      return () => clearTimeout(t);
+    }
   }, []);
 
   // Carousel auto-advance
@@ -268,49 +293,51 @@ export const Login: React.FC = () => {
   };
 
   const onLoginSubmit = async (data: LoginFormValues) => {
-  if (isSubmitting) return;
-  setIsSubmitting(true);
-  setShakeEmail(false);
-  setShakePassword(false);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setShakeEmail(false);
+    setShakePassword(false);
 
-  try {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
-    if (error) throw error;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+      if (error) throw error;
 
-    // 1. Lock session redirects and trigger the reversed Outro Animation
-    sessionStorage.setItem('outroActive', 'true');
-    sessionStorage.setItem('playDashboardIntro', 'true'); // Flag for dashboard intro
-    setIsLoggingIn(true); // Fades and scales down login card & logos
-    setIsReady(false);    // Smoothly expands left panel back to 100% width
+      // Lock session redirects and trigger the reversed Outro Animation
+      sessionStorage.setItem('outroActive', 'true');
+      sessionStorage.setItem('playDashboardIntro', 'true'); // Flag for dashboard intro
+      setIsLoggingIn(true); // Fades and scales down login card & logos
+      setIsReady(false);    // Smoothly expands left panel back to 100% width
 
-    await checkSession();
-    const loggedInUser = useAuthStore.getState().user;
+      await checkSession();
+      const loggedInUser = useAuthStore.getState().user;
 
-    if (!loggedInUser) {
+      if (!loggedInUser) {
+        setIsSubmitting(false);
+        setIsLoggingIn(false);
+        setIsReady(true);
+        sessionStorage.removeItem('outroActive');
+        return;
+      }
+
+      // Wait exactly 1.8s for the slide transition to complete (Left panel covers screen)
+      setTimeout(() => {
+        sessionStorage.removeItem('outroActive');
+        const userProfile = (useAuthStore.getState() as any).profile;
+        const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : from;
+        navigate(targetRoute, { replace: true });
+      }, 1800);
+
+    } catch (err: any) {
+      toast.error(err.message || 'Invalid email or password.');
+      setLoginValue('password', '');
+      triggerShake(setShakePassword);
+    } finally {
       setIsSubmitting(false);
-      setIsLoggingIn(false);
-      setIsReady(true);
-      sessionStorage.removeItem('outroActive');
-      return;
     }
-
-    // 2. Wait exactly 1.8s for the slide transition to complete (Left panel covers screen)
-    setTimeout(() => {
-      sessionStorage.removeItem('outroActive');
-      navigate(from, { replace: true });
-    }, 1800); // <-- Change this timeout to 1800ms to allow the full outro animation to complete
-
-  } catch (err: any) {
-    toast.error(err.message || 'Invalid email or password.');
-    setLoginValue('password', '');
-    triggerShake(setShakePassword);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   const onInvalidLoginSubmit = () => {
     if (loginErrors.email)    triggerShake(setShakeEmail);
@@ -411,8 +438,7 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── Email normalisation wrappers ─────────────────────────────────────────
-
+  // Email normalisation wrappers
   const handlePreLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     normaliseEmail(watchEmail, setLoginValue, 'email');
@@ -425,8 +451,7 @@ export const Login: React.FC = () => {
     handleRecoverySubmit(onRecoverySubmit, onInvalidRecoverySubmit)(e);
   };
 
-  // ─── OTP input handlers ───────────────────────────────────────────────────
-
+  // OTP input handlers
   const handleOtpChange = (index: number, val: string) => {
     if (!/^\d*$/.test(val)) return;
     const next = [...otpDigits];
@@ -448,6 +473,17 @@ export const Login: React.FC = () => {
     setOtpDigits(pasted.split(''));
     otpRefs.current[5]?.focus();
   };
+
+  const handleBackToLoginClick = () => {
+  if (recoveryStep === 'otp') {
+    // If waiting for the 6-digit code, prompt the confirmation modal
+    setShowExitConfirm(true);
+  } else {
+    // If still entering their email, return to login instantly with no prompt
+    setIsFlipped(false);
+    resetRecovery();
+  }
+};
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -492,347 +528,341 @@ export const Login: React.FC = () => {
         </span>
       </button>
 
-      {/* ── Split container ───────────────────────────────────────────────── */}
-      <div className={`flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''}`}>
+{/* ─── SPLIT CONTAINER ─── */}
+<div className={`flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''}`}>
 
-        {/* ── LEFT PANEL ─────────────────────────────────────────────────── */}
-        <div className="auth-left flex flex-col items-center justify-center z-10 px-4">
-
-          {/* Mobile logo */}
-          <img 
-  src="/favicon.svg" 
-  alt="Palomar Logo" 
-  className={`block lg:hidden w-28 h-28 object-contain rounded-3xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#141414] p-3 shadow-xl mb-6 mx-auto animate-slide-up transition-all duration-500 ${isLoggingIn ? 'opacity-0 scale-95 pointer-events-none' : ''}`} 
-/>
-
-
-          {/* Desktop logo */}
-          <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
-  <img 
-    src={landscapeLogo} 
-    alt="Palomar Logo" 
-    className={`w-52 h-auto object-contain rounded-2xl shadow-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#141414] p-3 transition-all duration-500 ${isLoggingIn ? 'opacity-0 scale-95 pointer-events-none' : ''}`} 
-  />
-</div>
-
-          {/* ── Flip card ──────────────────────────────────────────────── */}
-          <Card isFlipped={isFlipped} isLoggingIn={isLoggingIn}>
-
-            {/* ── FRONT: Login ─────────────────────────────────────────── */}
-            <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
-
-              {/* Header */}
-              <div>
-                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-                  LOGIN
-                </div>
-                <p className="text-center font-heading text-[10px] tracking-[2.4px] text-[#1b365d] dark:text-blue-400 uppercase opacity-90 mb-2">
-                  GYM MANAGEMENT SYSTEM
-                </p>
-                <div className="flex justify-center mb-6">
-                  <span className="text-[9px] text-slate-500 dark:text-slate-300 tracking-widest border border-blue-500/30 dark:border-rose-500/30 bg-blue-500/5 dark:bg-rose-500/10 rounded-full px-3 py-1 font-mono uppercase">
-                    v{APP_VERSION}
-                  </span>
-                </div>
-
-                {/* Login form */}
-                <form onSubmit={handlePreLoginSubmit} className="space-y-4 font-body">
-                  <Input
-                    {...registerLogin('email')}
-                    type="email"
-                    label="Email Address"
-                    icon={<Mail className="w-4 h-4 text-slate-400" />}
-                    error={!!loginErrors.email}
-                    shake={shakeEmail}
-                    touched={touchedLogin.email}
-                    isPopulated={!!watchEmail}
-                  />
-
-                  <Input
-                    {...registerLogin('password')}
-                    type={showPassword ? 'text' : 'password'}
-                    label="Password"
-                    icon={<Lock className="w-4 h-4 text-slate-400" />}
-                    error={!!loginErrors.password}
-                    shake={shakePassword}
-                    touched={touchedLogin.password}
-                    isPopulated={!!watchPassword}
-                    rightElement={
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((p) => !p)}
-                        className="field-visibility-toggle cursor-pointer"
-                        aria-label="Toggle password visibility"
-                      >
-                        {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                      </button>
-                    }
-                  />
-
-                  {/* Agreement checkbox */}
-                  <div className="flex items-start gap-2.5 my-2">
-                    <input
-                      type="checkbox"
-                      id="loginAgreement"
-                      {...registerLogin('agree')}
-                      className="styled-checkbox"
-                    />
-                    <label htmlFor="loginAgreement" className="checkbox-label">
-                      <span className="checkbox-ui" />
-                      <span className="text-[10px] text-slate-900 dark:text-slate-400 font-bold">
-                        I agree to the{' '}
-                        <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Terms & Conditions</a>
-                        {' '}and{' '}
-                        <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Privacy Policy</a>.
-                      </span>
-                    </label>
-                  </div>
-
-                  <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">
-                    Login Now
-                  </Button>
-
-                  {/* Google OAuth */}
-                  <Button
-                    type="button"
-                    variant="google"
-                    onClick={handleGoogleLogin}
-                    loading={isGoogleSubmitting}
-                  >
-                    <svg className="w-4 h-4 text-[#ea4335] shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                    </svg>
-                    <span>Continue With Google</span>
-                  </Button>
-                </form>
-              </div>
-
-              {/* Footer */}
-              <div className="space-y-4 mt-4 font-body">
-                <div className="flex items-center justify-center text-xs font-bold text-slate-400">
-                  <button
-                    onClick={() => { setIsFlipped(true); setRecoveryStep('email'); setRecoveryError(null); }}
-                    className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer"
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-
-                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
-                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                    <span>ACCESS PROTOCOL</span>
-                  </div>
-                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.
-                  </p>
-                </div>
-
-                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
-                  © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
-                </div>
-              </div>
-            </div>
-
-            {/* ── BACK: Recovery ────────────────────────────────────────── */}
-            <div className="flip-card-back flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
-
-              <div>
-                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-                  RECOVERY MODE
-                </div>
-
-                {/* Step 1: Email */}
-                {recoveryStep === 'email' ? (
-                  <div className="animate-slide-up">
-                    <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
-                      Enter authorized email to receive security key.
-                    </p>
-                    <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body">
-                      <Input
-                        {...registerRecovery('email')}
-                        type="email"
-                        label="Email Address"
-                        icon={<Mail className="w-4 h-4 text-slate-400" />}
-                        error={!!recoveryErrors.email}
-                        shake={shakeRecovery}
-                        touched={touchedRecovery.email}
-                        isPopulated={!!watchRecoveryEmail}
-                      />
-                      {recoveryError && (
-                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
-                          {recoveryError}
-                        </div>
-                      )}
-                      <Button type="submit" loading={isRecoverySubmitting} loadingLabel="TRANSMITTING...">
-                        Send Security OTP
-                      </Button>
-                    </form>
-                  </div>
-
-                ) : (
-                  /* Step 2: OTP + new password */
-                  <form onSubmit={handlePasswordChange} className="space-y-4 font-body animate-slide-up">
-                    <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-2 leading-relaxed font-bold">
-                      Enter the 6-digit code sent to your email.
-                    </p>
-
-                    {/* OTP digit inputs */}
-                    <div className="flex justify-between gap-1.5 px-2 my-3">
-                      {otpDigits.map((digit, idx) => (
-                        <input
-                          key={idx}
-                          ref={(el) => { otpRefs.current[idx] = el; }}
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          autoComplete="one-time-code"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => handleOtpChange(idx, e.target.value)}
-                          onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                          onPaste={handleOtpPaste}
-                          onFocus={(e) => e.target.select()}
-                          placeholder="0"
-                          aria-label={`OTP digit ${idx + 1}`}
-                          className="w-10 h-12 text-center text-xl font-bold bg-slate-200 dark:bg-neutral-800 text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:border-[#1b365d] dark:focus:border-[#bf0202]"
-                        />
-                      ))}
-                    </div>
-
-                    {/* New password */}
-                    <div className="field-wrap relative">
-                      <input
-                        id="recoveryNewPassword"
-                        type={showNewPassword ? 'text' : 'password'}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="field-input"
-                        placeholder=" "
-                        aria-label="New password"
-                        required
-                      />
-                      <label htmlFor="recoveryNewPassword" className="field-label">
-                        <Lock className="w-4 h-4 text-slate-400" />
-                        <span>Enter your new password</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword((p) => !p)}
-                        className="field-visibility-toggle cursor-pointer"
-                        aria-label="Toggle new password visibility"
-                      >
-                        {showNewPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                      </button>
-                    </div>
-
-                    {recoveryError && (
-                      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
-                        {recoveryError}
-                      </div>
-                    )}
-
-                    <Button
-                      type="submit"
-                      loading={isRecoverySubmitting}
-                      loadingLabel="TRANSMITTING..."
-                      loadingSubtitle={recoveryStatusText}
-                    >
-                      Restore System Access
-                    </Button>
-                  </form>
-                )}
-              </div>
-
-              {/* Recovery footer */}
-              <div className="space-y-4 font-body mt-4">
-                {/* Context notice box */}
-                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up">
-                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
-                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                    <span>{recoveryStep === 'email' ? 'RECOVERY PROTOCOL' : 'VERIFICATION STEP'}</span>
-                  </div>
-                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    {recoveryStep === 'email'
-                      ? 'Recovery Mode transmits a secure OTP (One-Time Password) to your registered email address. This is used to request password changes and restore access to your account.'
-                      : 'Enter the 6-digit code sent to your email. Verify the code first, then enter your new password below to complete the reset.'}
-                  </p>
-                </div>
-
-                <div className="flex flex-col items-center gap-2">
-                  {recoveryStep === 'otp' && (
-                    <div className="text-center text-[11px] font-bold animate-slide-up font-body">
-                      {resendTimer > 0 ? (
-                        <span className="text-slate-400">Wait {resendTimer}s to resend code</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => requestOtp(recoveryEmail)}
-                          className="text-[#1b365d] dark:text-[#bf0202] hover:underline cursor-pointer"
-                        >
-                          Resend code
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => setShowExitConfirm(true)}
-                    className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
-                  >
-                    Already have credentials? Back to Login
-                  </button>
-                </div>
-
-                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
-                  © {new Date().getFullYear()} WOLF PALOMAR.
-                </div>
-              </div>
-            </div>
-          </Card>
+  {/* ── SIBLING 1: LEFT COLUMN (Contains Mobile Logo, Desktop Logo, and Main Login Card) ── */}
+  {/* On PC: Slides smoothly off-screen to the LEFT (translateX(-42vw)) and fades out during Recovery Mode */}
+  <div 
+  className={`auth-left h-full flex flex-col items-center justify-center px-4 ${
+    isLoggingIn 
+      ? 'opacity-0 pointer-events-none' 
+      : isFlipped 
+        ? 'opacity-0 pointer-events-none' 
+        : 'opacity-100'
+  }`}
+  style={{ 
+    // Moves the card 101% of its own width to the left to ensure it is completely past the screen edge
+    transform: isLoggingIn 
+      ? 'translateX(0)' 
+      : isFlipped 
+        ? 'translateX(-101%)' 
+        : 'translateX(0)' 
+  }}
+>
+    {/* Mobile Logo Card */}
+    <div className="block lg:hidden mx-auto animate-slide-up">
+      <Card isLoggingIn={isLoggingIn} className="w-32 h-32">
+        <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
+          <img src="/favicon.svg" alt="Palomar Logo" className="w-full h-full object-contain" />
         </div>
+      </Card>
+    </div>
 
-        {/* ── RIGHT PANEL: Carousel ──────────────────────────────────────── */}
-        <div className="auth-right flex-0 opacity-0 relative overflow-hidden hidden lg:block shrink-0 w-162.5">
-          <div className="carousel-bg-wrapper absolute inset-0">
-            {CAROUSEL_IMAGES.map((image, index) => (
-              <img
-                key={index}
-                src={image}
-                alt={`Gym view ${index + 1}`}
-                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
-                  activeSlide === index ? 'opacity-100' : 'opacity-0'
-                }`}
-              />
-            ))}
+    {/* Desktop Logo Card */}
+    <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
+      <Card isLoggingIn={isLoggingIn} className="w-56 h-24">
+        <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-4 flex items-center justify-center transition-all duration-500">
+          <img src={landscapeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
+        </div>
+      </Card>
+    </div>
+
+    {/* Main Login Card */}
+    <Card isLoggingIn={isLoggingIn}>
+      <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
+        <div>
+          <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
+            LOGIN
+          </div>
+          <p className="text-center font-heading text-[10px] tracking-[2.4px] text-[#1b365d] dark:text-blue-400 uppercase opacity-90 mb-2">
+            GYM MANAGEMENT SYSTEM
+          </p>
+          <div className="flex justify-center mb-6">
+            <span className="text-[9px] text-slate-500 dark:text-slate-300 tracking-widest border border-blue-500/30 dark:border-rose-500/30 bg-blue-500/5 dark:bg-rose-500/10 rounded-full px-3 py-1 font-mono uppercase">
+              v{APP_VERSION}
+            </span>
           </div>
 
-          <div className="carousel-overlay absolute inset-0 z-2" />
-
-          <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
-            <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
-              BEYOND <br />
-              <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
-              <span className="text-[#031d7d] dark:text-[#bf0202] animate-[blink_0.8s_infinite]">|</span>
-            </h2>
-
-            <div className="bg-black/50 border border-white/10 p-6 rounded-2xl max-w-lg transition-all duration-300 backdrop-blur-md shadow-2xl font-body">
-              <p className="text-xs text-slate-200 leading-relaxed">
-                The ultimate terminal for Palomar Gym administrative control. Encrypted, fast, and precise.
-                <span className="block mt-4 text-[11px] text-slate-400 line-clamp-3 leading-relaxed">
-                  Wolf OS provides end-to-end telemetry for modern fitness centers — managing membership lifecycles, financial encryption, and real-time staff coordination.
+          <form onSubmit={handlePreLoginSubmit} className="space-y-4 font-body">
+            <Input
+              {...registerLogin('email')}
+              type="email"
+              label="Email Address"
+              icon={<Mail className="w-4 h-4 text-slate-400" />}
+              error={!!loginErrors.email}
+              shake={shakeEmail}
+              touched={touchedLogin.email}
+              isPopulated={!!watchEmail}
+            />
+            <Input
+              {...registerLogin('password')}
+              type={showPassword ? 'text' : 'password'}
+              label="Password"
+              icon={<Lock className="w-4 h-4 text-slate-400" />}
+              error={!!loginErrors.password}
+              shake={shakePassword}
+              touched={touchedLogin.password}
+              isPopulated={!!watchPassword}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((p) => !p)}
+                  className="field-visibility-toggle cursor-pointer"
+                  aria-label="Toggle password visibility"
+                >
+                  {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                </button>
+              }
+            />
+            <div className="flex items-start gap-2.5 my-2">
+              <input type="checkbox" id="loginAgreement" {...registerLogin('agree')} className="styled-checkbox" />
+              <label htmlFor="loginAgreement" className="checkbox-label">
+                <span className="checkbox-ui" />
+                <span className="text-[10px] text-slate-900 dark:text-slate-400 font-bold">
+                  I agree to the <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Terms & Conditions</a> and <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Privacy Policy</a>.
                 </span>
-              </p>
-              <div className="text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-                CONNECTED PROTOCOL TERMINAL
-              </div>
+              </label>
             </div>
+            <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">Login Now</Button>
+            <Button type="button" variant="google" onClick={handleGoogleLogin} loading={isGoogleSubmitting}>
+              <svg className="w-4 h-4 text-[#ea4335] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
+              <span>Continue With Google</span>
+            </Button>
+          </form>
+        </div>
+        <div className="space-y-4 mt-4 font-body">
+          <div className="flex items-center justify-center text-xs font-bold text-slate-400">
+            <button onClick={() => { setIsFlipped(true); setRecoveryStep('email'); setRecoveryError(null); }} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer">
+              Forgot Password?
+            </button>
+          </div>
+          <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
+            <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+              <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+              <span>ACCESS PROTOCOL</span>
+            </div>
+            <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+              This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.
+            </p>
+          </div>
+          <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
+            © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
           </div>
         </div>
       </div>
+    </Card>
+  </div>
+
+  {/* ── SIBLING 2: RIGHT PANEL (Contains slideshow background and expandable description card) ── */}
+  {/* On PC: Slides smoothly left to take over left column space in Recovery (translateX(-42vw)) */}
+  <div 
+  className={`auth-right h-full relative overflow-hidden hidden lg:block ${
+    isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
+  }`}
+  style={{ 
+    // Slides the carousel slightly further left (-43vw) to overlap the screen boundary and swallow the sub-pixel line
+    transform: isLoggingIn 
+      ? 'translateX(0)' 
+      : isFlipped 
+        ? 'translateX(-43vw)' 
+        : 'translateX(0)' 
+  }}
+>
+    <div className="carousel-bg-wrapper absolute inset-0">
+      {CAROUSEL_IMAGES.map((image, index) => (
+        <img
+          key={index}
+          src={image}
+          alt={`Gym view ${index + 1}`}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
+            activeSlide === index ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      ))}
+    </div>
+    <div className="carousel-overlay absolute inset-0 z-2" />
+    <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
+      <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
+        BEYOND <br />
+        <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
+        <span className="text-[#031d7d] dark:text-[#bf0202] animate-[blink_0.8s_infinite]">|</span>
+      </h2>
+      <Card expandable={true} className="max-w-lg h-auto">
+        <div className="bg-black/50 border border-white/10 p-6 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 font-body text-left">
+          <p className="text-xs text-slate-200 leading-relaxed font-bold">
+            The ultimate terminal for Palomar Gym administrative control. Encrypted, fast, and precise.
+            <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-bold animate-slide-up">
+              Wolf OS provides end-to-end telemetry for modern fitness centers — managing membership lifecycles, financial encryption, and real-time staff coordination.
+            </span>
+          </p>
+          <div className="block group-[.expanded]:hidden text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
+            CLICK TO EXPAND PROTOCOL
+          </div>
+          <div className="hidden group-[.expanded]:block text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
+            CLICK TO COLLAPSE PROTOCOL
+          </div>
+        </div>
+      </Card>
+    </div>
+  </div>
+
+  {/* ── SIBLING 3: ABSOLUTE RECOVERY CARD (Sits off-screen. Slides smoothly onto right column during Recovery) ── */}
+  {/* Sits at right-0. When flipped, it transitions to translateX(0) (slides on screen). In login mode, it sits at translateX(42vw) (off-screen) */}
+  <div 
+    className="hidden lg:flex absolute top-0 right-0 h-full w-[42vw] flex-col items-center justify-center shrink-0 px-4"
+    style={{
+      transform: isLoggingIn 
+        ? 'fixed inset-0 z-50 bg-[var(--bg-page)]' 
+        : isFlipped 
+          ? 'translateX(0) scale(1)' // Slides smoothly onto the screen
+          : 'translateX(42vw) scale(0.95)', // Sits safely off-screen to the right (translateX of its own 42vw width)
+      opacity: isLoggingIn ? 1 : isFlipped ? 1 : 0,
+      pointerEvents: isFlipped && !isLoggingIn ? 'auto' : 'none',
+      transition: 'transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1)'
+    }}
+  >
+    <Card isLoggingIn={isLoggingIn}>
+      <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl font-body font-body">
+        <div>
+          <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
+            RECOVERY MODE
+          </div>
+          {recoveryStep === 'email' ? (
+            <div className="animate-slide-up">
+              <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
+                Enter authorized email to receive security key.
+              </p>
+              <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body">
+                <Input
+                  {...registerRecovery('email')}
+                  type="email"
+                  label="Email Address"
+                  icon={<Mail className="w-4 h-4 text-slate-400" />}
+                  error={!!recoveryErrors.email}
+                  shake={shakeRecovery}
+                  touched={touchedRecovery.email}
+                  isPopulated={!!watchRecoveryEmail}
+                />
+                {recoveryError && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
+                    {recoveryError}
+                  </div>
+                )}
+                <Button type="submit" loading={isRecoverySubmitting} loadingLabel="TRANSMITTING...">
+                  Send Security OTP
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <form onSubmit={handlePasswordChange} className="space-y-4 font-body animate-slide-up">
+              <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-2 leading-relaxed font-bold">
+                Enter the 6-digit code sent to your email.
+              </p>
+              <div className="flex justify-between gap-1.5 px-2 my-3">
+                {otpDigits.map((digit, idx) => (
+                  <input
+                    key={idx}
+                    ref={(el) => { otpRefs.current[idx] = el; }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="one-time-code"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(idx, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                    onPaste={handleOtpPaste}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="0"
+                    aria-label={`OTP digit ${idx + 1}`}
+                    className="w-10 h-12 text-center text-xl font-bold bg-slate-200 dark:bg-neutral-800 text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:border-[#1b365d] dark:focus:border-[#bf0202]"
+                  />
+                ))}
+              </div>
+              <div className="field-wrap relative">
+                <input
+                  id="recoveryNewPassword"
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="field-input"
+                  placeholder=" "
+                  aria-label="New password"
+                  required
+                />
+                <label htmlFor="recoveryNewPassword" className="field-label">
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  <span>Enter your new password</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((p) => !p)}
+                  className="field-visibility-toggle cursor-pointer"
+                  aria-label="Toggle new password visibility"
+                >
+                  {showNewPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                </button>
+              </div>
+              {recoveryError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center font-body">
+                  {recoveryError}
+                </div>
+              )}
+              <Button type="submit" loading={isRecoverySubmitting} loadingLabel="TRANSMITTING..." loadingSubtitle={recoveryStatusText}>
+                Restore System Access
+              </Button>
+            </form>
+          )}
+        </div>
+        <div className="space-y-4 font-body mt-4">
+          <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up animate-slide-up animate-slide-up">
+            <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
+              <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+              <span>{recoveryStep === 'email' ? 'RECOVERY PROTOCOL' : 'VERIFICATION STEP'}</span>
+            </div>
+            <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+              {recoveryStep === 'email'
+                ? 'Recovery Mode transmits a secure OTP (One-Time Password) to your registered email address. This is used to request password changes and restore access to your account.'
+                : 'Enter the 6-digit code sent to your email. Verify the code first, then enter your new password below to complete the reset.'}
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            {recoveryStep === 'otp' && (
+              <div className="text-center text-[11px] font-bold animate-slide-up font-body">
+                {resendTimer > 0 ? (
+                  <span className="text-slate-400">Wait {resendTimer}s to resend code</span>
+                ) : (
+                  <button type="button" onClick={() => requestOtp(recoveryEmail)} className="text-[#1b365d] dark:text-[#bf0202] hover:underline cursor-pointer font-body">
+                    Resend code
+                  </button>
+                )}
+              </div>
+            )}
+            <button 
+  onClick={handleBackToLoginClick} 
+  className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-body"
+>
+  Already have credentials? Back to Login
+</button>
+          </div>
+          <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold font-body">
+            © {new Date().getFullYear()} WOLF PALOMAR.
+          </div>
+        </div>
+      </div>
+    </Card>
+  </div>
+
+</div>
+
+      {/* RIGHT PANEL: Dynamic Spacer */}
+      <div className="auth-right h-full" />
 
       {/* ── MODAL: Exit recovery confirm ──────────────────────────────────── */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">
@@ -864,7 +894,6 @@ export const Login: React.FC = () => {
         </div>
       </Modal>
 
-      {/* No welcome overlay — Dashboard replays login intro animation instead */}
     </div>
   );
 };

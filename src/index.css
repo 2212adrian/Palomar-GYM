@@ -72,8 +72,9 @@ body {
 body,
 .auth-split-container,
 .auth-left,
-.flip-card-front,
-.flip-card-back,
+.admin-split-container,
+.admin-left,
+.admin-right,
 .field-input,
 .protocol-notice-box,
 .brand,
@@ -89,7 +90,7 @@ button {
               box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* --- THE DUAL SPLIT CAROUSEL CONTROLLER --- */
+/* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
 .auth-split-container {
   display: flex;
   width: 100%;
@@ -98,22 +99,21 @@ button {
   overflow: hidden;
 }
 
-/* Left panel initial state: 100% full screen width */
 .auth-left {
   position: relative;
   background-color: var(--bg-page);
   display: flex;
-  justify-content: center !important; /* Keep card in exact middle on load */
+  justify-content: center !important;
   align-items: center !important;
   padding-right: 0 !important;
   overflow: hidden;
   flex: 1 0 100%;
   border: none !important;
   outline: none !important;
-  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1);
+  /* Animates BOTH width adjustments (flex) and the camera slide (transform) */
+   transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-/* Right panel initial state: collapsed width */
 .auth-right {
   position: relative;
   overflow: hidden;
@@ -121,17 +121,51 @@ button {
   opacity: 0;
   border: none !important;
   outline: none !important;
-  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
+  /* Animates width adjustments, camera slide, and image crossfades */
+  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-/* --- READY STATE: Contracting Left, Expanding Right --- */
 @media (min-width: 1024px) {
   .auth-split-container.is-ready .auth-left {
-    flex: 1 1 42%;
+    flex: 1 1 0%;
   }
 
   .auth-split-container.is-ready .auth-right {
-    flex: 1.2 1 58%;
+    flex: 1.2 1 5%;
+    opacity: 1;
+  }
+}
+
+/* --- 2. DE-COUPLED ADMIN PANEL CONSOLE LAYOUT --- */
+.admin-split-container {
+  display: flex;
+  width: 100%;
+  height: calc(100vh - 4rem); /* Force height to match viewport below the Topbar */
+  overflow: hidden;
+  background-color: var(--bg-page);
+}
+
+.admin-left {
+  position: relative;
+  background-color: var(--bg-page);
+  display: flex;
+  overflow: hidden;
+  flex: 0 0 auto; /* Statically sized on desktop, no shifting or warping */
+}
+
+.admin-right {
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 0%; /* Occupies the remaining horizontal screen space */
+}
+
+@media (min-width: 1024px) {
+  .admin-split-container.is-ready-admin .admin-left {
+    flex: 0 0 auto; /* sized dynamically by Tailwind's w-72 or w-20 */
+  }
+
+  .admin-split-container.is-ready-admin .admin-right {
+    flex: 1 1 0%;
     opacity: 1;
   }
 }
@@ -161,8 +195,6 @@ button {
 /* --- FLIP CONTAINER CONTROLS --- */
 .flip-card {
   perspective: 1000px;
-  width: 400px;
-  height: 620px;
 }
 
 .flip-card-inner {
@@ -341,6 +373,12 @@ button {
 }
 
 /* --- SHAKE ERROR ON FAILURE --- */
+@keyframes field-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+}
 @keyframes field-shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-6px); }
