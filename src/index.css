@@ -24,7 +24,7 @@
 }
 
 :root {
-  /* LIGHT MODE THEME - Clean White, Elegant Low-Saturated Navy Blue, High-Contrast Text */
+  /* LIGHT MODE THEME - Clean White, Elegant Slate Navy, High-Contrast Text */
   --bg-page: #f8fafc;
   --bg-card: #ffffff;
   --bg-input: #f1f5f9;
@@ -108,6 +108,8 @@ button {
   padding-right: 0 !important;
   overflow: hidden;
   flex: 1 0 100%;
+  border: none !important;
+  outline: none !important;
   transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
@@ -117,6 +119,8 @@ button {
   overflow: hidden;
   flex: 0 0 0%;
   opacity: 0;
+  border: none !important;
+  outline: none !important;
   transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
@@ -140,14 +144,14 @@ button {
     0 1px 1px rgba(0, 0, 0, 1);
 }
 
-/* --- CAROUSEL TRANSPARENT BLENDER OVERLAY (NO SOLID BLOCKS / SEAMS) --- */
+/* --- CAROUSEL OVERLAY (Smooth blend, removes solid vertical divider lines) --- */
 .carousel-overlay {
   background: linear-gradient(
     to right,
     var(--bg-page) 0%,
-    var(--bg-page) 12%,       /* Holds background color over split boundary seam */
-    rgba(15, 16, 18, 0.6) 28%, /* Soft, smooth fade-in directly onto the image */
-    transparent 55%,
+    var(--bg-page) 15%,      /* Holds background color over split boundary seam */
+    rgba(15, 16, 18, 0.5) 35%, /* Soft, smooth fade-in directly onto the image */
+    transparent 60%,
     transparent 80%,
     rgba(15, 16, 18, 0.45) 94%,
     var(--bg-page) 100%
@@ -186,7 +190,7 @@ button {
   transform: rotateY(180deg);
 }
 
-/* --- TEXT FLOATING FIELDS --- */
+/* --- TEXT FLOATING FIELDS WITH CORNER FLOATING TRANSITION --- */
 .field-wrap {
   position: relative;
   width: 100%;
@@ -197,19 +201,16 @@ button {
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 22px 14px 10px;
+  padding: 24px 14px 8px !important; /* Space at top for floating label */
   color: var(--color-text);
   font-size: 14px;
   outline: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
+/* Box shadows on focus trigger the active state glowing parameters */
 .field-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 10px rgba(var(--wolf-red-rgb), 0.3);
-}
-
-.field-wrap.has-visibility-toggle .field-input {
-  padding-right: 46px;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
 }
 
 .field-label {
@@ -225,15 +226,18 @@ button {
   letter-spacing: 1px;
   text-transform: uppercase;
   pointer-events: none;
+  transform-origin: top left;
+  transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.field-wrap:focus-within .field-label,
-.field-input:not(:placeholder-shown) + .field-label {
+/* Sibling selector handles rise-to-corner on input focus and value population */
+.field-input:focus ~ .field-label,
+.field-input:not(:placeholder-shown) ~ .field-label {
   top: 6px;
-  transform: translateY(0);
-  font-size: 9px;
-  color: var(--color-primary-light);
-  letter-spacing: 1.2px;
+  transform: translateY(0) scale(0.78);
 }
 
 .field-visibility-toggle {
@@ -412,4 +416,27 @@ button {
   .flip-card-inner.flipped .flip-card-front {
     display: none !important;
   }
+}
+
+@keyframes dashboardReveal {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+    filter: blur(12px);
+    visibility: hidden;
+  }
+}
+
+.dashboard-intro-overlay {
+  animation: dashboardReveal 1.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
 }

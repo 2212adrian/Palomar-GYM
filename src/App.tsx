@@ -7,15 +7,26 @@ import 'react-toastify/dist/ReactToastify.css';
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
 
+  // Global Theme Initialization (Survives hard page refreshes on protected routes)
   useEffect(() => {
-    // Automatically retrieve the session state on page load/mount
+    const saved = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const activeTheme = saved === 'dark' || saved === 'light' 
+      ? saved 
+      : (systemPrefersDark ? 'dark' : 'light');
+
+    const root = document.documentElement;
+    root.classList.toggle('dark', activeTheme === 'dark');
+    root.classList.toggle('light', activeTheme === 'light');
+  }, []);
+
+  useEffect(() => {
     checkSession();
   }, [checkSession]);
 
   return (
     <>
       <AppRoutes />
-      {/* Visual notifications element */}
       <ToastContainer
         position="top-right"
         autoClose={4000}
