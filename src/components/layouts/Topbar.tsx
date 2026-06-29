@@ -1,3 +1,4 @@
+//src/components/layouts/Topbar.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
@@ -36,26 +37,28 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#141414]/80 backdrop-blur-md sticky top-0 flex items-center justify-between px-6 z-200 select-none">
+    <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#141414]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-200 select-none">
       
-      {/* Mobile hamburger - Satisfies Axe a11y checks with clear labels */}
-      <button 
-        onClick={onMenuClick}
-        aria-label="Open Navigation Drawer"
-        title="Open Navigation"
-        className="block lg:hidden text-slate-500 dark:text-slate-400 cursor-pointer"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
-
       {/* Centered Breadcrumbs */}
       <div className="absolute left-1/2 -translate-x-1/2 font-heading text-xs tracking-[1.5px] uppercase text-[#1b365d] dark:text-[#bf0202]">
         {getBreadcrumbs()}
       </div>
 
-      {/* Real-time date and clock on the right */}
-      <div className="hidden sm:block text-[11px] font-mono text-slate-400 select-none ml-auto">
-        {currentTime}
+      {/* Real-time clock and mobile hamburger on the far right */}
+      <div className="flex items-center gap-4 ml-auto">
+        <div className="hidden sm:block text-[11px] font-mono text-slate-400 select-none">
+          {currentTime}
+        </div>
+
+        {/* Mobile hamburger - Moved to top right */}
+        <button 
+          onClick={onMenuClick}
+          aria-label="Open Navigation Drawer"
+          title="Open Navigation"
+          className="block lg:hidden text-slate-500 dark:text-slate-400 cursor-pointer"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
       </div>
     </header>
   );

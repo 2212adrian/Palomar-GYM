@@ -42,16 +42,16 @@ export const SystemLayout: React.FC = () => {
   };
 
  return (
-    <div className="relative h-screen overflow-hidden bg-[var(--bg-page)] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
+    <div className="relative h-screen overflow-hidden bg-[var(--bg-page)] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans pt-16">
       
       {/* 1. TOPBAR - Spans 100% width */}
-      <Topbar onMenuClick={() => setMobileDrawerOpen(true)} />
+      <Topbar onMenuClick={() => setMobileDrawerOpen(prev => !prev)} />
 
       {/* 2. SPLIT LAYOUT PANEL (Now completely static and aligned under Topbar) */}
       <div className="flex flex-1 overflow-hidden admin-split-container">
         
         {/* Left Sidebar Pane */}
-        <div className={`admin-left h-full z-40 transition-all duration-300 ${desktopCollapsed ? 'w-20' : 'w-72'}`}>
+        <div className={`admin-left h-full z-300 transition-all duration-300 hidden lg:block ${desktopCollapsed ? 'lg:w-20' : 'lg:w-72'}`}>
           <Sidebar
             collapsed={desktopCollapsed}
             setCollapsed={setDesktopCollapsed}
@@ -71,7 +71,7 @@ export const SystemLayout: React.FC = () => {
       </div>
 
       {/* MOBILE BOTTOM NAVIGATION */}
-      <Navbar onMoreClick={() => setMobileDrawerOpen(true)} />
+      <Navbar />
 
       {/* 3. SEAMLESS INTRO/OUTRO SLIDE OVERLAY (Curtain) */}
       {/* Kept permanently mounted in DOM to ensure smooth, un-interrupted transition directions both ways */}

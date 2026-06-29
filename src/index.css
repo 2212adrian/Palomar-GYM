@@ -1,43 +1,56 @@
-@import "tailwindcss";
+  @import "tailwindcss";
 
-/* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
-@custom-variant dark (&:where(.dark, .dark *));
+  /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
+  @custom-variant dark (&:where(.dark, .dark *));
 
-/* ==========================================================
-   PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN SCREEN CUSTOM CSS
-   ========================================================== */
+  /* ==========================================================
+    PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN SCREEN CUSTOM CSS
+    ========================================================== */
 
-/* Font Family Declarations */
-@font-face {
-  font-family: 'Freshman';
-  src: url('./assets/Freshman.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
+  /* Font Family Declarations */
+  @font-face {
+    font-family: 'Freshman';
+    src: url('./assets/Freshman.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
 
-.font-heading {
-  font-family: 'Freshman', Impact, sans-serif !important;
-}
+  .font-heading {
+    font-family: 'Freshman', Impact, sans-serif !important;
+  }
 
-.font-body {
-  font-family: 'Inter', sans-serif !important;
-}
+  .font-body {
+    font-family: 'Inter', sans-serif !important;
+  }
 
-:root {
-  /* LIGHT MODE THEME - Clean White, Elegant Slate Navy, High-Contrast Text */
-  --bg-page: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-input: #f1f5f9;
-  --border-color: rgba(15, 23, 42, 0.08);
-  --color-text: #0f172a;
-  --color-primary: #1b365d;
-  --color-primary-hover: #112246;
-  --color-primary-light: #2c4a6f;
-}
+  :root {
+    /* LIGHT MODE THEME - Clean White, Elegant Slate Navy, High-Contrast Text */
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-input: #f1f5f9;
+    --border-color: rgba(15, 23, 42, 0.08);
+    --color-text: #0f172a;
+    --color-primary: #1b365d;
+    --color-primary-hover: #112246;
+    --color-primary-light: #2c4a6f;
+  }
 
-/* Automatically apply dark mode if system prefers it and no manual override is set */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
+  /* Automatically apply dark mode if system prefers it and no manual override is set */
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+      --bg-page: #0f1012;
+      --bg-card: #141414;
+      --bg-input: #13161a;
+      --border-color: rgba(255, 255, 255, 0.05);
+      --color-text: #f3f4f6;
+      --color-primary: #bf0202;
+      --color-primary-hover: #9c0202;
+      --color-primary-light: #e03434;
+    }
+  }
+
+  /* Explicit Dark Mode selection */
+  .dark {
     --bg-page: #0f1012;
     --bg-card: #141414;
     --bg-input: #13161a;
@@ -47,434 +60,421 @@
     --color-primary-hover: #9c0202;
     --color-primary-light: #e03434;
   }
-}
 
-/* Explicit Dark Mode selection */
-.dark {
-  --bg-page: #0f1012;
-  --bg-card: #141414;
-  --bg-input: #13161a;
-  --border-color: rgba(255, 255, 255, 0.05);
-  --color-text: #f3f4f6;
-  --color-primary: #bf0202;
-  --color-primary-hover: #9c0202;
-  --color-primary-light: #e03434;
-}
-
-/* Apply default font fallback to body elements */
-body {
-  font-family: 'Inter', sans-serif;
-  background-color: var(--bg-page);
-  color: var(--color-text);
-}
-
-/* --- CINEMATIC TRANSITIONS FOR THEME SWAPPING --- */
-body,
-.auth-split-container,
-.auth-left,
-.admin-split-container,
-.admin-left,
-.admin-right,
-.field-input,
-.protocol-notice-box,
-.brand,
-.system-subtitle,
-.checkbox-ui,
-span,
-p,
-label,
-button {
-  transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
-.auth-split-container {
-  display: flex;
-  width: 100%;
-  height: 100vh;
-  background-color: var(--bg-page);
-  overflow: hidden;
-}
-
-.auth-left {
-  position: relative;
-  background-color: var(--bg-page);
-  display: flex;
-  justify-content: center !important;
-  align-items: center !important;
-  padding-right: 0 !important;
-  overflow: hidden;
-  flex: 1 0 100%;
-  border: none !important;
-  outline: none !important;
-  /* Animates BOTH width adjustments (flex) and the camera slide (transform) */
-   transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
-}
-
-.auth-right {
-  position: relative;
-  overflow: hidden;
-  flex: 0 0 0%;
-  opacity: 0;
-  border: none !important;
-  outline: none !important;
-  /* Animates width adjustments, camera slide, and image crossfades */
-  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
-}
-
-@media (min-width: 1024px) {
-  .auth-split-container.is-ready .auth-left {
-    flex: 1 1 0%;
+  /* Apply default font fallback to body elements */
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-page);
+    color: var(--color-text);
   }
 
-  .auth-split-container.is-ready .auth-right {
-    flex: 1.2 1 5%;
-    opacity: 1;
-  }
-}
-
-/* --- 2. DE-COUPLED ADMIN PANEL CONSOLE LAYOUT --- */
-.admin-split-container {
-  display: flex;
-  width: 100%;
-  height: calc(100vh - 4rem); /* Force height to match viewport below the Topbar */
-  overflow: hidden;
-  background-color: var(--bg-page);
-}
-
-.admin-left {
-  position: relative;
-  background-color: var(--bg-page);
-  display: flex;
-  overflow: hidden;
-  flex: 0 0 auto; /* Statically sized on desktop, no shifting or warping */
-}
-
-.admin-right {
-  position: relative;
-  overflow: hidden;
-  flex: 1 1 0%; /* Occupies the remaining horizontal screen space */
-}
-
-@media (min-width: 1024px) {
-  .admin-split-container.is-ready-admin .admin-left {
-    flex: 0 0 auto; /* sized dynamically by Tailwind's w-72 or w-20 */
+  /* --- CINEMATIC TRANSITIONS FOR THEME SWAPPING --- */
+  body,
+  .auth-split-container,
+  .auth-left,
+  .admin-split-container,
+  .admin-left,
+  .admin-right,
+  .field-input,
+  .protocol-notice-box,
+  .brand,
+  .system-subtitle,
+  .checkbox-ui,
+  span,
+  p,
+  label,
+  button {
+    transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+                border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+                color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+                box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .admin-split-container.is-ready-admin .admin-right {
-    flex: 1 1 0%;
-    opacity: 1;
+  /* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
+  .auth-split-container {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    background-color: var(--bg-page);
+    overflow: hidden;
   }
-}
 
-/* --- ADAPTIVE READABILITY OPTIMIZATIONS --- */
-.carousel-content h2 {
-  text-shadow: 
-    0 4px 18px rgba(0, 0, 0, 0.95), 
-    0 2px 4px rgba(0, 0, 0, 0.95),
-    0 1px 1px rgba(0, 0, 0, 1);
-}
-
-/* --- CAROUSEL OVERLAY (Smooth blend, removes solid vertical divider lines) --- */
-.carousel-overlay {
-  background: linear-gradient(
-    to right,
-    var(--bg-page) 0%,
-    var(--bg-page) 15%,      /* Holds background color over split boundary seam */
-    rgba(15, 16, 18, 0.5) 35%, /* Soft, smooth fade-in directly onto the image */
-    transparent 60%,
-    transparent 80%,
-    rgba(15, 16, 18, 0.45) 94%,
-    var(--bg-page) 100%
-  );
-}
-
-/* --- FLIP CONTAINER CONTROLS --- */
-.flip-card {
-  perspective: 1000px;
-}
-
-.flip-card-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-  transform-style: preserve-3d;
-}
-
-.flip-card-inner.flipped {
-  transform: rotateY(180deg);
-}
-
-.flip-card-front,
-.flip-card-back {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.flip-card-back {
-  transform: rotateY(180deg);
-}
-
-/* --- TEXT FLOATING FIELDS WITH CORNER FLOATING TRANSITION --- */
-.field-wrap {
-  position: relative;
-  width: 100%;
-}
-
-.field-input {
-  width: 100%;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 24px 14px 8px !important; /* Space at top for floating label */
-  color: var(--color-text);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-}
-
-/* Box shadows on focus trigger the active state glowing parameters */
-.field-input:focus {
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
-}
-
-.field-label {
-  position: absolute;
-  top: 50%;
-  left: 14px;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #8a9099;
-  font-size: 11px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  pointer-events: none;
-  transform-origin: top left;
-  transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-/* Sibling selector handles rise-to-corner on input focus and value population */
-.field-input:focus ~ .field-label,
-.field-input:not(:placeholder-shown) ~ .field-label {
-  top: 6px;
-  transform: translateY(0) scale(0.78);
-}
-
-.field-visibility-toggle {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #a9b5ca;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.field-visibility-toggle:hover {
-  color: var(--color-text);
-}
-
-/* --- AGREEMENT SYSTEM CHECKBOX --- */
-.checkbox-group {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.styled-checkbox {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.checkbox-label {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.checkbox-ui {
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  border: 1.5px solid var(--border-color);
-  background-color: var(--bg-input);
-  flex-shrink: 0;
-  position: relative;
-}
-
-.checkbox-ui::after {
-  content: '';
-  position: absolute;
-  top: 1px;
-  left: 5px;
-  width: 5px;
-  height: 9px;
-  border-right: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
-  transform: rotate(45deg) scale(0);
-  opacity: 0;
-}
-
-.styled-checkbox:checked + .checkbox-label .checkbox-ui {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35);
-}
-
-.styled-checkbox:checked + .checkbox-label .checkbox-ui::after {
-  opacity: 1;
-  transform: rotate(45deg) scale(1);
-}
-
-/* --- GOOGLE OAUTH STYLING --- */
-.google-login-btn {
-  width: 100%;
-  margin-top: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  background: linear-gradient(
-    180deg,
-    rgba(250, 250, 252, 0.96),
-    rgba(234, 238, 246, 0.93)
-  );
-  color: #1f2937;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.85px;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.google-login-btn:hover {
-  background: linear-gradient(180deg, #ffffff, #eef3fa);
-}
-
-/* --- SHAKE ERROR ON FAILURE --- */
-@keyframes field-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-}
-@keyframes field-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
-}
-
-.shake-error {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35) !important;
-  animation: field-shake 0.35s ease;
-}
-
-/* --- TYPEWRITER CURSOR BLINKING --- */
-@keyframes blink {
-  50% { opacity: 0; }
-}
-
-/* --- WELCOME GATEWAY OVERLAY PROGRESS --- */
-@keyframes loading {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
-}
-
-/* --- MOBILE RESPONSIVE LAYOUTS --- */
-@media (max-width: 1023px) {
-  /* Distributes proper padding to allow scroll room */
   .auth-left {
-    flex: 1 1 100% !important;
+    position: relative;
+    background-color: var(--bg-page);
+    display: flex;
+    justify-content: center !important;
+    align-items: center !important;
     padding-right: 0 !important;
-    padding-top: 40px !important;
-    padding-bottom: 40px !important;
-    min-height: 100vh;
-    overflow-y: auto !important;
+    overflow: hidden;
+    flex: 1 0 100%;
+    border: none !important;
+    outline: none !important;
+    /* Animates BOTH width adjustments (flex) and the camera slide (transform) */
+    transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+  }
+
+  .auth-right {
+    position: relative;
+    overflow: hidden;
+    flex: 0 0 0%;
+    opacity: 0;
+    border: none !important;
+    outline: none !important;
+    /* Animates width adjustments, camera slide, and image crossfades */
+    transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
+  }
+
+  @media (min-width: 1024px) {
+    .auth-split-container.is-ready .auth-left {
+      flex: 1 1 0%;
+    }
+
+    .auth-split-container.is-ready .auth-right {
+      flex: 1.2 1 5%;
+      opacity: 1;
+    }
+  }
+
+  /* --- 2. DE-COUPLED ADMIN PANEL CONSOLE LAYOUT --- */
+  .admin-split-container {
+    display: flex;
+    width: 100%;
+    height: calc(100vh - 4rem); /* Force height to match viewport below the Topbar */
+    overflow: hidden;
+    background-color: var(--bg-page);
+  }
+
+  .admin-left {
+    position: relative;
+    background-color: var(--bg-page);
+    display: flex;
+    overflow: hidden;
+    flex: 0 0 auto; /* Statically sized on desktop, no shifting or warping */
+  }
+
+  .admin-right {
+    position: relative;
+    overflow: hidden;
+    flex: 1 1 0%; /* Occupies the remaining horizontal screen space */
+  }
+
+  @media (min-width: 1024px) {
+    .admin-split-container.is-ready-admin .admin-left {
+      flex: 0 0 auto; /* sized dynamically by Tailwind's w-72 or w-20 */
+    }
+
+    .admin-split-container.is-ready-admin .admin-right {
+      flex: 1 1 0%;
+      opacity: 1;
+    }
+  }
+
+  /* --- ADAPTIVE READABILITY OPTIMIZATIONS --- */
+  .carousel-content h2 {
+    text-shadow: 
+      0 4px 18px rgba(0, 0, 0, 0.95), 
+      0 2px 4px rgba(0, 0, 0, 0.95),
+      0 1px 1px rgba(0, 0, 0, 1);
+  }
+
+  /* --- CAROUSEL OVERLAY (Smooth blend, removes solid vertical divider lines) --- */
+  .carousel-overlay {
+    background: linear-gradient(
+      to right,
+      var(--bg-page) 0%,
+      var(--bg-page) 15%,      /* Holds background color over split boundary seam */
+      rgba(15, 16, 18, 0.5) 35%, /* Soft, smooth fade-in directly onto the image */
+      transparent 60%,
+      transparent 80%,
+      rgba(15, 16, 18, 0.45) 94%,
+      var(--bg-page) 100%
+    );
+  }
+
+  /* --- FLIP CONTAINER CONTROLS --- */
+  .flip-card {
+    perspective: 1000px;
+  }
+
+  .flip-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+  }
+
+  .flip-card-inner.flipped {
+    transform: rotateY(180deg);
+  }
+
+  .flip-card-front,
+  .flip-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .flip-card-back {
+    transform: rotateY(180deg);
+  }
+
+  /* --- TEXT FLOATING FIELDS WITH CORNER FLOATING TRANSITION --- */
+  .field-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  .field-input {
+    width: 100%;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px 14px 8px !important; /* Space at top for floating label */
+    color: var(--color-text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  /* Box shadows on focus trigger the active state glowing parameters */
+  .field-input:focus {
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  .field-label {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #8a9099;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    pointer-events: none;
+    transform-origin: top left;
+    transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+                transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+                font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+                color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  /* Sibling selector handles rise-to-corner on input focus and value population */
+  .field-input:focus ~ .field-label,
+  .field-input:not(:placeholder-shown) ~ .field-label {
+    top: 6px;
+    transform: translateY(0) scale(0.78);
+  }
+
+  .field-visibility-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a9b5ca;
+    background: transparent;
+    border: none;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  
-  .flip-card {
-    width: 100%;
-    max-width: 400px;
-    height: auto !important;
-    max-height: none !important;
-  }
-  
-  .flip-card-inner {
-    transform-style: flat;
-    height: auto;
+
+  .field-visibility-toggle:hover {
+    color: var(--color-text);
   }
 
-  /* Switches from absolute positioning to relative to let elements layout organically with zero cuts */
-  .flip-card-front,
-  .flip-card-back {
-    position: relative !important;
-    height: auto !important;
-    backface-visibility: visible !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 20px 16px !important;
+  /* --- AGREEMENT SYSTEM CHECKBOX --- */
+  .checkbox-group {
+    position: relative;
     display: flex;
-    flex-direction: column;
+    align-items: center;
   }
 
-  /* Ensure the inactive card face is completely cleared from mobile layout footprint */
-  .flip-card-inner:not(.flipped) .flip-card-back {
-    display: none !important;
-  }
-
-  .flip-card-inner.flipped .flip-card-front {
-    display: none !important;
-  }
-}
-
-@keyframes dashboardReveal {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(0px);
-  }
-  60% {
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(4px);
-  }
-  100% {
+  .styled-checkbox {
+    position: absolute;
     opacity: 0;
-    transform: scale(1.08);
-    filter: blur(12px);
-    visibility: hidden;
+    pointer-events: none;
   }
-}
 
-.dashboard-intro-overlay {
-  animation: dashboardReveal 1.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
-}
+  .checkbox-label {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+  }
+
+  .checkbox-ui {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border-color);
+    background-color: var(--bg-input);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .checkbox-ui::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 5px;
+    width: 5px;
+    height: 9px;
+    border-right: 2px solid #ffffff;
+    border-bottom: 2px solid #ffffff;
+    transform: rotate(45deg) scale(0);
+    opacity: 0;
+  }
+
+  .styled-checkbox:checked + .checkbox-label .checkbox-ui {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35);
+  }
+
+  .styled-checkbox:checked + .checkbox-label .checkbox-ui::after {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+
+  /* --- GOOGLE OAUTH STYLING --- */
+  .google-login-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(
+      180deg,
+      rgba(250, 250, 252, 0.96),
+      rgba(234, 238, 246, 0.93)
+    );
+    color: #1f2937;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.85px;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .google-login-btn:hover {
+    background: linear-gradient(180deg, #ffffff, #eef3fa);
+  }
+
+  /* --- SHAKE ERROR ON FAILURE --- */
+  @keyframes field-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+  }
+  @keyframes field-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+  }
+
+  .shake-error {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35) !important;
+    animation: field-shake 0.35s ease;
+  }
+
+  /* --- TYPEWRITER CURSOR BLINKING --- */
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* --- WELCOME GATEWAY OVERLAY PROGRESS --- */
+  @keyframes loading {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+
+  /* --- MOBILE RESPONSIVE LAYOUTS --- */
+  @media (max-width: 1023px) {
+    /* Distributes proper padding to allow scroll room */
+    .auth-left {
+      flex: 1 1 100% !important;
+      padding-right: 0 !important;
+      padding-top: 40px !important;
+      padding-bottom: 40px !important;
+      min-height: 100vh;
+      overflow-y: auto !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .flip-card {
+      width: 100%;
+      max-width: 400px;
+      height: auto !important;
+      max-height: none !important;
+    }
+    
+    .flip-card-inner {
+      transform-style: flat;
+      height: auto;
+    }
+
+    /* Switches from absolute positioning to relative to let elements layout organically with zero cuts */
+    .flip-card-front,
+    .flip-card-back {
+      position: relative !important;
+      height: auto !important;
+      backface-visibility: visible !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 20px 16px !important;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Ensure the inactive card face is completely cleared from mobile layout footprint */
+    .flip-card-inner:not(.flipped) .flip-card-back {
+      display: none !important;
+    }
+
+    .flip-card-inner.flipped .flip-card-front {
+      display: none !important;
+    }
+  }
+
+  @keyframes dashboardReveal {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(0px);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(4px);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.08);
+      filter: blur(12px);
+      visibility: hidden;
+    }
+  }
+
+  .dashboard-intro-overlay {
+    animation: dashboardReveal 1.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+  }

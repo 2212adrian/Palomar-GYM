@@ -534,7 +534,7 @@ export const Login: React.FC = () => {
   {/* ── SIBLING 1: LEFT COLUMN (Contains Mobile Logo, Desktop Logo, and Main Login Card) ── */}
   {/* On PC: Slides smoothly off-screen to the LEFT (translateX(-42vw)) and fades out during Recovery Mode */}
   <div 
-  className={`auth-left h-full flex flex-col items-center justify-center px-4 ${
+  className={`auth-left h-full flex flex-col items-center justify-center ${
     isLoggingIn 
       ? 'opacity-0 pointer-events-none' 
       : isFlipped 
@@ -553,7 +553,7 @@ export const Login: React.FC = () => {
     {/* Mobile Logo Card */}
     <div className="block lg:hidden mx-auto animate-slide-up">
       <Card isLoggingIn={isLoggingIn} className="w-32 h-32">
-        <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
+        <div className="w-50 h-50 bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
           <img src="/favicon.svg" alt="Palomar Logo" className="w-full h-full object-contain" />
         </div>
       </Card>
@@ -715,13 +715,13 @@ export const Login: React.FC = () => {
   {/* ── SIBLING 3: ABSOLUTE RECOVERY CARD (Sits off-screen. Slides smoothly onto right column during Recovery) ── */}
   {/* Sits at right-0. When flipped, it transitions to translateX(0) (slides on screen). In login mode, it sits at translateX(42vw) (off-screen) */}
   <div 
-    className="hidden lg:flex absolute top-0 right-0 h-full w-[42vw] flex-col items-center justify-center shrink-0 px-4"
+    className="absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-4"
     style={{
       transform: isLoggingIn 
         ? 'fixed inset-0 z-50 bg-[var(--bg-page)]' 
         : isFlipped 
-          ? 'translateX(0) scale(1)' // Slides smoothly onto the screen
-          : 'translateX(42vw) scale(0.95)', // Sits safely off-screen to the right (translateX of its own 42vw width)
+          ? 'translateX(0) scale(1)' 
+          : 'translateX(100%) scale(0.95)',
       opacity: isLoggingIn ? 1 : isFlipped ? 1 : 0,
       pointerEvents: isFlipped && !isLoggingIn ? 'auto' : 'none',
       transition: 'transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1)'
