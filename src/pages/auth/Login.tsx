@@ -1,3 +1,4 @@
+//src/pages/auth/Login.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,6 +8,9 @@ import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'l
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
+
+// Capacitor core import
+import { Capacitor } from '@capacitor/core';
 
 // Reusable UI Components from src/components/ui/
 import { Input } from '../../components/ui/Input';
@@ -280,10 +284,16 @@ export const Login: React.FC = () => {
   const handleGoogleLogin = async () => {
     setIsGoogleSubmitting(true);
     try {
-      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
+      const isNative = Capacitor.isNativePlatform();
+
+      // Dynamically select deep link on Android, standard origin URL on Desktop browsers
+      const redirectTo = isNative 
+        ? 'com.wolfpalomar.gymmanagement://login' 
+        : `${import.meta.env.VITE_APP_URL || window.location.origin}/dashboard`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: `${appUrl}/dashboard` },
+        options: { redirectTo },
       });
       if (error) throw error;
     } catch (err: any) {
@@ -299,7 +309,7 @@ export const Login: React.FC = () => {
     setShakePassword(false);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error = null } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
