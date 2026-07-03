@@ -13,57 +13,58 @@ export const SystemLayout: React.FC = () => {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  // 1. Replaced showIntro with a clean, single-state slide tracker
   const [slideOut, setSlideOut] = useState(false);
 
   useEffect(() => {
     const playIntro = sessionStorage.getItem('playDashboardIntro') === 'true';
     if (playIntro) {
-      // Swipe curtain off-screen to the right after brief paint delay
       const timer = setTimeout(() => {
         setSlideOut(true);
         sessionStorage.removeItem('playDashboardIntro');
       }, 50);
       return () => clearTimeout(timer);
     } else {
-      // If not playing intro (e.g. refreshed), start ready immediately
       setSlideOut(true);
     }
   }, []);
 
   const handleLogout = async () => {
-    setIsLoggingOut(true); // Slides curtain back in from the right (covers screen)
+    setIsLoggingOut(true);
+    
+    // ─── Reset the login intro keys so the animation plays on next mount ───
+    sessionStorage.removeItem('loginIntroPlayed'); 
     sessionStorage.setItem('loginIntroDone', '0'); 
+    
     setTimeout(async () => {
       await logout();
-      navigate('/login', { replace: true });
+      // Explicitly pass the loggedOut state to reinforce the transition trigger
+      navigate('/login', { replace: true, state: { loggedOut: true } });
     }, 1500);
   };
 
- return (
-    <div className="relative h-screen overflow-hidden bg-[var(--bg-page)] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans pt-16">
+  return (
+    <div className="relative h-screen overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
       
-      {/* 1. TOPBAR - Spans 100% width */}
-      <Topbar onMenuClick={() => setMobileDrawerOpen(prev => !prev)} />
+      {/* 1. SIDEBAR */}
+      <Sidebar
+        collapsed={desktopCollapsed}
+        setCollapsed={setDesktopCollapsed}
+        mobileOpen={mobileDrawerOpen}
+        setMobileOpen={setMobileDrawerOpen}
+        onLogout={handleLogout}
+      />
 
-      {/* 2. SPLIT LAYOUT PANEL (Now completely static and aligned under Topbar) */}
-      <div className="flex flex-1 overflow-hidden admin-split-container">
+      {/* 2. RIGHT CONTAINER VIEWPORT */}
+      <div 
+        className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative"
+        style={{ transform: 'translate3d(0, 0, 0)' }}
+      >
         
-        {/* Left Sidebar Pane */}
-        <div className={`admin-left h-full z-300 transition-all duration-300 hidden lg:block ${desktopCollapsed ? 'lg:w-20' : 'lg:w-72'}`}>
-          <Sidebar
-            collapsed={desktopCollapsed}
-            setCollapsed={setDesktopCollapsed}
-            mobileOpen={mobileDrawerOpen}
-            setMobileOpen={setMobileDrawerOpen}
-            onLogout={handleLogout}
-          />
-        </div>
+        <Topbar onMenuClick={() => setMobileDrawerOpen(prev => !prev)} />
 
-        {/* Right Content Pane */}
-        <div className="admin-right flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
-          <main className="flex-1 p-6 pb-24 lg:pb-6">
+        {/* Scrollable Main Content Pane (Set to lg:overflow-hidden to prevent outer scrollbar on PC) */}
+        <div className="flex-1 overflow-y-auto lg:overflow-hidden relative min-w-0 pt-16 h-full">
+          <main className="h-full">
             <Outlet />
           </main>
         </div>
@@ -73,10 +74,9 @@ export const SystemLayout: React.FC = () => {
       {/* MOBILE BOTTOM NAVIGATION */}
       <Navbar />
 
-      {/* 3. SEAMLESS INTRO/OUTRO SLIDE OVERLAY (Curtain) */}
-      {/* Kept permanently mounted in DOM to ensure smooth, un-interrupted transition directions both ways */}
+      {/* 3. SEAMLESS INTRO/OUTRO OVERLAY CURTAIN */}
       <div 
-        className={`fixed inset-0 z-[16000] bg-[var(--bg-page)] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+        className={`fixed inset-0 z-16000 bg-(--bg-page) pointer-events-none transition-transform duration-1500 ease-[cubic-bezier(0.77,0,0.175,1)] ${
           (isLoggingOut || !slideOut) ? 'translate-x-0' : 'translate-x-full'
         }`} 
       />

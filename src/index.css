@@ -1,17 +1,92 @@
-  @import "tailwindcss";
+@import "tailwindcss";
 
   /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
-  @custom-variant dark (&:where(.dark, .dark *));
+  @define-variant dark (&:where(.dark, .dark *));
+
+  
+/* ==========================================================
+   SCROLLBAR SYSTEM THEME TUNING (ADAPTIVE LIGHT/DARK)
+   ========================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+/* Hide default browser scrollbar up/down arrow buttons */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* --- LIGHT MODE: NAVY BLUE SCROLLBARS --- */
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #295c9a; /* Logo Shield Blue */
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #123c73; /* Darker Shield Blue */
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #295c9a transparent;
+}
+
+
+/* --- DARK MODE: RED SCROLLBARS (Explicit Class) --- */
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #9c0202; /* Deep Crimson Red */
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #bf0202; /* Vibrant Wolf Red */
+}
+
+.dark html {
+  scrollbar-color: #9c0202 transparent;
+}
+
+
+/* --- DARK MODE: RED SCROLLBARS (System Preference Fallback) --- */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  :root:not(.light) ::-webkit-scrollbar-thumb {
+    background-color: #9c0202; /* Deep Crimson Red */
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+  :root:not(.light) ::-webkit-scrollbar-thumb:hover {
+    background-color: #bf0202; /* Vibrant Wolf Red */
+  }
+  :root:not(.light) html {
+    scrollbar-color: #9c0202 transparent;
+  }
+}
 
   /* ==========================================================
-    PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN SCREEN CUSTOM CSS
+    PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN & DASHBOARD CUSTOM CSS
     ========================================================== */
 
   /* Font Family Declarations */
   @font-face {
     font-family: 'Freshman';
-    src: url('./assets/Freshman.ttf') format('truetype');
-    font-weight: normal;
+    src: url('./assets/aBlackLives.ttf') format('truetype');
+    font-weight: 800;
     font-style: normal;
   }
 
@@ -24,26 +99,28 @@
   }
 
   :root {
-    /* LIGHT MODE THEME - Clean White, Elegant Slate Navy, High-Contrast Text */
-    --bg-page: #f8fafc;
-    --bg-card: #ffffff;
-    --bg-input: #f1f5f9;
-    --border-color: rgba(15, 23, 42, 0.08);
-    --color-text: #0f172a;
-    --color-primary: #1b365d;
-    --color-primary-hover: #112246;
-    --color-primary-light: #2c4a6f;
+    /* LIGHT MODE: Premium Ice Slate & Athletic Navy (from Logo Shield) */
+    --bg-page: #f0f4f8;                  /* Elegant light slate blue canvas */
+    --bg-card: #ffffff;                  /* Lighter white card for proper depth hierarchy */
+    --bg-input: #e2e8f0;                 /* Structured inner inputs */
+    --border-color: rgba(18, 60, 115, 0.08);
+    --color-glow: #123c73;               /* Shield Navy Blue */
+    --color-text: #0b1a30;               /* Readable dark navy text */
+    --color-primary: #123c73;
+    --color-primary-hover: #0c2950;
+    --color-primary-light: #295c9a;
   }
 
   /* Automatically apply dark mode if system prefers it and no manual override is set */
   @media (prefers-color-scheme: dark) {
     :root:not(.light) {
-      --bg-page: #0f1012;
-      --bg-card: #141414;
-      --bg-input: #13161a;
-      --border-color: rgba(255, 255, 255, 0.05);
+      /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
+      --bg-page: #0c0e12;                /* Deepest base - a rich midnight obsidian blue-black */
+      --bg-card: #161920;                /* Elevated panel/card/sidebar - polished and comfortable */
+      --bg-input: #1e232d;               /* Even lighter for readable form inputs/fields */
+      --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
       --color-text: #f3f4f6;
-      --color-primary: #bf0202;
+      --color-primary: #bf0202;          /* Active Wolf Red */
       --color-primary-hover: #9c0202;
       --color-primary-light: #e03434;
     }
@@ -51,14 +128,22 @@
 
   /* Explicit Dark Mode selection */
   .dark {
-    --bg-page: #0f1012;
-    --bg-card: #141414;
-    --bg-input: #13161a;
-    --border-color: rgba(255, 255, 255, 0.05);
+    --color-glow: #bf0202;
+    /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
+    --bg-page: #0c0e12;                  /* Deepest base - a rich midnight obsidian blue-black */
+    --bg-card: #161920;                  /* Elevated panel/card/sidebar - polished and comfortable */
+    --bg-input: #1e232d;                 /* Even lighter for readable form inputs/fields */
+    --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
     --color-text: #f3f4f6;
-    --color-primary: #bf0202;
+    --color-primary: #bf0202;            /* Active Wolf Red */
     --color-primary-hover: #9c0202;
     --color-primary-light: #e03434;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+      --color-glow: #bf0202;
+    }
   }
 
   /* Apply default font fallback to body elements */
@@ -114,6 +199,50 @@
     transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
   }
 
+
+ /* ==========================================================
+     DYNAMIC NEON GLOWING DIVIDER SYSTEM (TWO STATIC LINES)
+     ========================================================== */
+  .auth-divider-line {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 30;
+    pointer-events: none;
+    background-color: var(--color-glow);
+    
+    /* Neon glow effect */
+    filter: drop-shadow(0 0 4px var(--color-glow)) 
+            drop-shadow(0 0 12px var(--color-glow));
+            
+    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+                background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* LEFT LINE: Static geometry for the left slant edge */
+  .auth-line-left {
+    clip-path: polygon(10% 0%, 10.3% 0%, 0.3% 100%, 0% 100%);
+    opacity: 0.95;
+  }
+
+  /* Fade out the left line when the panel flips to recovery mode */
+  .carousel-flipped .auth-line-left {
+    opacity: 0;
+  }
+
+  /* RIGHT LINE: Static geometry for the right slant edge */
+  .auth-line-right {
+    clip-path: polygon(89.7% 0%, 90% 0%, 100% 100%, 99.7% 100%);
+    opacity: 0;
+  }
+
+  /* Fade in the right line when the panel flips to recovery mode */
+  .carousel-flipped .auth-line-right {
+    opacity: 0.95;
+  }
+
+  /* Keep your updated .auth-right styles from earlier */
   .auth-right {
     position: relative;
     overflow: hidden;
@@ -121,8 +250,28 @@
     opacity: 0;
     border: none !important;
     outline: none !important;
-    /* Animates width adjustments, camera slide, and image crossfades */
-    transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1);
+    clip-path: polygon(10% 0%, 100% 0%, 100% 100%, 0% 100%);
+    margin-left: -5vw;
+    transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), 
+                transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), 
+                opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1),
+                clip-path 1.2s cubic-bezier(0.77, 0, 0.175, 1),
+                margin 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+  }
+
+  .auth-right.carousel-flipped {
+    clip-path: polygon(0% 0%, 90% 0%, 100% 100%, 0% 100%);
+    margin-left: 0;
+    margin-right: -5vw;
+  }
+
+  @media (max-width: 1023px) {
+    .auth-right,
+    .auth-right.carousel-flipped {
+      clip-path: none !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
   }
 
   @media (min-width: 1024px) {
@@ -178,17 +327,15 @@
       0 1px 1px rgba(0, 0, 0, 1);
   }
 
-  /* --- CAROUSEL OVERLAY (Smooth blend, removes solid vertical divider lines) --- */
+  /* --- CAROUSEL OVERLAY --- */
   .carousel-overlay {
     background: linear-gradient(
       to right,
       var(--bg-page) 0%,
-      var(--bg-page) 15%,      /* Holds background color over split boundary seam */
-      rgba(15, 16, 18, 0.5) 35%, /* Soft, smooth fade-in directly onto the image */
-      transparent 60%,
-      transparent 80%,
-      rgba(15, 16, 18, 0.45) 94%,
-      var(--bg-page) 100%
+      var(--bg-page) 16%, 
+      transparent 45%,
+      transparent 65%,
+      var(--bg-page) 100
     );
   }
 
@@ -214,15 +361,15 @@
     position: absolute;
     width: 100%;
     height: 100%;
-    backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 
   .flip-card-back {
     transform: rotateY(180deg);
   }
 
-  /* --- TEXT FLOATING FIELDS WITH CORNER FLOATING TRANSITION --- */
+  /* --- TEXT FLOATING FIELDS --- */
   .field-wrap {
     position: relative;
     width: 100%;
@@ -233,14 +380,13 @@
     background-color: var(--bg-input);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 24px 14px 8px !important; /* Space at top for floating label */
+    padding: 24px 14px 8px !important; 
     color: var(--color-text);
     font-size: 14px;
     outline: none;
     transition: border-color 0.25s ease, box-shadow 0.25s ease;
   }
 
-  /* Box shadows on focus trigger the active state glowing parameters */
   .field-input:focus {
     box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
   }
@@ -265,7 +411,6 @@
                 color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
-  /* Sibling selector handles rise-to-corner on input focus and value population */
   .field-input:focus ~ .field-label,
   .field-input:not(:placeholder-shown) ~ .field-label {
     top: 6px;
@@ -327,8 +472,8 @@
     left: 5px;
     width: 5px;
     height: 9px;
-    border-right: 2px solid #ffffff;
-    border-bottom: 2px solid #ffffff;
+    border-right: #ffffff 2px solid;
+    border-bottom: #ffffff 2px solid;
     transform: rotate(45deg) scale(0);
     opacity: 0;
   }
@@ -379,13 +524,6 @@
     40% { transform: translateX(6px); }
     60% { transform: translateX(-4px); }
   }
-  @keyframes field-shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-6px); }
-    40% { transform: translateX(6px); }
-    60% { transform: translateX(-4px); }
-    80% { transform: translateX(4px); }
-  }
 
   .shake-error {
     border-color: var(--color-primary) !important;
@@ -407,7 +545,6 @@
 
   /* --- MOBILE RESPONSIVE LAYOUTS --- */
   @media (max-width: 1023px) {
-    /* Distributes proper padding to allow scroll room */
     .auth-left {
       flex: 1 1 100% !important;
       padding-right: 0 !important;
@@ -432,7 +569,6 @@
       height: auto;
     }
 
-    /* Switches from absolute positioning to relative to let elements layout organically with zero cuts */
     .flip-card-front,
     .flip-card-back {
       position: relative !important;
@@ -446,7 +582,6 @@
       flex-direction: column;
     }
 
-    /* Ensure the inactive card face is completely cleared from mobile layout footprint */
     .flip-card-inner:not(.flipped) .flip-card-back {
       display: none !important;
     }

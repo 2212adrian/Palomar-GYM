@@ -29,6 +29,7 @@ import carousel4 from '../../assets/4-carousel.webp';
 import carousel5 from '../../assets/5-carousel.webp';
 import carousel6 from '../../assets/6-carousel.webp';
 import landscapeLogo from '../../assets/landscape-logo.webp';
+import hexagonBg from '../../assets/textures/hexagons.svg';
 
 const CAROUSEL_IMAGES = [carousel1, carousel2, carousel3, carousel4, carousel5, carousel6];
 const TYPEWRITER_PHRASES = ['SECURE.', 'RELIABLE.', 'STRENGTH.', 'LIMITS.', 'ENDURANCE.', 'CAPACITY.'];
@@ -36,7 +37,7 @@ const APP_VERSION = pkg.version || '2.0.0B';
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 const loginSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid email address' }),
+  usernameOrEmail: z.string().min(3, { message: 'Please enter a valid username or email' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
   agree: z.boolean().refine((val) => val === true, {
     message: 'You must agree to the Terms and Privacy Policy',
@@ -58,174 +59,57 @@ function getInitialTheme(): 'dark' | 'light' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
 export const Login: React.FC = () => {
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { checkSession, user, initialized, error: storeError, setError } = useAuthStore() as any;
 
   const from = (location.state as any)?.from?.pathname || '/dashboard';
+  const safeFrom = from === '/login' ? '/dashboard' : from;
 
-  // ── Layout / reveal ──────────────────────────────────────────────────────
-  // Layout & UI States (Session-locked to control one-time transition limits)
-  const [isReady, setIsReady] = useState(() => {
-    const introDone = sessionStorage.getItem('loginIntroDone') === '1';
-    const outroActive = sessionStorage.getItem('outroActive') === 'true';
-    
-    if (introDone) return true; // If already run once, start ready immediately (no transition)
-    if (outroActive) return false;
+  // ─── Core UI States (Only plays intro on fresh session or explicit reset) ──────────────────
+  const [isReady, setIsReady] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('loginIntroPlayed') === 'true';
+    }
     return false;
   });
-
-  const [isLoggingIn, setIsLoggingIn] = useState(() => {
-    return sessionStorage.getItem('outroActive') === 'true';
-  });
-
-  const [isFlipped, setIsFlipped] = useState(false);
-
-  // ── Auth submit states ───────────────────────────────────────────────────
-  const [isSubmitting,       setIsSubmitting]       = useState(false);
-  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
-
-  // ── Password visibility ──────────────────────────────────────────────────
-  const [showPassword,    setShowPassword]    = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-
-  // ── Shake animations ─────────────────────────────────────────────────────
-  const [shakeEmail,    setShakeEmail]    = useState(false);
-  const [shakePassword, setShakePassword] = useState(false);
-  const [shakeRecovery, setShakeRecovery] = useState(false);
-
-  // ── Recovery flow ────────────────────────────────────────────────────────
-  const [recoveryStep,        setRecoveryStep]        = useState<'email' | 'otp'>('email');
-  const [recoveryEmail,       setRecoveryEmail]       = useState('');
-  const [recoveryStatusText,  setRecoveryStatusText]  = useState('Connecting...');
-  const [isRecoverySubmitting,setIsRecoverySubmitting]= useState(false);
-  const [otpDigits,           setOtpDigits]           = useState<string[]>(['', '', '', '', '', '']);
-  const [newPassword,         setNewPassword]         = useState('');
-  const [resendTimer,         setResendTimer]         = useState(60);
-  const [recoveryError,       setRecoveryError]       = useState<string | null>(null);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // ── Modals ───────────────────────────────────────────────────────────────
-  const [showExitConfirm,  setShowExitConfirm]  = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-
-  // ── Carousel ─────────────────────────────────────────────────────────────
-  const [activeSlide, setActiveSlide] = useState(0);
-
-  // ── Typewriter ───────────────────────────────────────────────────────────
-  const [typewriterText, setTypewriterText] = useState('');
-  const [phraseIndex,    setPhraseIndex]    = useState(0);
-  const [isDeleting,     setIsDeleting]     = useState(false);
-
-  // ── Theme ────────────────────────────────────────────────────────────────
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
-  // ─── Effects ──────────────────────────────────────────────────────────────
+  // ─── Submitting & Visual Error States ──────────────────────────────────────
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
-  // Theme sync
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('dark',  theme === 'dark');
-    root.classList.toggle('light', theme === 'light');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+  const [shakeEmail, setShakeEmail] = useState<boolean>(false);
+  const [shakePassword, setShakePassword] = useState<boolean>(false);
+  const [shakeRecovery, setShakeRecovery] = useState<boolean>(false);
 
-  // Session guard — skip redirect while outro animation is running
-  useEffect(() => {
-    const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
-    if (initialized && user && !isLoggingIn && !isOutroActive) {
-      const userProfile = (useAuthStore.getState() as any).profile;
-      const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : from;
-      navigate(targetRoute, { replace: true });
-    }
-  }, [initialized, user, navigate, isLoggingIn, from]);
+  // ─── Password Recovery States (Simplified) ──────────────────────────────────
+  const [recoveryEmail, setRecoveryEmail] = useState<string>('');
+  const [isRecoverySubmitting, setIsRecoverySubmitting] = useState<boolean>(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
-  // Capture forwarded OAuth errors from URL hash / query params
-  useEffect(() => {
-    const hash  = new URLSearchParams(window.location.hash.slice(1));
-    const query = new URLSearchParams(window.location.search);
-    const errorDesc = hash.get('error_description') || query.get('error_description');
-    const errorCode = hash.get('error_code')        || query.get('error_code');
+  // ─── Modal States ──────────────────────────────────────────────────────────
+  const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
-    if (errorDesc) {
-      let msg = errorDesc.replace(/\+/g, ' ');
-      if (errorCode === 'signup_disabled') {
-        msg = 'This account has not been registered. Please contact an administrator.';
-      }
-      toast.error(msg, { toastId: 'unauthorized-access-toast' });
-      window.history.replaceState(null, '', window.location.pathname);
-    }
-  }, []);
+  // ─── Carousel & Typewriter States ──────────────────────────────────────────
+  const [activeSlide, setActiveSlide] = useState<number>(0);
+  const [typewriterText, setTypewriterText] = useState<string>('');
+  const [phraseIndex, setPhraseIndex] = useState<number>(0);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Deduplicate store errors (e.g. access-denied from Google OAuth)
-  useEffect(() => {
-    if (storeError) {
-      toast.error(storeError, { toastId: 'unauthorized-access-toast' });
-      setError(null);
-      setIsGoogleSubmitting(false);
-    }
-  }, [storeError, setError]);
+  // ─── Refs ──────────────────────────────────────────────────────────────────
+  const carouselBgRef = useRef<HTMLDivElement>(null);
+  const mouseCoordinates = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lerpedCoordinates = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const rafId = useRef<number | null>(null);
+  const isHovering = useRef<boolean>(true);
 
-  // One-time shrink-reveal transition on mount
-  useEffect(() => {
-    const introDone = sessionStorage.getItem('loginIntroDone') === '1';
-    
-    if (introDone) {
-      setIsReady(true);
-    } else {
-      const t = setTimeout(() => {
-        setIsReady(true);
-        sessionStorage.setItem('loginIntroDone', '1');
-      }, 150);
-      return () => clearTimeout(t);
-    }
-  }, []);
-
-  // Carousel auto-advance
-  useEffect(() => {
-    const t = setInterval(() => setActiveSlide((p) => (p + 1) % CAROUSEL_IMAGES.length), 5000);
-    return () => clearInterval(t);
-  }, []);
-
-  // OTP resend countdown
-  useEffect(() => {
-    if (resendTimer > 0 && recoveryStep === 'otp') {
-      const t = setTimeout(() => setResendTimer((p) => p - 1), 1000);
-      return () => clearTimeout(t);
-    }
-  }, [resendTimer, recoveryStep]);
-
-  // Typewriter loop
-  useEffect(() => {
-    const current = TYPEWRITER_PHRASES[phraseIndex];
-    let t: ReturnType<typeof setTimeout>;
-
-    const tick = () => {
-      if (!isDeleting) {
-        setTypewriterText(current.substring(0, typewriterText.length + 1));
-        if (typewriterText === current) {
-          t = setTimeout(() => setIsDeleting(true), 2500);
-        } else {
-          t = setTimeout(tick, 50);
-        }
-      } else {
-        setTypewriterText(current.substring(0, typewriterText.length - 1));
-        if (typewriterText === '') {
-          setIsDeleting(false);
-          setPhraseIndex((p) => (p + 1) % TYPEWRITER_PHRASES.length);
-        } else {
-          t = setTimeout(tick, 25);
-        }
-      }
-    };
-
-    t = setTimeout(tick, isDeleting ? 20 : 50);
-    return () => clearTimeout(t);
-  }, [typewriterText, isDeleting, phraseIndex]);
-
-  // ─── Forms ────────────────────────────────────────────────────────────────
+  // ─── Form Setup ────────────────────────────────────────────────────────────
   const {
     register: registerLogin,
     handleSubmit: handleLoginSubmit,
@@ -234,7 +118,7 @@ export const Login: React.FC = () => {
     formState: { errors: loginErrors, touchedFields: touchedLogin },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '', agree: true },
+    defaultValues: { usernameOrEmail: '', password: '', agree: true },
   });
 
   const {
@@ -248,48 +132,243 @@ export const Login: React.FC = () => {
     defaultValues: { email: '' },
   });
 
-  const watchEmail         = watchLogin('email');
-  const watchPassword      = watchLogin('password');
+  const watchIdentifier = watchLogin('usernameOrEmail');
+  const watchPassword = watchLogin('password');
   const watchRecoveryEmail = watchRecovery('email');
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // Dynamic input label swapping
+  const dynamicLabel = watchIdentifier && watchIdentifier.includes('@')
+    ? 'Email Address'
+    : 'Username';
 
-  /** One-shot shake: sets flag, clears after animation duration */
+  // ─── Clear Stale Transition States on Mount ────────────────────────────────
+  useEffect(() => {
+    sessionStorage.removeItem('outroActive');
+    sessionStorage.removeItem('playDashboardIntro');
+    setIsLoggingIn(false);
+  }, []);
+
+  // ─── Theme Sync ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    root.classList.toggle('light', theme === 'light');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  // ─── Session Guard ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
+    if (initialized && user && !isLoggingIn && !isOutroActive) {
+      const userProfile = (useAuthStore.getState() as any).profile;
+      
+      const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
+      const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
+      
+      const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : safeFromPath;
+      navigate(targetRoute, { replace: true });
+    }
+  }, [initialized, user, navigate, isLoggingIn, location.state]);
+
+  // ─── Handle OAuth Errors in URL ───────────────────────────────────────────
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const query = new URLSearchParams(window.location.search);
+    const errorDesc = hash.get('error_description') || query.get('error_description');
+    const errorCode = hash.get('error_code') || query.get('error_code');
+
+    if (errorDesc) {
+      let msg = errorDesc.replace(/\+/g, ' ');
+      if (errorCode === 'signup_disabled') {
+        msg = 'This account has not been registered. Please contact an administrator.';
+      }
+      toast.error(msg, { toastId: 'unauthorized-access-toast' });
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  // ─── Deduplicate Auth Store Errors ────────────────────────────────────────
+  useEffect(() => {
+    if (storeError) {
+      toast.error(storeError, { toastId: 'unauthorized-access-toast' });
+      setError(null);
+      setIsGoogleSubmitting(false);
+    }
+  }, [storeError, setError]);
+
+  // ─── Intro Transition Activation (Only once per session, resets on logout) ──
+  useEffect(() => {
+    // 1. Detect if the user explicitly logged out (via router state or URL parameters)
+    const hasLoggedOut = 
+      (location.state as any)?.loggedOut || 
+      new URLSearchParams(location.search).has('logout');
+    
+    if (hasLoggedOut) {
+      sessionStorage.removeItem('loginIntroPlayed');
+      // Instantly wipe history state and query parameters to prevent re-triggering on F5 refreshes
+      navigate(location.pathname, { replace: true, state: {} });
+      return;
+    }
+
+    // 2. If already played during this tab session, skip transition completely
+    if (sessionStorage.getItem('loginIntroPlayed') === 'true') {
+      setIsReady(true);
+      return;
+    }
+
+    // 3. First-time entry sequence: collapse visual elements and open them on a timer
+    setIsReady(false);
+    const timer = setTimeout(() => {
+      setIsReady(true);
+      sessionStorage.setItem('loginIntroPlayed', 'true');
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [location.search, location.state, navigate]);
+
+  // ─── Carousel Cycle ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveSlide((p) => (p + 1) % CAROUSEL_IMAGES.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ─── Typewriter Loop ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const current = TYPEWRITER_PHRASES[phraseIndex];
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = () => {
+      if (!isDeleting) {
+        setTypewriterText(current.substring(0, typewriterText.length + 1));
+        if (typewriterText === current) {
+          timer = setTimeout(() => setIsDeleting(true), 2500);
+        } else {
+          timer = setTimeout(tick, 50);
+        }
+      } else {
+        setTypewriterText(current.substring(0, typewriterText.length - 1));
+        if (typewriterText === '') {
+          setIsDeleting(false);
+          setPhraseIndex((p) => (p + 1) % TYPEWRITER_PHRASES.length);
+        } else {
+          timer = setTimeout(tick, 25);
+        }
+      }
+    };
+
+    timer = setTimeout(tick, isDeleting ? 20 : 50);
+    return () => clearTimeout(timer);
+  }, [typewriterText, isDeleting, phraseIndex]);
+
+  // ─── Flat Parallax System (Hardware Optimized & Pointer Coarse Aware) ──────
+  useEffect(() => {
+    const isTouch = window.matchMedia('(pointer: coarse)').matches;
+    if (isTouch) return;
+
+    const bg = carouselBgRef.current;
+    if (!bg) return;
+
+    const tick = () => {
+      const targetX = isHovering.current ? mouseCoordinates.current.x : 0;
+      const targetY = isHovering.current ? mouseCoordinates.current.y : 0;
+
+      const dx = targetX - lerpedCoordinates.current.x;
+      const dy = targetY - lerpedCoordinates.current.y;
+
+      lerpedCoordinates.current.x += dx * 0.08;
+      lerpedCoordinates.current.y += dy * 0.08;
+
+      const translateX = -lerpedCoordinates.current.x * 50;
+      const translateY = -lerpedCoordinates.current.y * 50;
+
+      // Transform background image wrapper on its own composite layer
+      bg.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(1.12)`;
+
+      // Auto-Sleep Threshold convergence check
+      const threshold = 0.0001;
+      if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+        lerpedCoordinates.current.x = targetX;
+        lerpedCoordinates.current.y = targetY;
+
+        const finalTransX = -targetX * 50;
+        const finalTransY = -targetY * 50;
+        bg.style.transform = `translate3d(${finalTransX}px, ${finalTransY}px, 0) scale(1.12)`;
+
+        rafId.current = null;
+      } else {
+        rafId.current = requestAnimationFrame(tick);
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const x = e.clientX / window.innerWidth - 0.5;
+      const y = e.clientY / window.innerHeight - 0.5;
+      mouseCoordinates.current = { x, y };
+
+      if (!rafId.current) {
+        rafId.current = requestAnimationFrame(tick);
+      }
+    };
+
+    const handleMouseEnter = () => {
+      isHovering.current = true;
+      if (!rafId.current) {
+        rafId.current = requestAnimationFrame(tick);
+      }
+    };
+
+    const handleMouseLeave = () => {
+      isHovering.current = false;
+      if (!rafId.current) {
+        rafId.current = requestAnimationFrame(tick);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    document.addEventListener('mouseenter', handleMouseEnter, { passive: true });
+    document.addEventListener('mouseleave', handleMouseLeave, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseenter', handleMouseEnter);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+      if (rafId.current) {
+        cancelAnimationFrame(rafId.current);
+      }
+    };
+  }, []);
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const triggerShake = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(true);
     setTimeout(() => setter(false), 500);
   };
 
-  /** Auto-append @gmail.com if the user typed without a domain */
   const normaliseEmail = (
     val: string,
     setter: (field: any, val: string, opts?: any) => void,
-    field: any,
+    field: any
   ) => {
     if (val && !val.includes('@')) {
       setter(field, `${val.trim()}@gmail.com`, { shouldValidate: true });
     }
   };
 
-  /** Reset recovery state back to initial */
   const resetRecovery = () => {
-    setRecoveryStep('email');
-    setOtpDigits(['', '', '', '', '', '']);
-    setNewPassword('');
+    setRecoveryEmail('');
     setRecoveryError(null);
   };
 
-  // ─── Auth handlers ────────────────────────────────────────────────────────
-
+  // ─── Auth Submission Logic ───────────────────────────────────────────────
   const handleGoogleLogin = async () => {
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
-
-      // Dynamically select deep link on Android, standard origin URL on Desktop browsers
-      const redirectTo = isNative 
-        ? 'com.wolfpalomar.gymmanagement://login' 
-        : `${import.meta.env.VITE_APP_URL || window.location.origin}/dashboard`;
+      const redirectTo = isNative
+        ? 'com.wolfpalomar.gymmanagement://login'
+        : `${window.location.origin}/dashboard`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -309,39 +388,49 @@ export const Login: React.FC = () => {
     setShakePassword(false);
 
     try {
+      // Map local username registrations to palomargym.local domain
+      const finalEmail = data.usernameOrEmail.includes('@')
+        ? data.usernameOrEmail.trim().toLowerCase()
+        : `${data.usernameOrEmail.trim().toLowerCase()}@palomargym.noemail`;
+
       const { error = null } = await supabase.auth.signInWithPassword({
-        email: data.email,
+        email: finalEmail,
         password: data.password,
       });
+
       if (error) throw error;
+      
+      const loggedInUser = (await supabase.auth.getUser()).data.user;
+      const { data: dbProfile } = await supabase
+        .from('profiles')
+        .select('status')
+        .eq('id', loggedInUser?.id)
+        .maybeSingle();
 
-      // Lock session redirects and trigger the reversed Outro Animation
-      sessionStorage.setItem('outroActive', 'true');
-      sessionStorage.setItem('playDashboardIntro', 'true'); // Flag for dashboard intro
-      setIsLoggingIn(true); // Fades and scales down login card & logos
-      setIsReady(false);    // Smoothly expands left panel back to 100% width
+      const userStatus = dbProfile?.status || loggedInUser?.user_metadata?.status;
 
-      await checkSession();
-      const loggedInUser = useAuthStore.getState().user;
-
-      if (!loggedInUser) {
-        setIsSubmitting(false);
-        setIsLoggingIn(false);
-        setIsReady(true);
-        sessionStorage.removeItem('outroActive');
+      if (userStatus === 'inactive') {
+        await supabase.auth.signOut();
+        toast.error('This account has been deactivated. Please contact an administrator.');
         return;
       }
 
-      // Wait exactly 1.8s for the slide transition to complete (Left panel covers screen)
+      // 2. Only start the transition sequence on successful credentials & verification checks
+      sessionStorage.setItem('outroActive', 'true');
+      sessionStorage.setItem('playDashboardIntro', 'true');
+      setIsLoggingIn(true);
+      setIsReady(false);
+
+      await checkSession();
+
       setTimeout(() => {
         sessionStorage.removeItem('outroActive');
         const userProfile = (useAuthStore.getState() as any).profile;
-        const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : from;
+        const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : safeFrom;
         navigate(targetRoute, { replace: true });
       }, 1800);
-
     } catch (err: any) {
-      toast.error(err.message || 'Invalid email or password.');
+      toast.error(err.message || 'Invalid username, email, or password.');
       setLoginValue('password', '');
       triggerShake(setShakePassword);
     } finally {
@@ -350,108 +439,40 @@ export const Login: React.FC = () => {
   };
 
   const onInvalidLoginSubmit = () => {
-    if (loginErrors.email)    triggerShake(setShakeEmail);
+    if (loginErrors.usernameOrEmail) triggerShake(setShakeEmail);
     if (loginErrors.password) triggerShake(setShakePassword);
   };
 
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
-  // ─── Recovery handlers ────────────────────────────────────────────────────
-
-  const requestOtp = async (email: string) => {
+  // ─── Standard Supabase Reset Link Dispatcher ───
+  const requestResetLink = async (email: string) => {
     setRecoveryError(null);
     setIsRecoverySubmitting(true);
-    setRecoveryStatusText('Connecting...');
-
-    await new Promise((r) => setTimeout(r, 1000));
-    setRecoveryStatusText('Verifying...');
-    await new Promise((r) => setTimeout(r, 800));
 
     try {
-      const res = await fetch('/.netlify/functions/auth-recovery', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ action: 'send-otp', email }),
+      // Dispatches reset instructions natively using Supabase
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/forgot-password`,
       });
-
-      const ct = res.headers.get('content-type');
-      if (!ct?.includes('application/json')) {
-        throw new Error('Local server connection error. Please try again.');
-      }
-
-      const resData = await res.json();
-
-      // Rate-limited — sync timer and jump straight to OTP entry
-      if (res.status === 429) {
-        setRecoveryEmail(email);
-        setRecoveryStep('otp');
-        setResendTimer(resData.remaining_seconds || 60);
-        throw new Error('Please wait for the cooldown timer before requesting another code.');
-      }
-
-      if (!res.ok) throw new Error('We could not verify this email. Please try again.');
+      if (error) throw error;
 
       setRecoveryEmail(email);
-      setRecoveryStep('otp');
-      setResendTimer(60);
-      setOtpDigits(['', '', '', '', '', '']);
-      toast.info('Verification code sent to your email.');
-
+      setShowSuccessModal(true); // Opens the modal indicating the link was sent
     } catch (err: any) {
-      setRecoveryError(err.message);
+      setRecoveryError(err.message || 'Failed to dispatch recovery instructions.');
       triggerShake(setShakeRecovery);
     } finally {
       setIsRecoverySubmitting(false);
     }
   };
 
-  const onRecoverySubmit = async (data: RecoveryFormValues) => requestOtp(data.email);
+  const onRecoverySubmit = async (data: RecoveryFormValues) => requestResetLink(data.email);
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRecoveryError(null);
-    setIsRecoverySubmitting(true);
-    setRecoveryStatusText('Verifying code...');
-
-    const otp = otpDigits.join('');
-    if (otp.length !== 6 || !newPassword) {
-      setRecoveryError('Please enter your verification code and new password.');
-      setIsRecoverySubmitting(false);
-      return;
-    }
-
-    try {
-      const res = await fetch('/.netlify/functions/auth-recovery', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          action:       'verify-otp',
-          email:        recoveryEmail,
-          otp,
-          new_password: newPassword,
-        }),
-      });
-
-      const ct = res.headers.get('content-type');
-      if (!ct?.includes('application/json')) throw new Error('Connection error. Please try again.');
-      await res.json();
-      if (!res.ok) throw new Error('Code verification failed. Please try again.');
-
-      setShowSuccessModal(true);
-
-    } catch (err: any) {
-      setRecoveryError(err.message || 'Verification failed. Please try again.');
-      setOtpDigits(['', '', '', '', '', '']);
-      otpRefs.current[0]?.focus();
-    } finally {
-      setIsRecoverySubmitting(false);
-    }
-  };
-
-  // Email normalisation wrappers
+  // ─── Normalisation Wrapper Submissions ────────────────────────────────────
   const handlePreLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    normaliseEmail(watchEmail, setLoginValue, 'email');
+    // Only call submit sequence directly (preserving raw username input parameters)
     handleLoginSubmit(onLoginSubmit, onInvalidLoginSubmit)(e);
   };
 
@@ -461,45 +482,26 @@ export const Login: React.FC = () => {
     handleRecoverySubmit(onRecoverySubmit, onInvalidRecoverySubmit)(e);
   };
 
-  // OTP input handlers
-  const handleOtpChange = (index: number, val: string) => {
-    if (!/^\d*$/.test(val)) return;
-    const next = [...otpDigits];
-    next[index] = val.slice(-1);
-    setOtpDigits(next);
-    if (val && index < 5) otpRefs.current[index + 1]?.focus();
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if      (e.key === 'Backspace'   && !otpDigits[index] && index > 0) otpRefs.current[index - 1]?.focus();
-    else if (e.key === 'ArrowLeft'   && index > 0)                       otpRefs.current[index - 1]?.focus();
-    else if (e.key === 'ArrowRight'  && index < 5)                       otpRefs.current[index + 1]?.focus();
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').trim();
-    if (!/^\d{6}$/.test(pasted)) return;
-    setOtpDigits(pasted.split(''));
-    otpRefs.current[5]?.focus();
-  };
-
   const handleBackToLoginClick = () => {
-  if (recoveryStep === 'otp') {
-    // If waiting for the 6-digit code, prompt the confirmation modal
-    setShowExitConfirm(true);
-  } else {
-    // If still entering their email, return to login instantly with no prompt
     setIsFlipped(false);
     resetRecovery();
-  }
-};
+  };
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-white dark:bg-[#0f1012] select-none font-sans text-slate-900 dark:text-slate-100">
+    <div className="relative w-full h-screen overflow-hidden bg-(--bg-page) select-none font-sans text-(--color-text) font-body">
+      
+      {/* ─── Hardware Accelerated Hexagon Pattern Background Overlay ─── */}
+      <div 
+        className="absolute inset-0 z-0 pointer-events-none opacity-[0.04] dark:opacity-[0.02] mix-blend-normal"
+        style={{ 
+          backgroundImage: `url(${hexagonBg})`,
+          backgroundRepeat: 'repeat',
+          backgroundSize: '280px 280px',
+        }}
+      />
 
-      {/* Keyframe injection */}
+      {/* Dynamic Keyframes */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
@@ -508,373 +510,325 @@ export const Login: React.FC = () => {
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
       `}} />
 
-      {/* ── Theme toggle ─────────────────────────────────────────────────── */}
+      {/* ── Theme Toggle ─────────────────────────────────────────────────── */}
       <button
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="absolute top-4 right-4 z-50 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95"
+        className={`absolute top-4 right-4 z-50 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95 transition-all duration-700 ease-out ${
+          isLoggingIn
+            ? 'opacity-0 translate-y-4 pointer-events-none'
+            : isReady
+              ? 'opacity-100 translate-y-0'
+              : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}
       >
-        {/* Palette preview squares */}
         <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
           {theme === 'dark' ? (
             <>
-              <span className="w-3.5 h-3.5 bg-[#0f1012]" />
+              <span className="w-3.5 h-3.5 bg-[#0c0e12]" />
               <span className="w-3.5 h-3.5 bg-[#bf0202]" />
-              <span className="w-3.5 h-3.5 bg-[#13161a]" />
+              <span className="w-3.5 h-3.5 bg-[#161920]" />
             </>
           ) : (
             <>
+              <span className="w-3.5 h-3.5 bg-[#f0f4f8]" />
+              <span className="w-3.5 h-3.5 bg-[#123c73]" />
               <span className="w-3.5 h-3.5 bg-[#ffffff]" />
-              <span className="w-3.5 h-3.5 bg-[#1b365d]" />
-              <span className="w-3.5 h-3.5 bg-[#f3f4f6]" />
             </>
           )}
         </div>
         <span className="text-slate-700 dark:text-slate-300 text-[10px] font-black tracking-widest flex items-center gap-1">
           {theme === 'dark' ? (
-            <><Sun  className="w-3.5 h-3.5 text-amber-400"  /><span>LIGHT</span></>
+            <><Sun className="w-3.5 h-3.5 text-amber-400" /><span>LIGHT</span></>
           ) : (
             <><Moon className="w-3.5 h-3.5 text-indigo-400" /><span>DARK</span></>
           )}
         </span>
       </button>
 
-{/* ─── SPLIT CONTAINER ─── */}
-<div className={`flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''}`}>
+      {/* ─── SPLIT CONTAINER ─── */}
+      <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''}`}>
 
-  {/* ── SIBLING 1: LEFT COLUMN (Contains Mobile Logo, Desktop Logo, and Main Login Card) ── */}
-  {/* On PC: Slides smoothly off-screen to the LEFT (translateX(-42vw)) and fades out during Recovery Mode */}
-  <div 
-  className={`auth-left h-full flex flex-col items-center justify-center ${
-    isLoggingIn 
-      ? 'opacity-0 pointer-events-none' 
-      : isFlipped 
-        ? 'opacity-0 pointer-events-none' 
-        : 'opacity-100'
-  }`}
-  style={{ 
-    // Moves the card 101% of its own width to the left to ensure it is completely past the screen edge
-    transform: isLoggingIn 
-      ? 'translateX(0)' 
-      : isFlipped 
-        ? 'translateX(-101%)' 
-        : 'translateX(0)' 
-  }}
->
-    {/* Mobile Logo Card */}
-    <div className="block lg:hidden mx-auto animate-slide-up">
-      <Card isLoggingIn={isLoggingIn} className="w-32 h-32">
-        <div className="w-50 h-50 bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
-          <img src="/favicon.svg" alt="Palomar Logo" className="w-full h-full object-contain" />
-        </div>
-      </Card>
-    </div>
-
-    {/* Desktop Logo Card */}
-    <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
-      <Card isLoggingIn={isLoggingIn} className="w-56 h-24">
-        <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-4 flex items-center justify-center transition-all duration-500">
-          <img src={landscapeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
-        </div>
-      </Card>
-    </div>
-
-    {/* Main Login Card */}
-    <Card isLoggingIn={isLoggingIn}>
-      <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
-        <div>
-          <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-            LOGIN
-          </div>
-          <p className="text-center font-heading text-[10px] tracking-[2.4px] text-[#1b365d] dark:text-blue-400 uppercase opacity-90 mb-2">
-            GYM MANAGEMENT SYSTEM
-          </p>
-          <div className="flex justify-center mb-6">
-            <span className="text-[9px] text-slate-500 dark:text-slate-300 tracking-widest border border-blue-500/30 dark:border-rose-500/30 bg-blue-500/5 dark:bg-rose-500/10 rounded-full px-3 py-1 font-mono uppercase">
-              v{APP_VERSION}
-            </span>
-          </div>
-
-          <form onSubmit={handlePreLoginSubmit} className="space-y-4 font-body">
-            <Input
-              {...registerLogin('email')}
-              type="email"
-              label="Email Address"
-              icon={<Mail className="w-4 h-4 text-slate-400" />}
-              error={!!loginErrors.email}
-              shake={shakeEmail}
-              touched={touchedLogin.email}
-              isPopulated={!!watchEmail}
-            />
-            <Input
-              {...registerLogin('password')}
-              type={showPassword ? 'text' : 'password'}
-              label="Password"
-              icon={<Lock className="w-4 h-4 text-slate-400" />}
-              error={!!loginErrors.password}
-              shake={shakePassword}
-              touched={touchedLogin.password}
-              isPopulated={!!watchPassword}
-              rightElement={
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((p) => !p)}
-                  className="field-visibility-toggle cursor-pointer"
-                  aria-label="Toggle password visibility"
-                >
-                  {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                </button>
-              }
-            />
-            <div className="flex items-start gap-2.5 my-2">
-              <input type="checkbox" id="loginAgreement" {...registerLogin('agree')} className="styled-checkbox" />
-              <label htmlFor="loginAgreement" className="checkbox-label">
-                <span className="checkbox-ui" />
-                <span className="text-[10px] text-slate-900 dark:text-slate-400 font-bold">
-                  I agree to the <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Terms & Conditions</a> and <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Privacy Policy</a>.
-                </span>
-              </label>
-            </div>
-            <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">Login Now</Button>
-            <Button type="button" variant="google" onClick={handleGoogleLogin} loading={isGoogleSubmitting}>
-              <svg className="w-4 h-4 text-[#ea4335] shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-              </svg>
-              <span>Continue With Google</span>
-            </Button>
-          </form>
-        </div>
-        <div className="space-y-4 mt-4 font-body">
-          <div className="flex items-center justify-center text-xs font-bold text-slate-400">
-            <button onClick={() => { setIsFlipped(true); setRecoveryStep('email'); setRecoveryError(null); }} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer">
-              Forgot Password?
-            </button>
-          </div>
-          <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-            <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
-              <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-              <span>ACCESS PROTOCOL</span>
-            </div>
-            <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-              This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.
-            </p>
-          </div>
-          <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
-            © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
-          </div>
-        </div>
-      </div>
-    </Card>
-  </div>
-
-  {/* ── SIBLING 2: RIGHT PANEL (Contains slideshow background and expandable description card) ── */}
-  {/* On PC: Slides smoothly left to take over left column space in Recovery (translateX(-42vw)) */}
-  <div 
-  className={`auth-right h-full relative overflow-hidden hidden lg:block ${
-    isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
-  }`}
-  style={{ 
-    // Slides the carousel slightly further left (-43vw) to overlap the screen boundary and swallow the sub-pixel line
-    transform: isLoggingIn 
-      ? 'translateX(0)' 
-      : isFlipped 
-        ? 'translateX(-43vw)' 
-        : 'translateX(0)' 
-  }}
->
-    <div className="carousel-bg-wrapper absolute inset-0">
-      {CAROUSEL_IMAGES.map((image, index) => (
-        <img
-          key={index}
-          src={image}
-          alt={`Gym view ${index + 1}`}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
-            activeSlide === index ? 'opacity-100' : 'opacity-0'
+        {/* ── SIBLING 1: LEFT COLUMN ── */}
+        <div 
+          className={`auth-left h-full flex flex-col items-center justify-center ${
+            isLoggingIn 
+              ? 'opacity-0 pointer-events-none' 
+              : isFlipped 
+                ? 'opacity-0 pointer-events-none' 
+                : 'opacity-100'
           }`}
-        />
-      ))}
-    </div>
-    <div className="carousel-overlay absolute inset-0 z-2" />
-    <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
-      <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
-        BEYOND <br />
-        <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
-        <span className="text-[#031d7d] dark:text-[#bf0202] animate-[blink_0.8s_infinite]">|</span>
-      </h2>
-      <Card expandable={true} className="max-w-lg h-auto">
-        <div className="bg-black/50 border border-white/10 p-6 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 font-body text-left">
-          <p className="text-xs text-slate-200 leading-relaxed font-bold">
-            The ultimate terminal for Palomar Gym administrative control. Encrypted, fast, and precise.
-            <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-bold animate-slide-up">
-              Wolf OS provides end-to-end telemetry for modern fitness centers — managing membership lifecycles, financial encryption, and real-time staff coordination.
-            </span>
-          </p>
-          <div className="block group-[.expanded]:hidden text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-            CLICK TO EXPAND PROTOCOL
+          style={{ 
+            transformStyle: 'flat',
+            transform: isLoggingIn 
+              ? 'translateX(0)' 
+              : isFlipped 
+                ? 'translateX(-101%)' 
+                : 'translateX(0)' 
+          }}
+        >
+          {/* Mobile Logo */}
+          <div className="block lg:hidden mx-auto animate-slide-up">
+            <Card isLoggingIn={isLoggingIn} className="w-32 h-32">
+              <div className="w-50 h-50 bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
+                <img src="/favicon.svg" alt="Palomar Logo" className="w-full h-full object-contain" />
+              </div>
+            </Card>
           </div>
-          <div className="hidden group-[.expanded]:block text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-            CLICK TO COLLAPSE PROTOCOL
-          </div>
-        </div>
-      </Card>
-    </div>
-  </div>
 
-  {/* ── SIBLING 3: ABSOLUTE RECOVERY CARD (Sits off-screen. Slides smoothly onto right column during Recovery) ── */}
-  {/* Sits at right-0. When flipped, it transitions to translateX(0) (slides on screen). In login mode, it sits at translateX(42vw) (off-screen) */}
-  <div 
-    className="absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-4"
-    style={{
-      transform: isLoggingIn 
-        ? 'fixed inset-0 z-50 bg-[var(--bg-page)]' 
-        : isFlipped 
-          ? 'translateX(0) scale(1)' 
-          : 'translateX(100%) scale(0.95)',
-      opacity: isLoggingIn ? 1 : isFlipped ? 1 : 0,
-      pointerEvents: isFlipped && !isLoggingIn ? 'auto' : 'none',
-      transition: 'transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1)'
-    }}
-  >
-    <Card isLoggingIn={isLoggingIn}>
-      <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl font-body font-body">
-        <div>
-          <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-            RECOVERY MODE
+          {/* Desktop Logo */}
+          <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
+            <Card isLoggingIn={isLoggingIn} className="w-56 h-40">
+              <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-4 flex items-center justify-center transition-all duration-500">
+                <img src={landscapeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
+              </div>
+            </Card>
           </div>
-          {recoveryStep === 'email' ? (
-            <div className="animate-slide-up">
-              <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
-                Enter authorized email to receive security key.
-              </p>
-              <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body">
-                <Input
-                  {...registerRecovery('email')}
-                  type="email"
-                  label="Email Address"
-                  icon={<Mail className="w-4 h-4 text-slate-400" />}
-                  error={!!recoveryErrors.email}
-                  shake={shakeRecovery}
-                  touched={touchedRecovery.email}
-                  isPopulated={!!watchRecoveryEmail}
-                />
-                {recoveryError && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center">
-                    {recoveryError}
-                  </div>
-                )}
-                <Button type="submit" loading={isRecoverySubmitting} loadingLabel="TRANSMITTING...">
-                  Send Security OTP
-                </Button>
-              </form>
-            </div>
-          ) : (
-            <form onSubmit={handlePasswordChange} className="space-y-4 font-body animate-slide-up">
-              <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-2 leading-relaxed font-bold">
-                Enter the 6-digit code sent to your email.
-              </p>
-              <div className="flex justify-between gap-1.5 px-2 my-3">
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => { otpRefs.current[idx] = el; }}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    autoComplete="one-time-code"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    onPaste={handleOtpPaste}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="0"
-                    aria-label={`OTP digit ${idx + 1}`}
-                    className="w-10 h-12 text-center text-xl font-bold bg-slate-200 dark:bg-neutral-800 text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:border-[#1b365d] dark:focus:border-[#bf0202]"
-                  />
-                ))}
-              </div>
-              <div className="field-wrap relative">
-                <input
-                  id="recoveryNewPassword"
-                  type={showNewPassword ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="field-input"
-                  placeholder=" "
-                  aria-label="New password"
-                  required
-                />
-                <label htmlFor="recoveryNewPassword" className="field-label">
-                  <Lock className="w-4 h-4 text-slate-400" />
-                  <span>Enter your new password</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword((p) => !p)}
-                  className="field-visibility-toggle cursor-pointer"
-                  aria-label="Toggle new password visibility"
-                >
-                  {showNewPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                </button>
-              </div>
-              {recoveryError && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-500 font-mono text-center font-body">
-                  {recoveryError}
+
+          {/* Login Card */}
+          <Card isLoggingIn={isLoggingIn}>
+            <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
+              <div>
+                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
+                  LOGIN
                 </div>
-              )}
-              <Button type="submit" loading={isRecoverySubmitting} loadingLabel="TRANSMITTING..." loadingSubtitle={recoveryStatusText}>
-                Restore System Access
-              </Button>
-            </form>
-          )}
-        </div>
-        <div className="space-y-4 font-body mt-4">
-          <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up animate-slide-up animate-slide-up">
-            <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
-              <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-              <span>{recoveryStep === 'email' ? 'RECOVERY PROTOCOL' : 'VERIFICATION STEP'}</span>
-            </div>
-            <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-              {recoveryStep === 'email'
-                ? 'Recovery Mode transmits a secure OTP (One-Time Password) to your registered email address. This is used to request password changes and restore access to your account.'
-                : 'Enter the 6-digit code sent to your email. Verify the code first, then enter your new password below to complete the reset.'}
-            </p>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            {recoveryStep === 'otp' && (
-              <div className="text-center text-[11px] font-bold animate-slide-up font-body">
-                {resendTimer > 0 ? (
-                  <span className="text-slate-400">Wait {resendTimer}s to resend code</span>
-                ) : (
-                  <button type="button" onClick={() => requestOtp(recoveryEmail)} className="text-[#1b365d] dark:text-[#bf0202] hover:underline cursor-pointer font-body">
-                    Resend code
-                  </button>
-                )}
-              </div>
-            )}
-            <button 
-  onClick={handleBackToLoginClick} 
-  className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-body"
->
-  Already have credentials? Back to Login
-</button>
-          </div>
-          <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold font-body">
-            © {new Date().getFullYear()} WOLF PALOMAR.
-          </div>
-        </div>
-      </div>
-    </Card>
-  </div>
+                <p className="text-center font-heading text-[10px] tracking-[2.4px] text-[#1b365d] dark:text-blue-400 uppercase opacity-90 mb-2">
+                  GYM MANAGEMENT SYSTEM
+                </p>
+                <div className="flex justify-center mb-6">
+                  <span className="text-[9px] text-slate-500 dark:text-slate-300 tracking-widest border border-blue-500/30 dark:border-rose-500/30 bg-blue-500/5 dark:bg-rose-500/10 rounded-full px-3 py-1 font-mono uppercase">
+                    v{APP_VERSION}
+                  </span>
+                </div>
 
-</div>
+                <form onSubmit={handlePreLoginSubmit} className="space-y-4 font-body">
+                  <Input
+                    {...registerLogin('usernameOrEmail')}
+                    type="text"
+                    label={dynamicLabel}
+                    icon={<Mail className="w-4 h-4 text-slate-400" />}
+                    error={!!loginErrors.usernameOrEmail}
+                    shake={shakeEmail}
+                    touched={touchedLogin.usernameOrEmail}
+                    isPopulated={!!watchIdentifier}
+                  />
+                  <Input
+                    {...registerLogin('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    label="Password"
+                    icon={<Lock className="w-4 h-4 text-slate-400" />}
+                    error={!!loginErrors.password}
+                    shake={shakePassword}
+                    touched={touchedLogin.password}
+                    isPopulated={!!watchPassword}
+                    rightElement={
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((p) => !p)}
+                        className="field-visibility-toggle cursor-pointer"
+                        aria-label="Toggle password visibility"
+                      >
+                        {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                      </button>
+                    }
+                  />
+                  <div className="flex items-start gap-2.5 my-2">
+                    <input type="checkbox" id="loginAgreement" {...registerLogin('agree')} className="styled-checkbox" />
+                    <label htmlFor="loginAgreement" className="checkbox-label">
+                      <span className="checkbox-ui" />
+                      <span className="text-[10px] text-slate-900 dark:text-slate-400 font-bold">
+                        I agree to the <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Terms & Conditions</a> and <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Privacy Policy</a>.
+                      </span>
+                    </label>
+                  </div>
+                  <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">Login Now</Button>
+                  <Button type="button" variant="google" onClick={handleGoogleLogin} loading={isGoogleSubmitting}>
+                    <svg className="w-4 h-4 text-[#ea4335] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                    </svg>
+                    <span>Continue With Google</span>
+                  </Button>
+                </form>
+              </div>
+              <div className="space-y-4 mt-4 font-body">
+                <div className="flex items-center justify-center text-xs font-bold text-slate-400">
+                  <button onClick={() => { setIsFlipped(true); resetRecovery(); }} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer">
+                    Forgot Password?
+                  </button>
+                </div>
+                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
+                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+                    <span>ACCESS PROTOCOL</span>
+                  </div>
+                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+                    This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.
+                  </p>
+                </div>
+                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
+                  © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* ── SIBLING 2: RIGHT PANEL ── */}
+        <div 
+          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] ${
+            isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          } ${isFlipped ? 'carousel-flipped' : ''}`}
+          style={{ 
+            transformStyle: 'flat',
+            transform: isLoggingIn ? 'translateX(0)' : isFlipped ? 'translateX(-43vw)' : 'translateX(0)' 
+          }}
+        >
+          <div 
+            ref={carouselBgRef}
+            className="carousel-bg-wrapper absolute inset-0"
+            style={{
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              transform: 'scale(1.12) translate3d(0, 0, 0)'
+            }}
+          >
+            {CAROUSEL_IMAGES.map((image, index) => (
+              <img
+                key={index}
+                src={image}
+                alt={`Gym view ${index + 1}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
+                  activeSlide === index ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            ))}
+          </div>
+          <div 
+            className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2" 
+            style={{
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              transform: 'translate3d(0, 0, 0)'
+            }}
+          />
+          <div 
+            className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none"
+            style={{ transformStyle: 'flat' }}
+          >
+            <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
+              BEYOND <br />
+              <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
+              <span className="text-[#031d7d] dark:text-[#bf0202] animate-[blink_0.8s_infinite]">|</span>
+            </h2>
+            <Card expandable={true} className="max-w-lg h-auto">
+              <div className="bg-black/50 border border-white/10 p-6 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 font-body text-left">
+                <p className="text-xs text-slate-200 leading-relaxed font-bold">
+                  The ultimate terminal for Palomar Gym administrative control. Encrypted, fast, and precise.
+                  <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-bold animate-slide-up">
+                    Wolf OS provides end-to-end telemetry for modern fitness centers — managing membership lifecycles, financial encryption, and real-time staff coordination.
+                  </span>
+                </p>
+                <div className="block group-[.expanded]:hidden text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
+                  CLICK TO EXPAND PROTOCOL
+                </div>
+                <div className="hidden group-[.expanded]:block text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
+                  CLICK TO COLLAPSE PROTOCOL
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Glowing divider lines nested inside the RIGHT PANEL (one left, one right) */}
+          <div className="auth-divider-line auth-line-left" />
+          <div className="auth-divider-line auth-line-right" />
+        </div>
+
+        {/* ── SIBLING 3: ABSOLUTE RECOVERY CARD ── */}
+        <div 
+          className="absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-4"
+          style={{
+            transformStyle: 'flat',
+            transform: isLoggingIn 
+              ? 'fixed inset-0 z-50 bg-[var(--bg-page)]' 
+              : isFlipped 
+                ? 'translateX(0) scale(1)' 
+                : 'translateX(100%) scale(0.95)',
+            opacity: isLoggingIn ? 1 : isFlipped ? 1 : 0,
+            pointerEvents: isFlipped && !isLoggingIn ? 'auto' : 'none',
+            transition: 'transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1)'
+          }}
+        >
+          <Card isLoggingIn={isLoggingIn}>
+            <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl font-body">
+              <div>
+                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
+                  RECOVERY MODE
+                </div>
+                <div className="animate-slide-up">
+                  <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
+                    Enter authorized email. We will send you secure password-reset link to your email inbox.
+                  </p>
+                  <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body">
+                    <Input
+                      {...registerRecovery('email')}
+                      type="email"
+                      label="Email Address"
+                      icon={<Mail className="w-4 h-4 text-slate-400" />}
+                      error={!!recoveryErrors.email}
+                      shake={shakeRecovery}
+                      touched={touchedRecovery.email}
+                      isPopulated={!!watchRecoveryEmail}
+                    />
+                    
+                    {recoveryError && (
+                      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] text-red-500 font-mono text-center">
+                        {recoveryError}
+                      </div>
+                    )}
+                    
+                    <Button type="submit" loading={isRecoverySubmitting} loadingLabel="DISPATCHING LINK...">
+                      Change Password
+                    </Button>
+                  </form>
+                </div>
+              </div>
+              <div className="space-y-4 font-body mt-4">
+                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up">
+                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
+                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+                    <span>RECOVERY PROTOCOL</span>
+                  </div>
+                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
+                    We will send a secure password reset link to your email address. Please check your inbox and follow the link to complete the reset.
+                  </p>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={handleBackToLoginClick} 
+                    className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-body"
+                  >
+                    Already have credentials? Back to Login
+                  </button>
+                </div>
+                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold font-body">
+                  © {new Date().getFullYear()} WOLF PALOMAR.
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+      </div>
 
       {/* RIGHT PANEL: Dynamic Spacer */}
-      <div className="auth-right h-full" />
+      <div className="flex-1 h-full" />
 
-      {/* ── MODAL: Exit recovery confirm ──────────────────────────────────── */}
+      {/* ── MODAL: Exit recovery confirm ── */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold font-body text-center">
           If you leave recovery, you must re-verify credentials. Discard this operation?
@@ -887,16 +841,16 @@ export const Login: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ── MODAL: Recovery success ───────────────────────────────────────── */}
-      <Modal
+      {/* ── MODAL: Recovery success ── */}
+       <Modal
         isOpen={showSuccessModal}
         onClose={() => { setShowSuccessModal(false); setIsFlipped(false); resetRecovery(); }}
-        title="Access Restored"
+        title="Recovery Link Sent"
       >
         <div className="space-y-6 font-body text-center">
           <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-            Your password has been successfully updated.
+            We have successfully sent a secure password reset link to <span className="font-mono text-slate-950 dark:text-white select-all">{recoveryEmail}</span>. Please check your inbox and follow the link to complete the reset.
           </p>
           <Button onClick={() => { setShowSuccessModal(false); setIsFlipped(false); resetRecovery(); }}>
             Return to Login

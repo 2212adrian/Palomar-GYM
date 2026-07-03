@@ -37,17 +37,11 @@ export const handler = async (event) => {
       };
     }
 
-    // Extract client public IP securely from Netlify headers
-    const clientIp = event.headers['client-ip'] || 
-                     event.headers['x-nf-client-connection-ip'] || 
-                     event.headers['x-forwarded-for'] || 
-                     '127.0.0.1';
-
     // 1. Fetch user by email securely
     const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
     if (listError) throw listError;
 
-    const targetUser = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const targetUser = users.find((u) => u.email && u.email.toLowerCase() === email.toLowerCase());
 
     if (!targetUser) {
       return {
@@ -62,34 +56,6 @@ export const handler = async (event) => {
 
     // --- ACTION A: GENERATE AND SEND OTP ---
     if (action === 'send-otp') {
-      
-      // SERVER-SIDE IP RATE LIMIT CHECK
-      const { data: limitData } = await supabase
-        .from('rate_limits')
-        .select('last_requested_at')
-        .eq('ip', clientIp)
-        .maybeSingle();
-
-      if (limitData) {
-        const lastRequested = new Date(limitData.last_requested_at).getTime();
-        const timePassed = Date.now() - lastRequested;
-        const remainingTime = Math.ceil((60 * 1000 - timePassed) / 1000); // 1-minute lockdown
-
-        if (remainingTime > 0) {
-          return {
-            statusCode: 429,
-            headers: { 
-              'Access-Control-Allow-Origin': '*',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-              error: `[ERR_429] RATE_LIMIT: Please wait ${remainingTime} seconds before requesting a new key.`,
-              remaining_seconds: remainingTime
-            }),
-          };
-        }
-      }
-
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
 
@@ -103,11 +69,6 @@ export const handler = async (event) => {
       });
 
       if (updateError) throw updateError;
-
-      // Upsert the IP Rate Limit timestamp to prevent spam
-      await supabase
-        .from('rate_limits')
-        .upsert({ ip: clientIp, last_requested_at: new Date().toISOString() });
 
       // Send the email via SMTP
       const transporter = nodemailer.createTransport({

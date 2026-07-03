@@ -12,7 +12,7 @@ export const Card: React.FC<CardProps> = ({
   children, 
   isFlipped, 
   isLoggingIn, 
-  className = 'w-[400px] h-[620px]',
+  className = 'w-100 h-155',
   expandable = false 
 }) => {
   const [mounted, setMounted] = useState(false);
