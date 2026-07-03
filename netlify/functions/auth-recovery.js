@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import nodemailer from 'nodemailer';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -37,7 +36,7 @@ export const handler = async (event) => {
       };
     }
 
-    // 1. Fetch user by email securely
+    // 1. Fetch user by email securely (Preserved to maintain your custom 404 notification on frontend)
     const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
     if (listError) throw listError;
 
@@ -54,57 +53,21 @@ export const handler = async (event) => {
       };
     }
 
-    // --- ACTION A: GENERATE AND SEND OTP ---
+    // --- ACTION A: SEND OTP VIA SUPABASE SMTP ---
     if (action === 'send-otp') {
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+      // Trigger Supabase's native reset flow, which routes directly through your Dashboard SMTP
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
 
-      // Save OTP into user's app metadata securely
-      const { error: updateError } = await supabase.auth.admin.updateUserById(targetUser.id, {
-        user_metadata: {
-          ...targetUser.user_metadata,
-          recovery_otp: otpCode,
-          recovery_otp_expires_at: otpExpiresAt,
-        },
-      });
-
-      if (updateError) throw updateError;
-
-      // Send the email via SMTP
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: process.env.SMTP_PORT === '465',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      const mailOptions = {
-        from: `"Wolf Palomar Gym" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject: 'WOLF OS - SECURITY PROTOCOL KEY',
-        html: `
-          <div style="font-family: sans-serif; padding: 30px; background-color: #0f1012; color: #ffffff; border-radius: 12px; max-width: 500px; margin: auto; border: 1px solid #bf0202;">
-            <div style="text-align: center; margin-bottom: 20px;">
-              <h2 style="color: #bf0202; margin: 0; font-size: 24px; tracking: 2px;">WOLF OS RECOVERY</h2>
-              <p style="color: #a1a1a1; font-size: 11px; margin: 5px 0 0 0;">CONNECTED SECURITY PROTOCOL</p>
-            </div>
-            <p style="font-size: 14px; line-height: 1.6; color: #e1e1e1;">
-              An administrator terminal recovery sequence was initiated. Use the secure 6-digit key below to complete verification:
-            </p>
-            <div style="font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #ffffff; background-color: #1a1c1f; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0; border: 1px solid #333;">
-              ${otpCode}
-            </div>
-            <p style="font-size: 11px; color: #a1a1a1; line-height: 1.5; margin: 0;">
-              * This code is valid for exactly 10 minutes. If you did not request this, please ignore this communication.
-            </p>
-          </div>
-        `,
-      };
-
-      await transporter.sendMail(mailOptions);
+      if (resetError) {
+        return {
+          statusCode: 400,
+          headers: { 
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ error: `[ERR_400] REQUEST_FAILED: ${resetError.message}` }),
+        };
+      }
 
       return {
         statusCode: 200,
@@ -129,40 +92,27 @@ export const handler = async (event) => {
         };
       }
 
-      const savedOtp = targetUser.user_metadata?.recovery_otp;
-      const expiresAt = targetUser.user_metadata?.recovery_otp_expires_at;
+      // 1. Validate the incoming 6-digit OTP directly with Supabase Auth
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: otp,
+        type: 'recovery', // Natively validates recovery OTPs
+      });
 
-      // Validation
-      if (!savedOtp || savedOtp !== otp) {
+      if (verifyError) {
         return {
           statusCode: 400,
           headers: { 
             'Access-Control-Allow-Origin': '*',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ error: '[ERR_400] REQUEST_INVALID: Security OTP verification failed.' }),
+          body: JSON.stringify({ error: `[ERR_400] REQUEST_INVALID: ${verifyError.message}` }),
         };
       }
 
-      if (!expiresAt || Date.now() > expiresAt) {
-        return {
-          statusCode: 400,
-          headers: { 
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ error: '[ERR_400] REQUEST_INVALID: Security OTP has expired.' }),
-        };
-      }
-
-      // Update password and erase the single-use OTP
-      const { error: updateError } = await supabase.auth.admin.updateUserById(targetUser.id, {
+      // 2. Since validation succeeded, update password securely using the admin client
+      const { error: updateError } = await supabase.auth.admin.updateUserById(data.user.id, {
         password: new_password,
-        user_metadata: {
-          ...targetUser.user_metadata,
-          recovery_otp: null,
-          recovery_otp_expires_at: null,
-        },
       });
 
       if (updateError) throw updateError;
