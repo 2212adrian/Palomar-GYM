@@ -509,7 +509,7 @@ export const RatesPayments: React.FC = () => {
                     value={newCardFee}
                     placeholder="0"
                     title="New Card Fee"
-                    onChange={(e) => setNewCardFee(Math.max(0, parseInt(e.target.value) || 0))}
+                    onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
                     className="w-full pl-8 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-mono outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
                   />
                 </div>
