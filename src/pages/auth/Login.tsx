@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon, Loader2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
@@ -71,7 +71,6 @@ export const Login: React.FC = () => {
   // ─── Detect Sandboxed Preview Mode ────────────────────────────────────────
   const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
   const [gymConfig, setGymConfig] = useState<any>(null);
-  const [isConfigLoaded, setIsConfigLoaded] = useState<boolean>(false);
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
 
   // Dynamic fallbacks matching gym_profile database schema default values
@@ -89,7 +88,6 @@ export const Login: React.FC = () => {
     ? gymConfig.carouselImages 
     : CAROUSEL_IMAGES;
 
-  const activeGymName = gymConfig?.gymName || 'WOLF PANEL';
   const activeGymDescription = gymConfig?.gymDescription || 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
 
   // Retrieve active config (from database, or local draft if in Preview mode)

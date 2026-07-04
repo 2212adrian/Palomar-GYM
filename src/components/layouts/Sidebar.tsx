@@ -90,26 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const { user, profile } = useAuthStore() as any; 
   const [activeHeaderTab, setActiveHeaderTab] = useState<'profile' | 'target'>('profile');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  
+
   // Single-expand Accordion State: Only allows one dropdown to be active
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
 
   // Dedicated Mobile Single-expand State
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(null);
-
-  // Synchronize internal theme state with global theme events
-  useEffect(() => {
-    const activeTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-    setTheme(activeTheme);
-
-    const handleThemeEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<'dark' | 'light'>;
-      setTheme(customEvent.detail);
-    };
-    window.addEventListener('theme-changed', handleThemeEvent);
-    return () => window.removeEventListener('theme-changed', handleThemeEvent);
-  }, []);
 
   // Menu structure (Removed System to convert into static bottom buttons)
   const navigationMenu: MenuItem[] = [
