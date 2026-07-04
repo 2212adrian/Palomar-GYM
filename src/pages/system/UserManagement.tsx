@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
@@ -125,6 +126,12 @@ export const UserManagement: React.FC = () => {
 
       const registeredUserId = data?.id || data?.user_id || data;
 
+      await logAudit(
+        'USER_PRE_REGISTERED',
+        `Pre-registered new user account "${newUserName.trim()}" with role "${newUserRole}".`,
+        registeredUserId
+      );
+
       if (authMethod === 'email') {
         const { error: resendError } = await supabase.auth.resend({
           type: 'signup',
@@ -230,6 +237,12 @@ export const UserManagement: React.FC = () => {
 
       if (error) throw error;
 
+      await logAudit(
+        'USER_DELETED',
+        `Permanently deleted staff/admin account "${deleteTargetUser.username}".`,
+        deleteTargetUser.id
+      );
+
       toast.success(`Account for "${deleteTargetUser.username}" deleted successfully.`);
       setDeleteModalOpen(false);
       setDeleteTargetUser(null);
@@ -266,6 +279,12 @@ export const UserManagement: React.FC = () => {
         .eq('id', targetId);
 
       if (error) throw error;
+
+       await logAudit(
+        'USER_STATUS_TOGGLED',
+        `Changed account status for "${targetName}" to "${nextStatus}".`,
+        targetId
+      );
       
       toast.success(`Status for "${targetName}" username changed to ${nextStatus}.`);
       fetchUsers();
@@ -327,11 +346,11 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
         const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
-
+        
         return (
           <span className="font-mono text-xs max-w-45 truncate block text-slate-500 dark:text-slate-400">
             {isLocalAccount ? (
-              <span className="text-slate-400 dark:text-slate-600 italic">No associated email</span>
+              <span className="text-slate-400 dark:text-slate-600 italic">{displayEmail}</span>
             ) : (
               displayEmail
             )}

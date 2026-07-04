@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Menu, X, ChevronDown, LogOut, LayoutDashboard, 
-  Users, ShoppingBag, ClipboardList, Settings, Sun, Moon
+  Users, ShoppingBag, ClipboardList, Settings
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -46,9 +46,9 @@ const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: s
         return;
       }
       if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:')) {
-  setSrcUrl(path);
-  return;
-}
+        setSrcUrl(path);
+        return;
+      }
       const cleanPath = path.startsWith('/') ? path.slice(1) : path;
       try {
         const { data, error } = await supabase.storage
@@ -57,13 +57,13 @@ const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: s
 
         if (error || !data?.signedUrl) {
           const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-          setSrcUrl(pubData?.publicUrl || null); // <-- Corrected typo here
+          setSrcUrl(pubData?.publicUrl || null); // Fixed property name
         } else {
           setSrcUrl(data.signedUrl);
         }
       } catch {
         const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-        setSrcUrl(pubData?.publicUrl || null); // <-- Corrected typo here
+        setSrcUrl(pubData?.publicUrl || null); // Fixed property name
       }
     };
     fetchSignedUrl();
@@ -90,6 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const { user, profile } = useAuthStore() as any; 
   const [activeHeaderTab, setActiveHeaderTab] = useState<'profile' | 'target'>('profile');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   
   // Single-expand Accordion State: Only allows one dropdown to be active
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
@@ -97,20 +98,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Dedicated Mobile Single-expand State
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(null);
 
-  // Self-Contained Theme Sync
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    if (typeof window === 'undefined') return 'dark';
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark' || saved === 'light') return saved;
-    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-  });
-
+  // Synchronize internal theme state with global theme events
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('dark',  theme === 'dark');
-    root.classList.toggle('light', theme === 'light');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    const activeTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    setTheme(activeTheme);
+
+    const handleThemeEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<'dark' | 'light'>;
+      setTheme(customEvent.detail);
+    };
+    window.addEventListener('theme-changed', handleThemeEvent);
+    return () => window.removeEventListener('theme-changed', handleThemeEvent);
+  }, []);
 
   // Menu structure (Removed System to convert into static bottom buttons)
   const navigationMenu: MenuItem[] = [
@@ -231,7 +230,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside 
-        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-[#141414] h-full relative select-none shrink-0"
+        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-[#141414] h-full relative select-none shrink-0 animate-fade-in"
         style={{
           width: collapsed ? '5rem' : '18rem',
           transition: 'width 300ms cubic-bezier(0.77, 0, 0.175, 1)'
@@ -248,8 +247,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <img src="/favicon.svg" alt="Icon" className="w-6 h-6 animate-pulse" />
-              <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PANEL</span>
+              <img src="/favicon.svg" alt="Icon" className="w-6 h-6 animate-pulse animate-duration-3000" />
+              <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
             </div>
             <button
               onClick={() => setCollapsed(true)}
@@ -285,7 +284,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
-          {/* Header Content Panel */}
+          {/* Header Content Panel (Adaptive contrast text colors corrected) */}
           <div className="relative h-18 overflow-hidden">
             {activeHeaderTab === 'profile' ? (
               <div className="flex items-center gap-3 animate-slide-up h-full">
@@ -296,17 +295,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   />
                   <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
                 </div>
-                <div className="overflow-hidden">
+                <div className="overflow-hidden text-left">
                   <h4 className="font-heading text-xs tracking-wider uppercase truncate text-slate-800 dark:text-slate-200">{profile?.username || 'User'}</h4>
                   <p className="text-[9px] font-heading text-[#1b365d] dark:text-[#bf0202] uppercase tracking-widest flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
                     {profile?.role || 'Staff'}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate font-mono">{user?.email}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">{user?.email}</p>
                 </div>
               </div>
             ) : (
-              <div className="space-y-2.5 animate-slide-up text-[10px] font-bold text-slate-400 h-full flex flex-col justify-center">
+              <div className="space-y-2.5 animate-slide-up text-[10px] font-bold text-slate-500 dark:text-slate-400 h-full flex flex-col justify-center text-left">
                 <div className="flex justify-between font-heading tracking-wider">
                   <span>REVENUE TARGET:</span>
                   <span className="text-slate-900 dark:text-white font-mono font-black">₱5,000 / ₱8,000</span>
@@ -446,27 +445,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer Controls */}
-        <div className="p-4 border-t border-slate-200 dark:border-white/5 space-y-3 mt-auto relative z-10 bg-slate-50/30 dark:bg-neutral-950/20">
-          
+        {/* Sidebar Footer Controls - Re-engineered for perfect PC collapsed symmetry */}
+        <div className={`border-t border-slate-200 dark:border-white/5 mt-auto relative z-10 bg-slate-50/30 dark:bg-neutral-950/20 transition-all duration-300 ${
+          collapsed ? 'p-3 space-y-4' : 'p-4 space-y-3'
+        }`}>
           <Link
             to="/system/account"
-            className="w-full flex items-center justify-center gap-2.5 p-3 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5 text-slate-700 dark:text-slate-300 hover:opacity-90 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black"
+            className={`flex items-center justify-center rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5 text-slate-700 dark:text-slate-300 hover:opacity-90 transition-all cursor-pointer ${
+              collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
+            }`}
+            title={collapsed ? "System Settings" : undefined}
           >
-            <Settings className="w-4 h-4" />
-            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>SYSTEM SETTINGS</span>
+            <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
+            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>SETTINGS</span>
           </Link>
 
           <button
             onClick={onLogout}
             aria-label="Logout"
-            title="Logout"
-            className={`w-full flex items-center justify-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/20 dark:text-slate-300 dark:text-slate-300 dark:text-slate-300 dark:text-slate-300 dark:text-slate-300 dark:text-slate-300 text-slate-700 dark:text-slate-300 text-[10px] tracking-widest font-black ${
-              collapsed ? 'px-0' : ''
+            title={collapsed ? "Logout" : undefined}
+            className={`flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer ${
+              collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
             }`}
           >
-            <LogOut className="w-4 h-4" />
-            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT SYSTEM</span>
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT</span>
           </button>
         </div>
       </aside>
@@ -490,35 +493,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex flex-col h-full justify-between relative z-10">
             <div className="space-y-6">
               
-              {/* Mobile Header with Theme selection */}
+              {/* Mobile Header with brand naming updated */}
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
-                <button
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  className="flex items-center gap-2.5 bg-slate-100 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-3 py-1.5 shadow-sm cursor-pointer hover:opacity-95 transition-all"
-                >
-                  <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
-                    {theme === 'dark' ? (
-                      <>
-                        <span className="w-2.5 h-2.5 bg-[#0f1012]" />
-                        <span className="w-2.5 h-2.5 bg-[#bf0202]" />
-                        <span className="w-2.5 h-2.5 bg-[#13161a]" />
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-2.5 h-2.5 bg-[#ffffff]" />
-                        <span className="w-2.5 h-2.5 bg-[#1b365d]" />
-                        <span className="w-2.5 h-2.5 bg-[#f3f4f6]" />
-                      </>
-                    )}
-                  </div>
-                  <span className="text-slate-700 dark:text-slate-300 text-[9px] font-black tracking-widest flex items-center gap-1 font-body">
-                    {theme === 'dark' ? (
-                      <><Sun className="w-3.5 h-3.5 text-amber-400" /><span>LIGHT</span></>
-                    ) : (
-                      <><Moon className="w-3.5 h-3.5 text-indigo-400" /><span>DARK</span></>
-                    )}
-                  </span>
-                </button>
+                <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
 
                 <button 
                   onClick={() => setMobileOpen(false)} 
@@ -535,7 +512,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="w-12 h-12 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-950 overflow-hidden">
                   <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
                 </div>
-                <div className="overflow-hidden">
+                <div className="overflow-hidden text-left">
                   <h4 className="font-heading text-xs tracking-wider uppercase text-slate-900 dark:text-white truncate">{profile?.username || 'User'}</h4>
                   <p className="text-[9px] font-heading text-[#1b365d] dark:text-[#bf0202] uppercase tracking-widest">{profile?.role || 'Staff'}</p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">{user?.email}</p>
@@ -642,7 +619,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-neutral-800 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
               >
                 <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                <span>SYSTEM SETTINGS</span>
+                <span>SETTINGS</span>
               </Link>
 
               <button
@@ -650,7 +627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
               >
                 <LogOut className="w-4 h-4" />
-                <span>LOGOUT SYSTEM</span>
+                <span>LOGOUT</span>
               </button>
             </div>
           </div>

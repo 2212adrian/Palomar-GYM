@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
   /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
-  @define-variant dark (&:where(.dark, .dark *));
+  @variant dark (&:where(.dark, .dark *));
 
   
 /* ==========================================================

@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
@@ -29,6 +29,7 @@ import carousel4 from '../../assets/4-carousel.webp';
 import carousel5 from '../../assets/5-carousel.webp';
 import carousel6 from '../../assets/6-carousel.webp';
 import landscapeLogo from '../../assets/landscape-logo.webp';
+import googleIcon from '../../assets/Google_Icon.webp';
 import hexagonBg from '../../assets/textures/hexagons.svg';
 
 const CAROUSEL_IMAGES = [carousel1, carousel2, carousel3, carousel4, carousel5, carousel6];
@@ -67,7 +68,93 @@ export const Login: React.FC = () => {
   const from = (location.state as any)?.from?.pathname || '/dashboard';
   const safeFrom = from === '/login' ? '/dashboard' : from;
 
-  // ─── Core UI States (Only plays intro on fresh session or explicit reset) ──────────────────
+  // ─── Detect Sandboxed Preview Mode ────────────────────────────────────────
+  const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
+  const [gymConfig, setGymConfig] = useState<any>(null);
+  const [isConfigLoaded, setIsConfigLoaded] = useState<boolean>(false);
+  const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
+
+  // Dynamic fallbacks matching gym_profile database schema default values
+  const activeGymAddress = gymConfig?.gymAddress || '123 Sample Street, Barangay Central, Quezon City, Metro Manila';
+  const activeContactName1 = gymConfig?.contactName1 || 'Staff Ryan';
+  const activeContactNumber1 = gymConfig?.contactNumber1 || '09762607481';
+  const activeContactName2 = gymConfig?.contactName2 || 'Admin Wolf';
+  const activeContactNumber2 = gymConfig?.contactNumber2 || '09123456789';
+  const activeEmailAddress = gymConfig?.emailAddress || 'contact@wolfpalomargym.com';
+
+  // ─── Resolve Dynamic Media Assets (Declared first to prevent scoping errors) ───
+  const activeLogo = gymConfig?.gymLogo || landscapeLogo;
+
+  const activeCarouselImages = (gymConfig?.carouselImages && Array.isArray(gymConfig.carouselImages) && gymConfig.carouselImages.length > 0)
+    ? gymConfig.carouselImages 
+    : CAROUSEL_IMAGES;
+
+  const activeGymName = gymConfig?.gymName || 'WOLF PANEL';
+  const activeGymDescription = gymConfig?.gymDescription || 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
+
+  // Retrieve active config (from database, or local draft if in Preview mode)
+  useEffect(() => {
+    const loadBranding = async () => {
+      let activeConfig = null;
+
+      if (isPreview) {
+        const savedDraft = localStorage.getItem('palomar_gym_profile_draft');
+        if (savedDraft) {
+          try {
+            activeConfig = JSON.parse(savedDraft);
+          } catch (e) {
+            console.warn('Failed to parse local draft configuration.');
+          }
+        }
+      }
+
+      if (!activeConfig) {
+        try {
+          const { data, error } = await supabase
+            .from('gym_profile')
+            .select('*')
+            .eq('id', 1)
+            .single();
+
+          if (error) throw error;
+          if (data) {
+            activeConfig = {
+              gymName: data.gym_name,
+              gymDescription: data.gym_description,
+              gymAddress: data.gym_address,
+              contactName1: data.contact_name_1,
+              contactNumber1: data.contact_number_1,
+              contactName2: data.contact_name_2,
+              contactNumber2: data.contact_number_2,
+              emailAddress: data.email_address,
+              gymLogo: data.gym_logo,
+              carouselImages: data.carousel_images
+            };
+          }
+        } catch (err: any) {
+          console.warn('Could not read cloud configuration, using default branding assets:', err.message);
+          const savedProduction = localStorage.getItem('palomar_gym_profile');
+          if (savedProduction) {
+            try {
+              activeConfig = JSON.parse(savedProduction);
+            } catch (e) {
+              console.warn('Local storage fallback parsed unsuccessfully.');
+            }
+          }
+        }
+      }
+
+      if (activeConfig) {
+        setGymConfig(activeConfig);
+      }
+      setIsAssetPreloaded(true);
+    };
+
+    loadBranding();
+  }, [isPreview]);
+
+  // ─── Core UI States ────────────────────────────────────────────────────────
+  const [isAssetPreloaded, setIsAssetPreloaded] = useState<boolean>(false);
   const [isReady, setIsReady] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('loginIntroPlayed') === 'true';
@@ -156,8 +243,9 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // ─── Session Guard ────────────────────────────────────────────────────────
+  // ─── Session Guard (Bypassed entirely in preview mode) ────────────────────
   useEffect(() => {
+    if (isPreview) return; // Prevent session routing inside sandbox
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
     if (initialized && user && !isLoggingIn && !isOutroActive) {
       const userProfile = (useAuthStore.getState() as any).profile;
@@ -168,7 +256,7 @@ export const Login: React.FC = () => {
       const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : safeFromPath;
       navigate(targetRoute, { replace: true });
     }
-  }, [initialized, user, navigate, isLoggingIn, location.state]);
+  }, [initialized, user, navigate, isLoggingIn, location.state, isPreview]);
 
   // ─── Handle OAuth Errors in URL ───────────────────────────────────────────
   useEffect(() => {
@@ -196,27 +284,25 @@ export const Login: React.FC = () => {
     }
   }, [storeError, setError]);
 
-  // ─── Intro Transition Activation (Only once per session, resets on logout) ──
+  // ─── Intro Transition Activation ──────────────────────────────────────────
   useEffect(() => {
-    // 1. Detect if the user explicitly logged out (via router state or URL parameters)
     const hasLoggedOut = 
       (location.state as any)?.loggedOut || 
       new URLSearchParams(location.search).has('logout');
     
     if (hasLoggedOut) {
       sessionStorage.removeItem('loginIntroPlayed');
-      // Instantly wipe history state and query parameters to prevent re-triggering on F5 refreshes
       navigate(location.pathname, { replace: true, state: {} });
       return;
     }
 
-    // 2. If already played during this tab session, skip transition completely
-    if (sessionStorage.getItem('loginIntroPlayed') === 'true') {
+    const isIntroPlayed = sessionStorage.getItem('loginIntroPlayed') === 'true';
+
+    if (isIntroPlayed || isPreview) {
       setIsReady(true);
       return;
     }
 
-    // 3. First-time entry sequence: collapse visual elements and open them on a timer
     setIsReady(false);
     const timer = setTimeout(() => {
       setIsReady(true);
@@ -224,18 +310,20 @@ export const Login: React.FC = () => {
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [location.search, location.state, navigate]);
+  }, [location.search, location.state, navigate, isPreview]);
 
   // ─── Carousel Cycle ───────────────────────────────────────────────────────
   useEffect(() => {
+    if (!isAssetPreloaded) return;
     const interval = setInterval(() => {
-      setActiveSlide((p) => (p + 1) % CAROUSEL_IMAGES.length);
+      setActiveSlide((p) => (p + 1) % activeCarouselImages.length);
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [gymConfig, activeCarouselImages.length, isAssetPreloaded]);
 
   // ─── Typewriter Loop ──────────────────────────────────────────────────────
   useEffect(() => {
+    if (!isAssetPreloaded) return;
     const current = TYPEWRITER_PHRASES[phraseIndex];
     let timer: ReturnType<typeof setTimeout>;
 
@@ -260,7 +348,7 @@ export const Login: React.FC = () => {
 
     timer = setTimeout(tick, isDeleting ? 20 : 50);
     return () => clearTimeout(timer);
-  }, [typewriterText, isDeleting, phraseIndex]);
+  }, [typewriterText, isDeleting, phraseIndex, isAssetPreloaded]);
 
   // ─── Flat Parallax System (Hardware Optimized & Pointer Coarse Aware) ──────
   useEffect(() => {
@@ -283,10 +371,8 @@ export const Login: React.FC = () => {
       const translateX = -lerpedCoordinates.current.x * 50;
       const translateY = -lerpedCoordinates.current.y * 50;
 
-      // Transform background image wrapper on its own composite layer
       bg.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(1.12)`;
 
-      // Auto-Sleep Threshold convergence check
       const threshold = 0.0001;
       if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
         lerpedCoordinates.current.x = targetX;
@@ -363,6 +449,7 @@ export const Login: React.FC = () => {
 
   // ─── Auth Submission Logic ───────────────────────────────────────────────
   const handleGoogleLogin = async () => {
+    if (isPreview) return; // Disable OAuth in sandbox preview
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
@@ -382,13 +469,12 @@ export const Login: React.FC = () => {
   };
 
   const onLoginSubmit = async (data: LoginFormValues) => {
-    if (isSubmitting) return;
+    if (isSubmitting || isPreview) return; // Disable logins in sandbox preview
     setIsSubmitting(true);
     setShakeEmail(false);
     setShakePassword(false);
 
     try {
-      // Map local username registrations to palomargym.local domain
       const finalEmail = data.usernameOrEmail.includes('@')
         ? data.usernameOrEmail.trim().toLowerCase()
         : `${data.usernameOrEmail.trim().toLowerCase()}@palomargym.noemail`;
@@ -415,7 +501,6 @@ export const Login: React.FC = () => {
         return;
       }
 
-      // 2. Only start the transition sequence on successful credentials & verification checks
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
       setIsLoggingIn(true);
@@ -445,20 +530,19 @@ export const Login: React.FC = () => {
 
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
-  // ─── Standard Supabase Reset Link Dispatcher ───
   const requestResetLink = async (email: string) => {
+    if (isPreview) return; // Disable recovery emails in sandbox preview
     setRecoveryError(null);
     setIsRecoverySubmitting(true);
 
     try {
-      // Dispatches reset instructions natively using Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/forgot-password`,
       });
       if (error) throw error;
 
       setRecoveryEmail(email);
-      setShowSuccessModal(true); // Opens the modal indicating the link was sent
+      setShowSuccessModal(true);
     } catch (err: any) {
       setRecoveryError(err.message || 'Failed to dispatch recovery instructions.');
       triggerShake(setShakeRecovery);
@@ -469,10 +553,8 @@ export const Login: React.FC = () => {
 
   const onRecoverySubmit = async (data: RecoveryFormValues) => requestResetLink(data.email);
 
-  // ─── Normalisation Wrapper Submissions ────────────────────────────────────
   const handlePreLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Only call submit sequence directly (preserving raw username input parameters)
     handleLoginSubmit(onLoginSubmit, onInvalidLoginSubmit)(e);
   };
 
@@ -487,7 +569,6 @@ export const Login: React.FC = () => {
     resetRecovery();
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="relative w-full h-screen overflow-hidden bg-(--bg-page) select-none font-sans text-(--color-text) font-body">
       
@@ -510,16 +591,31 @@ export const Login: React.FC = () => {
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
       `}} />
 
-      {/* ── Theme Toggle ─────────────────────────────────────────────────── */}
+      {/* ── Live Preview Mode Overlay Banner ── */}
+      {isPreview && (
+        <div className="absolute top-0 inset-x-0 z-200 bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2">
+          <span>✨ Live Brand Preview Mode (Form Inputs & Actions Disabled)</span>
+          <button 
+            onClick={() => window.close()} 
+            className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors"
+            style={{ pointerEvents: 'auto' }}
+          >
+            Close Preview
+          </button>
+        </div>
+      )}
+
+      {/* ── Theme Toggle (Bypasses parent pointerEvents to be clickable in Preview) ── */}
       <button
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className={`absolute top-4 right-4 z-50 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95 transition-all duration-700 ease-out ${
+        className={`absolute top-4 right-4 z-200 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95 transition-all duration-700 ease-out ${
           isLoggingIn
             ? 'opacity-0 translate-y-4 pointer-events-none'
             : isReady
               ? 'opacity-100 translate-y-0'
               : 'opacity-0 -translate-y-4 pointer-events-none'
         }`}
+        style={{ pointerEvents: 'auto' }}
       >
         <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
           {theme === 'dark' ? (
@@ -536,7 +632,7 @@ export const Login: React.FC = () => {
             </>
           )}
         </div>
-        <span className="text-slate-700 dark:text-slate-300 text-[10px] font-black tracking-widest flex items-center gap-1">
+        <span className="text-slate-700 dark:text-slate-300 text-[10px] font-black tracking-widest flex items-center gap-1 font-body">
           {theme === 'dark' ? (
             <><Sun className="w-3.5 h-3.5 text-amber-400" /><span>LIGHT</span></>
           ) : (
@@ -545,8 +641,8 @@ export const Login: React.FC = () => {
         </span>
       </button>
 
-      {/* ─── SPLIT CONTAINER ─── */}
-      <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''}`}>
+      {/* ─── SPLIT CONTAINER (Disabled mouse actions dynamically if in Preview) ─── */}
+      <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}>
 
         {/* ── SIBLING 1: LEFT COLUMN ── */}
         <div 
@@ -579,12 +675,12 @@ export const Login: React.FC = () => {
           <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
             <Card isLoggingIn={isLoggingIn} className="w-56 h-40">
               <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-4 flex items-center justify-center transition-all duration-500">
-                <img src={landscapeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
+                <img src={activeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
               </div>
             </Card>
           </div>
 
-          {/* Login Card */}
+         {/* Login Card */}
           <Card isLoggingIn={isLoggingIn}>
             <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
               <div>
@@ -642,12 +738,8 @@ export const Login: React.FC = () => {
                   </div>
                   <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">Login Now</Button>
                   <Button type="button" variant="google" onClick={handleGoogleLogin} loading={isGoogleSubmitting}>
-                    <svg className="w-4 h-4 text-[#ea4335] shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                    </svg>
+                    {/* Updated to imported Google webp icon asset */}
+                    <img src={googleIcon} alt="Google Icon" className="w-4 h-4 shrink-0 object-contain" />
                     <span>Continue With Google</span>
                   </Button>
                 </form>
@@ -664,7 +756,7 @@ export const Login: React.FC = () => {
                     <span>ACCESS PROTOCOL</span>
                   </div>
                   <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.
+                    {activeGymDescription}
                   </p>
                 </div>
                 <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
@@ -687,24 +779,33 @@ export const Login: React.FC = () => {
         >
           <div 
             ref={carouselBgRef}
-            className="carousel-bg-wrapper absolute inset-0"
+            className="carousel-bg-wrapper absolute inset-0 bg-[#0c0e12]"
             style={{
               willChange: 'transform',
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              transform: 'scale(1.12) translate3d(0, 0, 0)'
+              backgroundPosition: 'center',
+              backgroundSize: 'cover',
+              transform: 'scale(1.12)'
             }}
           >
-            {CAROUSEL_IMAGES.map((image, index) => (
-              <img
-                key={index}
-                src={image}
-                alt={`Gym view ${index + 1}`}
-                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ${
-                  activeSlide === index ? 'opacity-100' : 'opacity-0'
-                }`}
-              />
-            ))}
+            {isAssetPreloaded && activeCarouselImages.map((image: string, index: number) => {
+              const isCurrent = activeSlide === index;
+              const isImgLoaded = loadedImages[image];
+              return (
+                <img
+                  key={index}
+                  src={image}
+                  alt={`Gym view ${index + 1}`}
+                  onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
+                  className={`absolute inset-0 w-full h-full object-cover transition-all duration-1500 ease-in-out ${
+                    isCurrent && isImgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
+                  }`}
+                  style={{
+                    willChange: 'opacity, transform',
+                    transitionProperty: 'opacity, transform',
+                  }}
+                />
+              );
+            })}
           </div>
           <div 
             className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2" 
@@ -727,16 +828,30 @@ export const Login: React.FC = () => {
             <Card expandable={true} className="max-w-lg h-auto">
               <div className="bg-black/50 border border-white/10 p-6 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 font-body text-left">
                 <p className="text-xs text-slate-200 leading-relaxed font-bold">
-                  The ultimate terminal for Palomar Gym administrative control. Encrypted, fast, and precise.
-                  <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-bold animate-slide-up">
-                    Wolf OS provides end-to-end telemetry for modern fitness centers — managing membership lifecycles, financial encryption, and real-time staff coordination.
+                  {activeGymDescription}
+                  <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-normal animate-slide-up space-y-3">
+                    <span className="block border-t border-white/10 pt-3">
+                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">LOCATION</strong>
+                      <span className="text-slate-300">{activeGymAddress}</span>
+                    </span>
+                    <span className="block">
+                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">DIRECT SUPPORT</strong>
+                      <span className="text-slate-300">
+                        {activeContactName1}: {activeContactNumber1}
+                        {activeContactName2 && ` | ${activeContactName2}: ${activeContactNumber2}`}
+                      </span>
+                    </span>
+                    <span className="block">
+                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">EMAIL COMMUNICATIONS</strong>
+                      <span className="text-slate-300">{activeEmailAddress}</span>
+                    </span>
                   </span>
                 </p>
                 <div className="block group-[.expanded]:hidden text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-                  CLICK TO EXPAND PROTOCOL
+                  CLICK TO EXPAND GYM INFORMATION
                 </div>
                 <div className="hidden group-[.expanded]:block text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-                  CLICK TO COLLAPSE PROTOCOL
+                  CLICK TO COLLAPSE GYM INFORMATION
                 </div>
               </div>
             </Card>
