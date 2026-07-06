@@ -1,6 +1,8 @@
+//src/pages/system/PersonalAccount.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
 import { 
   User as UserIcon, 
@@ -154,16 +156,27 @@ export const PersonalAccount: React.FC = () => {
 
     try {
       setIsUpdatingProfile(true);
+      const oldUsername = profile?.username || '';
+      const newUsername = username.trim();
+
       const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: username.trim() }
+        data: { full_name: newUsername }
       });
       if (authError) throw authError;
 
       const { error: dbError } = await supabase
         .from('profiles')
-        .update({ username: username.trim() })
+        .update({ username: newUsername })
         .eq('id', user?.id);
       if (dbError) throw dbError;
+
+      // ─── AUDIT LOG: Display Username Updated ─────────────────────────────────
+      await logAudit(
+        'PROFILE_UPDATED',
+        `User updated display username from "${oldUsername}" to "${newUsername}".`,
+        user?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
 
       await checkSession();
       toast.success('Username updated successfully');
@@ -201,6 +214,14 @@ export const PersonalAccount: React.FC = () => {
 
       if (error) throw error;
 
+      // ─── AUDIT LOG: Manual Password Update ───────────────────────────────────
+      await logAudit(
+        'USER_PASSWORD_UPDATED',
+        'User manually updated their account password.',
+        user?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
+
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -225,6 +246,15 @@ export const PersonalAccount: React.FC = () => {
       });
 
       if (error) throw error;
+
+      // ─── AUDIT LOG: Recovery Reset Email Dispatched ──────────────────────────
+      await logAudit(
+        'PASSWORD_RESET_REQUESTED',
+        `User requested a password reset email dispatched to "${user.email}".`,
+        user?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
+
       toast.success(`A password reset link has been dispatched to ${user.email}`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to dispatch recovery link.');
@@ -310,6 +340,14 @@ export const PersonalAccount: React.FC = () => {
         }
       }
 
+      // ─── AUDIT LOG: Avatar Photo Uploaded ────────────────────────────────────
+      await logAudit(
+        'USER_AVATAR_UPDATED',
+        'User successfully updated their account profile photo.',
+        user?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
+
       await checkSession();
       toast.success('Profile avatar updated successfully!');
     } catch (err: any) {
@@ -346,6 +384,14 @@ export const PersonalAccount: React.FC = () => {
           console.warn('Failed to remove avatar from storage:', deleteError.message);
         }
       }
+
+      // ─── AUDIT LOG: Avatar Photo Removed ─────────────────────────────────────
+      await logAudit(
+        'USER_AVATAR_REMOVED',
+        'User removed their account profile photo.',
+        user?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
 
       await checkSession();
       toast.success('Profile picture removed');

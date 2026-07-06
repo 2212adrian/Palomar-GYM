@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 
 // Texture imports for background accent layers
 import axiomTexture from '../../assets/textures/hexagons.svg';
@@ -192,6 +193,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const toggleSubmenu = (menuName: string) => {
     setExpandedMenu(prev => (prev === menuName ? null : menuName));
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+        const targetName = profileData?.full_name || currentUser.email || 'Unknown User';
+
+        // Log the logout action before triggering the parent onLogout handler
+        await logAudit(
+          'USER_LOGOUT',
+          `User "${targetName}" logged out successfully.`,
+          currentUser.id
+        );
+      }
+    } catch (err) {
+      console.warn('Could not register logout audit record:', err);
+    } finally {
+      onLogout();
+    }
   };
 
   const fallbackCharacter = profile?.username?.[0]?.toUpperCase() || 'U';
@@ -447,7 +474,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </Link>
 
           <button
-            onClick={onLogout}
+            onClick={handleLogout}
             aria-label="Logout"
             title={collapsed ? "Logout" : undefined}
             className={`flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer ${
@@ -609,7 +636,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </Link>
 
               <button
-                onClick={onLogout}
+                onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
               >
                 <LogOut className="w-4 h-4" />

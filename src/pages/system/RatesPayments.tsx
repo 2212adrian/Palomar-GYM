@@ -396,21 +396,20 @@ export const RatesPayments: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-  <label htmlFor="yearlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Yearly Registration Fee</label>
-  <div className="relative">
-    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm">₱</span>
-    <input
-      id="yearlyRateInput"
-      type="number"
-      value={yearlyRate}
-      placeholder="0"
-      title="Yearly Plan Rate"
-      // CHANGE THIS LINE:
-      onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
-      className="w-full pl-8 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-mono outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-    />
-  </div>
-</div>
+                <label htmlFor="yearlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Yearly Registration Fee</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm">₱</span>
+                  <input
+                    id="yearlyRateInput"
+                    type="number"
+                    value={yearlyRate}
+                    placeholder="0"
+                    title="Yearly Plan Rate"
+                    onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full pl-8 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-mono outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                  />
+                </div>
+              </div>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Monthly subscriptions grant free daily entry. Yearly memberships grant a discounted daily rate.</p>
           </div>
@@ -509,7 +508,7 @@ export const RatesPayments: React.FC = () => {
                     value={newCardFee}
                     placeholder="0"
                     title="New Card Fee"
-                    onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                    onChange={(e) => setNewCardFee(Math.max(0, parseInt(e.target.value) || 0))}
                     className="w-full pl-8 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-mono outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
                   />
                 </div>

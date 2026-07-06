@@ -128,7 +128,7 @@ export const UserManagement: React.FC = () => {
 
       await logAudit(
         'USER_PRE_REGISTERED',
-        `Pre-registered new user account "${newUserName.trim()}" with role "${newUserRole}".`,
+        `Pre-registered new user account "${finalEmail}" with role "${newUserRole}".`,
         registeredUserId
       );
 
@@ -239,9 +239,9 @@ export const UserManagement: React.FC = () => {
 
       await logAudit(
         'USER_DELETED',
-        `Permanently deleted staff/admin account "${deleteTargetUser.username}".`,
+        `Permanently deleted staff/admin account "${deleteTargetUser.email}".`,
         deleteTargetUser.id
-      );
+      );  
 
       toast.success(`Account for "${deleteTargetUser.username}" deleted successfully.`);
       setDeleteModalOpen(false);
@@ -255,7 +255,13 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  const handleToggleUserStatus = async (targetId: string, currentStatus: string, targetName: string, targetRole: string) => {
+  const handleToggleUserStatus = async (
+    targetId: string, 
+    currentStatus: string, 
+    targetEmail: string, 
+    targetRole: string, 
+    targetName: string
+  ) => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own account status.');
       return;
@@ -280,9 +286,9 @@ export const UserManagement: React.FC = () => {
 
       if (error) throw error;
 
-       await logAudit(
+      await logAudit(
         'USER_STATUS_TOGGLED',
-        `Changed account status for "${targetName}" to "${nextStatus}".`,
+        `Changed account status for "${targetEmail}" to "${nextStatus}".`,
         targetId
       );
       
@@ -414,7 +420,13 @@ export const UserManagement: React.FC = () => {
         return (
           <button
             type="button"
-            onClick={() => handleToggleUserStatus(u.id, u.status || 'pending', u.username || 'Staff', u.role || 'staff')}
+            onClick={() => handleToggleUserStatus(
+              u.id, 
+              u.status || 'pending', 
+              u.email || 'Staff', 
+              u.role || 'staff',
+              u.username || 'Staff'
+            )}
             title="Click to toggle account status"
             aria-label="Click to toggle account status"
             className="cursor-pointer hover:opacity-80 transition-opacity"
@@ -602,7 +614,7 @@ export const UserManagement: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
-              Local Username
+              No Email 
             </button>
           </div>
 

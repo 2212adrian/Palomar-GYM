@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     action TEXT NOT NULL,
     target_id TEXT,
     details TEXT,
-    ip_address TEXT,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
@@ -42,10 +41,22 @@ WITH CHECK (true);
 
 -- Policy: Lock down manual updates and deletes completely to guarantee log integrity
 DROP POLICY IF EXISTS "Prevent manual updates on audit logs" ON public.audit_logs;
-CREATE POLICY "Prevent manual updates on audit logs" ON public.audit_logs FOR UPDATE TO authenticated USING (false);
+CREATE POLICY "Prevent manual updates on audit logs"
+ON public.audit_logs
+FOR UPDATE
+TO authenticated
+USING (false);
 
 DROP POLICY IF EXISTS "Prevent manual deletes on audit logs" ON public.audit_logs;
-CREATE POLICY "Prevent manual deletes on audit logs" ON public.audit_logs FOR DELETE TO authenticated USING (false);
+CREATE POLICY "Prevent manual deletes on audit logs"
+ON public.audit_logs
+FOR DELETE
+TO authenticated
+USING (false);
+
+-- Clear any previously overloaded signatures to prevent ambiguity errors [1.1.2]
+DROP FUNCTION IF EXISTS public.log_audit_entry(uuid, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public.log_audit_entry(uuid, text, text, text, text);
 
 -- Helper function to write system/auth events easily from backend/client RPCs
 CREATE OR REPLACE FUNCTION public.log_audit_entry(
@@ -53,17 +64,28 @@ CREATE OR REPLACE FUNCTION public.log_audit_entry(
     p_actor_username TEXT,
     p_action TEXT,
     p_target_id TEXT,
-    p_details TEXT,
-    p_ip_address TEXT DEFAULT NULL
+    p_details TEXT
 )
 RETURNS UUID AS $$
 DECLARE
     v_log_id UUID;
 BEGIN
-    INSERT INTO public.audit_logs (user_id, actor_username, action, target_id, details, ip_address)
-    VALUES (p_user_id, COALESCE(p_actor_username, 'System'), p_action, p_target_id, p_details, p_ip_address)
+    INSERT INTO public.audit_logs (
+        user_id,
+        actor_username,
+        action,
+        target_id,
+        details
+    )
+    VALUES (
+        p_user_id,
+        COALESCE(p_actor_username, 'System'),
+        p_action,
+        p_target_id,
+        p_details
+    )
     RETURNING id INTO v_log_id;
-    
+
     RETURN v_log_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

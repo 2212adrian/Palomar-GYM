@@ -8,6 +8,7 @@ import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'l
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
+import { logAudit } from '../../lib/supabase/audit';
 
 // Capacitor core import
 import { Capacitor } from '@capacitor/core';
@@ -466,6 +467,7 @@ export const Login: React.FC = () => {
     }
   };
 
+  // 2. Insert into the onLoginSubmit function inside src/pages/auth/Login.tsx
   const onLoginSubmit = async (data: LoginFormValues) => {
     if (isSubmitting || isPreview) return; // Disable logins in sandbox preview
     setIsSubmitting(true);
@@ -487,17 +489,33 @@ export const Login: React.FC = () => {
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
         .from('profiles')
-        .select('status')
+        .select('status, full_name')
         .eq('id', loggedInUser?.id)
         .maybeSingle();
 
       const userStatus = dbProfile?.status || loggedInUser?.user_metadata?.status;
+      const targetName = dbProfile?.full_name || loggedInUser?.email || data.usernameOrEmail;
 
       if (userStatus === 'inactive') {
+        // Audit a failed login attempt due to a deactivated profile before signing out
+        await logAudit(
+          'USER_LOGIN_FAILED',
+          `Deactivated user "${targetName}" attempted to log in.`,
+           loggedInUser?.id ?? undefined
+        );
+
         await supabase.auth.signOut();
         toast.error('This account has been deactivated. Please contact an administrator.');
         return;
       }
+
+      // ─── AUDIT LOG: Successful Login ─────────────────────────────────────────
+      await logAudit(
+        'USER_LOGIN',
+        `User "${targetName}" logged in successfully.`,
+         loggedInUser?.id ?? undefined
+      );
+      // ──────────────────────────────────────────────────────────────────────────
 
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
@@ -786,24 +804,24 @@ export const Login: React.FC = () => {
             }}
           >
             {isAssetPreloaded && activeCarouselImages.map((image: string, index: number) => {
-              const isCurrent = activeSlide === index;
-              const isImgLoaded = loadedImages[image];
-              return (
-                <img
-                  key={index}
-                  src={image}
-                  alt={`Gym view ${index + 1}`}
-                  onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
-                  className={`absolute inset-0 w-full h-full object-cover transition-all duration-1500 ease-in-out ${
-                    isCurrent && isImgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
-                  }`}
-                  style={{
-                    willChange: 'opacity, transform',
-                    transitionProperty: 'opacity, transform',
-                  }}
-                />
-              );
-            })}
+  const isCurrent = activeSlide === index;
+  const isImgLoaded = loadedImages[image];
+  return (
+    <img
+      key={index}
+      src={image}
+      alt={`Gym view ${index + 1}`}
+      onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
+      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ease-in-out ${
+        isCurrent && isImgLoaded ? 'opacity-100' : 'opacity-0'
+      }`}
+      style={{
+        willChange: 'opacity',
+        transitionProperty: 'opacity',
+      }}
+    />
+  );
+})}
           </div>
           <div 
             className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2" 

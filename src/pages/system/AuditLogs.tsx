@@ -1,23 +1,55 @@
-import React, { useState, useEffect } from 'react';
+//src/pages/system/AuditLogs.tsx
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
-import { Table } from '../../components/ui/Table';
-import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { 
-  FileText, 
+  Database, 
   RefreshCw, 
   Loader2, 
-  ShieldCheck, 
   Users, 
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  LogIn,
+  LogOut,
+  Settings,
+  Trash2,
+  CreditCard,
+  User,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Activity,
+  Shield,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
+
+// Category filter chip definitions
+const CATEGORIES = [
+  { id: 'all', label: 'All Activities' },
+  { id: 'members', label: 'Members' },
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'backups', label: 'Backups' },
+  { id: 'security', label: 'Security' },
+  { id: 'auth', label: 'Authentication' }
+];
 
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [activeSeverity, setActiveSeverity] = useState<string>('all');
+  const [activeOperator, setActiveOperator] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 8;
 
-  // Fetch security audit logs directly from Supabase
+  // Track currently expanded timeline card ID (Accordion behavior) [1.1.2]
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+
   const fetchLogs = async () => {
     try {
       setIsLoading(true);
@@ -40,173 +72,669 @@ export const AuditLogs: React.FC = () => {
     fetchLogs();
   }, []);
 
-  // Maps action types to contextual color badges for clean visual scanning
-  const getActionBadgeClass = (action: string) => {
+  // 1. Map system actions to human-readable non-technical terminology
+  const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
-    if (act.includes('CHECK_IN') || act.includes('CHECK_OUT') || act.includes('LOGBOOK')) {
-      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
-    }
-    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('ALERT') || act.includes('CLEANUP')) {
-      return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20';
-    }
-    if (act.includes('UPDATE') || act.includes('CONFIG') || act.includes('SAVE') || act.includes('REGISTER')) {
-      return 'bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20';
-    }
-    return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20';
+    if (act.includes('CHECK_IN')) return 'Member Checked In';
+    if (act.includes('CHECK_OUT')) return 'Member Checked Out';
+    if (act.includes('LOGBOOK')) return 'Logbook Entry Recorded';
+    if (act.includes('MEMBER_UPDATED') || act.includes('MEMBER_EDIT')) return 'Updated Member Details';
+    if (act.includes('MEMBER_CREATED') || act.includes('MEMBER_REG')) return 'Registered New Member';
+    if (act.includes('MEMBER_DEACTIVATED')) return 'Deactivated Member Account';
+    if (act.includes('PAYMENT_RECEIVED') || act.includes('PAYMENT_ADD')) return 'Received Plan Payment';
+    if (act.includes('SYSTEM_RATES_UPDATED') || act.includes('RATES_CONFIG')) return 'Updated Pricing Rates';
+    if (act.includes('DATABASE_BACKUP') || act.includes('GENERATE_BACKUP')) return 'Created System Backup';
+    if (act.includes('RESTORE_DATABASE') || act.includes('RESTORE_BACKUP')) return 'Restored System Backup';
+    if (act.includes('LOGIN') || act.includes('SIGN_IN')) return 'User Logged In';
+    if (act.includes('LOGOUT') || act.includes('SIGN_OUT')) return 'User Logged Out';
+    if (act.includes('DELETE') || act.includes('PURGE')) return 'Purged System Record';
+    
+    // Fallback format
+    return action.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
   };
 
-  // Reusable columns configuration for standard UI Table
-  const columns: Column<any>[] = [
-    {
-      key: 'created_at',
-      header: 'Timestamp (PHT)',
-      sortable: true,
-      render: (log) => {
-        const formattedDate = new Date(log.created_at).toLocaleString('en-US', {
-          timeZone: 'Asia/Manila',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true
-        });
-        return (
-          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-mono text-[11px] whitespace-nowrap">
-            <Calendar className="w-3.5 h-3.5 opacity-60" />
-            <span>{formattedDate}</span>
-          </div>
-        );
-      }
-    },
-    {
-      key: 'actor_username',
-      header: 'Actor',
-      sortable: true,
-      render: (log) => (
-        <span className="font-bold text-slate-900 dark:text-white truncate max-w-40 block text-xs">
-          {log.actor_username}
-        </span>
-      )
-    },
-    {
-      key: 'action',
-      header: 'Action Type',
-      sortable: true,
-      render: (log) => (
-        <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-md uppercase font-black ${getActionBadgeClass(log.action)}`}>
-          {log.action.replace(/_/g, ' ')}
-        </span>
-      )
-    },
-    {
-      key: 'details',
-      header: 'Event Description',
-      render: (log) => (
-        <span className="text-slate-600 dark:text-slate-400 text-xs block leading-relaxed max-w-sm md:max-w-xl truncate" title={log.details}>
-          {log.details || '—'}
-        </span>
-      )
+  // 2. Map system actions to category groups
+  const getActionCategory = (action: string): string => {
+    const act = action.toLowerCase();
+    if (act.includes('login') || act.includes('logout') || act.includes('auth')) return 'auth';
+    if (act.includes('check_in') || act.includes('check_out') || act.includes('logbook') || act.includes('attendance')) return 'attendance';
+    if (act.includes('member')) return 'members';
+    if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('reset')) return 'security';
+    if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('sale') || act.includes('rates')) return 'payments';
+    if (act.includes('backup') || act.includes('snapshot')) return 'backups';
+    if (act.includes('config') || act.includes('settings') || act.includes('gym')) return 'settings';
+    return 'all';
+  };
+
+  // 3. Map system actions to precise non-technical severity levels
+  const getActionSeverity = (action: string): 'info' | 'warning' | 'critical' => {
+    const act = action.toUpperCase();
+    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE_ADMIN') || act.includes('DEACTIVATE')) {
+      return 'critical';
     }
-  ];
+    if (act.includes('UPDATE') || act.includes('CONFIG') || act.includes('EDIT') || act.includes('BACKUP') || act.includes('SAVE')) {
+      return 'warning';
+    }
+    return 'info';
+  };
 
-  // Helper metric tallies
-  const securityEventCount = logs.filter(l => {
-    const act = l.action.toUpperCase();
-    return act.includes('DELETE') || act.includes('PURGE') || act.includes('CONFIG') || act.includes('UPDATE');
-  }).length;
+  // 4. Resolve semantic, non-technical context icons
+  const getActionIcon = (action: string, severity: string) => {
+    const act = action.toUpperCase();
+    const style = "w-4 h-4";
+    if (severity === 'critical') return <Trash2 className={`${style} text-red-500`} />;
+    if (act.includes('CHECK_IN') || act.includes('CHECK_OUT') || act.includes('LOGBOOK')) {
+      return <CheckCircle2 className={`${style} text-emerald-450`} />;
+    }
+    if (act.includes('PAYMENT')) return <CreditCard className={`${style} text-emerald-450`} />;
+    if (act.includes('MEMBER') || act.includes('USER')) return <User className={`${style} text-blue-400`} />;
+    if (act.includes('BACKUP') || act.includes('SNAPSHOT')) return <Database className={`${style} text-amber-500`} />;
+    if (act.includes('RESTORE')) return <RefreshCw className={`${style} text-red-500`} />;
+    if (act.includes('LOGIN')) return <LogIn className={`${style} text-blue-400`} />;
+    if (act.includes('LOGOUT')) return <LogOut className={`${style} text-slate-400`} />;
+    if (act.includes('CONFIG') || act.includes('RATES')) return <Settings className={`${style} text-amber-500`} />;
+    return <Activity className={`${style} text-slate-400`} />;
+  };
 
-  const uniqueActors = new Set(logs.map(l => l.actor_username)).size;
+  // 5. Parse absolute date timestamps into simple daily segments (Local Manila Time)
+  const getDayLabel = (dateStr: string): string => {
+    const ManilaTimeStr = new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+    const targetDate = new Date(ManilaTimeStr);
+    
+    const nowManilaStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+    const now = new Date(nowManilaStr);
+
+    const targetZero = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const nowZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const diffTime = nowZero.getTime() - targetZero.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    
+    return targetDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  // 6. Tally dashboard summary calculations
+  const summaryMetrics = useMemo(() => {
+    const activeOperators = new Set(logs.map(l => l.actor_username)).size;
+    const criticalCount = logs.filter(l => getActionSeverity(l.action) === 'critical').length;
+    
+    const todayPHTStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
+    const todayCount = logs.filter(l => {
+      const logPHTStr = new Date(l.created_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
+      return logPHTStr === todayPHTStr;
+    }).length;
+
+    const backupCount = logs.filter(l => getActionCategory(l.action) === 'backups').length;
+    const authCount = logs.filter(l => getActionCategory(l.action) === 'auth').length;
+
+    return {
+      total: logs.length,
+      critical: criticalCount,
+      operators: activeOperators,
+      today: todayCount,
+      backups: backupCount,
+      auth: authCount
+    };
+  }, [logs]);
+
+  // Extract list of operators dynamically based on user management logs [1.1.2]
+  const uniqueOperators = useMemo(() => {
+    const operators = logs.map(l => l.actor_username);
+    return Array.from(new Set(operators)).filter(Boolean).sort();
+  }, [logs]);
+
+  // 7. Client-side Search and Category Filtering [1.1.2]
+  const processedLogs = useMemo(() => {
+    return logs.filter((log) => {
+      const matchesCategory = activeCategory === 'all' || getActionCategory(log.action) === activeCategory;
+      
+      const matchesSeverity = activeSeverity === 'all' || getActionSeverity(log.action) === activeSeverity;
+
+      const matchesOperator = activeOperator === 'all' || log.actor_username === activeOperator;
+
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch = !query || 
+        log.actor_username.toLowerCase().includes(query) ||
+        log.details?.toLowerCase().includes(query) ||
+        formatActionName(log.action).toLowerCase().includes(query);
+
+      return matchesCategory && matchesSeverity && matchesOperator && matchesSearch;
+    });
+  }, [logs, activeCategory, activeSeverity, activeOperator, searchQuery]);
+
+  // 8. Consecutive Grouping Algorithm [1.1.2]
+  // Pairs sequential actions triggered by the exact same actor within a 5-minute window [1.1.2]
+  const timelineGroups = useMemo(() => {
+    if (!processedLogs.length) return [];
+
+    const grouped: any[] = [];
+    let currentGroup: any = null;
+
+    processedLogs.forEach((log) => {
+      const logTime = new Date(log.created_at).getTime();
+
+      if (!currentGroup) {
+        currentGroup = {
+          id: log.id,
+          actor_username: log.actor_username,
+          action: log.action,
+          severity: getActionSeverity(log.action),
+          category: getActionCategory(log.action),
+          created_at: log.created_at,
+          items: [log]
+        };
+      } else {
+        const lastInGroupTime = new Date(currentGroup.items[currentGroup.items.length - 1].created_at).getTime();
+        const timeDiffMins = Math.abs(lastInGroupTime - logTime) / (1000 * 60);
+
+        if (
+          currentGroup.actor_username === log.actor_username &&
+          currentGroup.action === log.action &&
+          timeDiffMins <= 5
+        ) {
+          currentGroup.items.push(log);
+        } else {
+          grouped.push(currentGroup);
+          currentGroup = {
+            id: log.id,
+            actor_username: log.actor_username,
+            action: log.action,
+            severity: getActionSeverity(log.action),
+            category: getActionCategory(log.action),
+            created_at: log.created_at,
+            items: [log]
+          };
+        }
+      }
+    });
+
+    if (currentGroup) {
+      grouped.push(currentGroup);
+    }
+
+    // 9. Group the timeline cards further under their respective days (Today, Yesterday, Date)
+    const dayPartitions: Record<string, any[]> = {};
+    grouped.forEach((group) => {
+      const label = getDayLabel(group.created_at);
+      if (!dayPartitions[label]) {
+        dayPartitions[label] = [];
+      }
+      dayPartitions[label].push(group);
+    });
+
+    return Object.entries(dayPartitions).map(([day, items]) => ({
+      day,
+      items
+    }));
+  }, [processedLogs]);
+
+  // Compute pagination limits on groups [1.1.2]
+  const totalGroupsCount = useMemo(() => {
+    return timelineGroups.reduce((acc, current) => acc + current.items.length, 0);
+  }, [timelineGroups]);
+
+  const paginatedTimelineGroups = useMemo(() => {
+    let flatIndex = 0;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+
+    const result: any[] = [];
+
+    timelineGroups.forEach((dayGroup) => {
+      const visibleItemsInDay: any[] = [];
+      
+      dayGroup.items.forEach((item) => {
+        if (flatIndex >= startIndex && flatIndex < endIndex) {
+          visibleItemsInDay.push(item);
+        }
+        flatIndex++;
+      });
+
+      if (visibleItemsInDay.length > 0) {
+        result.push({
+          day: dayGroup.day,
+          items: visibleItemsInDay
+        });
+      }
+    });
+
+    return result;
+  }, [timelineGroups, currentPage]);
+
+  const totalPages = Math.ceil(totalGroupsCount / itemsPerPage);
+
+  const toggleGroupExpand = (groupId: string) => {
+    // Accordion Toggle logic: Collapse current active if selected, otherwise set new active [1.1.2]
+    setExpandedGroupId((prev) => (prev === groupId ? null : groupId));
+  };
 
   return (
-    <div className="space-y-8 font-body">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-8 font-body bg-(--bg-page) text-(--color-text) min-h-screen">
       
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">
+          <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
             System Audit Logs
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Real-time tracking of administrative events, check-ins, and database transactions.
+          <p className="text-sm text-slate-400 mt-1 font-medium">
+            A comprehensive, readable timeline tracking administrative actions and system security events.
           </p>
         </div>
         
         <button
           onClick={fetchLogs}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 dark:bg-[#bf0202] hover:opacity-90 disabled:opacity-50 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto shadow-md"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto shadow-md"
         >
           {isLoading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <RefreshCw className="w-3.5 h-3.5" />
           )}
-          Refresh Logs
+          Refresh Feed
         </button>
       </div>
 
-      {/* KPI Info Widgets */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 bg-slate-50 dark:bg-neutral-900/50 border border-slate-200 dark:border-white/5 rounded-xl flex items-center gap-3.5">
-          <div className="p-2.5 bg-blue-600/10 dark:bg-[#bf0202]/10 rounded-lg text-blue-600 dark:text-[#bf0202]">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Total Logged Events</span>
-            <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono">
-              {logs.length} Actions
-            </span>
-          </div>
+      {/* KPI Info Widgets Container (Hover-to-Reveal Implementation) [1.1.2] */}
+      <div className="group/kpis relative transition-all duration-500 ease-in-out border border-transparent hover:border-(--border-color)/40 rounded-3xl p-1">
+        
+        {/* Subtle hover disclosure anchor bar [1.1.2] */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-500/5 border border-dashed border-(--border-color) rounded-2xl text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer transition-all hover:bg-slate-500/10">
+          <span className="flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+            System Metrics Overview
+          </span>
+          <span className="text-[9px] text-slate-500 font-bold group-hover/kpis:hidden">Hover to Expand metrics</span>
+          <span className="text-[9px] text-slate-500 font-bold hidden group-hover/kpis:inline">Collapse metrics</span>
         </div>
+        
+        {/* KPI Grid (Only expanded and faded in on container hover) [1.1.2] */}
+        <div className="opacity-0 max-h-0 scale-y-95 origin-top overflow-hidden group-hover/kpis:opacity-100 group-hover/kpis:max-h-96 group-hover/kpis:scale-y-100 group-hover/kpis:mt-4 transition-all duration-500 ease-in-out grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Logs</span>
+              <Activity className="w-4 h-4 text-slate-400" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                {summaryMetrics.total}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Total Events</span>
+            </div>
+          </div>
 
-        <div className="p-4 bg-slate-50 dark:bg-neutral-900/50 border border-slate-200 dark:border-white/5 rounded-xl flex items-center gap-3.5">
-          <div className="p-2.5 bg-amber-500/10 rounded-lg text-amber-500">
-            <AlertTriangle className="w-5 h-5" />
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Critical</span>
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-red-500 font-mono block">
+                {summaryMetrics.critical}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Requires Review</span>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Security & Config Edits</span>
-            <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono">
-              {securityEventCount} Events
-            </span>
-          </div>
-        </div>
 
-        <div className="p-4 bg-slate-50 dark:bg-neutral-900/50 border border-slate-200 dark:border-white/5 rounded-xl flex items-center gap-3.5">
-          <div className="p-2.5 bg-emerald-500/10 rounded-lg text-emerald-500">
-            <Users className="w-5 h-5" />
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Operators</span>
+              <Users className="w-4 h-4 text-blue-400" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                {summaryMetrics.operators}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Active Staff</span>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Active Actors</span>
-            <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono">
-              {uniqueActors} Operators
-            </span>
+
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today</span>
+              <Calendar className="w-4 h-4 text-emerald-450" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-emerald-450 font-mono block">
+                {summaryMetrics.today}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">System Events</span>
+            </div>
           </div>
+
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Backups</span>
+              <Database className="w-4 h-4 text-amber-500" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-amber-500 font-mono block">
+                {summaryMetrics.backups}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Auto & Manual</span>
+            </div>
+          </div>
+
+          <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Logins</span>
+              <LogIn className="w-4 h-4 text-blue-400" />
+            </div>
+            <div>
+              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                {summaryMetrics.auth}
+              </span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Session Logins</span>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      {/* Main Table Interface */}
-      <div className="p-1 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-neutral-950/20">
-        <Table<any>
-          data={logs}
-          columns={columns}
-          searchKeys={['actor_username', 'action', 'details']}
-          searchPlaceholder="Search audit logs by actor, action, or details..."
-          defaultSortKey="created_at"
-          defaultSortDirection="desc"
-          itemsPerPage={10}
-          loading={isLoading}
-          loadingLabel="Fetching system telemetry logs..."
-        />
+      {/* Filter and Search Section */}
+      <div className="space-y-4 bg-(--bg-card) p-5 rounded-2xl border border-(--border-color) shadow-xs text-left">
+        
+        {/* Row 1: Search and Selection Filters (Optimized inline row design) [1.1.2] */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
+          {/* Search Input block */}
+          <div className="relative flex-1 max-w-md w-full">
+            <input
+              type="text"
+              placeholder="Search audit logs by actor, action, or description..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-10 pr-4 py-2.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-sm text-(--color-text) outline-none focus:border-slate-450 transition-all font-medium"
+            />
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          </div>
+
+          {/* New Inline Filters block (Severity and User Operator dropdowns in one consistent row) [1.1.2] */}
+          <div className="flex flex-row items-center gap-4 shrink-0 flex-nowrap w-full md:w-auto">
+            {/* Severity Filter Select */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Severity:</span>
+              <select
+                value={activeSeverity}
+                onChange={(e) => {
+                  setActiveSeverity(e.target.value);
+                  setCurrentPage(1);
+                }}
+                title="Filter logs by severity"
+                aria-label="Filter logs by severity"
+                className="px-3.5 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer whitespace-nowrap"
+              >
+                <option value="all">All Severities</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+
+            {/* Operator/User Filter Select */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">User:</span>
+              <select
+                value={activeOperator}
+                onChange={(e) => {
+                  setActiveOperator(e.target.value);
+                  setCurrentPage(1);
+                }}
+                title="Filter logs by system operator"
+                aria-label="Filter logs by system operator"
+                className="px-3.5 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer max-w-40 truncate whitespace-nowrap"
+              >
+                <option value="all">All Users</option>
+                {uniqueOperators.map((operator) => (
+                  <option key={operator} value={operator}>
+                    {operator}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Category Chips filtering scroll block */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t border-(--border-color) pt-4">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 shrink-0">Category:</span>
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => {
+                setActiveCategory(cat.id);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer border transition-all shrink-0 ${
+                activeCategory === cat.id
+                  ? 'bg-(--color-primary) border-(--color-primary) text-white'
+                  : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Unified Timeline Layout (Hides Excel dense spreadsheets) */}
+      <div className="space-y-6">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-(--bg-card) rounded-2xl border border-(--border-color)">
+            <Loader2 className="w-8 h-8 animate-spin text-(--color-primary)" />
+            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Accessing security logbook indexes...</p>
+          </div>
+        ) : paginatedTimelineGroups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center bg-(--bg-card) rounded-2xl border border-(--border-color) space-y-3">
+            <Layers className="w-10 h-10 text-slate-500 opacity-60" />
+            <p className="text-sm font-semibold text-slate-300">No matching activities found</p>
+            <p className="text-xs text-slate-500">Try modifying your search query or selecting a different category filter.</p>
+          </div>
+        ) : (
+          <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-4 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
+            
+            {paginatedTimelineGroups.map((dayGroup) => (
+              <div key={dayGroup.day} className="space-y-4 relative">
+                
+                {/* Daily Divider Header */}
+                <div className="relative z-10 -ml-1 sm:ml-0 text-left">
+                  <span className="px-3.5 py-1.5 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-full text-slate-500 dark:text-slate-400 font-bold shadow-xs">
+                    {dayGroup.day}
+                  </span>
+                </div>
+
+                {/* Consecutive grouped cards */}
+                <div className="space-y-3 pl-6 sm:pl-10">
+                  {dayGroup.items.map((group: any) => {
+                    const isExpanded = expandedGroupId === group.id; // Accordion expansion check [1.1.2]
+                    const itemCount = group.items.length;
+                    const representative = group.items[0];
+                    const latestTimestamp = new Date(group.created_at);
+
+                    return (
+                      <div 
+                        key={group.id} 
+                        className={`group relative rounded-2xl border transition-all duration-300 bg-(--bg-card) border-(--border-color) hover:border-slate-700/60 p-4 sm:p-5 shadow-xs ${
+                          isExpanded ? 'ring-1 ring-slate-800/30' : ''
+                        }`}
+                      >
+                        
+                        {/* Bullet Marker dot overlapping vertical line */}
+                        <div className={`absolute -left-7.5 sm:-left-11.5 top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) transition-all ${
+                          group.severity === 'critical'
+                            ? 'border-red-500 shadow-md shadow-red-500/10'
+                            : group.severity === 'warning'
+                              ? 'border-amber-500 shadow-md shadow-amber-500/10'
+                              : 'border-blue-400 shadow-md shadow-blue-400/10'
+                        }`} />
+
+                        {/* Top Line Card content */}
+                        <div 
+                          onClick={() => toggleGroupExpand(group.id)}
+                          className="flex items-start justify-between gap-4 cursor-pointer"
+                        >
+                          <div className="flex items-start gap-3 sm:gap-4">
+                            <div className="p-2.5 rounded-xl border shrink-0 bg-(--bg-page) border-(--border-color) group-hover:scale-105 transition-transform">
+                              {getActionIcon(group.action, group.severity)}
+                            </div>
+                            <div className="space-y-0.5 text-left">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold text-(--color-text) block tracking-wide">
+                                  {formatActionName(group.action)}
+                                </span>
+                                {itemCount > 1 && (
+                                  <span className="px-2 py-0.5 bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 rounded-md font-bold tracking-wider uppercase">
+                                    {itemCount} Consecutive Actions
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Reverted back to permanently visible timeline descriptions as originally structured. Contrasting color corrected. [1.1.2] */}
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 mr-1.5">{group.actor_username}</span>
+                                {itemCount > 1 
+                                  ? `recorded ${itemCount} events in a 5-minute interval`
+                                  : representative.details || 'System action executed.'
+                                }
+                              </p>
+                              
+                              <span className="text-[10px] text-slate-500 block font-semibold mt-1">
+                                {latestTimestamp.toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true
+                                })} (PHT)
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Right Controls Column */}
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            {/* Severity Badge */}
+                            {group.severity === 'critical' ? (
+                              <span className="px-2.5 py-0.5 bg-red-500/10 text-[9px] text-red-400 border border-red-500/20 rounded-full font-bold tracking-widest uppercase">
+                                Critical
+                              </span>
+                            ) : group.severity === 'warning' ? (
+                              <span className="px-2.5 py-0.5 bg-amber-500/10 text-[9px] text-amber-500 border border-amber-500/20 rounded-full font-bold tracking-widest uppercase">
+                                Warning
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-widest uppercase">
+                                Info
+                              </span>
+                            )}
+
+                            {/* Dropdown toggle state indicator */}
+                            <span className="text-slate-500 group-hover:text-slate-300 transition-colors">
+                              {isExpanded ? <ChevronUp className="w-4.5 h-4.5" /> : <ChevronDown className="w-4.5 h-4.5" />}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Expandable nested details logic */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-(--border-color) space-y-4 animate-slide-up text-left">
+                            
+                            {itemCount > 1 ? (
+                              <div className="space-y-3.5">
+                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Grouped Sub-Events:</span>
+                                <div className="space-y-3 pl-3 border-l-2 border-slate-800/80">
+                                  {group.items.map((item: any) => (
+                                    <div key={item.id} className="space-y-0.5 text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                        <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                                          {new Date(item.created_at).toLocaleTimeString('en-US', {
+                                            hour: 'numeric',
+                                            minute: '2-digit',
+                                            second: '2-digit',
+                                            hour12: true
+                                          })}
+                                        </span>
+                                      </div>
+                                      <p className="text-slate-700 dark:text-slate-300 font-semibold pl-5">{item.details || 'No additional context recorded.'}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              /* Dynamic contrast text values corrected for flawless light/dark mode reading [1.1.2] */
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold">
+                                <div className="space-y-1">
+                                  <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Actor Username</span>
+                                  <span className="text-slate-800 dark:text-slate-100 font-bold block">{representative.actor_username}</span>
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Database Event Key</span>
+                                  <span className="text-slate-800 dark:text-slate-100 font-mono text-[10px] block">{representative.action}</span>
+                                </div>
+                                <div className="space-y-1 sm:col-span-2">
+                                  <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Metadata & Details</span>
+                                  <span className="text-slate-700 dark:text-slate-200 font-normal leading-relaxed block bg-(--bg-page) p-3 rounded-lg border border-(--border-color) font-mono text-[11px] whitespace-pre-wrap text-left select-all">
+                                    {representative.details || 'No extended metadata payload registered.'}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+                        )}
+
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            ))}
+
+            {/* Pagination Controls block [1.1.2] */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between bg-(--bg-card) border border-(--border-color) rounded-2xl px-5 py-3 shadow-xs font-semibold">
+                <span className="text-xs text-slate-400">
+                  Showing <strong className="text-slate-200">{(currentPage - 1) * itemsPerPage + 1}</strong> to <strong className="text-slate-200">{Math.min(currentPage * itemsPerPage, totalGroupsCount)}</strong> of <strong className="text-slate-200">{totalGroupsCount}</strong> grouped items
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="px-3.5 py-1.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="px-3.5 py-1.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
       {/* Safety Policy Info Box */}
-      <div className="flex items-start gap-3 p-4 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-4xl">
-        <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-bold">System Retention Policy (pgAudit Aligned)</p>
-          <p className="text-[11px] opacity-90">
+      <div className="flex items-start gap-4 p-5 bg-blue-500/5 border border-blue-500/20 rounded-2xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-full">
+        <Shield className="w-5 h-5 shrink-0 mt-0.5" />
+        <div className="space-y-1.5 text-left">
+          <p className="font-heading tracking-wider uppercase text-xs">System Retention Policy (pgAudit Aligned)</p>
+          <p className="text-[11px] font-semibold text-slate-400 opacity-90 leading-relaxed">
             Audit logging operations are protected under secure write-only database constraints. Manual record updates or deletions are restricted at the database catalog layer. Logs are retained for exactly one year and pruned daily via an automated database cron job at midnight Manila time.
           </p>
         </div>

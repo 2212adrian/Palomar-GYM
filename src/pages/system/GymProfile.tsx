@@ -187,7 +187,7 @@ export const GymProfile: React.FC = () => {
       localStorage.removeItem('palomar_gym_profile_draft'); // Clean up drafts
       setInitialConfig(current);
       initialConfigRef.current = current;
-      toast.success('Gym business profile saved to cloud database.');
+      toast.success('GYM profile settings saved successfully.');
     } catch (err: any) {
       toast.error(err.message || 'Failed to sync modifications.');
     } finally {
@@ -325,7 +325,7 @@ export const GymProfile: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 max-w-md mx-auto">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-[#bf0202]" />
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading gym business profile settings...</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Loading GYM business profile settings...</p>
       </div>
     );
   }
@@ -571,7 +571,7 @@ export const GymProfile: React.FC = () => {
               ) : (
                 <div className="py-8 border border-dashed border-slate-200 dark:border-white/10 rounded-xl text-center text-xs text-slate-400 font-medium leading-relaxed">
                   No widescreen carousel images uploaded yet. <br />
-                  (Max 6 photos • Compressed to 1MB target).
+                  (Max 6 photos • Compressed to 2MB target).
                 </div>
               )}
             </div>
