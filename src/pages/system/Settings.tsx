@@ -1,5 +1,5 @@
-//src/pages/system/Settings.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { PersonalAccount } from './PersonalAccount';
 import { GymProfile } from './GymProfile';
@@ -15,6 +15,7 @@ import {
   Database, 
   FileText,
   ChevronRight,
+  ChevronLeft,
   Save,
   Loader2,
   Sun,
@@ -76,10 +77,50 @@ const TABS: TabItem[] = [
   },
 ];
 
+const TAB_URL_MAP: Record<TabID, string> = {
+  'account': 'personal-account',
+  'gym-profile': 'gym-profile',
+  'rates': 'rates-and-payments',
+  'users': 'user-management',
+  'backup': 'database-backup',
+  'audit': 'audit-logs'
+};
+
+const URL_TAB_MAP: Record<string, TabID> = {
+  'personal-account': 'account',
+  'gym-profile': 'gym-profile',
+  'rates-and-payments': 'rates',
+  'user-management': 'users',
+  'database-backup': 'backup',
+  'audit-logs': 'audit'
+};
+
 export default function Settings() {
   const { user, profile } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<TabID>('account');
-  const [mobileView, setMobileView] = useState<'menu' | 'detail'>('menu');
+  const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
+  const navigate = useNavigate();
+
+  const activeTab = useMemo<string>(() => {
+    if (!urlTabParam) return 'personal-account';
+    return urlTabParam;
+  }, [urlTabParam]);
+
+  const activeTabId = useMemo<TabID>(() => {
+    if (!urlTabParam) return 'account';
+    return URL_TAB_MAP[urlTabParam] || 'account';
+  }, [urlTabParam]);
+
+  const [mobileView, setMobileView] = useState<'menu' | 'detail'>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      const path = window.location.pathname;
+      if (path.includes('/settings/') && !path.endsWith('/settings')) {
+        return 'detail';
+      }
+    }
+    return 'menu';
+  });
+
+  const [navigatingTab, setNavigatingTab] = useState<string | null>(null);
   const [isChildDirty, setIsChildDirty] = useState<boolean>(false);
   const [isChildSaving, setIsChildSaving] = useState<boolean>(false);
   
@@ -88,7 +129,6 @@ export default function Settings() {
   const isAdmin = userRole === 'admin' || isSuperAdmin;
   const visibleTabs: TabItem[] = TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
 
-  // Self-Contained Theme Sync
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
     const saved = localStorage.getItem('theme');
@@ -103,11 +143,9 @@ export default function Settings() {
     root.classList.toggle('dark', nextTheme === 'dark');
     root.classList.toggle('light', nextTheme === 'light');
     localStorage.setItem('theme', nextTheme);
-    // Broadcast custom event so Sidebar.tsx and other views stay in sync
     window.dispatchEvent(new CustomEvent('theme-changed', { detail: nextTheme }));
   };
 
-  // Sync internal theme state on global theme changes
   useEffect(() => {
     const handleThemeEvent = (e: Event) => {
       const customEvent = e as CustomEvent<'dark' | 'light'>;
@@ -117,28 +155,50 @@ export default function Settings() {
     return () => window.removeEventListener('theme-changed', handleThemeEvent);
   }, []);
 
-  // Dynamic topbar synchronization
+  // Monitors route changes to activate the view only after destination component mounts
   useEffect(() => {
-    const isMobile = window.innerWidth < 1024;
+    if (urlTabParam && urlTabParam === navigatingTab) {
+      setMobileView('detail');
+      setNavigatingTab(null);
+    }
+  }, [urlTabParam, navigatingTab]);
+
+  // Synchronize mobile view state on popstate or general location updates
+  useEffect(() => {
+    if (!urlTabParam) {
+      setMobileView('menu');
+    } else {
+      setMobileView('detail');
+    }
+  }, [urlTabParam]);
+
+  // Self-contained desktop-only redirect fallback (avoids infinite loops on mobile menu views)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 1280 && !urlTabParam) {
+      navigate('/settings/personal-account', { replace: true });
+    }
+  }, [urlTabParam, navigate]);
+
+  useEffect(() => {
+    const isMobile = window.innerWidth < 1280;
     
     const delayTimeout = setTimeout(() => {
       if (isMobile) {
         if (mobileView === 'detail') {
-          const activeLabel = TABS.find(t => t.id === activeTab)?.label || '';
+          const activeLabel = TABS.find(t => t.id === activeTabId)?.label || '';
           window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: activeLabel }));
         } else {
           window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: null }));
         }
       } else {
-        const activeLabel = TABS.find(t => t.id === activeTab)?.label || '';
+        const activeLabel = TABS.find(t => t.id === activeTabId)?.label || '';
         window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: activeLabel }));
       }
     }, 100); 
 
     return () => clearTimeout(delayTimeout);
-  }, [activeTab, mobileView]);
+  }, [activeTabId, mobileView]);
 
-  // Listen to the settings dirty-state events broadcasted by child views
   useEffect(() => {
     const handleDirtyState = (e: Event) => {
       const customEvent = e as CustomEvent<{ isDirty: boolean; isSaving: boolean }>;
@@ -152,7 +212,6 @@ export default function Settings() {
     };
   }, []);
 
-  // Listen to mobile Topbar Go Back triggers
   useEffect(() => {
     const handleSettingsGoBack = () => {
       handleGoBack();
@@ -161,7 +220,6 @@ export default function Settings() {
     return () => window.removeEventListener('settings-go-back', handleSettingsGoBack);
   }, [isChildDirty]);
 
-  // Clean up subtab on unmount
   useEffect(() => {
     return () => {
       window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: null }));
@@ -169,13 +227,19 @@ export default function Settings() {
   }, []);
 
   const handleTabClick = (tabId: TabID) => {
-    // If navigating via the sidebar, discard unsaved changes to unlock viewports
     if (isChildDirty) {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
 
-    setActiveTab(tabId);
-    setMobileView('detail');
+    const pathSegment = TAB_URL_MAP[tabId];
+    if (pathSegment) {
+      if (urlTabParam === pathSegment) {
+        setMobileView('detail');
+      } else {
+        setNavigatingTab(pathSegment);
+        navigate(`/settings/${pathSegment}`);
+      }
+    }
   };
 
   const handleGoBack = () => {
@@ -183,6 +247,7 @@ export default function Settings() {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
     setMobileView('menu');
+    navigate('/settings'); 
   };
 
   const handleTriggerChildSave = () => {
@@ -194,14 +259,9 @@ export default function Settings() {
   };
 
   return (
-    /* 
-      PAGE CONTAINER WRAPPER:
-      Configured using 'lg:pb-2' to preserve exactly an 8px margin spacing 
-      at the bottom of your PC viewport layout.
-    */
-    <div className="mx-auto pt-20 pb-36 px-4 sm:px-5 lg:pt-10 lg:px-8 lg:pb-2 max-w-360 lg:h-full flex flex-col overflow-hidden relative">
+    /* Applied dynamic horizontal padding constraints (px-0 on audit mobile/tablet, px-4 for pc and other settings) */
+    <div className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-6 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-8rem)] xl:max-h-[820px] flex flex-col overflow-visible xl:overflow-hidden relative`}>
       
-      {/* Dynamic Keyframe Animations */}
       <style>{`
         @keyframes slideUp {
           from {
@@ -218,8 +278,8 @@ export default function Settings() {
         }
       `}</style>
 
-      {/* Header - Hidden on Mobile (Matched precisely with PersonalAccount format) */}
-      <div className="hidden lg:block mb-8 shrink-0">
+      {/* Header */}
+      <div className="hidden xl:block mb-8 shrink-0">
         <h1 className="text-xl font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase">
           System Settings
         </h1>
@@ -229,14 +289,14 @@ export default function Settings() {
       </div>
 
       {/* Main Split-View Area */}
-      <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-hidden">
         
-        {/* Mobile Navigation List */}
-        <div className={`${mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'} lg:hidden w-full shrink-0`}>
-          <nav className="flex flex-col gap-4">
+        {/* Mobile / Tablet Navigation List */}
+        <div className={`${mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'} xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}>
+          <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
             {visibleTabs.map((tab: TabItem) => {
               const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
+              const isActive = activeTabId === tab.id;
               return (
                 <button
                   key={tab.id}
@@ -256,7 +316,7 @@ export default function Settings() {
                       <Icon className="w-6 h-6 shrink-0" />
                     </div>
                     <div>
-                      <h3 className={`font-semibold text-sm lg:text-base transition-colors ${
+                      <h3 className={`font-semibold text-sm xl:text-base transition-colors ${
                         isActive ? 'text-white' : 'text-slate-800 dark:text-slate-100'
                       }`}>
                         {tab.label}
@@ -275,10 +335,10 @@ export default function Settings() {
               );
             })}
 
-            {/* Dynamic Theme Toggle in Mobile List (Placed uniquely below Audit Logs) */}
+            {/* Dynamic Theme Toggle in Mobile List */}
             <button
               onClick={toggleTheme}
-              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all duration-200 cursor-pointer text-left active:scale-95"
+              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all duration-200 cursor-pointer text-left active:scale-95 md:col-span-2"
             >
               <div className="flex items-center gap-4">
                 <div className="p-2 rounded-lg bg-white dark:bg-[#111315] border border-slate-200/50 dark:border-white/5 shadow-xs">
@@ -317,7 +377,7 @@ export default function Settings() {
         </div>
 
         {/* PC Sidebar Navigation */}
-        <div className="hidden lg:flex flex-col gap-6 w-[280px] shrink-0 overflow-y-auto scrollbar-none">
+        <div className="hidden xl:flex flex-col gap-6 w-70 shrink-0 overflow-y-auto scrollbar-none">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 px-4">
               Personal Area
@@ -325,14 +385,14 @@ export default function Settings() {
             <div className="flex flex-col gap-1">
               {visibleTabs.filter(t => !t.adminOnly).map(tab => {
                 const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
+                const isActive = activeTabId === tab.id;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => handleTabClick(tab.id)}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
                       isActive
-                        ? 'bg-blue-600 dark:bg-red-600 text-white font-semibold shadow-sm'
+                        ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
                         : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
                     }`}
                   >
@@ -352,14 +412,14 @@ export default function Settings() {
               <div className="flex flex-col gap-1">
                 {visibleTabs.filter(t => t.adminOnly).map(tab => {
                   const Icon = tab.icon;
-                  const isActive = activeTab === tab.id;
+                  const isActive = activeTabId === tab.id;
                   return (
                     <button
                       key={tab.id}
                       onClick={() => handleTabClick(tab.id)}
                       className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
                         isActive
-                          ? 'bg-blue-600 dark:bg-red-600 text-white font-semibold shadow-sm'
+                          ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
                           : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
                       }`}
                     >
@@ -370,7 +430,7 @@ export default function Settings() {
                 })}
               </div>
 
-              {/* Dynamic Theme Toggle in PC Sidebar (Placed uniquely below Audit Logs) */}
+              {/* Dynamic Theme Toggle in PC Sidebar */}
               <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 animate-slide-up">
                 <button
                   onClick={toggleTheme}
@@ -409,29 +469,37 @@ export default function Settings() {
           )}
         </div>
 
-        {/* 
-          CONDITIONAL MOUNT PANEL WORKSPACE:
-          Wraps children conditionally, rendering only the active module in memory.
-        */}
-        <div className={`${mobileView === 'detail' ? 'flex' : 'hidden lg:flex'} flex-1 min-h-0 h-full lg:bg-white lg:dark:bg-[#141414] lg:rounded-xl lg:border lg:border-slate-200 lg:dark:border-white/5 lg:shadow-sm flex-col overflow-hidden`}>
-          <div className="flex-1 h-full overflow-y-auto scroll-smooth pr-2 ml-8 mt-4 mb-4 mr-4">
-            {activeTab === 'account' && <PersonalAccount />}
+        {/* Conditional Workspace Frame */}
+        <div className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#141414] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}>
+          
+          {/* Back Navigation Bar */}
+          {mobileView === 'detail' && (
+            <div className="hidden md:flex xl:hidden px-4 py-3 border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#111315]/50 items-center shrink-0">
+              <button
+                onClick={handleGoBack}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xs hover:bg-slate-50 dark:hover:bg-zinc-700 transition-all active:scale-95 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to Settings list
+              </button>
+            </div>
+          )}
+
+          {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
+          <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
+            {activeTab === 'personal-account' && <PersonalAccount />}
             {activeTab === 'gym-profile' && <GymProfile />}
-            {activeTab === 'rates' && <RatesPayments />}
-            {activeTab === 'users' && <UserManagement />}
-            {activeTab === 'backup' && <DatabaseBackup />}
-            {activeTab === 'audit' && <AuditLogs />}
+            {activeTab === 'rates-and-payments' && <RatesPayments />}
+            {activeTab === 'user-management' && <UserManagement />}
+            {activeTab === 'database-backup' && <DatabaseBackup />}
+            {activeTab === 'audit-logs' && <AuditLogs />}
           </div>
         </div>
       </div>
 
-      {/* 
-        FLOATING ACTION BAR:
-        Displays Cancel (Discard) and Save Changes actions centered at the bottom.
-      */}
+      {/* FLOATING ACTION BAR */}
       {isChildDirty && (
-        <div className="fixed bottom-24 lg:bottom-10 left-1/2 -translate-x-1/2 z-200 flex items-center gap-3 animate-slide-up">
-          {/* Cancel & Discard Changes */}
+        <div className="fixed bottom-24 xl:bottom-10 left-1/2 -translate-x-1/2 z-200 flex items-center gap-3 animate-slide-up">
           <button
             onClick={handleTriggerChildCancel}
             className="inline-flex items-center gap-1.5 px-5 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-slate-200 text-[10px] font-heading tracking-widest uppercase rounded-full shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer border border-slate-200 dark:border-white/5"
@@ -439,7 +507,6 @@ export default function Settings() {
             Cancel
           </button>
 
-          {/* Save Changes */}
           <button
             onClick={handleTriggerChildSave}
             disabled={isChildSaving}

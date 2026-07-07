@@ -38,7 +38,7 @@ export function Table<T>({
   searchPlaceholder = "Search records...",
   defaultSortKey = '',
   defaultSortDirection = 'asc',
-  itemsPerPage = 10,
+  itemsPerPage: propItemsPerPage, // Renamed to allow responsive default fallback
   loading = false,
   loadingLabel = "Loading data..."
 }: TableProps<T>) {
@@ -47,12 +47,40 @@ export function Table<T>({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset to first page when filtering or sorting parameters change
+  // 1. Manage viewport-based items per page if no explicit value is passed
+  const [viewportItemsPerPage, setViewportItemsPerPage] = useState(() => {
+    if (typeof window === 'undefined') return 25;
+    const width = window.innerWidth;
+    if (width < 768) return 10;   // Mobile
+    if (width < 1024) return 15;  // Tablet
+    return 25;                    // Desktop
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width < 768) {
+        setViewportItemsPerPage(10);
+      } else if (width < 1024) {
+        setViewportItemsPerPage(15);
+      } else {
+        setViewportItemsPerPage(25);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Use the custom prop override if provided; otherwise, fall back to the responsive viewport limit
+  const itemsPerPage = propItemsPerPage !== undefined ? propItemsPerPage : viewportItemsPerPage;
+
+  // Reset to first page when filtering, sorting parameters, or item limits change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sortKey, sortDirection]);
+  }, [searchQuery, sortKey, sortDirection, itemsPerPage]);
 
-  // 1. Filter Data based on Search Keys
+  // 2. Filter Data based on Search Keys
   const filteredData = useMemo(() => {
     if (!searchQuery || searchKeys.length === 0) return data;
     const lowerQuery = searchQuery.toLowerCase();
@@ -66,7 +94,7 @@ export function Table<T>({
     });
   }, [data, searchQuery, searchKeys]);
 
-  // 2. Sort Filtered Data
+  // 3. Sort Filtered Data
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
     const colDef = columns.find(col => col.key === sortKey);
@@ -90,7 +118,7 @@ export function Table<T>({
     });
   }, [filteredData, sortKey, sortDirection, columns]);
 
-  // 3. Paginate Sorted & Filtered Data
+  // 4. Paginate Sorted & Filtered Data
   const totalItems = sortedData.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -136,12 +164,12 @@ export function Table<T>({
             <tr>
               {columns.map((col) => (
                 <th
-  key={col.key}
-  onClick={() => col.sortable && handleSort(col.key)}
-  className={`p-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${
-    col.sortable ? 'cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800/30 transition-colors' : ''
-  } ${col.headerClassName || ''}`}
->
+                  key={col.key}
+                  onClick={() => col.sortable && handleSort(col.key)}
+                  className={`p-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${
+                    col.sortable ? 'cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800/30 transition-colors' : ''
+                  } ${col.headerClassName || ''}`}
+                >
                   <div className="flex items-center gap-1.5">
                     <span>{col.header}</span>
                     {col.sortable && (
@@ -180,9 +208,9 @@ export function Table<T>({
                 >
                   {columns.map((col) => (
                     <td 
-  key={col.key} 
-  className={`p-4 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap ${col.cellClassName || ''}`}
->
+                      key={col.key} 
+                      className={`p-4 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap ${col.cellClassName || ''}`}
+                    >
                       {col.render ? col.render(item) : (item as any)[col.key]}
                     </td>
                   ))}
@@ -203,7 +231,6 @@ export function Table<T>({
           </span>
 
           <div className="flex items-center gap-1.5">
-            {/* Added accessible dynamic labels and system attributes [14] */}
             <button
               type="button"
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
@@ -232,7 +259,6 @@ export function Table<T>({
               </button>
             ))}
 
-            {/* Added accessible dynamic labels and system attributes [14] */}
             <button
               type="button"
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}

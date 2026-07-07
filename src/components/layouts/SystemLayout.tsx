@@ -63,9 +63,13 @@ export const SystemLayout: React.FC = () => {
         <Topbar onMenuClick={() => setMobileDrawerOpen(prev => !prev)} />
 
         {/* Scrollable Main Content Pane (Set to lg:overflow-hidden to prevent outer scrollbar on PC) */}
-        <div className="flex-1 overflow-y-auto lg:overflow-hidden relative min-w-0 pt-16 h-full">
-          <main className="h-full">
-            <Outlet />
+        <div className="flex-1 overflow-y-auto lg:overflow-hidden relative min-w-0 px-4 pt-16 pb-20 h-full">
+          {/* Applied margins & responsive padding for clean content layout spacing with zero top padding */}
+          <main className="h-full pt-0 pb-4 sm:pt-0 sm:px-20 sm:pb-20 lg:pt-0 lg:px-16 lg:pb-16 overflow-y-auto">
+            {/* Max width wrapper to prevent infinite horizontal stretch on ultra-wide screens */}
+            <div className="max-w-[1600px] w-full mx-auto h-full">
+              <Outlet />
+            </div>
           </main>
         </div>
 

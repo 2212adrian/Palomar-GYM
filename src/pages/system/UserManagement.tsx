@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
@@ -517,7 +518,7 @@ export const UserManagement: React.FC = () => {
         searchPlaceholder="Search system users..."
         defaultSortKey="username"
         defaultSortDirection="asc"
-        itemsPerPage={10}
+        itemsPerPage={useResponsiveItemsPerPage()}
         loading={isLoadingUsers}
         loadingLabel="Retrieving system user profiles..."
       />

@@ -721,7 +721,7 @@ export const RatesPayments: React.FC = () => {
                   <h4 className="font-heading text-xs tracking-wider text-slate-900 dark:text-white uppercase leading-none">
                     {gymProfileData?.gym_name || "WOLF PALOMAR GYM"}
                   </h4>
-                  <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-tight leading-normal max-w-[200px] mx-auto text-center">
+                  <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-tight leading-normal max-w-50 mx-auto text-center">
                     {gymProfileData?.gym_address || "123 Sample Street, Barangay Central, Quezon City, Metro Manila, Philippines"}
                   </p>
                   <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">
@@ -868,7 +868,7 @@ export const RatesPayments: React.FC = () => {
 
                 {/* Invoice verification guidelines footer */}
                 <div className="text-center space-y-2 pt-1.5 text-[8px] text-slate-400 leading-normal">
-                  <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice <br /> {vatEnabled ? '(Vat-Inclusive)' : '(Non-Vat)'}</p>
+                  <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice</p>
                   <div className="font-medium uppercase tracking-widest text-slate-500 dark:text-slate-300 space-y-0.5">
                     <p>Thank you for choosing Wolf Gym.</p>
                     <p>We look forward to seeing you again.</p>

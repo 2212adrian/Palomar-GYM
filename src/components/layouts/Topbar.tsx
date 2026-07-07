@@ -80,7 +80,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       .map(p => p.replace(/-/g, ' ').toUpperCase())
       .join(' / ');
 
-    if (location.pathname.includes('/system/account')) {
+    if (location.pathname.includes('/settings') || location.pathname.includes('/system/account')) {
       baseBreadcrumb = 'SETTINGS';
     }
 
@@ -107,8 +107,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           <span 
             className={
               isFirst 
-                ? "text-[#1b365d] dark:text-[#bf0202] font-semibold" 
-                : "text-slate-900 dark:text-slate-100" 
+                ? "text-[var(--color-primary)] font-bold" 
+                : "text-[var(--color-text)]" 
             }
           >
             {segment}
@@ -123,13 +123,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#141414]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-200 select-none">
+    /*
+      Responsive Bottom Outline styling:
+      - Light Mode: Dark Blue outline (#123c73) with micro-shadowing.
+      - Dark Mode (dark:): Crimson Red outline (#bf0202) with matched micro-shadowing.
+    */
+    <header className="h-16 border-b border-[#123c73]/25 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.05)] dark:shadow-[0_2px_8px_rgba(191,2,2,0.05)] bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-200 select-none">
       
       {/* 
         Far Left Container:
-        Displays a clean, square Chevron back button on mobile when subtabs are active.
+        Includes the back button and mobile breadcrumbs next to each other to prevent overlaps.
       */}
-      <div className="flex items-center min-w-10">
+      <div className="flex items-center gap-3.5 min-w-[200px]">
         {subTab && (
           <button
             onClick={handleGoBackTrigger}
@@ -140,16 +145,21 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             <ChevronLeft className="w-5 h-5" />
           </button>
         )}
+
+        {/* Mobile / Tablet Breadcrumbs */}
+        <div className="lg:hidden font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
+          {renderStyledBreadcrumbs()}
+        </div>
       </div>
 
-      {/* Centered Breadcrumbs Wrapper */}
-      <div className="absolute left-1/2 -translate-x-1/2 font-heading text-xs tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
+      {/* Centered Breadcrumbs Wrapper (Desktop Viewports Only) */}
+      <div className="hidden lg:block absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
         {renderStyledBreadcrumbs()}
       </div>
 
       {/* Real-time clock and mobile hamburger on the far right */}
       <div className="flex items-center gap-4 ml-auto">
-        <div className="hidden sm:block text-[11px] font-mono text-slate-400 select-none">
+        <div className="hidden sm:block text-[15px] font-mono text-slate-400 select-none">
           {currentTime}
         </div>
 

@@ -1,12 +1,12 @@
-//src/routes/index.tsx
 import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
+import { IncidentReports } from '../pages/reports/IncidentReports';
 import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
 
-// Mount actual pages instead of placeholders [13]
+// Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
 import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
@@ -17,8 +17,8 @@ const RegisterSalePlaceholder = () => <div className="p-4 text-slate-900 dark:te
 const router = createBrowserRouter([
   // Public Routes (Outside of the secure console layout shell)
   { path: '/login', element: <Login /> },
-  { path: '/forgot-password', element: <ForgotPassword /> }, // Replaced placeholder with verified component [13]
-  { path: '/confirm-signup', element: <ConfirmSignUp /> }, // Added Confirm Sign Up route
+  { path: '/forgot-password', element: <ForgotPassword /> }, 
+  { path: '/confirm-signup', element: <ConfirmSignUp /> }, 
 
   // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {
@@ -39,7 +39,6 @@ const router = createBrowserRouter([
               { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
               { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
               { path: '/sales/products', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Product List (Right Tab)</div> },
-              { path: '/reports/incidents', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Incident Reports</div> },
               { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
               { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
             ]
@@ -51,7 +50,12 @@ const router = createBrowserRouter([
             children: [
               { path: '/sales/register', element: <RegisterSalePlaceholder /> },
               { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
-              { path: '/system/account', element: <Settings /> }
+              { path: '/reports/incident-reports', element: <IncidentReports /> }, 
+              
+              // Standardized settings routes (No redirects at the router configuration level)
+              { path: '/settings/:activeTab', element: <Settings /> },
+              { path: '/settings', element: <Settings /> },
+              { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
             ]
           }
 

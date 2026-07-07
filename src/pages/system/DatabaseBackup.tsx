@@ -6,6 +6,7 @@ import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import type { Column } from '../../components/ui/Table';
+import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { 
   Database, 
@@ -510,7 +511,7 @@ export const DatabaseBackup: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 font-body bg-(--bg-page) min-h-screen text-(--color-text) p-6 rounded-3xl">
+    <div className="space-y-8 font-body min-h-screen text-(--color-text) rounded-3xl">
       
       {/* ⚠️ POST-RESTORE SYSTEM VERIFICATION FLOATING PORTAL CARD */}
       {safetyBackupPoint && (
@@ -571,8 +572,8 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Info Widgets */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* KPI Info Widgets - Hidden on mobile viewports */}
+      <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-450 border border-emerald-500/20">
             <Database className="w-6 h-6 text-emerald-500" />
@@ -651,7 +652,7 @@ export const DatabaseBackup: React.FC = () => {
           searchPlaceholder="Search saved backups history..."
           defaultSortKey="created_at"
           defaultSortDirection="desc"
-          itemsPerPage={5}
+          itemsPerPage={useResponsiveItemsPerPage()}
           loading={isLoading}
           loadingLabel="Accessing system backup files..."
         />

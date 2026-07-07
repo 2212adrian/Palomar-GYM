@@ -1,5 +1,4 @@
-//src/components/layouts/Sidebar.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Menu, X, ChevronDown, LogOut, LayoutDashboard, 
@@ -58,13 +57,13 @@ const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: s
 
         if (error || !data?.signedUrl) {
           const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-          setSrcUrl(pubData?.publicUrl || null); // Fixed property name
+          setSrcUrl(pubData?.publicUrl || null);
         } else {
           setSrcUrl(data.signedUrl);
         }
       } catch {
         const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-        setSrcUrl(pubData?.publicUrl || null); // Fixed property name
+        setSrcUrl(pubData?.publicUrl || null);
       }
     };
     fetchSignedUrl();
@@ -90,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const location = useLocation();
   const { user, profile } = useAuthStore() as any; 
-  const [activeHeaderTab, setActiveHeaderTab] = useState<'profile' | 'target'>('profile');
+  const [activeHeaderTab, setActiveHeaderTab] = useState<'profile' | 'goal'>('profile');
 
   // Single-expand Accordion State: Only allows one dropdown to be active
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
@@ -98,7 +97,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Dedicated Mobile Single-expand State
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(null);
 
-  // Menu structure (Removed System to convert into static bottom buttons)
+  // Inline Confirmation States and Ref Timers
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
+  const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] = useState<boolean>(false);
+  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mobileLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Menu structure (De-coupled sub items to support role permissions dynamically)
   const navigationMenu: MenuItem[] = [
     {
       name: 'Dashboard',
@@ -113,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { 
           name: 'Revenue Goals', 
           path: '/dashboard/goals', 
-          description: 'Set custom target limits (Day, Week, Month)',
+          description: 'Set custom goal limits (Day, Week, Month)',
           badge: 'GOALS' 
         }
       ]
@@ -171,25 +176,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       name: 'Reports',
       icon: <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin'],
+      roles: ['admin', 'staff'], // Opened group to both roles
       children: [
         { 
           name: 'Incident Reports', 
-          path: '/reports/incidents', 
-          description: 'Infraction logs and security entries' 
+          path: '/reports/incident-reports', 
+          description: 'Infraction logs and security entries',
+          roles: ['admin', 'staff'] // Accessible to both
         },
         { 
           name: 'BIR Records', 
           path: '/reports/bir', 
-          description: 'Tax export sheets and sales book compliance' 
+          description: 'Tax export sheets and sales book compliance',
+          roles: ['admin'] // Only visible to admins
         }
       ]
     }
   ];
 
-  const allowedMenu = navigationMenu.filter(
-    item => !item.roles || (profile && item.roles.includes(profile.role))
-  );
+  // Dynamic filter structure reflecting nested child element access
+  const allowedMenu = navigationMenu
+    .filter(item => !item.roles || (profile && item.roles.includes(profile.role)))
+    .map(item => {
+      if (item.children) {
+        return {
+          ...item,
+          children: item.children.filter(child => !child.roles || (profile && child.roles.includes(profile.role)))
+        };
+      }
+      return item;
+    })
+    .filter(item => !item.children || item.children.length > 0);
 
   const toggleSubmenu = (menuName: string) => {
     setExpandedMenu(prev => (prev === menuName ? null : menuName));
@@ -205,12 +222,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           .eq('id', currentUser.id)
           .maybeSingle();
 
-        const targetName = profileData?.full_name || currentUser.email || 'Unknown User';
+        const goalName = profileData?.full_name || currentUser.email || 'Unknown User';
 
-        // Log the logout action before triggering the parent onLogout handler
         await logAudit(
           'USER_LOGOUT',
-          `User "${targetName}" logged out successfully.`,
+          `User "${goalName}" logged out successfully.`,
           currentUser.id
         );
       }
@@ -220,6 +236,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onLogout();
     }
   };
+
+  const triggerDesktopConfirm = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (showLogoutConfirm) return;
+
+    setShowLogoutConfirm(true);
+    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+    logoutTimerRef.current = setTimeout(() => {
+      setShowLogoutConfirm(false);
+    }, 5000);
+  };
+
+  const cancelDesktopConfirm = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowLogoutConfirm(false);
+    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+  };
+
+  const triggerMobileConfirm = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (showMobileLogoutConfirm) return;
+
+    setShowMobileLogoutConfirm(true);
+    if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
+    mobileLogoutTimerRef.current = setTimeout(() => {
+      setShowMobileLogoutConfirm(false);
+    }, 5000);
+  };
+
+  const cancelMobileConfirm = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowMobileLogoutConfirm(false);
+    if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+      if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
+    };
+  }, []);
 
   const fallbackCharacter = profile?.username?.[0]?.toUpperCase() || 'U';
 
@@ -260,7 +321,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <img src="/favicon.svg" alt="Icon" className="w-6 h-6 animate-pulse animate-duration-3000" />
+              <img src="/favicon.svg" alt="Icon" className="w-6 h-6" />
               <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
             </div>
             <button
@@ -273,7 +334,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
-          {/* Header tab selectors */}
           <div className="flex border border-slate-200 dark:border-white/10 rounded-lg overflow-hidden bg-slate-50 dark:bg-neutral-900/50 p-1 font-heading text-[10px] tracking-wider shadow-inner">
             <button 
               onClick={() => setActiveHeaderTab('profile')}
@@ -286,18 +346,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               PROFILE
             </button>
             <button 
-              onClick={() => setActiveHeaderTab('target')}
+              onClick={() => setActiveHeaderTab('goal')}
               className={`flex-1 py-1.5 rounded-md cursor-pointer transition-all duration-300 font-bold ${
-                activeHeaderTab === 'target' 
+                activeHeaderTab === 'goal' 
                   ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-md' 
                   : 'text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              TARGET
+              goal
             </button>
           </div>
 
-          {/* Header Content Panel (Adaptive contrast text colors corrected) */}
           <div className="relative h-18 overflow-hidden">
             {activeHeaderTab === 'profile' ? (
               <div className="flex items-center gap-3 animate-slide-up h-full">
@@ -311,7 +370,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="overflow-hidden text-left">
                   <h4 className="font-heading text-xs tracking-wider uppercase truncate text-slate-800 dark:text-slate-200">{profile?.username || 'User'}</h4>
                   <p className="text-[9px] font-heading text-[#1b365d] dark:text-[#bf0202] uppercase tracking-widest flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                     {profile?.role || 'Staff'}
                   </p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">{user?.email}</p>
@@ -320,7 +379,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <div className="space-y-2.5 animate-slide-up text-[10px] font-bold text-slate-500 dark:text-slate-400 h-full flex flex-col justify-center text-left">
                 <div className="flex justify-between font-heading tracking-wider">
-                  <span>REVENUE TARGET:</span>
+                  <span>REVENUE goal:</span>
                   <span className="text-slate-900 dark:text-white font-mono font-black">₱5,000 / ₱8,000</span>
                 </div>
                 <div className="w-full h-2 bg-slate-200 dark:bg-neutral-800 rounded-full overflow-hidden p-px shadow-inner relative">
@@ -353,7 +412,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           
           <div className="w-10 h-10 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 shadow-lg relative bg-slate-100 dark:bg-neutral-900 overflow-hidden">
             <div 
-              className="absolute inset-0 opacity-[0.15] mix-blend-overlay" 
+              className="absolute inset-0 opacity-[0.15] mix-blend-overlay transform-gpu" 
               style={{ backgroundImage: `url(${TwillTexture})` }}
             />
             <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} isMini={true} />
@@ -458,12 +517,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer Controls - Re-engineered for perfect PC collapsed symmetry */}
+        {/* Sidebar Footer Controls */}
         <div className={`border-t border-slate-200 dark:border-white/5 mt-auto relative z-10 bg-slate-50/30 dark:bg-neutral-950/20 transition-all duration-300 ${
           collapsed ? 'p-3 space-y-4' : 'p-4 space-y-3'
         }`}>
           <Link
-            to="/system/account"
+            to="/settings"
             className={`flex items-center justify-center rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5 text-slate-700 dark:text-slate-300 hover:opacity-90 transition-all cursor-pointer ${
               collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
             }`}
@@ -473,17 +532,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>SETTINGS</span>
           </Link>
 
-          <button
-            onClick={handleLogout}
-            aria-label="Logout"
-            title={collapsed ? "Logout" : undefined}
-            className={`flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer ${
-              collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
-            }`}
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT</span>
-          </button>
+          {showLogoutConfirm ? (
+            collapsed ? (
+              <div className="flex flex-col items-center justify-center rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-11 py-2 gap-2 font-heading text-[8px] font-black transition-all mx-auto">
+                <span className="text-[7px] tracking-tighter">SURE?</span>
+                <div className="flex flex-col gap-1.5 w-full px-1">
+                  <button
+                    onClick={cancelDesktopConfirm}
+                    className="w-full py-1.5 rounded bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-black cursor-pointer text-[7px]"
+                  >
+                    NO
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full py-1.5 rounded bg-red-600 hover:bg-red-700 text-white font-black cursor-pointer text-[7px]"
+                  >
+                    YES
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-full p-2.5 font-heading text-[10px] tracking-widest font-black transition-all">
+                <span className="text-[9px] mr-1 shrink-0">ARE YOU SURE?</span>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={cancelDesktopConfirm}
+                    className="px-4 py-2 rounded-lg bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px]"
+                  >
+                    NO
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px]"
+                  >
+                    YES
+                  </button>
+                </div>
+              </div>
+            )
+          ) : (
+            <button
+              onClick={triggerDesktopConfirm}
+              aria-label="Logout"
+              title={collapsed ? "Logout" : undefined}
+              className={`flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer ${
+                collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
+              }`}
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT</span>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -499,14 +598,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <div 
-            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" 
+            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none transform-gpu will-change-transform" 
             style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
           />
 
           <div className="flex flex-col h-full justify-between relative z-10">
             <div className="space-y-6">
               
-              {/* Mobile Header with brand naming updated */}
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
                 <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
 
@@ -520,7 +618,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               </div>
 
-              {/* User Profile */}
               <div className="flex items-center gap-3 bg-slate-50/50 dark:bg-neutral-900/30 p-3 rounded-2xl border border-slate-200/50 dark:border-white/5 shadow-inner">
                 <div className="w-12 h-12 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-950 overflow-hidden">
                   <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
@@ -532,7 +629,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
 
-              {/* TIER 1 & TIER 2: MOBILE DE-COUPLED ACCORDION NAV */}
               <nav className="space-y-4 pt-2 overflow-y-auto max-h-[55vh] pr-1">
                 {allowedMenu.map((item, idx) => {
                   const isMobileExpanded = mobileExpandedMenu === item.name;
@@ -627,7 +723,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="border-t border-slate-200 dark:border-white/5 pt-4 space-y-3 mt-auto">
               
               <Link
-                to="/system/account"
+                to="/settings"
                 onClick={() => setMobileOpen(false)}
                 className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-neutral-800 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
               >
@@ -635,13 +731,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span>SETTINGS</span>
               </Link>
 
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>LOGOUT</span>
-              </button>
+              {showMobileLogoutConfirm ? (
+                <div className="w-full flex items-center justify-between p-3 rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all shadow-inner">
+                  <span className="text-[9px]">ARE YOU SURE?</span>
+                  <div className="flex gap-2.5">
+                    <button
+                      onClick={cancelMobileConfirm}
+                      className="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px]"
+                    >
+                      NO
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px]"
+                    >
+                      YES
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={triggerMobileConfirm}
+                  className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
+                >
+                  <LogOut className="w-4 h-4 animate-duration-3000" />
+                  <span>LOGOUT</span>
+                </button>
+              )}
             </div>
           </div>
         </aside>

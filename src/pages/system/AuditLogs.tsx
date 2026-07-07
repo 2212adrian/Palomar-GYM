@@ -1,7 +1,7 @@
-//src/pages/system/AuditLogs.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
+import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { 
   Database, 
   RefreshCw, 
@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   LogIn,
   LogOut,
-  Settings,
+  Settings as SettingsIcon,
   Trash2,
   CreditCard,
   User,
@@ -45,9 +45,8 @@ export const AuditLogs: React.FC = () => {
   const [activeSeverity, setActiveSeverity] = useState<string>('all');
   const [activeOperator, setActiveOperator] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = useResponsiveItemsPerPage();
 
-  // Track currently expanded timeline card ID (Accordion behavior) [1.1.2]
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
 
   const fetchLogs = async () => {
@@ -72,7 +71,6 @@ export const AuditLogs: React.FC = () => {
     fetchLogs();
   }, []);
 
-  // 1. Map system actions to human-readable non-technical terminology
   const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
     if (act.includes('CHECK_IN')) return 'Member Checked In';
@@ -89,11 +87,9 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('LOGOUT') || act.includes('SIGN_OUT')) return 'User Logged Out';
     if (act.includes('DELETE') || act.includes('PURGE')) return 'Purged System Record';
     
-    // Fallback format
     return action.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
   };
 
-  // 2. Map system actions to category groups
   const getActionCategory = (action: string): string => {
     const act = action.toLowerCase();
     if (act.includes('login') || act.includes('logout') || act.includes('auth')) return 'auth';
@@ -106,7 +102,6 @@ export const AuditLogs: React.FC = () => {
     return 'all';
   };
 
-  // 3. Map system actions to precise non-technical severity levels
   const getActionSeverity = (action: string): 'info' | 'warning' | 'critical' => {
     const act = action.toUpperCase();
     if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE_ADMIN') || act.includes('DEACTIVATE')) {
@@ -118,7 +113,6 @@ export const AuditLogs: React.FC = () => {
     return 'info';
   };
 
-  // 4. Resolve semantic, non-technical context icons
   const getActionIcon = (action: string, severity: string) => {
     const act = action.toUpperCase();
     const style = "w-4 h-4";
@@ -132,11 +126,10 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('RESTORE')) return <RefreshCw className={`${style} text-red-500`} />;
     if (act.includes('LOGIN')) return <LogIn className={`${style} text-blue-400`} />;
     if (act.includes('LOGOUT')) return <LogOut className={`${style} text-slate-400`} />;
-    if (act.includes('CONFIG') || act.includes('RATES')) return <Settings className={`${style} text-amber-500`} />;
+    if (act.includes('CONFIG') || act.includes('RATES')) return <SettingsIcon className={`${style} text-amber-500`} />;
     return <Activity className={`${style} text-slate-400`} />;
   };
 
-  // 5. Parse absolute date timestamps into simple daily segments (Local Manila Time)
   const getDayLabel = (dateStr: string): string => {
     const ManilaTimeStr = new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
     const targetDate = new Date(ManilaTimeStr);
@@ -160,7 +153,6 @@ export const AuditLogs: React.FC = () => {
     });
   };
 
-  // 6. Tally dashboard summary calculations
   const summaryMetrics = useMemo(() => {
     const activeOperators = new Set(logs.map(l => l.actor_username)).size;
     const criticalCount = logs.filter(l => getActionSeverity(l.action) === 'critical').length;
@@ -184,19 +176,15 @@ export const AuditLogs: React.FC = () => {
     };
   }, [logs]);
 
-  // Extract list of operators dynamically based on user management logs [1.1.2]
   const uniqueOperators = useMemo(() => {
     const operators = logs.map(l => l.actor_username);
     return Array.from(new Set(operators)).filter(Boolean).sort();
   }, [logs]);
 
-  // 7. Client-side Search and Category Filtering [1.1.2]
   const processedLogs = useMemo(() => {
     return logs.filter((log) => {
       const matchesCategory = activeCategory === 'all' || getActionCategory(log.action) === activeCategory;
-      
       const matchesSeverity = activeSeverity === 'all' || getActionSeverity(log.action) === activeSeverity;
-
       const matchesOperator = activeOperator === 'all' || log.actor_username === activeOperator;
 
       const query = searchQuery.trim().toLowerCase();
@@ -209,8 +197,6 @@ export const AuditLogs: React.FC = () => {
     });
   }, [logs, activeCategory, activeSeverity, activeOperator, searchQuery]);
 
-  // 8. Consecutive Grouping Algorithm [1.1.2]
-  // Pairs sequential actions triggered by the exact same actor within a 5-minute window [1.1.2]
   const timelineGroups = useMemo(() => {
     if (!processedLogs.length) return [];
 
@@ -259,7 +245,6 @@ export const AuditLogs: React.FC = () => {
       grouped.push(currentGroup);
     }
 
-    // 9. Group the timeline cards further under their respective days (Today, Yesterday, Date)
     const dayPartitions: Record<string, any[]> = {};
     grouped.forEach((group) => {
       const label = getDayLabel(group.created_at);
@@ -275,7 +260,6 @@ export const AuditLogs: React.FC = () => {
     }));
   }, [processedLogs]);
 
-  // Compute pagination limits on groups [1.1.2]
   const totalGroupsCount = useMemo(() => {
     return timelineGroups.reduce((acc, current) => acc + current.items.length, 0);
   }, [timelineGroups]);
@@ -311,12 +295,11 @@ export const AuditLogs: React.FC = () => {
   const totalPages = Math.ceil(totalGroupsCount / itemsPerPage);
 
   const toggleGroupExpand = (groupId: string) => {
-    // Accordion Toggle logic: Collapse current active if selected, otherwise set new active [1.1.2]
     setExpandedGroupId((prev) => (prev === groupId ? null : groupId));
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-8 font-body bg-(--bg-page) text-(--color-text) min-h-screen">
+    <div className="w-full space-y-6 font-body text-(--color-text) pr-1 pl-1 sm:px-0 min-w-0">
       
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -324,7 +307,7 @@ export const AuditLogs: React.FC = () => {
           <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
             System Audit Logs
           </h2>
-          <p className="text-sm text-slate-400 mt-1 font-medium">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-semibold leading-relaxed">
             A comprehensive, readable timeline tracking administrative actions and system security events.
           </p>
         </div>
@@ -343,10 +326,10 @@ export const AuditLogs: React.FC = () => {
         </button>
       </div>
 
-      {/* KPI Info Widgets Container (Hover-to-Reveal Implementation) [1.1.2] */}
-      <div className="group/kpis relative transition-all duration-500 ease-in-out border border-transparent hover:border-(--border-color)/40 rounded-3xl p-1">
+      {/* KPI Info Widgets Container - Hidden on mobile, visible on md screens and up */}
+      <div className="hidden md:block group/kpis relative transition-all duration-500 ease-in-out border border-transparent hover:border-(--border-color)/40 rounded-3xl p-1">
         
-        {/* Subtle hover disclosure anchor bar [1.1.2] */}
+        {/* Hover disclosure bar */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-slate-500/5 border border-dashed border-(--border-color) rounded-2xl text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer transition-all hover:bg-slate-500/10">
           <span className="flex items-center gap-2">
             <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
@@ -356,7 +339,7 @@ export const AuditLogs: React.FC = () => {
           <span className="text-[9px] text-slate-500 font-bold hidden group-hover/kpis:inline">Collapse metrics</span>
         </div>
         
-        {/* KPI Grid (Only expanded and faded in on container hover) [1.1.2] */}
+        {/* KPI Grid */}
         <div className="opacity-0 max-h-0 scale-y-95 origin-top overflow-hidden group-hover/kpis:opacity-100 group-hover/kpis:max-h-96 group-hover/kpis:scale-y-100 group-hover/kpis:mt-4 transition-all duration-500 ease-in-out grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           
           <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
@@ -441,15 +424,15 @@ export const AuditLogs: React.FC = () => {
       </div>
 
       {/* Filter and Search Section */}
-      <div className="space-y-4 bg-(--bg-card) p-5 rounded-2xl border border-(--border-color) shadow-xs text-left">
+      <div className="space-y-4 bg-(--bg-card) p-4 sm:p-5 rounded-2xl border border-(--border-color) shadow-xs text-left">
         
-        {/* Row 1: Search and Selection Filters (Optimized inline row design) [1.1.2] */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
+        {/* Row 1: Search and Selection Filters */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
           {/* Search Input block */}
           <div className="relative flex-1 max-w-md w-full">
             <input
               type="text"
-              placeholder="Search audit logs by actor, action, or description..."
+              placeholder="Search audit logs by actor, action..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -460,12 +443,13 @@ export const AuditLogs: React.FC = () => {
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           </div>
 
-          {/* New Inline Filters block (Severity and User Operator dropdowns in one consistent row) [1.1.2] */}
-          <div className="flex flex-row items-center gap-4 shrink-0 flex-nowrap w-full md:w-auto">
+          {/* New Inline Filters block (Split into 2-columns on mobile, flex row on tablet/desktop) */}
+          <div className="grid grid-cols-2 gap-3 w-full lg:flex lg:flex-row lg:items-center lg:gap-4 lg:w-auto">
             {/* Severity Filter Select */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Severity:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 w-full">
+              <label htmlFor="severity-filter" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Severity:</label>
               <select
+                id="severity-filter"
                 value={activeSeverity}
                 onChange={(e) => {
                   setActiveSeverity(e.target.value);
@@ -473,7 +457,7 @@ export const AuditLogs: React.FC = () => {
                 }}
                 title="Filter logs by severity"
                 aria-label="Filter logs by severity"
-                className="px-3.5 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer whitespace-nowrap"
+                className="w-full px-3 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer whitespace-nowrap"
               >
                 <option value="all">All Severities</option>
                 <option value="info">Info</option>
@@ -483,9 +467,10 @@ export const AuditLogs: React.FC = () => {
             </div>
 
             {/* Operator/User Filter Select */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">User:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 w-full">
+              <label htmlFor="operator-filter" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">User:</label>
               <select
+                id="operator-filter"
                 value={activeOperator}
                 onChange={(e) => {
                   setActiveOperator(e.target.value);
@@ -493,7 +478,7 @@ export const AuditLogs: React.FC = () => {
                 }}
                 title="Filter logs by system operator"
                 aria-label="Filter logs by system operator"
-                className="px-3.5 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer max-w-40 truncate whitespace-nowrap"
+                className="w-full px-3 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer truncate whitespace-nowrap"
               >
                 <option value="all">All Users</option>
                 {uniqueOperators.map((operator) => (
@@ -507,7 +492,7 @@ export const AuditLogs: React.FC = () => {
         </div>
 
         {/* Category Chips filtering scroll block */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t border-(--border-color) pt-4">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t border-(--border-color) pt-4 no-scrollbar">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 shrink-0">Category:</span>
           {CATEGORIES.map((cat) => (
             <button
@@ -528,7 +513,7 @@ export const AuditLogs: React.FC = () => {
         </div>
       </div>
 
-      {/* Unified Timeline Layout (Hides Excel dense spreadsheets) */}
+      {/* Unified Timeline Layout */}
       <div className="space-y-6">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-(--bg-card) rounded-2xl border border-(--border-color)">
@@ -542,7 +527,8 @@ export const AuditLogs: React.FC = () => {
             <p className="text-xs text-slate-500">Try modifying your search query or selecting a different category filter.</p>
           </div>
         ) : (
-          <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-4 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
+          /* Adjust vertical line inset coordinates on mobile screens (before:left-2.5 sm:before:left-6) */
+          <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-2.5 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
             
             {paginatedTimelineGroups.map((dayGroup) => (
               <div key={dayGroup.day} className="space-y-4 relative">
@@ -554,10 +540,10 @@ export const AuditLogs: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Consecutive grouped cards */}
+                {/* Consecutive grouped cards - adjusted left padding to pl-6 on mobile */}
                 <div className="space-y-3 pl-6 sm:pl-10">
                   {dayGroup.items.map((group: any) => {
-                    const isExpanded = expandedGroupId === group.id; // Accordion expansion check [1.1.2]
+                    const isExpanded = expandedGroupId === group.id;
                     const itemCount = group.items.length;
                     const representative = group.items[0];
                     const latestTimestamp = new Date(group.created_at);
@@ -565,13 +551,13 @@ export const AuditLogs: React.FC = () => {
                     return (
                       <div 
                         key={group.id} 
-                        className={`group relative rounded-2xl border transition-all duration-300 bg-(--bg-card) border-(--border-color) hover:border-slate-700/60 p-4 sm:p-5 shadow-xs ${
+                        className={`group relative rounded-2xl border transition-all duration-300 bg-(--bg-card) border-(--border-color) hover:border-slate-700/60 p-3.5 sm:p-5 shadow-xs overflow-hidden ${
                           isExpanded ? 'ring-1 ring-slate-800/30' : ''
                         }`}
                       >
                         
-                        {/* Bullet Marker dot overlapping vertical line */}
-                        <div className={`absolute -left-7.5 sm:-left-11.5 top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) transition-all ${
+                        {/* Bullet Marker dot overlapping vertical line (hidden on mobile, visible on sm and up) */}
+                        <div className={`absolute hidden sm:block sm:left-[-22px] top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) transition-all ${
                           group.severity === 'critical'
                             ? 'border-red-500 shadow-md shadow-red-500/10'
                             : group.severity === 'warning'
@@ -582,27 +568,26 @@ export const AuditLogs: React.FC = () => {
                         {/* Top Line Card content */}
                         <div 
                           onClick={() => toggleGroupExpand(group.id)}
-                          className="flex items-start justify-between gap-4 cursor-pointer"
+                          className="flex items-start justify-between gap-2.5 sm:gap-4 cursor-pointer"
                         >
-                          <div className="flex items-start gap-3 sm:gap-4">
+                          <div className="flex items-start gap-2.5 sm:gap-4 flex-1 min-w-0">
                             <div className="p-2.5 rounded-xl border shrink-0 bg-(--bg-page) border-(--border-color) group-hover:scale-105 transition-transform">
                               {getActionIcon(group.action, group.severity)}
                             </div>
-                            <div className="space-y-0.5 text-left">
-                              <div className="flex flex-wrap items-center gap-2">
+                            <div className="space-y-0.5 text-left flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                                 <span className="text-sm font-semibold text-(--color-text) block tracking-wide">
                                   {formatActionName(group.action)}
                                 </span>
                                 {itemCount > 1 && (
-                                  <span className="px-2 py-0.5 bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 rounded-md font-bold tracking-wider uppercase">
+                                  <span className="px-2 py-0.5 bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 rounded-md font-bold tracking-wider uppercase shrink-0">
                                     {itemCount} Consecutive Actions
                                   </span>
                                 )}
                               </div>
                               
-                              {/* Reverted back to permanently visible timeline descriptions as originally structured. Contrasting color corrected. [1.1.2] */}
-                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                                <span className="font-bold text-slate-800 dark:text-slate-200 mr-1.5">{group.actor_username}</span>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed break-words">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 mr-1.5 break-all">{group.actor_username}</span>
                                 {itemCount > 1 
                                   ? `recorded ${itemCount} events in a 5-minute interval`
                                   : representative.details || 'System action executed.'
@@ -619,8 +604,8 @@ export const AuditLogs: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Right Controls Column */}
-                          <div className="flex flex-col items-end gap-2 shrink-0">
+                          {/* Right Controls Column - shrink-0 prevents status badges from clipping */}
+                          <div className="flex flex-col items-end gap-2 shrink-0 ml-1">
                             {/* Severity Badge */}
                             {group.severity === 'critical' ? (
                               <span className="px-2.5 py-0.5 bg-red-500/10 text-[9px] text-red-400 border border-red-500/20 rounded-full font-bold tracking-widest uppercase">
@@ -664,25 +649,24 @@ export const AuditLogs: React.FC = () => {
                                           })}
                                         </span>
                                       </div>
-                                      <p className="text-slate-700 dark:text-slate-300 font-semibold pl-5">{item.details || 'No additional context recorded.'}</p>
+                                      <p className="text-slate-700 dark:text-slate-300 font-semibold pl-5 break-words">{item.details || 'No additional context recorded.'}</p>
                                     </div>
                                   ))}
                                 </div>
                               </div>
                             ) : (
-                              /* Dynamic contrast text values corrected for flawless light/dark mode reading [1.1.2] */
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold">
                                 <div className="space-y-1">
                                   <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Actor Username</span>
-                                  <span className="text-slate-800 dark:text-slate-100 font-bold block">{representative.actor_username}</span>
+                                  <span className="text-slate-800 dark:text-slate-100 font-bold block break-all">{representative.actor_username}</span>
                                 </div>
                                 <div className="space-y-1">
                                   <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Database Event Key</span>
-                                  <span className="text-slate-800 dark:text-slate-100 font-mono text-[10px] block">{representative.action}</span>
+                                  <span className="text-slate-800 dark:text-slate-100 font-mono text-[10px] block break-all">{representative.action}</span>
                                 </div>
                                 <div className="space-y-1 sm:col-span-2">
                                   <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Metadata & Details</span>
-                                  <span className="text-slate-700 dark:text-slate-200 font-normal leading-relaxed block bg-(--bg-page) p-3 rounded-lg border border-(--border-color) font-mono text-[11px] whitespace-pre-wrap text-left select-all">
+                                  <span className="text-slate-700 dark:text-slate-200 font-normal leading-relaxed block bg-(--bg-page) p-3 rounded-lg border border-(--border-color) font-mono text-[11px] whitespace-pre-wrap text-left select-all break-words">
                                     {representative.details || 'No extended metadata payload registered.'}
                                   </span>
                                 </div>
@@ -700,11 +684,11 @@ export const AuditLogs: React.FC = () => {
               </div>
             ))}
 
-            {/* Pagination Controls block [1.1.2] */}
+            {/* Pagination Controls block */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between bg-(--bg-card) border border-(--border-color) rounded-2xl px-5 py-3 shadow-xs font-semibold">
-                <span className="text-xs text-slate-400">
-                  Showing <strong className="text-slate-200">{(currentPage - 1) * itemsPerPage + 1}</strong> to <strong className="text-slate-200">{Math.min(currentPage * itemsPerPage, totalGroupsCount)}</strong> of <strong className="text-slate-200">{totalGroupsCount}</strong> grouped items
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-(--bg-card) border border-(--border-color) rounded-2xl p-4 shadow-xs font-semibold">
+                <span className="text-xs text-slate-400 text-center sm:text-left">
+                  Showing <strong className="text-slate-550">{(currentPage - 1) * itemsPerPage + 1}</strong> to <strong className="text-slate-550">{Math.min(currentPage * itemsPerPage, totalGroupsCount)}</strong> of <strong className="text-slate-550">{totalGroupsCount}</strong> grouped items
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -730,7 +714,7 @@ export const AuditLogs: React.FC = () => {
       </div>
 
       {/* Safety Policy Info Box */}
-      <div className="flex items-start gap-4 p-5 bg-blue-500/5 border border-blue-500/20 rounded-2xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-full">
+      <div className="flex items-start gap-4 p-4 sm:p-5 bg-blue-500/5 border border-blue-500/20 rounded-2xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-full">
         <Shield className="w-5 h-5 shrink-0 mt-0.5" />
         <div className="space-y-1.5 text-left">
           <p className="font-heading tracking-wider uppercase text-xs">System Retention Policy (pgAudit Aligned)</p>
