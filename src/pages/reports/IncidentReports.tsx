@@ -104,7 +104,7 @@ export const IncidentReports: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Unread' | 'Read' | 'Archived'>('All');
   const [priorityFilter, setPriorityFilter] = useState<'All' | 'Low' | 'Medium' | 'High'>('All');
-  const [sortOrder, setSortOrder] = useState<'Newest' | 'Oldest'>('Newest');
+  const [sortOrder] = useState<'Newest' | 'Oldest'>('Newest');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
