@@ -69,7 +69,12 @@ const SUGGESTED_TAGS = [
 
 export const IncidentReports: React.FC = () => {
   const { user } = useAuthStore();
-  const isAdmin = user?.user_metadata?.role === 'Admin' || user?.email === 'wolf.palomar@gmail.com';
+  
+  // Safe validation utilizing both app_metadata and user_metadata
+  const isAdmin = 
+    user?.app_metadata?.role === 'Admin' || 
+    user?.user_metadata?.role === 'Admin' || 
+    user?.email === 'wolf.palomar@gmail.com';
 
   // State Management
   const [reports, setReports] = useState<IncidentReport[]>([]);
@@ -288,8 +293,8 @@ export const IncidentReports: React.FC = () => {
   };
 
   const openEditModal = (report: IncidentReport) => {
-    if (report.status !== 'Unread') {
-      toast.error('Reviewed incidents cannot be modified.');
+    if (report.status !== 'Unread' || report.is_archived) {
+      toast.error('Reviewed or archived incidents cannot be modified.');
       return;
     }
     setIsEditing(true);
@@ -369,8 +374,8 @@ export const IncidentReports: React.FC = () => {
   const handleDeleteReport = async (id: string) => {
     try {
       const target = reports.find(r => r.id === id);
-      if (!isAdmin && target?.status !== 'Unread') {
-        toast.error('Cannot delete report after it has been reviewed.');
+      if (!isAdmin && (target?.status !== 'Unread' || target?.is_archived)) {
+        toast.error('Cannot delete report after it has been reviewed or archived.');
         return;
       }
 
@@ -564,12 +569,12 @@ export const IncidentReports: React.FC = () => {
 
           <div className="sm:text-right self-start sm:self-center">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-heading tracking-widest uppercase ${
-              report.status === 'Unread'
+              report.status === 'Unread' && !report.is_archived
                 ? 'bg-red-500/10 text-red-500 border border-red-500/20'
                 : 'bg-green-500/10 text-green-500 border border-green-500/20'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' ? 'bg-red-500' : 'bg-green-500'}`} />
-              {report.status === 'Unread' ? 'New' : 'Reviewed'}
+              <span className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' && !report.is_archived ? 'bg-red-500' : 'bg-green-500'}`} />
+              {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
             </span>
           </div>
         </div>
@@ -615,7 +620,7 @@ export const IncidentReports: React.FC = () => {
                     className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
                   >
                     <Mail className="w-4 h-4" />
-                    Reopen Report
+                    Mark as unread
                   </button>
                 )}
 
@@ -654,7 +659,7 @@ export const IncidentReports: React.FC = () => {
           ) : (
             <div className="space-y-3.5">
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions</h4>
-              {report.status === 'Unread' ? (
+              {report.status === 'Unread' && !report.is_archived ? (
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -675,7 +680,7 @@ export const IncidentReports: React.FC = () => {
               ) : (
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
-                  <span>This report has already been reviewed by administrators and can no longer be edited or deleted by staff personnel.</span>
+                  <span>This report has already been reviewed or archived by administrators and can no longer be edited or deleted by staff personnel.</span>
                 </div>
               )}
             </div>
@@ -767,7 +772,7 @@ export const IncidentReports: React.FC = () => {
                         : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
                     }`}
                   >
-                    {filter === 'Unread' ? 'New' : filter === 'Read' ? 'Reviewed' : filter}
+                    {filter === 'Unread' ? 'Unread' : filter === 'Read' ? 'Read' : filter}
                   </button>
                 ))}
               </div>
@@ -817,7 +822,7 @@ export const IncidentReports: React.FC = () => {
               <div className="flex gap-1 flex-wrap">
                 <button
                   onClick={() => handleBulkAction('Read')}
-                  title="Mark reviewed"
+                  title="Mark as Read"
                   className="px-2 py-1 bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-green-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
                 >
                   Read
@@ -906,18 +911,17 @@ export const IncidentReports: React.FC = () => {
                     }`} />
 
                     {/* Bulk Selection Checkbox */}
-<div className="pt-1 select-none shrink-0 z-10">
-  <input
-    type="checkbox"
-    checked={selectedIds.includes(report.id)}
-    onChange={() => {}}
-    onClick={(e) => handleToggleSelect(report.id, e)}
-    // ADD THESE TWO LINES FOR ACCESSIBILITY compliance [3]
-    title={`Select report: ${report.title}`}
-    aria-label={`Select report: ${report.title}`}
-    className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
-  />
-</div>
+                    <div className="pt-1 select-none shrink-0 z-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(report.id)}
+                        onChange={() => {}}
+                        onClick={(e) => handleToggleSelect(report.id, e)}
+                        title={`Select report: ${report.title}`}
+                        aria-label={`Select report: ${report.title}`}
+                        className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                      />
+                    </div>
 
                     <div className="pl-1.5 flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
@@ -947,8 +951,8 @@ export const IncidentReports: React.FC = () => {
                           {new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
                         <span>•</span>
-                        <span className={`font-semibold ${report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}>
-                          {report.status === 'Unread' ? 'New' : 'Reviewed'}
+                        <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}>
+                          {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
                         </span>
                       </div>
 
@@ -1021,7 +1025,7 @@ export const IncidentReports: React.FC = () => {
           )}
         </div>
 
-        {/* Right Column: Desktop Inline Detail Panel (Hides completely on Mobile & Tablet viewports) */}
+        {/* Right Column: Desktop Inline Detail Panel */}
         <div className="hidden lg:block lg:col-span-7">
           {selectedReport ? (
             <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
@@ -1044,7 +1048,7 @@ export const IncidentReports: React.FC = () => {
 
       </div>
 
-      {/* Mobile & Tablet Detail Modal Overlay (Guaranteed above all z-index with spring entry) */}
+      {/* Mobile & Tablet Detail Modal Overlay */}
       <AnimatePresence>
         {isDetailModalOpen && selectedReport && (
           <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs lg:hidden">
@@ -1062,18 +1066,16 @@ export const IncidentReports: React.FC = () => {
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
               className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-2xl relative w-full max-w-lg max-h-[90vh] overflow-y-auto z-[2001]"
             >
-             
-             {/* Close Button */}
-<button
-  type="button"
-  onClick={() => setIsDetailModalOpen(false)}
-  // ADDED z-50 HERE TO FORCE THE BUTTON ABOVE CONTENT
-  className="absolute top-4 right-4 z-50 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg cursor-pointer transition-colors"
-  title="Close report modal"
-  aria-label="Close modal"
->
-  <X className="w-5 h-5" />
-</button>
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setIsDetailModalOpen(false)}
+                className="absolute top-4 right-4 z-50 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg cursor-pointer transition-colors"
+                title="Close report modal"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
 
               {/* Render reusable details component styled inside the modal wrapper */}
               {renderDetailPanelContent(selectedReport, true)}
@@ -1083,7 +1085,7 @@ export const IncidentReports: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Emergency contacts modal panel (Floating out from inline views) */}
+      {/* Emergency contacts modal panel */}
       <AnimatePresence>
         {showContactsModal && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -1163,7 +1165,6 @@ export const IncidentReports: React.FC = () => {
               <h3 className="font-heading text-xs tracking-widest uppercase text-slate-900 dark:text-slate-100">
                 {isEditing ? 'Modify Incident Report' : 'Draft New Incident Report'}
               </h3>
-              {/* ACCESSIBILITY COMPLIANT ICON BUTTON (with aria-label & title) */}
               <button 
                 onClick={() => setShowModal(false)}
                 title="Close editing modal dialog window"
@@ -1192,7 +1193,6 @@ export const IncidentReports: React.FC = () => {
                 />
               </div>
 
-              {/* Priority Select Element - ACCESSIBILITY COMPLIANT */}
               <div className="grid gap-1.5">
                 <label htmlFor="form-priority-select" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Severity Priority Level *
@@ -1219,7 +1219,6 @@ export const IncidentReports: React.FC = () => {
                   {formTags.map((tag, idx) => (
                     <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 text-[9px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                       {tag}
-                      {/* ACCESSIBILITY COMPLIANT INNER CHIP REMOVE BUTTON (with aria-label & title) */}
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(idx)}
@@ -1234,7 +1233,7 @@ export const IncidentReports: React.FC = () => {
                   
                   <input
                     id="form-tag-input"
-                    type="placeholder"
+                    type="text"
                     placeholder={formTags.length === 0 ? "Press Enter to add custom tag..." : "Add more..."}
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}

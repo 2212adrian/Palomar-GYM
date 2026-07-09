@@ -11,6 +11,9 @@ import Settings from '../pages/system/Settings';
 import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
 
+// Import newly created Sales / Inventory component
+import { Products } from '../pages/sales/Products';
+
 // Shared Layout Placeholders
 const RegisterSalePlaceholder = () => <div className="p-4 text-slate-900 dark:text-white font-heading">Register Sale Interface</div>;
 
@@ -38,7 +41,7 @@ const router = createBrowserRouter([
               { path: '/members/id-maker', element: <div className="p-4 text-slate-900 dark:text-white font-heading">ID Maker (Subscribed Only)</div> },
               { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
               { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
-              { path: '/sales/products', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Product List (Right Tab)</div> },
+              { path: '/sales/products', element: <Products /> }, // Mounted the dynamic Products dashboard here
               { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
               { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
             ]

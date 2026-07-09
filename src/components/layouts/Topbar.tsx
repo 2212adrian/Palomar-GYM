@@ -1,3 +1,4 @@
+//src/components/layout/Topbar.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu, ChevronLeft } from 'lucide-react';
@@ -140,20 +141,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             onClick={handleGoBackTrigger}
             aria-label="Go Back"
             title="Go Back"
-            className="lg:hidden h-9 w-9 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up"
+            className="xl:hidden h-9 w-9 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
         )}
 
         {/* Mobile / Tablet Breadcrumbs */}
-        <div className="lg:hidden font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
+        <div className="xl:hidden font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
           {renderStyledBreadcrumbs()}
         </div>
       </div>
 
       {/* Centered Breadcrumbs Wrapper (Desktop Viewports Only) */}
-      <div className="hidden lg:block absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
+      <div className="hidden xl:block absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
         {renderStyledBreadcrumbs()}
       </div>
 
@@ -168,7 +169,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           onClick={onMenuClick}
           aria-label="Open Navigation Drawer"
           title="Open Navigation"
-          className="block lg:hidden text-slate-500 dark:text-slate-400 cursor-pointer"
+          className="block xl:hidden text-slate-500 dark:text-slate-400 cursor-pointer"
         >
           <Menu className="w-5 h-5" />
         </button>

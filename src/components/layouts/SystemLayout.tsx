@@ -1,3 +1,4 @@
+//src/components/layouts/SystemLayout.tsx
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';

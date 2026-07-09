@@ -1,3 +1,4 @@
+//src/pages/system/UserManagement.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -314,7 +315,7 @@ export const UserManagement: React.FC = () => {
     });
   }
 
-  // Define Columns configuration for our reusable UI Table [2]
+  // Define Columns configuration for our reusable UI Table
   const columns: Column<any>[] = [
     {
       key: 'username',
@@ -326,19 +327,19 @@ export const UserManagement: React.FC = () => {
         const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
 
         return (
-          <div className="font-bold text-slate-900 dark:text-white flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-xs border border-slate-300 dark:border-white/10 shrink-0">
+          <div className="font-bold text-(--color-text) flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-(--bg-input) flex items-center justify-center text-xs border border-(--border-color) shrink-0">
               <AvatarImage src={u.avatar_url} />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-800 dark:text-slate-200">{u.username || 'System Account'}</span>
+                <span className="text-(--color-text) opacity-90">{u.username || 'System Account'}</span>
                 {isSelfUser && (
-                  <span className="text-[8px] bg-[#1b365d] dark:bg-[#bf0202] text-white rounded px-1.5 py-0.2 font-mono uppercase font-bold tracking-wider">YOU</span>
+                  <span className="text-[8px] bg-(--color-primary) text-white rounded px-1.5 py-0.5 font-mono uppercase font-bold tracking-wider">YOU</span>
                 )}
               </div>
               {isLocalAccount && (
-                <span className="text-[9px] text-amber-600 dark:text-amber-500 font-mono tracking-tight">Non-Email Account</span>
+                <span className="text-[9px] text-amber-500 font-mono tracking-tight font-semibold">Non-Email Account</span>
               )}
             </div>
           </div>
@@ -355,9 +356,9 @@ export const UserManagement: React.FC = () => {
         const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
         
         return (
-          <span className="font-mono text-xs max-w-45 truncate block text-slate-500 dark:text-slate-400">
+          <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
             {isLocalAccount ? (
-              <span className="text-slate-400 dark:text-slate-600 italic">{displayEmail}</span>
+              <span className="text-slate-550 italic">{displayEmail}</span>
             ) : (
               displayEmail
             )}
@@ -375,17 +376,17 @@ export const UserManagement: React.FC = () => {
 
         if (displayEmail === 'wolf.palomar@gmail.com') {
           return (
-            <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
+            <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
               superadmin
             </span>
           );
         }
 
         return (
-          <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase ${
+          <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold ${
             u.role === 'admin' 
-              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20' 
-              : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+              ? 'bg-rose-500/10 text-rose-450 border border-rose-500/20' 
+              : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
           }`}>
             {u.role || 'staff'}
           </span>
@@ -430,7 +431,7 @@ export const UserManagement: React.FC = () => {
             )}
             title="Click to toggle account status"
             aria-label="Click to toggle account status"
-            className="cursor-pointer hover:opacity-80 transition-opacity"
+            className="cursor-pointer hover:opacity-80 transition-opacity outline-none"
           >
             {u.status === 'inactive' ? (
               <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
@@ -461,12 +462,12 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
 
         if (isSelfUser) {
-          return <span className="text-xs text-slate-400 italic">Locked</span>;
+          return <span className="text-xs text-slate-500 italic font-semibold">Locked</span>;
         }
 
         if (u.role === 'admin' && u.status === 'active' && !isSuperAdmin) {
           return (
-            <span className="text-xs text-slate-400/80 italic font-medium" title="Active administrators can only be deleted by the Superadmin">
+            <span className="text-xs text-slate-500 italic font-semibold" title="Active administrators can only be deleted by the Superadmin">
               Protected
             </span>
           );
@@ -493,35 +494,37 @@ export const UserManagement: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 font-body">
+    <div className="space-y-8 font-body text-(--color-text)">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">User Management</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">User Management</h2>
+          <p className="text-sm text-slate-400 mt-1 font-medium">
             Pre-register staff accounts and manage system user permissions. 
           </p>
         </div>
         
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto animate-pulse"
+          className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto"
         >
           + Pre-Register User
         </button>
       </div>
 
       {/* Render modular UI Table with proper pagination, default sorting, and Search features */}
-      <Table<any>
-        data={systemUsers}
-        columns={columns}
-        searchKeys={['username', 'email', 'role', 'status']}
-        searchPlaceholder="Search system users..."
-        defaultSortKey="username"
-        defaultSortDirection="asc"
-        itemsPerPage={useResponsiveItemsPerPage()}
-        loading={isLoadingUsers}
-        loadingLabel="Retrieving system user profiles..."
-      />
+      <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
+        <Table<any>
+          data={systemUsers}
+          columns={columns}
+          searchKeys={['username', 'email', 'role', 'status']}
+          searchPlaceholder="Search system users..."
+          defaultSortKey="username"
+          defaultSortDirection="asc"
+          itemsPerPage={useResponsiveItemsPerPage()}
+          loading={isLoadingUsers}
+          loadingLabel="Retrieving system user profiles..."
+        />
+      </div>
 
       {/* Confirmation and invitations overlay portals */}
       <Modal
@@ -535,14 +538,14 @@ export const UserManagement: React.FC = () => {
       >
         {deleteTargetUser && (
           <div className="space-y-4 font-body text-left">
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-normal font-bold">
-              Are you sure you want to permanently delete user <strong className="text-slate-900 dark:text-white font-extrabold font-heading">"{deleteTargetUser.username}"</strong>? This action cannot be undone.
+            <p className="text-xs text-slate-400 leading-normal font-bold">
+              Are you sure you want to permanently delete user <strong className="text-(--color-text) font-extrabold font-heading">"{deleteTargetUser.username}"</strong>? This action cannot be undone.
             </p>
 
             {deleteTargetUser.status !== 'pending' ? (
               <div className="space-y-2">
-                <label htmlFor="deleteConfirmInput" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  To confirm, type the username <span className="font-mono text-slate-900 dark:text-white select-all">{deleteTargetUser.username}</span> below:
+                <label htmlFor="deleteConfirmInput" className="text-[10px] font-bold uppercase tracking-wider text-slate-450">
+                  To confirm, type the username <span className="font-mono text-(--color-text) select-all font-extrabold">{deleteTargetUser.username}</span> below:
                 </label>
                 <input
                   id="deleteConfirmInput"
@@ -550,11 +553,11 @@ export const UserManagement: React.FC = () => {
                   value={deleteConfirmText}
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder="Type username to verify"
-                  className="w-full px-4 py-3 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-slate-100 dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-red-500 transition-all"
+                  className="w-full px-4 py-3 border border-(--border-color) rounded-xl text-xs bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-red-500 transition-all font-semibold"
                 />
               </div>
             ) : (
-              <p className="text-[11px] text-amber-500 font-bold bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl">
+              <p className="text-[11px] text-amber-505 font-bold bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl">
                 * Note: Since this invitation status is pending, no input verification is required to discard it.
               </p>
             )}
@@ -594,14 +597,14 @@ export const UserManagement: React.FC = () => {
         title="Pre-Register Account"
       >
         <form onSubmit={handleCreateUserSubmit} className="text-left w-full space-y-4 font-body">
-          <div className="flex bg-slate-200/50 dark:bg-[#111315] p-1 rounded-xl border border-slate-300/30 dark:border-white/5">
+          <div className="flex bg-(--bg-card) p-1 rounded-xl border border-(--border-color)">
             <button
               type="button"
               onClick={() => setAuthMethod('email')}
               className={`flex-1 py-1.5 text-[10px] uppercase tracking-wider font-heading rounded-lg transition-all cursor-pointer ${
                 authMethod === 'email'
-                  ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
+                  : 'text-slate-400 hover:text-(--color-text)'
               }`}
             >
               Email Invite
@@ -611,8 +614,8 @@ export const UserManagement: React.FC = () => {
               onClick={() => setAuthMethod('username')}
               className={`flex-1 py-1.5 text-[10px] uppercase tracking-wider font-heading rounded-lg transition-all cursor-pointer ${
                 authMethod === 'username'
-                  ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
+                  : 'text-slate-400 hover:text-(--color-text)'
               }`}
             >
               No Email 
@@ -684,7 +687,7 @@ export const UserManagement: React.FC = () => {
           )}
 
           <div className="grid gap-1.5">
-            <label htmlFor="newUserRole" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <label htmlFor="newUserRole" className="text-[10px] font-bold uppercase tracking-wider text-slate-450">
               Assigned Permissions
             </label>
             <select
@@ -693,28 +696,28 @@ export const UserManagement: React.FC = () => {
               onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'staff')}
               title="Select assigned permission role levels"
               aria-label="Select assigned permission role levels"
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-slate-100 dark:bg-[#13161a] text-slate-900 dark:text-slate-100 uppercase font-bold tracking-wider outline-none focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] transition-all cursor-pointer"
+              className="w-full px-3 py-2.5 border border-(--border-color) rounded-xl text-xs bg-(--bg-page) text-(--color-text) uppercase font-bold tracking-wider outline-none focus:ring-1 focus:ring-(--color-primary) transition-all cursor-pointer"
             >
               <option value="staff">Staff Member</option>
               <option value="admin">Administrator</option>
             </select>
           </div>
 
-          <div className="flex flex-col items-center gap-2 border border-dashed border-slate-200 dark:border-white/10 p-4 rounded-xl bg-slate-50/50 dark:bg-neutral-900/30">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">
+          <div className="flex flex-col items-center gap-2 border border-dashed border-(--border-color) p-4 rounded-xl bg-(--bg-card)">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-450 text-center">
               Profile Photo (Optional)
             </span>
             <div className="flex items-center gap-3 w-full justify-center">
               <button
                 type="button"
                 onClick={() => modalFileInputRef.current?.click()}
-                className="px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-[10px] font-heading uppercase tracking-widest text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                className="px-3 py-1.5 border border-(--border-color) bg-(--bg-input) rounded-lg hover:opacity-90 text-[10px] font-heading uppercase tracking-widest text-(--color-text) transition-colors cursor-pointer"
               >
                 {newUserAvatar ? 'Change' : 'Select'}
               </button>
               {newUserAvatar && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 max-w-30 truncate">
+                  <span className="text-xs text-slate-400 max-w-30 truncate">
                     {newUserAvatar.name}
                   </span>
                   <button
@@ -751,8 +754,8 @@ export const UserManagement: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-start gap-2 p-3 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-700 dark:text-blue-300 leading-normal">
-            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-normal">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
             <span>
               {authMethod === 'email' 
                 ? "This generates a temporary entry and emails a magic link to the recipient so they can configure their own security password."
@@ -765,14 +768,14 @@ export const UserManagement: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsCreateModalOpen(false)}
-              className="flex-1 px-4 py-2.5 bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer text-center"
+              className="flex-1 px-4 py-2.5 bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer text-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isCreatingUser}
-              className="flex-1 px-4 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 bg-(--color-primary) text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               {isCreatingUser ? (
                 <>

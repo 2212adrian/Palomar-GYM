@@ -403,10 +403,10 @@ export const PersonalAccount: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-body">
+    <div className="space-y-6 font-body text-(--color-text)">
       <div>
-        <h2 className="text-xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">Personal Account</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+        <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">Personal Account</h2>
+        <p className="text-sm text-slate-400 mt-1 font-medium">
           Update your identity settings and credentials.
         </p>
       </div>
@@ -418,13 +418,13 @@ export const PersonalAccount: React.FC = () => {
         <div className="lg:col-span-5 space-y-6">
           
           {/* Avatar & Username Card */}
-          <div className="bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 p-5 rounded-2xl space-y-5">
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
             <div className="flex flex-col sm:flex-row items-center gap-5">
               <div className="relative group">
-                <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-100 dark:bg-[#13161a] border border-slate-200 dark:border-white/10 flex items-center justify-center">
+                <div className="w-20 h-20 rounded-full overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center">
                   <AvatarImage 
                     src={profile?.avatar_url || user?.user_metadata?.avatar_url} 
-                    fallbackIcon={<UserIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />} 
+                    fallbackIcon={<UserIcon className="w-8 h-8 text-slate-500" />} 
                   />
                 </div>
                 
@@ -432,7 +432,7 @@ export const PersonalAccount: React.FC = () => {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploadingAvatar}
-                  className="absolute bottom-0 right-0 p-1.5 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-full border border-white dark:border-[#141414] shadow-md transition-colors cursor-pointer disabled:opacity-50"
+                  className="absolute bottom-0 right-0 p-1.5 bg-(--color-primary) hover:opacity-90 text-white rounded-full border border-(--border-color) shadow-md transition-colors cursor-pointer disabled:opacity-50"
                   title="Change profile photo"
                   aria-label="Change profile photo"
                 >
@@ -456,18 +456,18 @@ export const PersonalAccount: React.FC = () => {
               </div>
 
               <div className="text-center sm:text-left flex flex-col items-center sm:items-start">
-                <h4 className="font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 text-base leading-tight">{profile?.username}</h4>
-                <p className="text-xs text-[#1b365d] dark:text-[#bf0202] mt-0.5 capitalize font-bold tracking-widest">
+                <h4 className="font-heading tracking-wider uppercase text-(--color-text) text-base leading-tight">{profile?.username}</h4>
+                <p className="text-xs text-(--color-primary-light) mt-0.5 capitalize font-bold tracking-widest">
                   {isSuperAdmin ? 'Superadmin Account' : `${profile?.role} Account`}
                 </p>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-mono">Max size 20MB.</p>
+                <p className="text-[10px] text-slate-500 mt-1 font-mono">Max size 20MB.</p>
                 
                 {profile?.avatar_url && (
                   <button
                     type="button"
                     onClick={handleRemoveAvatar}
                     disabled={isUploadingAvatar}
-                    className="mt-2 text-xs font-semibold text-red-600 dark:text-red-500 hover:text-red-700 dark:hover:text-red-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="mt-2 text-xs font-semibold text-red-500 hover:text-red-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Remove Photo
@@ -477,9 +477,9 @@ export const PersonalAccount: React.FC = () => {
             </div>
 
             {/* Display Username Form */}
-            <form onSubmit={handleUpdateProfile} className="space-y-4 pt-5 border-t border-slate-200 dark:border-white/5">
+            <form onSubmit={handleUpdateProfile} className="space-y-4 pt-5 border-t border-(--border-color)">
               <div className="grid gap-1.5">
-                <label htmlFor="username" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                <label htmlFor="username" className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Display Username
                 </label>
                 <input
@@ -487,7 +487,7 @@ export const PersonalAccount: React.FC = () => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] focus:border-slate-950 dark:focus:border-[#bf0202] transition-all"
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                   placeholder="Enter username"
                   required
                 />
@@ -495,7 +495,7 @@ export const PersonalAccount: React.FC = () => {
               <button
                 type="submit"
                 disabled={isUpdatingProfile || username.trim() === profile?.username}
-                className="w-full flex items-center justify-center px-4 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
               >
                 {isUpdatingProfile ? (
                   <>
@@ -510,10 +510,10 @@ export const PersonalAccount: React.FC = () => {
           </div>
 
           {/* Quick Password Reset Card */}
-          <div className="bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 p-5 rounded-2xl space-y-3">
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-3">
             <div>
-              <h3 className="text-sm font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">Reset Password</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">Reset Password</h3>
+              <p className="text-xs text-slate-450 mt-1 leading-relaxed font-semibold">
                 Send a secure link to your email so you can easily choose a new password.
               </p>
             </div>
@@ -521,7 +521,7 @@ export const PersonalAccount: React.FC = () => {
               type="button"
               onClick={handleSendResetEmail}
               disabled={isSendingResetEmail}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-50"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-50"
             >
               {isSendingResetEmail ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -534,10 +534,10 @@ export const PersonalAccount: React.FC = () => {
         </div>
 
         {/* RIGHT COLUMN: Manual Security Credentials (7 Cols) */}
-        <div className="lg:col-span-7 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 p-5 rounded-2xl space-y-5">
+        <div className="lg:col-span-7 bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
           <div>
-            <h3 className="text-sm font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">Update Credentials</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">Update Credentials</h3>
+            <p className="text-xs text-slate-400 mt-1 font-semibold">
               Manually configure your login security passwords.
             </p>
           </div>
@@ -545,7 +545,7 @@ export const PersonalAccount: React.FC = () => {
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <div className="grid gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="current-password" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                <label htmlFor="current-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
                   Current Password
                 </label>
                 <input
@@ -553,13 +553,13 @@ export const PersonalAccount: React.FC = () => {
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] focus:border-slate-950 dark:focus:border-[#bf0202] transition-all"
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                   placeholder="Enter your current password"
                 />
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="new-password" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                <label htmlFor="new-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
                   New Password
                 </label>
                 <input
@@ -567,13 +567,13 @@ export const PersonalAccount: React.FC = () => {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] focus:border-slate-950 dark:focus:border-[#bf0202] transition-all"
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                   placeholder="Minimum 6 characters"
                 />
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="confirm-password" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                <label htmlFor="confirm-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
                   Confirm New Password
                 </label>
                 <input
@@ -581,7 +581,7 @@ export const PersonalAccount: React.FC = () => {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] focus:border-slate-950 dark:focus:border-[#bf0202] transition-all"
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                   placeholder="Re-type new password"
                 />
               </div>
@@ -590,7 +590,7 @@ export const PersonalAccount: React.FC = () => {
             <button
               type="submit"
               disabled={isUpdatingPassword || !currentPassword || !newPassword || !confirmPassword}
-              className="w-full flex items-center justify-center px-5 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+              className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
             >
               {isUpdatingPassword ? (
                 <>

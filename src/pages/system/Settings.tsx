@@ -470,7 +470,7 @@ export default function Settings() {
         </div>
 
         {/* Conditional Workspace Frame */}
-        <div className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#141414] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}>
+        <div className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}>
           
           {/* Back Navigation Bar */}
           {mobileView === 'detail' && (

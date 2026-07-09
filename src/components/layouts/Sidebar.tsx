@@ -304,7 +304,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside 
-        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-[#141414] h-full relative select-none shrink-0 animate-fade-in"
+        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative select-none shrink-0 animate-fade-in"
         style={{
           width: collapsed ? '5rem' : '18rem',
           transition: 'width 300ms cubic-bezier(0.77, 0, 0.175, 1)'
@@ -593,9 +593,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
         />
         <aside 
-          className={`fixed top-0 right-0 bottom-0 w-80 max-w-full bg-white dark:bg-[#141414] border-l border-slate-200 dark:border-white/5 p-6 flex flex-col justify-between transition-transform duration-300 ${
-            mobileOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
+         className={`fixed top-0 right-0 bottom-0 w-80 max-w-full bg-white dark:bg-(--bg-card) border-l border-slate-200 dark:border-white/5 p-6 flex flex-col justify-between transition-transform duration-300 ${
+  mobileOpen ? 'translate-x-0' : 'translate-x-full'
+}`}
         >
           <div 
             className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none transform-gpu will-change-transform" 
