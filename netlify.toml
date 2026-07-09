@@ -1,4 +1,0 @@
-[dev]
-  command = "npm run dev -- --port 10000 --strictPort"
-  targetPort = 10000
-  port = 8888
