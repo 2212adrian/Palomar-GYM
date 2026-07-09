@@ -12,7 +12,7 @@ import {
   Plus, Pencil, Trash2, Loader2, Upload, AlertTriangle, 
   Layers, Package, PackageX, X, Image as ImageIcon,
   ChevronDown, ChevronUp, SlidersHorizontal, CheckCircle2,
-  Sparkles, Tag, DollarSign, Eye, Search
+  Sparkles, Tag, DollarSign, Eye
 } from 'lucide-react';
 
 interface Product {
