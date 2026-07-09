@@ -7,6 +7,7 @@ import { RatesPayments } from './RatesPayments';
 import { UserManagement } from './UserManagement';
 import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
+import { isSuperAdmin } from '../../constants/auth';
 import { 
   User as UserIcon, 
   Building, 
@@ -125,7 +126,6 @@ export default function Settings() {
   const [isChildSaving, setIsChildSaving] = useState<boolean>(false);
   
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
-  const isSuperAdmin = user?.email === 'wolf.palomar@gmail.com';
   const isAdmin = userRole === 'admin' || isSuperAdmin;
   const visibleTabs: TabItem[] = TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
 

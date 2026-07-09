@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
+import { isSuperAdmin } from '../../constants/auth';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
@@ -74,7 +75,7 @@ export const IncidentReports: React.FC = () => {
   const isAdmin = 
     user?.app_metadata?.role === 'Admin' || 
     user?.user_metadata?.role === 'Admin' || 
-    user?.email === 'wolf.palomar@gmail.com';
+    isSuperAdmin(user?.email);
 
   // State Management
   const [reports, setReports] = useState<IncidentReport[]>([]);

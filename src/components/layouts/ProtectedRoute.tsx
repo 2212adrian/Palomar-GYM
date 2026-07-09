@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { UserX } from 'lucide-react';
+import { isSuperAdmin } from '../../constants/auth';
 
 interface ProtectedRouteProps {
   allowedRoles?: ('admin' | 'staff')[];
@@ -27,10 +28,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     return <Navigate to={redirectTarget} state={{ from: location }} replace />;
   }
 
-  // Guard: Intercept and display suspension notice to deactivated users
-  const userStatus = profile?.status || user?.user_metadata?.status;
+  const isSuperAdminUser = isSuperAdmin(user?.email);
 
-  
+  const userStatus = isSuperAdminUser ? 'active' : (profile?.status || user?.user_metadata?.status);
+  const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role;
+
   // Guard: Intercept and display suspension notice to deactivated users
   if (userStatus === 'inactive') {
     return (
@@ -63,9 +65,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   }
 
   // Verify role authorizations on custom restricted nodes
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
-    const targetFallback = profile.role === 'staff' ? '/sales/register' : '/dashboard';
-    return <Navigate to={targetFallback} replace />;
+  if (allowedRoles) {
+    if (!effectiveRole || !allowedRoles.includes(effectiveRole)) {
+      const targetFallback = effectiveRole === 'staff' ? '/sales/register' : '/dashboard';
+      return <Navigate to={targetFallback} replace />;
+    }
   }
 
   return <Outlet />;

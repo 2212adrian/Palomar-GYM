@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { compressImage } from '../../lib/imageCompressor';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
+import { isSuperAdmin } from '../../constants/auth';
 import { 
   Plus, Pencil, Trash2, Loader2, Upload, AlertTriangle, 
   Layers, Package, PackageX, X, Image as ImageIcon,
@@ -40,7 +41,7 @@ export const Products: React.FC = () => {
     user?.app_metadata?.role === 'admin' || 
     user?.user_metadata?.role === 'Admin' || 
     user?.user_metadata?.role === 'admin' || 
-    user?.email === 'wolf.palomar@gmail.com';
+    isSuperAdmin(user?.email);
 
   // Product Directory States
   const [products, setProducts] = useState<Product[]>([]);

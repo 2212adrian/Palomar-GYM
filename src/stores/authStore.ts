@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import { isSuperAdmin } from '../constants/auth'; // Centralized helper
 
 export interface UserProfile {
   id: string;
@@ -48,11 +49,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (sessionError) throw sessionError;
 
       if (session?.user) {
-        const isSuperAdmin = session.user.email === 'wolf.palomar@gmail.com';
+        // Evaluate using the centralized case-insensitive helper
+        const isSuperAdminUser = isSuperAdmin(session.user.email);
         let dbProfile: any = null;
 
         // 1. Validation: Verify if their profile actually exists inside public.profiles
-        if (!isSuperAdmin) {
+        if (!isSuperAdminUser) {
           const { data, error: dbError } = await supabase
             .from('profiles')
             .select('*')
@@ -77,13 +79,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           dbProfile = data;
         }
 
-        // 2. Resolve account attributes using database values as priority, falling back to JWT claims
-        const userRole = dbProfile?.role || 
-                         session.user.app_metadata?.role || 
-                         (isSuperAdmin ? 'admin' : 'staff');
+        // 2. Resolve account attributes with Superadmin taking absolute priority
+        const rawRole = (dbProfile?.role || session.user.app_metadata?.role || 'staff').toLowerCase();
+        const userRole = isSuperAdminUser ? 'admin' : (rawRole === 'admin' ? 'admin' : 'staff');
 
         // Superadmin status always resolves to active; other accounts load from DB with a pending fallback
-        const userStatus = isSuperAdmin 
+        const userStatus = isSuperAdminUser 
           ? 'active' 
           : (dbProfile?.status || session.user.user_metadata?.status || 'pending');
 
@@ -115,8 +116,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         }
 
-        // Only establish Realtime subscription if not already subscribed for this user ID
-        if (activeProfileUserId !== session.user.id) {
+        // Only establish Realtime subscription if not superadmin (they don't have a DB profile row)
+        if (!isSuperAdminUser && activeProfileUserId !== session.user.id) {
           if (activeProfileChannel) {
             supabase.removeChannel(activeProfileChannel);
           }
@@ -164,7 +165,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         // 3. Client-Side Account Activation Trigger (Bypasses background database trigger lock errors)
-        if (userStatus === 'pending' && !isSuperAdmin) {
+        if (userStatus === 'pending' && !isSuperAdminUser) {
           await supabase.from('profiles').update({ status: 'active' }).eq('id', session.user.id);
           // Recursively re-run checkSession once status transitions to active
           await get().checkSession();
@@ -235,13 +236,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'PASSWORD_RECOVERY') {
+    const isSuperAdminUser = isSuperAdmin(session?.user?.email);
+    
     // Safely update user credentials directly to bypass database schema checks on restricted recovery tokens
     useAuthStore.setState({ 
       user: session?.user || null, 
       profile: session?.user ? {
         id: session.user.id,
         username: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-        role: 'staff', // Temporary placeholder for UI rendering on recovery screen
+        role: isSuperAdminUser ? 'admin' : 'staff', // Force admin role if superadmin during password recovery
         status: 'active',
         avatar_url: session.user.user_metadata?.avatar_url || ''
       } : null,

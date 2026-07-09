@@ -4,6 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
+import { isSuperAdmin } from '../../constants/auth';
 import { 
   User as UserIcon, 
   Camera, 
@@ -140,7 +141,6 @@ export const PersonalAccount: React.FC = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isSuperAdmin = user?.email === 'wolf.palomar@gmail.com';
 
   const getRawMetadataPath = (): string | null => {
     if (!user?.user_metadata?.avatar_url) return null;
@@ -458,7 +458,7 @@ export const PersonalAccount: React.FC = () => {
               <div className="text-center sm:text-left flex flex-col items-center sm:items-start">
                 <h4 className="font-heading tracking-wider uppercase text-(--color-text) text-base leading-tight">{profile?.username}</h4>
                 <p className="text-xs text-(--color-primary-light) mt-0.5 capitalize font-bold tracking-widest">
-                  {isSuperAdmin ? 'Superadmin Account' : `${profile?.role} Account`}
+                  {isSuperAdmin(user?.email) ? 'Superadmin Account' : `${profile?.role} Account`}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-mono">Max size 20MB.</p>
                 

@@ -10,6 +10,7 @@ import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { AvatarImage, compressImage } from './PersonalAccount';
+import { isSuperAdmin } from '../../constants/auth';
 import { 
   Loader2, 
   Trash2, 
@@ -20,7 +21,6 @@ import {
 export const UserManagement: React.FC = () => {
   const { user, profile } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
-  const isSuperAdmin = user?.email === 'wolf.palomar@gmail.com';
   const isAdmin = userRole === 'admin' || isSuperAdmin;
 
   // Profiles list directories state
@@ -374,7 +374,7 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
 
-        if (displayEmail === 'wolf.palomar@gmail.com') {
+        if (isSuperAdmin(displayEmail)) {
           return (
             <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
               superadmin
