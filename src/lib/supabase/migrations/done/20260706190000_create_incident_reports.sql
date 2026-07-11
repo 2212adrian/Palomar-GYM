@@ -183,7 +183,7 @@ SELECT cron.schedule(
     $$
 );
 
--- Automatically purge read incidents older than 90 days (Daily at 2:00 AM)
+-- Automatically purge read incidents older than 90 days (Daily at 8:00 AM)
 SELECT cron.schedule(
     'auto-delete-read-incidents-after-90-days',
     '0 2 * * *',

@@ -1,19 +1,39 @@
-import React, { useState, useEffect, useRef } from 'react';
+//src/pages/sales/Products.tsx
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
-import { Input } from '../../components/ui/Input';
-import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal'; 
 import { compressImage } from '../../lib/imageCompressor';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
+import { AnimatePresence, motion } from 'framer-motion';
+import type { Variants } from 'framer-motion';
+
+// Component imports
+import { BarcodeComponent } from './components/BarcodeComponent';
+import { ProductBulkActions } from './components/ProductBulkActions';
+import { ProductFormModal } from './components/ProductFormModal';
+
+// Redesigned Spreadsheet Bulk Editor import
+import { BulkEditModal } from './components/BulkEditModal';
+
+// Barcode Printing Module imports
+import { BarcodePrintModal } from './components/barcode/BarcodePrintModal';
+import type { PrintableItem } from './utils/barcodePdfHelper';
+
+// Product Restoration Recovery Bin import
+import { ProductRecoveryModal } from './components/ProductRecoveryModal';
+
+// Shared Layout Header Context
+import { HeaderActionsContext } from '../../routes';
+
 import { 
-  Plus, Pencil, Trash2, Loader2, Upload, AlertTriangle, 
-  Layers, Package, PackageX, X, Image as ImageIcon,
-  ChevronDown, ChevronUp, SlidersHorizontal, CheckCircle2,
-  Sparkles, Tag, DollarSign, Eye
+  Plus, Pencil, Trash2, Layers, Package, PackageX, AlertTriangle, Search, X, Printer, Loader2, RotateCcw
 } from 'lucide-react';
 
 interface Product {
@@ -26,16 +46,65 @@ interface Product {
   stock_quantity: number;
   low_stock_alert: number | null;
   status: 'Active' | 'Inactive';
+  deleted_at: string | null;
+  deleted_by: string | null;
   created_at: string;
   updated_at: string;
+  
+  // Clean, consolidated manufacturer database tracking
+  manufacturer_barcode?: string | null;
+  manufacturer_source?: string;
 }
+
+const menuContainerVariants: Variants = {
+  hidden: { 
+    opacity: 0,
+    transition: {
+      staggerChildren: 0.04,
+      staggerDirection: -1
+    }
+  },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.02
+    }
+  }
+};
+
+const menuItemVariants: Variants = {
+  hidden: { 
+    opacity: 0, 
+    y: 16, 
+    scale: 0.88,
+    filter: 'blur(3px)'
+  },
+  show: { 
+    opacity: 1, 
+    y: 0, 
+    scale: 1,
+    filter: 'blur(0px)',
+    transition: { 
+      type: 'spring' as const,
+      stiffness: 260, 
+      damping: 20 
+    } 
+  }
+};
+
 
 export const Products: React.FC = () => {
   const { user } = useAuthStore() as any;
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const itemsPerPage = useResponsiveItemsPerPage();
-  
-  // Dynamic authorization check
+  const isMountedRef = useRef(true);
+   useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const isAdmin = 
     user?.app_metadata?.role === 'Admin' || 
     user?.app_metadata?.role === 'admin' || 
@@ -43,26 +112,34 @@ export const Products: React.FC = () => {
     user?.user_metadata?.role === 'admin' || 
     isSuperAdmin(user?.email);
 
-  // Product Directory States
+  // Core Listings States
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   
-  // Dynamic Custom Filters
+  // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
   
-  // Modal / Form States
+  // Navigation & Modals Toggle States
   const [showFormModal, setShowFormModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false); 
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false); 
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false); 
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  
-  // Advanced Settings Drawer Toggle
   const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  // Selection States for Bulk actions
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
-  // Form Fields
+  // Mobile Expandable Floating Action Button Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Form States (Single Edit)
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formHasStockLimit, setFormHasStockLimit] = useState(false);
@@ -71,25 +148,36 @@ export const Products: React.FC = () => {
   const [formStatus, setFormStatus] = useState<'Active' | 'Inactive'>('Active');
   const [formImageUrl, setFormImageUrl] = useState('');
 
-  // Fetch Inventory Products
+  // Minimal background tracker states
+  const [formManufacturerBarcode, setFormManufacturerBarcode] = useState('');
+  const [formManufacturerSource, setFormManufacturerSource] = useState('manual');
+
+  const { setActions } = useContext(HeaderActionsContext);
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('products')
         .select('*')
+        .is('deleted_at', null)
         .order('product_name', { ascending: true });
 
       if (error) throw error;
+      if (isMountedRef.current) {
+        setProducts(data || []);
+      }
       setProducts(data || []);
     } catch {
-      toast.error('Could not fetch active inventory listings.');
+      if (isMountedRef.current) {
+        console.warn('INTERNET_ERR: Could not load your product items. Please Check your Connection.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
-  // Setup Postgres Realtime Database Subscriptions
   useEffect(() => {
     fetchProducts();
 
@@ -108,12 +196,22 @@ export const Products: React.FC = () => {
             });
           } else if (eventType === 'UPDATE') {
             const updated = newRecord as Product;
-            setProducts((prev) =>
-              prev.map((p) => (p.id === updated.id ? updated : p)).sort((a, b) => a.product_name.localeCompare(b.product_name))
-            );
+            
+            if (updated.deleted_at) {
+              setProducts((prev) => prev.filter((p) => p.id !== updated.id));
+              setSelectedProductIds((prev) => prev.filter((id) => id !== updated.id));
+            } else {
+              setProducts((prev) => {
+                const updatedList = prev.some(p => p.id === updated.id)
+                  ? prev.map((p) => (p.id === updated.id ? updated : p))
+                  : [...prev, updated];
+                return updatedList.sort((a, b) => a.product_name.localeCompare(b.product_name));
+              });
+            }
           } else if (eventType === 'DELETE') {
             const targetId = oldRecord.id;
             setProducts((prev) => prev.filter((p) => p.id !== targetId));
+            setSelectedProductIds((prev) => prev.filter((id) => id !== targetId));
           }
         }
       )
@@ -124,21 +222,57 @@ export const Products: React.FC = () => {
     };
   }, []);
 
-  const recordAuditLog = async (action: string, details: any) => {
-    try {
-      if (!user) return;
-      await supabase.from('audit_logs').insert({
-        action,
-        user_id: user.id,
-        details: JSON.stringify(details),
-        created_at: new Date().toISOString()
-      });
-    } catch {
-      // Gracefully prevent background errors from interrupting workspace actions
-    }
-  };
+ const location = useLocation();
+  // Dynamically push the header action buttons to the unified layout container
+  useEffect(() => {
+    const updateHeaderActions = () => {
+      // Only show the header actions if the user is an admin and NO rows are selected
+      if (isAdmin && selectedProductIds.length === 0) {
+        setActions(
+          <>
+            <button
+              onClick={() => setShowRecoveryModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+              title="View and restore soft-deleted products"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+              <span>Recycle Bin</span>
+            </button>
 
-  // Iteratively compresses files under 8MB down to 10KB target
+            <button
+              onClick={() => setShowPrintModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#1e232d] hover:bg-slate-800 text-white border border-white/5 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+              title="Quickly generate printable sheet labels"
+            >
+              <Printer className="w-3.5 h-3.5 text-blue-500" />
+              <span>Print Sheet Labels</span>
+            </button>
+
+            <button
+              onClick={handleCreateClick}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-500/10"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add New Item
+            </button>
+          </>
+        );
+      } else {
+        // Clear actions if rows are selected or user is not authorized
+        setActions(null);
+      }
+    };
+
+    // Defer action registration until the parent layout mounts completely
+    const timer = setTimeout(updateHeaderActions, 0);
+
+    // Safely cleanup header slots on component unmount
+    return () => {
+      clearTimeout(timer);
+      setActions(null);
+    };
+  }, [isAdmin, selectedProductIds.length, location.pathname, setActions]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -151,11 +285,10 @@ export const Products: React.FC = () => {
     try {
       setUploading(true);
       const compressedFile = await compressImage(file, 10 * 1024);
-      
       const fileExt = 'jpg';
       const fileName = `products/${Math.random().toString(36).substring(2)}.${fileExt}`;
       
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('avatars')
         .upload(fileName, compressedFile, { 
           contentType: 'image/jpeg', 
@@ -165,20 +298,19 @@ export const Products: React.FC = () => {
 
       if (error) throw error;
 
-      if (data) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
-        
-        setFormImageUrl(publicUrl);
-        toast.success(`Image compressed cleanly to ${(compressedFile.size / 1024).toFixed(1)}KB!`);
-      }
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+      
+      setFormImageUrl(urlData.publicUrl);
+      toast.success(`Image processed successfully.`);
     } catch {
-      toast.error('Image compression or upload handshake failed.');
+      toast.error('Image upload failed.');
     } finally {
       setUploading(false);
     }
   };
+  
 
   const handleCreateClick = () => {
     setIsEditing(false);
@@ -191,6 +323,11 @@ export const Products: React.FC = () => {
     setFormStatus('Active');
     setFormImageUrl('');
     setShowAdvanced(false);
+
+    // Reset Open Food Facts fields
+    setFormManufacturerBarcode('');
+    setFormManufacturerSource('manual');
+
     setShowFormModal(true);
   };
 
@@ -205,6 +342,11 @@ export const Products: React.FC = () => {
     setFormStatus(product.status);
     setFormImageUrl(product.image_url || '');
     setShowAdvanced(false);
+
+    // Populate Open Food Facts fields
+    setFormManufacturerBarcode(product.manufacturer_barcode || '');
+    setFormManufacturerSource(product.manufacturer_source || 'manual');
+
     setShowFormModal(true);
   };
 
@@ -214,21 +356,16 @@ export const Products: React.FC = () => {
     const priceNum = parseFloat(formPrice);
 
     if (!nameClean || nameClean.length > 100) {
-      toast.error('Product name is required and must be under 100 characters.');
+      toast.error('Product name is required.');
       return;
     }
     if (isNaN(priceNum) || priceNum < 0) {
-      toast.error('Please enter a valid non-negative selling price.');
+      toast.error('Please enter a valid price.');
       return;
     }
 
     const stockQty = formHasStockLimit ? parseInt(formStockQuantity) : 0;
     const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) : null;
-
-    if (formHasStockLimit && (isNaN(stockQty) || stockQty < 0)) {
-      toast.error('Stock quantity must be a non-negative number.');
-      return;
-    }
 
     try {
       setSaving(true);
@@ -240,6 +377,11 @@ export const Products: React.FC = () => {
         low_stock_alert: alertQty,
         status: formStatus,
         image_url: formImageUrl.trim() || null,
+
+        // Only save required columns to db
+        manufacturer_barcode: formManufacturerBarcode.trim() || null,
+        manufacturer_source: formManufacturerSource,
+
         updated_at: new Date().toISOString()
       };
 
@@ -250,8 +392,19 @@ export const Products: React.FC = () => {
           .eq('id', selectedProductId);
 
         if (error) throw error;
-        toast.success('Product updated successfully.');
-        await recordAuditLog('PRODUCT_UPDATED', { id: selectedProductId, name: nameClean });
+        toast.success('Product updated.');
+
+        try {
+          await logAudit(
+            'PRODUCT_UPDATED',
+            `Updated product parameters for "${nameClean}".`,
+            selectedProductId
+          );
+        } catch (auditError) {
+          console.warn('Background audit logging failed silently:', auditError);
+        }
+        
+        setSelectedProductIds(prev => prev.filter(id => id !== selectedProductId));
       } else {
         const { data, error } = await supabase
           .from('products')
@@ -260,16 +413,19 @@ export const Products: React.FC = () => {
           .single();
 
         if (error) throw error;
-        toast.success('New product listed in inventory.');
-        if (data) {
-          await recordAuditLog('PRODUCT_CREATED', { id: data.id, name: nameClean });
-        }
+        toast.success('New product listed.');
+
+        await logAudit(
+          'PRODUCT_CREATED',
+          `Created new product catalog entry "${nameClean}" priced at ₱${priceNum.toFixed(2)}.`,
+          data?.id
+        );
       }
 
       setShowFormModal(false);
       fetchProducts();
     } catch {
-      toast.error('Failed to submit product parameters.');
+      toast.error('Failed to save parameters.');
     } finally {
       setSaving(false);
     }
@@ -277,22 +433,66 @@ export const Products: React.FC = () => {
 
   const handleDeleteProduct = async (id: string) => {
     try {
+      const targetProduct = products.find(p => p.id === id);
+
       const { error } = await supabase
         .from('products')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
-      toast.success('Product removed from records.');
-      await recordAuditLog('PRODUCT_DELETED', { id });
+      toast.success('Product removed.');
+
+      await logAudit(
+        'PRODUCT_DELETED',
+        `Deleted product "${targetProduct?.product_name || 'Unknown Item'}" from catalog.`,
+        id
+      );
+
       setDeleteConfirmId(null);
       fetchProducts();
     } catch {
-      toast.error('Action denied. Verification or network failure.');
+      toast.error('Action denied.');
     }
   };
 
-  // Card stats calculations
+  const handleBulkEditClick = () => {
+    setShowBulkEditModal(true);
+  };
+
+  const handleSaveBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+
+    const targetTitles = products
+      .filter(p => selectedProductIds.includes(p.id))
+      .map(p => p.product_name)
+      .join(', ');
+
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .in('id', selectedProductIds);
+
+      if (error) throw error;
+
+      toast.success(`Permanently deleted ${selectedProductIds.length} items.`);
+
+      await logAudit(
+        'BULK_PRODUCTS_DELETED',
+        `Permanently deleted ${selectedProductIds.length} products: "${targetTitles}".`
+      );
+      setShowBulkDeleteModal(false);
+      setSelectedProductIds([]);
+      fetchProducts();
+    } catch {
+      toast.error('Failed to perform bulk deletion.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const stats = {
     total: products.length,
     active: products.filter(p => p.status === 'Active').length,
@@ -300,17 +500,15 @@ export const Products: React.FC = () => {
     lowStock: products.filter(p => p.has_stock_limit && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert && p.stock_quantity > 0).length
   };
 
-  // Perform dynamic search and status filtering together in Products layout
   const filteredProducts = products.filter((p) => {
-    // 1. Search Query Match
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch = query === '' || 
       p.product_name.toLowerCase().includes(query) ||
-      p.barcode_id.toLowerCase().includes(query);
+      p.barcode_id.toLowerCase().includes(query) ||
+      (p.manufacturer_barcode && p.manufacturer_barcode.toLowerCase().includes(query));
 
     if (!matchesSearch) return false;
 
-    // 2. Friendly Filter Selector Match
     if (selectedStatusFilter === 'all') return true;
     if (selectedStatusFilter === 'active') return p.status === 'Active';
     if (selectedStatusFilter === 'inactive') return p.status === 'Inactive';
@@ -321,21 +519,94 @@ export const Products: React.FC = () => {
     return true;
   });
 
-  // Define structured Columns for the React <Table> Component (Disabled default search inputs inside table)
+  const getRowStyle = (product: Product) => {
+    const isSelected = selectedProductIds.includes(product.id);
+    const isHidden = product.status === 'Inactive';
+
+    if (isSelected) {
+      return 'bg-blue-500/10 hover:bg-blue-500/15 border-l-2 border-blue-500 transition-colors duration-150';
+    }
+    if (isHidden) {
+      return 'bg-slate-200/50 dark:bg-neutral-900/40 opacity-60 text-slate-455 dark:text-slate-500 transition-colors duration-150';
+    }
+    return '';
+  };
+
+  const handleRowClick = (product: Product) => {
+    setSelectedProductIds(prev =>
+      prev.includes(product.id)
+        ? prev.filter(id => id !== product.id)
+        : [...prev, product.id]
+    );
+  };
+
+  const isSelectionActive = selectedProductIds.length > 0;
+
   const columns: Column<Product>[] = [
     {
+      key: 'select',
+      header: isSelectionActive ? (
+        <div className="flex items-center justify-center h-full w-full py-1">
+          <input
+            type="checkbox"
+            checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id))}
+            onChange={(e) => {
+              if (e.target.checked) {
+                const currentIds = filteredProducts.map(p => p.id);
+                setSelectedProductIds(prev => Array.from(new Set([...prev, ...currentIds])));
+              } else {
+                const currentIds = filteredProducts.map(p => p.id);
+                setSelectedProductIds(prev => prev.filter(id => !currentIds.includes(id)));
+              }
+            }}
+            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
+            title="Toggle Select All"
+          />
+        </div>
+      ) : null, 
+      headerClassName: 'w-12 text-center',
+      cellClassName: 'text-center p-0', 
+      render: (item) => isSelectionActive ? ( 
+        <label className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selectedProductIds.includes(item.id)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedProductIds(prev => [...prev, item.id]);
+              } else {
+                setSelectedProductIds(prev => prev.filter(id => id !== item.id));
+              }
+            }}
+            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary) transition-transform duration-150 hover:scale-110"
+          />
+        </label>
+      ) : null
+    },
+    {
       key: 'barcode_id',
-      header: 'BARCODE ID',
+      header: 'Scan / Barcode',
       sortable: true,
       render: (item) => (
-        <span className="px-2.5 py-1 rounded-lg bg-(--bg-page) text-xs font-mono font-bold border border-(--border-color) text-(--color-text) opacity-90">
-          {item.barcode_id}
-        </span>
+        <div className="relative group/tooltip inline-block">
+          <span className="px-2.5 py-1 rounded-lg bg-(--bg-page) text-xs font-mono font-bold border border-(--border-color) text-(--color-text) opacity-90 block cursor-help tracking-wider active:scale-95 transition-transform select-none">
+            {item.barcode_id}
+          </span>
+          {item.manufacturer_barcode && (
+            <span className="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-mono block">
+              MFG: {item.manufacturer_barcode}
+            </span>
+          )}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block z-50 bg-white p-2 rounded-xl border border-slate-200 shadow-xl pointer-events-none scale-95 animate-scale-up">
+            <BarcodeComponent value={item.barcode_id} />
+            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-white" />
+          </div>
+        </div>
       )
     },
     {
       key: 'product_name',
-      header: 'ITEM PROFILE NAME',
+      header: 'Product Name',
       sortable: true,
       render: (item) => (
         <div className="flex items-center gap-3 py-1">
@@ -343,31 +614,30 @@ export const Products: React.FC = () => {
             <img 
               src={item.image_url} 
               alt={item.product_name} 
-              className="w-10 h-10 rounded-xl object-cover border border-(--border-color) bg-(--bg-page)" 
+              className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${item.status === 'Inactive' ? 'grayscale opacity-75' : ''}`} 
             />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-xs uppercase shadow-inner">
+            <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0">
               {item.product_name[0]}
             </div>
           )}
-          <span className="font-semibold text-(--color-text) tracking-wide block text-sm">{item.product_name}</span>
+          <span className="font-semibold tracking-wide block text-sm">{item.product_name}</span>
         </div>
       )
     },
     {
       key: 'selling_price',
-      header: 'RETAIL PRICE',
+      header: 'Price',
       sortable: true,
-      sortValue: (item) => Number(item.selling_price),
       render: (item) => (
-        <span className="font-mono font-bold text-(--color-text) text-xs opacity-90">
+        <span className="font-mono font-bold text-xs opacity-90">
           ₱{Number(item.selling_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
       )
     },
     {
       key: 'stock_quantity',
-      header: 'AVAILABLE STOCK',
+      header: 'Inventory Stock',
       sortable: true,
       sortValue: (item) => item.has_stock_limit ? item.stock_quantity : 999999,
       render: (item) => {
@@ -385,7 +655,7 @@ export const Products: React.FC = () => {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-[10px] text-red-500 border border-red-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              OUT
+              NO STOCK
             </span>
           );
         }
@@ -393,7 +663,7 @@ export const Products: React.FC = () => {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-[10px] text-amber-500 border border-amber-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              LOW STOCK ({item.stock_quantity})
+              LOW ({item.stock_quantity})
             </span>
           );
         }
@@ -407,21 +677,21 @@ export const Products: React.FC = () => {
     },
     {
       key: 'status',
-      header: 'STATUS',
+      header: 'Show in Cashier',
       sortable: true,
       render: (item) => {
         if (item.status === 'Active') {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[10px] text-emerald-400 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              ACTIVE
+              VISIBLE
             </span>
           );
         }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-500/10 text-[10px] text-slate-400 border border-slate-500/20 rounded-full font-bold tracking-wider uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            INACTIVE
+            HIDDEN
           </span>
         );
       }
@@ -430,26 +700,28 @@ export const Products: React.FC = () => {
       key: 'actions',
       header: 'ACTIONS',
       headerClassName: 'text-right justify-end',
-      cellClassName: 'text-right',
+      cellClassName: 'text-right py-1',
       render: (item) => {
-        if (!isAdmin) return <span className="text-xs text-slate-400 dark:text-slate-500">View Only</span>;
+        if (!isAdmin) return <span className="text-xs text-slate-400 dark:text-slate-500 font-bold">View Only</span>;
+        
+        const isSelected = selectedProductIds.includes(item.id);
+        if (!isSelected) return null;
+
         return (
-          <div className="flex items-center gap-3.5 justify-end">
+          <div className="flex items-center gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => handleEditClick(item)}
-              className="px-3.5 py-1.5 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary-light) hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-(--color-primary)/20 flex items-center gap-1.5"
+              className="flex items-center justify-center h-8 w-8 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary-light) hover:text-white rounded-lg transition-all duration-200 cursor-pointer font-bold border border-(--color-primary)/20 hover:scale-110 shrink-0"
               title="Edit Product"
             >
-              <Pencil className="w-3 h-3" />
-              EDIT
+              <Pencil className="w-4 h-4" />
             </button>
             <button
               onClick={() => setDeleteConfirmId(item.id)}
-              className="px-3.5 py-1.5 bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-red-500/20 flex items-center gap-1.5"
+              className="flex items-center justify-center h-8 w-8 bg-red-500/10 hover:bg-red-655 hover:text-white rounded-lg transition-all duration-200 cursor-pointer font-bold border border-red-500/20 hover:scale-110 shrink-0"
               title="Delete Product"
             >
-              <Trash2 className="w-3 h-3" />
-              DELETE
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         );
@@ -457,428 +729,580 @@ export const Products: React.FC = () => {
     }
   ];
 
+  const printableItems: PrintableItem[] = products.map(p => ({
+    id: p.id,
+    barcode_id: p.barcode_id,
+    product_name: p.product_name,
+    selling_price: p.selling_price
+  }));
+
+  const selectedProductsForBulkEdit = products
+    .filter(p => selectedProductIds.includes(p.id))
+    .map(p => ({
+      id: p.id,
+      barcode_id: p.barcode_id,
+      product_name: p.product_name,
+      selling_price: p.selling_price,
+      has_stock_limit: p.has_stock_limit,
+      stock_quantity: p.stock_quantity,
+      low_stock_alert: p.low_stock_alert,
+      status: p.status,
+      image_url: p.image_url,
+    }));
+
   return (
-    <div className="space-y-6 font-body min-h-screen text-(--color-text) rounded-3xl pt-2">
+    <div className="space-y-6">
       
-      {/* 1. Header Area */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
-            PRODUCT INVENTORY
-          </h2>
-          <p className="text-sm text-slate-400 mt-1 font-medium">
-            Manage your store inventory, check barcode ID mappings, adjust unit stock counts, and configure alerts.
-          </p>
-        </div>
-
-        {isAdmin && (
-          <button
-            onClick={handleCreateClick}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-500/10"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            ADD NEW PRODUCT
-          </button>
-        )}
-      </div>
-
-      {/* 2. KPI Score Cards */}
-      <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-5">
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20">
-            <Layers className="w-6 h-6" />
+      {/* 2. Responsive Overview Cards - Hidden on mobile viewports */}
+      <div className="hidden md:grid grid-cols-4 gap-4">
+        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+          <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500 border border-blue-500/20 shrink-0">
+            <Layers className="w-5 h-5" />
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">ACTIVE ITEMS</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wide mt-0.5 block">
-              {stats.active} / {stats.total} LISTED
+          <div className="min-w-0">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">VISIBLE</span>
+            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+              {stats.active} / {stats.total} item/s
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Visible on Register</span>
           </div>
         </div>
 
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-green-500/10 rounded-xl text-green-500 border border-green-500/20">
-            <Package className="w-6 h-6 text-green-500" />
+        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+          <div className="p-2 bg-green-500/10 rounded-lg text-green-500 border border-green-500/20 shrink-0">
+            <Package className="w-5 h-5" />
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AVAILABLE ITEMS</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {stats.total - stats.outOfStock} IN STOCK
+          <div className="min-w-0">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">IN STOCK</span>
+            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+              {stats.total - stats.outOfStock} item/s
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Ready for checkout</span>
           </div>
         </div>
 
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20">
-            <AlertTriangle className="w-6 h-6" />
+        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+          <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500 border border-amber-500/20 shrink-0">
+            <AlertTriangle className="w-5 h-5" />
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">LOW STOCK ALERTS</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {stats.lowStock} WARNINGS
+          <div className="min-w-0">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">LOW STOCK</span>
+            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+              {stats.lowStock} Item/s
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Threshold triggers</span>
           </div>
         </div>
 
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-red-500/10 rounded-xl text-red-500 border border-red-500/20">
-            <PackageX className="w-6 h-6 text-red-500" />
+        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+          <div className="p-2 bg-red-500/10 rounded-lg text-red-500 border border-red-500/20 shrink-0">
+            <PackageX className="w-5 h-5" />
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">DEPLETED STOCK</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {stats.outOfStock} RUNOUTS
+          <div className="min-w-0">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">No Stock</span>
+            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
+              {stats.outOfStock} Item/s
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Requires replenishment</span>
           </div>
         </div>
       </div>
 
-      {/* 3. Unified Filter Deck & Search Block (Consolidated in one row) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-4 rounded-2xl border border-(--border-color) shadow-xs mt-6">
-        <div className="relative flex-1 max-w-md">
+      {/* 3. Search and Status Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs mt-6">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search inventory items by name or barcode mappings..."
-            className="w-full pl-10 pr-4 py-2.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 transition-all font-medium"
+            placeholder="Search items by name, barcode, or manufacturer barcode..."
+            className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 transition-all font-medium"
           />
-          <Plus className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 rotate-45" />
+
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors"
+              title="Clear search query"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+        <div className="flex items-center gap-2 justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</span>
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            title="Filter products by inventory status"
-            aria-label="Filter products by status"
-            className="px-3.5 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer"
+            className="px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-lg text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer"
           >
-            <option value="all">ALL</option>
-            <option value="active">ACTIVE</option>
-            <option value="inactive">INACTIVE</option>
+            <option value="all">ALL ITEMS</option>
+            <option value="active">VISIBLE</option>
+            <option value="inactive">HIDDEN</option>
             <option value="low_stock">LOW STOCK</option>
             <option value="unlimited">UNLIMITED STOCK</option>
           </select>
         </div>
       </div>
 
-      {/* 4. Products Table (With Active Sub-filtering) */}
-      {filteredProducts.length === 0 ? (
+      {/* Bulk actions sticky pin bar */}
+      {selectedProductIds.length > 0 && (
+        <ProductBulkActions 
+          selectedCount={selectedProductIds.length}
+          onClear={() => setSelectedProductIds([])}
+          onPrint={() => setShowPrintModal(true)} 
+          onBulkEdit={handleBulkEditClick} 
+          onBulkDelete={() => setShowBulkDeleteModal(true)} 
+        />
+      )}
+
+      {/* 4. Products Table & Mobile Cards */}
+      {loading ? (
+        <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto w-full">
+          <Table<Product>
+            data={[]}
+            columns={columns}
+            itemsPerPage={itemsPerPage}
+            loading={true}
+          />
+        </div>
+      ) : filteredProducts.length === 0 ? (
         <div className="p-12 text-center bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
           <div className="w-16 h-16 bg-slate-100 dark:bg-neutral-800 rounded-full flex items-center justify-center mx-auto text-slate-400">
             <PackageX className="w-8 h-8" />
           </div>
           <div className="space-y-1">
             <h3 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">No products found</h3>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-              {products.length === 0 
-                ? "Your product inventory database is currently empty. Want to add a product?" 
-                : "No items match your active search configurations and stock status filters."}
+            <p className="text-xs text-slate-455 max-w-xs mx-auto leading-relaxed">
+              No items match your active search configurations.
             </p>
           </div>
-          {isAdmin && (
-            <button
-              onClick={handleCreateClick}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-heading tracking-widest uppercase rounded-xl shadow-md hover:scale-102 active:scale-95 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              ADD NEW INVENTORY PRODUCT
-            </button>
-          )}
         </div>
       ) : (
-        <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
-          <Table<Product>
-            data={filteredProducts}
-            columns={columns}
-            itemsPerPage={itemsPerPage}
-            loading={loading}
-            loadingLabel="Accessing product specifications..."
-          />
-        </div>
-      )}
-
-      {/* 5. Form Modal (Create & Edit) */}
-      {showFormModal && (
-        <div className="fixed inset-0 z-1000 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up text-(--color-text)">
-            
-            <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between">
-              <h3 className="font-heading text-xs tracking-widest uppercase text-(--color-text) flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
-                <span>{isEditing ? 'Modify Product Specifications' : 'Add New Inventory Product'}</span>
-              </h3>
-              <button 
-                onClick={() => setShowFormModal(false)}
-                title="Close editing window"
-                aria-label="Close Modal"
-                className="text-slate-400 hover:text-slate-200 cursor-pointer p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProduct} className="p-5 space-y-4 text-xs overflow-y-auto max-h-[80vh] no-scrollbar text-left">
+        <>
+          {/* MOBILE VIEW: Mobile-first responsive touch layout */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+            {filteredProducts.map((product) => {
+              const isSelected = selectedProductIds.includes(product.id);
+              const isHidden = product.status === 'Inactive';
               
-              {/* Product Cover Graphic (Placed on Top) */}
-              <div className="space-y-2.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Product Cover Graphic</span>
-                </label>
-                
-                <div className="grid gap-3">
-                  <Input
-                    type="text"
-                    icon={<ImageIcon className="w-3.5 h-3.5 text-slate-400" />}
-                    label="Image Address (URL)"
-                    value={formImageUrl}
-                    onChange={(e) => setFormImageUrl(e.target.value)}
-                  />
-                  
-                  {/* File Upload Dropzone with Live Compression Metrics */}
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="relative border-2 border-dashed border-(--border-color) rounded-2xl p-4 bg-(--bg-page) text-center transition-all hover:opacity-85 cursor-pointer"
-                  >
-                    {uploading ? (
-                      <div className="flex flex-col items-center justify-center py-2 space-y-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-[#123c73] dark:text-[#bf0202]" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest animate-pulse text-slate-400">
-                          Compressing image down to 10KB...
-                        </span>
-                      </div>
-                    ) : formImageUrl ? (
-                      <div className="flex flex-col items-center justify-center space-y-2">
-                        <div className="w-14 h-14 rounded-xl border border-(--border-color) overflow-hidden shadow-sm relative">
-                          <img src={formImageUrl} alt="Product Cover" className="w-full h-full object-cover" />
-                          <button 
-                            type="button" 
-                            onClick={(e) => { e.stopPropagation(); setFormImageUrl(''); }} 
-                            className="absolute top-0.5 right-0.5 bg-red-600 text-white rounded-md p-0.5 hover:bg-red-700 transition-colors"
-                            title="Remove Cover Image"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <span className="text-[9px] font-bold text-emerald-500 uppercase flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Image Ready
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-2 space-y-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-300 transition-all">
-                        <Upload className="w-6 h-6 shrink-0" />
-                        <span className="text-[10px] font-bold uppercase tracking-wider">Drag & drop image or local upload</span>
-                        <span className="text-[8px]">Max upload size is 8MB (Auto compressed to 10KB target)</span>
-                      </div>
-                    )}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      disabled={uploading}
-                      className="hidden"
-                      title="Choose local image file"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Required Core Fields (Always Visible) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="grid gap-1.5">
-                  <label htmlFor="form-product-name" className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Product Name *</span>
-                  </label>
-                  <Input
-                    id="form-product-name"
-                    type="text"
-                    required
-                    maxLength={100}
-                    label="E.g., Protein Powder Whey 1LB"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                  />
-                </div>
-
-                <div className="grid gap-1.5">
-                  <label htmlFor="form-product-price" className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Selling Price (₱) *</span>
-                  </label>
-                  <Input
-                    id="form-product-price"
-                    type="number"
-                    step="0.01"
-                    required
-                    min="0"
-                    label="0.00"
-                    value={formPrice}
-                    onChange={(e) => setFormPrice(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Advanced Parameters Group/Drawer (Collapsible accordion block at the very bottom) */}
-              <div className="border border-(--border-color) rounded-2xl overflow-hidden transition-all duration-300">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="w-full flex items-center justify-between p-4 bg-(--bg-page) border-b border-(--border-color) transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 text-[10px] font-heading tracking-widest uppercase text-slate-400">
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Advanced Configurations</span>
-                  </div>
-                  {showAdvanced ? (
-                    <ChevronUp className="w-4 h-4 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  )}
-                </button>
-
+              return (
                 <div 
-                  className={`transition-all duration-300 ease-in-out overflow-hidden bg-(--bg-page) ${
-                    showAdvanced ? 'max-h-[500px] opacity-100 p-4 space-y-4 border-t-0' : 'max-h-0 opacity-0 pointer-events-none'
+                  key={product.id}
+                  onClick={() => {
+                    setSelectedProductIds(prev =>
+                      prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
+                    );
+                  }}
+                  className={`p-4 border rounded-2xl relative flex flex-col gap-3 transition-all duration-150 cursor-pointer ${
+                    isSelected 
+                      ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500 shadow-sm' 
+                      : isHidden
+                        ? 'bg-slate-200/50 dark:bg-neutral-900/40 opacity-60 text-slate-455 dark:text-slate-500 border-(--border-color)'
+                        : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
-                  {/* Status Selection */}
-                  <div className="grid gap-1.5">
-                    <label htmlFor="form-product-status" className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <Eye className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Display Status *</span>
-                    </label>
-                    <select
-                      id="form-product-status"
-                      title="Select product visibility"
-                      value={formStatus}
-                      onChange={(e) => setFormStatus(e.target.value as any)}
-                      className="w-full px-4 py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-(--color-text) outline-none focus:border-slate-400 transition-all font-semibold cursor-pointer"
-                    >
-                      <option value="Active">Active (Visible in POS Storefront)</option>
-                      <option value="Inactive">Inactive (Hidden from POS)</option>
-                    </select>
+                  <div className="flex justify-between items-center">
+                    {isSelectionActive ? (
+                      <label className="flex items-center gap-2 cursor-pointer py-1 pr-4" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedProductIds(prev =>
+                              prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
+                            );
+                          }}
+                          className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73]"
+                        />
+                        <span className="text-[10px] font-bold uppercase select-none">Select</span>
+                      </label>
+                    ) : (
+                      <div className="w-1" /> 
+                    )}
+                    
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                      product.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-500/10 text-slate-455'
+                    }`}>
+                      {product.status === 'Active' ? 'VISIBLE' : 'HIDDEN'}
+                    </span>
                   </div>
 
-                  {/* Stock tracking configuration box */}
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-4 text-left">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Track stock limits</h4>
-                        <p className="text-[9px] text-slate-450 mt-0.5">Toggle if inventory items can go out of stock</p>
+                  <div className="flex items-center justify-between gap-3 min-h-12 text-xs font-semibold">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {product.image_url ? (
+                        <img 
+                          src={product.image_url} 
+                          alt={product.product_name} 
+                          className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${isHidden ? 'grayscale opacity-75' : ''}`} 
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0">
+                          {product.product_name[0]}
+                        </div>
+                      )}
+                      
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-semibold text-sm truncate leading-snug">{product.product_name}</h4>
+                        <p className="font-mono font-bold text-emerald-500 text-sm mt-0.5 leading-none">₱{product.selling_price.toFixed(2)}</p>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={formHasStockLimit}
-                        onChange={(e) => setFormHasStockLimit(e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-(--color-primary) focus:ring-0 cursor-pointer accent-(--color-primary)"
-                        title="Enable stock tracking"
-                      />
                     </div>
 
-                    {formHasStockLimit && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-slide-up">
-                        <div className="grid gap-1.5">
-                          <label htmlFor="form-product-stock" className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                            In-Stock Quantity *
-                          </label>
-                          <Input
-                            id="form-product-stock"
-                            type="number"
-                            min="0"
-                            required={formHasStockLimit}
-                            label="Quantity in box"
-                            value={formStockQuantity}
-                            onChange={(e) => setFormStockQuantity(e.target.value)}
-                          />
-                        </div>
-
-                        <div className="grid gap-1.5">
-                          <label htmlFor="form-product-alert" className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                            Low Stock Warning Mark
-                          </label>
-                          <Input
-                            id="form-product-alert"
-                            type="number"
-                            min="0"
-                            label="E.g., Warn at 5 remaining"
-                            value={formLowStockAlert}
-                            onChange={(e) => setFormLowStockAlert(e.target.value)}
-                          />
-                        </div>
+                    {isSelected && (
+                      <div className="bg-white p-1 rounded-lg border border-slate-200 dark:border-white/10 shadow-sm shrink-0 w-full max-w-28 flex items-center justify-center animate-scale-up">
+                        <BarcodeComponent value={product.barcode_id} />
                       </div>
                     )}
                   </div>
+
+                  <div className="grid grid-cols-2 gap-2 border-t border-(--border-color) pt-2 text-[11px] leading-none">
+                    <div className="space-y-1">
+                      <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">Stock Status</span>
+                      <span className="font-bold inline-block">
+                        {!product.has_stock_limit ? (
+                          <span className="text-blue-400">UNLIMITED</span>
+                        ) : product.stock_quantity === 0 ? (
+                          <span className="text-red-500">OUT OF STOCK</span>
+                        ) : (
+                          <span className="text-slate-350">{product.stock_quantity} UNITS</span>
+                        )}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1 text-right">
+                      <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">Code Number</span>
+                      <span className="font-mono font-bold text-slate-400 dark:text-slate-300 inline-block">
+                        {product.barcode_id}
+                        {product.manufacturer_barcode && (
+                          <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-normal mt-1">MFG: {product.manufacturer_barcode}</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isAdmin && isSelected && selectedProductIds.length === 1 && (
+                    <div 
+                      className="flex gap-2 mt-1 pt-2 border-t border-(--border-color) animate-slide-up"
+                      onClick={(e) => e.stopPropagation()} 
+                    >
+                      <button
+                        onClick={() => handleEditClick(product)}
+                        className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit Item
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(product.id)}
+                        className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          setSelectedProductIds(prev => prev.filter(id => id !== product.id));
+                        }}
+                        className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors"
+                        title="Close options"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-2 border-t border-(--border-color) pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 border border-(--border-color) text-slate-300 bg-(--bg-card) hover:opacity-90 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <Button
-                  type="submit"
-                  loading={saving}
-                  className="px-5 py-2.5 max-w-[150px]"
-                >
-                  {isEditing ? 'Save Details' : 'Publish Product'}
-                </Button>
-              </div>
-
-            </form>
+              );
+            })}
           </div>
-        </div>
+
+          {/* DESKTOP VIEW: Compact table layout */}
+          <div className="hidden md:block p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
+            <Table<Product>
+              data={filteredProducts}
+              columns={columns}
+              itemsPerPage={itemsPerPage}
+              loading={false}
+              getRowClassName={getRowStyle}
+              onRowClick={handleRowClick} 
+            />
+          </div>
+        </>
+      )}
+
+      {/* 5. Create / Edit Form Modal */}
+      {showFormModal && (
+        <ProductFormModal 
+          isEditing={isEditing}
+          formName={formName}
+          setFormName={setFormName}
+          formPrice={formPrice}
+          setFormPrice={setFormPrice}
+          formHasStockLimit={formHasStockLimit}
+          setFormHasStockLimit={setFormHasStockLimit}
+          formStockQuantity={formStockQuantity}
+          setFormStockQuantity={setFormStockQuantity}
+          formLowStockAlert={formLowStockAlert}
+          setFormLowStockAlert={setFormLowStockAlert}
+          formStatus={formStatus}
+          setFormStatus={setFormStatus}
+          formImageUrl={formImageUrl}
+          setFormImageUrl={setFormImageUrl}
+
+          // Condensed manufacturer state transfers
+          formManufacturerBarcode={formManufacturerBarcode}
+          setFormManufacturerBarcode={setFormManufacturerBarcode}
+          formManufacturerSource={formManufacturerSource}
+          setFormManufacturerSource={setFormManufacturerSource}
+
+          showAdvanced={showAdvanced}
+          setShowAdvanced={setShowAdvanced}
+          saving={saving}
+          uploading={uploading}
+          onFileUpload={handleFileUpload}
+          onSave={handleSaveProduct}
+          onClose={() => setShowFormModal(false)}
+          existingProducts={products} 
+          editingProductId={selectedProductId} 
+        />
       )}
 
       {/* 6. Destructive Delete Confirm Dialog */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-1000 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-sm shadow-xl p-5 text-center space-y-4 animate-scale-up text-xs">
-            
-            <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto">
-              <Trash2 className="w-5 h-5" />
-            </div>
+      {deleteConfirmId && (() => {
+        const productToDelete = products.find(p => p.id === deleteConfirmId);
+        if (!productToDelete) return null;
+        return (
+          <div className="fixed inset-0 z-10000 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+            <div className="bg-(--bg-card) border border-red-500/20 rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up text-xs text-(--color-text)">
+              
+              <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                <Trash2 className="w-6 h-6 animate-bounce" />
+              </div>
 
-            <div className="space-y-1.5 text-left">
-              <h4 className="font-heading text-xs tracking-wider uppercase text-(--color-text)">
-                Confirm Deletion
-              </h4>
-              <p className="text-slate-400 font-bold">
-                Are you sure you want to delete this product? This will remove all barcode lookups and POS mappings.
-              </p>
-            </div>
+              <div className="space-y-1">
+                <h4 className="font-heading text-sm tracking-wider uppercase text-red-500">
+                  Confirm Deletion
+                </h4>
+                <p className="text-slate-455 text-[11px] font-medium leading-relaxed">
+                  You are about to permanently delete this item from your store catalog. This action cannot be undone.
+                </p>
+              </div>
 
-            <div className="flex items-center justify-center gap-2 pt-2">
+              <div className="p-4 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner">
+                {productToDelete.image_url ? (
+                  <img 
+                    src={productToDelete.image_url} 
+                    alt={productToDelete.product_name} 
+                    className="w-16 h-16 rounded-xl object-cover border border-(--border-color) shadow-sm"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-lg uppercase shadow-inner">
+                    {productToDelete.product_name[0]}
+                  </div>
+                )}
+                
+                <div className="min-w-0 flex-1 space-y-1">
+                  <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block leading-none">Catalog Item</span>
+                  <h5 className="font-extrabold text-sm truncate leading-snug text-(--color-text)">
+                    {productToDelete.product_name}
+                  </h5>
+                  
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 text-[10px]">
+                    <span className="font-mono font-bold text-slate-455">
+                      {productToDelete.barcode_id}
+                    </span>
+                    <span className="text-slate-500">•</span>
+                    <span className="font-semibold text-emerald-500">
+                      ₱{productToDelete.selling_price.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-2.5 pt-2">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 hover:text-slate-200 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteProduct(productToDelete.id)}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-705 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 7. Barcode Print Workspace Modal */}
+      {showPrintModal && (
+        <BarcodePrintModal 
+          products={printableItems}
+          initialSelectedIds={selectedProductIds}
+          onClose={() => setShowPrintModal(false)}
+        />
+      )}
+
+      {/* 8. Spreadsheet Bulk Editor Modal */}
+      {showBulkEditModal && (
+        <BulkEditModal 
+          isOpen={showBulkEditModal}
+          onClose={() => setShowBulkEditModal(false)}
+          selectedProducts={selectedProductsForBulkEdit}
+          onSaveSuccess={() => {
+            setSelectedProductIds([]);
+            fetchProducts();
+          }}
+        />
+      )}
+
+      {/* 9. Bulk Deletion safety Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <Modal
+          isOpen={showBulkDeleteModal}
+          onClose={() => setShowBulkDeleteModal(false)}
+          title="Confirm Permanent Deletion"
+        >
+          <div className="space-y-4 text-center font-body text-xs">
+            <p className="text-slate-655 dark:text-slate-400 font-medium">
+              Are you sure you want to permanently delete these <strong>{selectedProductIds.length}</strong> selected products? This action will erase all barcode mappings and POS listings.
+            </p>
+            <div className="flex gap-2 justify-center pt-2">
               <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 border border-(--border-color) bg-(--bg-card) text-slate-300 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-500 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
               >
-                No, Cancel
+                Cancel
               </button>
               <button
-                onClick={() => handleDeleteProduct(deleteConfirmId)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                onClick={handleSaveBulkDelete}
+                disabled={saving}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold"
               >
+                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Confirm Delete
               </button>
             </div>
-
           </div>
-        </div>
+        </Modal>
+      )}
+
+      {/* 10. Product Recovery Bin Modal */}
+      {showRecoveryModal && (
+        <ProductRecoveryModal
+          isOpen={showRecoveryModal}
+          onClose={() => setShowRecoveryModal(false)}
+          onRestoreSuccess={() => {
+            fetchProducts();
+          }}
+        />
+      )}
+
+     {/* 
+        11. Redesigned Mobile Expandable Floating Action Menu (FAB):
+        Includes full backdrop overlays and staggered micro-interactions.
+      */}
+      {isAdmin && selectedProductIds.length === 0 && (
+        <>
+          {/* Backdrop Blur Focus Shield Overlay */}
+          <AnimatePresence>
+            {isMobileMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Floating Action Menu Container */}
+          <div className="md:hidden fixed bottom-24 right-4 z-40 flex flex-col items-end gap-3">
+            <AnimatePresence>
+              {isMobileMenuOpen && (
+                <motion.div 
+                  variants={menuContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  exit="hidden"
+                  className="flex flex-col items-end gap-2.5 mb-1"
+                >
+                  {/* Option 1: Recycle Bin */}
+                  <motion.button
+                    variants={menuItemVariants}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setShowRecoveryModal(true);
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-500" />
+                    <span>Recycle Bin</span>
+                  </motion.button>
+
+                  {/* Option 2: Print Sheet Labels */}
+                  <motion.button
+                    variants={menuItemVariants}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setShowPrintModal(true);
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-blue-500" />
+                    <span>Print Labels</span>
+                  </motion.button>
+                  
+                  {/* Option 3: Add New Item */}
+                  <motion.button
+                    variants={menuItemVariants}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleCreateClick();
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-500" />
+                    <span>Add Product</span>
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Core Trigger Button */}
+            <motion.button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              whileTap={{ scale: 0.9 }}
+              animate={{
+                backgroundColor: isMobileMenuOpen ? 'var(--color-primary)' : '#10b981',
+                boxShadow: isMobileMenuOpen 
+                  ? '0 10px 25px -5px rgba(0, 0, 0, 0.4)' 
+                  : '0 10px 25px -5px rgba(16, 185, 129, 0.45)'
+              }}
+              className="flex items-center justify-center w-14 h-14 text-white rounded-full cursor-pointer border border-white/10 shadow-lg"
+              title="Open actions menu"
+            >
+              <motion.div
+                animate={{ rotate: isMobileMenuOpen ? 135 : 0 }}
+                transition={{ type: 'spring', stiffness: 220, damping: 16 }}
+              >
+                <Plus className="w-6 h-6" />
+              </motion.div>
+            </motion.button>
+          </div>
+        </>
       )}
 
     </div>

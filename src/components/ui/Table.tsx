@@ -1,20 +1,21 @@
 //src/components/ui/Table.tsx
 import React, { useState, useMemo, useEffect } from 'react';
+import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
 import { 
   ChevronUp, 
   ChevronDown, 
   ArrowUpDown, 
   ChevronLeft, 
   ChevronRight, 
-  Search, 
-  Loader2 
+  Search 
 } from 'lucide-react';
 
 export interface Column<T> {
   key: string;
-  header: string;
+  header: React.ReactNode;
   sortable?: boolean;
-  sortValue?: (item: T) => any; // Custom value resolver for complex fields
+  sortValue?: (item: T) => any;
   render?: (item: T) => React.ReactNode;
   headerClassName?: string;
   cellClassName?: string;
@@ -30,6 +31,8 @@ interface TableProps<T> {
   itemsPerPage?: number;
   loading?: boolean;
   loadingLabel?: string;
+  getRowClassName?: (item: T) => string;
+  onRowClick?: (item: T) => void; 
 }
 
 export function Table<T>({
@@ -39,22 +42,22 @@ export function Table<T>({
   searchPlaceholder = "Search records...",
   defaultSortKey = '',
   defaultSortDirection = 'asc',
-  itemsPerPage: propItemsPerPage, // Renamed to allow responsive default fallback
+  itemsPerPage: propItemsPerPage,
   loading = false,
-  loadingLabel = "Loading data..."
+  getRowClassName,
+  onRowClick, // Properly deconstructed the new prop hook
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<string>(defaultSortKey);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // 1. Manage viewport-based items per page if no explicit value is passed
   const [viewportItemsPerPage, setViewportItemsPerPage] = useState(() => {
     if (typeof window === 'undefined') return 25;
     const width = window.innerWidth;
-    if (width < 768) return 10;   // Mobile
-    if (width < 1024) return 15;  // Tablet
-    return 25;                    // Desktop
+    if (width < 768) return 10;
+    if (width < 1024) return 15;
+    return 25;
   });
 
   useEffect(() => {
@@ -73,15 +76,12 @@ export function Table<T>({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Use the custom prop override if provided; otherwise, fall back to the responsive viewport limit
   const itemsPerPage = propItemsPerPage !== undefined ? propItemsPerPage : viewportItemsPerPage;
 
-  // Reset to first page when filtering, sorting parameters, or item limits change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, sortKey, sortDirection, itemsPerPage]);
 
-  // 2. Filter Data based on Search Keys
   const filteredData = useMemo(() => {
     if (!searchQuery || searchKeys.length === 0) return data;
     const lowerQuery = searchQuery.toLowerCase();
@@ -95,7 +95,6 @@ export function Table<T>({
     });
   }, [data, searchQuery, searchKeys]);
 
-  // 3. Sort Filtered Data
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
     const colDef = columns.find(col => col.key === sortKey);
@@ -105,7 +104,6 @@ export function Table<T>({
       let valA = colDef?.sortValue ? colDef.sortValue(a) : a[sortKey];
       let valB = colDef?.sortValue ? colDef.sortValue(b) : b[sortKey];
 
-      // Handle null/undefined values
       if (valA === null || valA === undefined) valA = '';
       if (valB === null || valB === undefined) valB = '';
 
@@ -119,7 +117,6 @@ export function Table<T>({
     });
   }, [filteredData, sortKey, sortDirection, columns]);
 
-  // 4. Paginate Sorted & Filtered Data
   const totalItems = sortedData.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -140,9 +137,10 @@ export function Table<T>({
     }
   };
 
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+
   return (
     <div className="space-y-4">
-      {/* Search Input Bar (Visible only if searchKeys are provided) */}
       {searchKeys.length > 0 && (
         <div className="relative max-w-sm">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-slate-500">
@@ -158,7 +156,6 @@ export function Table<T>({
         </div>
       )}
 
-      {/* Styled Responsive Table Wrapper */}
       <div className="border border-slate-200 dark:border-white/5 rounded-xl overflow-x-auto bg-slate-50/50 dark:bg-neutral-900/30">
         <table className="w-full min-w-max border-collapse text-left text-sm">  
           <thead className="bg-slate-100 dark:bg-[#13161a] border-b border-slate-200 dark:border-white/5">
@@ -167,7 +164,7 @@ export function Table<T>({
                 <th
                   key={col.key}
                   onClick={() => col.sortable && handleSort(col.key)}
-                  className={`p-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${
+                  className={`py-3 px-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${
                     col.sortable ? 'cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800/30 transition-colors' : ''
                   } ${col.headerClassName || ''}`}
                 >
@@ -189,12 +186,21 @@ export function Table<T>({
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-white/5">
             {loading ? (
-              <tr>
-                <td colSpan={columns.length} className="p-8 text-center text-xs text-slate-400">
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-                  {loadingLabel}
-                </td>
-              </tr>
+              Array.from({ length: 5 }).map((_, rIdx) => (
+                <tr key={`skeleton-row-${rIdx}`} className="border-b border-slate-200 dark:border-white/5">
+                  {columns.map((col, cIdx) => (
+                    <td key={`skeleton-cell-${cIdx}`} className="py-2.5 px-4 align-middle">
+                      <Skeleton
+                        height={col.key === 'barcode_id' ? 32 : 18}
+                        width={col.key === 'select' ? 18 : "75%"}
+                        baseColor={isDark ? '#1e232d' : '#e2e8f0'}
+                        highlightColor={isDark ? '#2d333f' : '#f1f5f9'}
+                        borderRadius="6px"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : paginatedData.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="p-8 text-center text-xs text-slate-400">
@@ -202,27 +208,30 @@ export function Table<T>({
                 </td>
               </tr>
             ) : (
-              paginatedData.map((item, rowIdx) => (
-                <tr 
-                  key={rowIdx} 
-                  className="hover:bg-slate-100/50 dark:hover:bg-neutral-900/10 transition-colors"
-                >
-                  {columns.map((col) => (
-                    <td 
-                      key={col.key} 
-                      className={`p-4 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap ${col.cellClassName || ''}`}
-                    >
-                      {col.render ? col.render(item) : (item as any)[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              paginatedData.map((item, rowIdx) => {
+                const rowStyleClass = getRowClassName ? getRowClassName(item) : '';
+                return (
+                  <tr 
+                    key={rowIdx} 
+                    onClick={() => onRowClick?.(item)}
+                    className={`group/row hover:bg-slate-100/50 dark:hover:bg-neutral-900/10 transition-colors duration-150 cursor-pointer ${rowStyleClass}`}
+                  >
+                    {columns.map((col) => (
+                      <td 
+                        key={col.key} 
+                        className={`py-2.5 px-4 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap ${col.cellClassName || ''}`}
+                      >
+                        {col.render ? col.render(item) : (item as any)[col.key]}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination Controls Footer */}
       {!loading && totalItems > 0 && totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 py-2 text-xs font-body">
           <span className="text-slate-500 dark:text-slate-400">

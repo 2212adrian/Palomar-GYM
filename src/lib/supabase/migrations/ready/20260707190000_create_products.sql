@@ -1,4 +1,4 @@
--- Migration: Create Products (Inventory) Table with Barcode Generator & RLS Policies
+-- Migration: Create Products (Inventory) Table with Barcode Generator, RLS Policies, Soft Delete, and Realtime Support
 -- 20260707190000_create_products.sql
 
 -- 1. Safely create custom ENUM type for product status if it does not exist
@@ -34,7 +34,7 @@ BEGIN
             USING new_barcode;
         END IF;
     END LOOP;
-    RETURN new_barcode;
+    return new_barcode;
 END;
 $$ LANGUAGE plpgsql VOLATILE;
 
@@ -61,9 +61,15 @@ CREATE TABLE IF NOT EXISTS public.products (
     stock_quantity INTEGER NOT NULL DEFAULT 0,
     low_stock_alert INTEGER DEFAULT NULL,
     status public.product_status NOT NULL DEFAULT 'Active'::public.product_status,
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
+    deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Defensive columns addition: safe fallback if the table already existed previously
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL;
 
 
 -- 5. Set up updated_at modification trigger
@@ -83,30 +89,56 @@ CREATE TRIGGER update_products_updated_at
     EXECUTE PROCEDURE update_updated_at_column();
 
 
--- 6. Enable Row Level Security (RLS)
+-- 6. Set up the transparent Soft Delete interception trigger
+-- Intercepts actual physical deletes and redirects them into logical updates
+CREATE OR REPLACE FUNCTION public.handle_products_soft_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE public.products
+    SET deleted_at = now(),
+        deleted_by = auth.uid()
+    WHERE id = OLD.id;
+    
+    RETURN NULL; -- Return NULL to suppress physical table deletion
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_products_soft_delete ON public.products;
+
+CREATE TRIGGER tr_products_soft_delete
+    BEFORE DELETE ON public.products
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_products_soft_delete();
+
+
+-- 7. Enable Row Level Security (RLS)
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
 
--- 7. Configure RLS Policies
+-- 8. Configure RLS Policies
 -- Drop existing policies first to prevent "policy already exists" errors during re-runs
 DROP POLICY IF EXISTS "Allow authenticated users to view products" ON public.products;
 DROP POLICY IF EXISTS "Allow authorized users to insert products" ON public.products;
 DROP POLICY IF EXISTS "Allow authorized users to update products" ON public.products;
 DROP POLICY IF EXISTS "Allow authorized users to delete products" ON public.products;
 
--- View Permission (Admin, wolf.palomar@gmail.com, and Staff can all view)
+-- View Permission (Staff and general users can only view non-deleted products. Admins can view soft-deleted files for audit/restoration)
 CREATE POLICY "Allow authenticated users to view products" ON public.products
     FOR SELECT
     TO authenticated
-    USING (true);
+    USING (
+        deleted_at IS NULL OR
+        public.get_user_role() = 'Admin' OR
+        auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
+    );
 
 -- Add Permission (Only Admin or wolf.palomar@gmail.com can create)
 CREATE POLICY "Allow authorized users to insert products" ON public.products
     FOR INSERT
     TO authenticated
     WITH CHECK (
-        public.get_user_role() = 'Admin' OR
-        auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
+        (public.get_user_role() = 'Admin' OR auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com')
+        AND deleted_at IS NULL
     );
 
 -- Edit Permission (Only Admin or wolf.palomar@gmail.com can modify)
@@ -122,7 +154,7 @@ CREATE POLICY "Allow authorized users to update products" ON public.products
         auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
     );
 
--- Delete Permission (Only Admin or wolf.palomar@gmail.com can delete)
+-- Delete Permission (Required for the soft-delete interception trigger to run for authorized users)
 CREATE POLICY "Allow authorized users to delete products" ON public.products
     FOR DELETE
     TO authenticated
@@ -130,3 +162,31 @@ CREATE POLICY "Allow authorized users to delete products" ON public.products
         public.get_user_role() = 'Admin' OR
         auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
     );
+
+
+-- 9. Enable Realtime Postgres Changes safely
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        IF NOT EXISTS (
+            SELECT 1 
+            FROM pg_publication_tables 
+            WHERE pubname = 'supabase_realtime' 
+              AND schemaname = 'public' 
+              AND tablename = 'products'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
+        END IF;
+    END IF;
+END $$;
+
+
+-- 10. Auto-Deletion Schedule (30 Days Retention)
+-- Ensures the pg_cron extension is enabled and schedules a daily hard delete job
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+SELECT cron.schedule(
+    'purge-old-soft-deleted-products',
+    '0 2 * * *', -- Everyday at 8:00 AM UTC
+    $$ DELETE FROM public.products WHERE deleted_at IS NOT NULL AND deleted_at < now() - INTERVAL '30 days'; $$
+);

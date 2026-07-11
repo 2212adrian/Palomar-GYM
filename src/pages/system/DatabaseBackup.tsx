@@ -596,7 +596,7 @@ export const DatabaseBackup: React.FC = () => {
             <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
               EVERY 24 HOURS
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Next backup: Tomorrow, 2:00 AM</span>
+            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Next backup: Tomorrow, 8:00 AM</span>
           </div>
         </div>
 

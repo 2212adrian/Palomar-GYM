@@ -129,7 +129,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       - Light Mode: Dark Blue outline (#123c73) with micro-shadowing.
       - Dark Mode (dark:): Crimson Red outline (#bf0202) with matched micro-shadowing.
     */
-    <header className="h-16 border-b border-[#123c73]/25 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.05)] dark:shadow-[0_2px_8px_rgba(191,2,2,0.05)] bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-200 select-none">
+    <header className="h-16 border-b border-[#123c73]/25 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.05)] dark:shadow-[0_2px_8px_rgba(191,2,2,0.05)] bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-20  select-none">
       
       {/* 
         Far Left Container:

@@ -18,6 +18,11 @@ import {
   UserX 
 } from 'lucide-react';
 
+interface DraftChange {
+  role?: 'admin' | 'staff';
+  status?: 'active' | 'inactive';
+}
+
 export const UserManagement: React.FC = () => {
   const { user, profile } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
@@ -27,6 +32,10 @@ export const UserManagement: React.FC = () => {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
+
+  // Local draft changes state (Silhouette state holder)
+  const [drafts, setDrafts] = useState<Record<string, DraftChange>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   // Invitation Modal fields
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -38,7 +47,6 @@ export const UserManagement: React.FC = () => {
   const [newUserRole, setNewUserRole] = useState<'admin' | 'staff'>('staff');
   const [newUserAvatar, setNewUserAvatar] = useState<File | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
-  const [showNewUserPassword] = useState<boolean>(false);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
   // Deletion Modal fields
@@ -83,6 +91,90 @@ export const UserManagement: React.FC = () => {
       supabase.removeChannel(directoryChannel);
     };
   }, [isAdmin]);
+
+  // Compute dirty parameters
+  const isDirty = Object.keys(drafts).length > 0;
+
+  // Sync current dirty states with the parent configuration page
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
+      detail: { isDirty, isSaving } 
+    }));
+  }, [isDirty, isSaving]);
+
+  // Clean up states on component dismount
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
+        detail: { isDirty: false, isSaving: false } 
+      }));
+    };
+  }, []);
+
+  // Save changes block
+  const handleSaveAllDrafts = async (currentDrafts: Record<string, DraftChange>) => {
+    const keys = Object.keys(currentDrafts);
+    if (keys.length === 0) return;
+
+    try {
+      setIsSaving(true);
+      const updatePromises = keys.map(async (id) => {
+        const draft = currentDrafts[id];
+        const target = usersList.find(u => u.id === id);
+        if (!target) return;
+
+        const payload: Record<string, any> = {};
+        if (draft.role !== undefined) payload.role = draft.role;
+        if (draft.status !== undefined) payload.status = draft.status;
+
+        const { error } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('id', id);
+
+        if (error) throw error;
+
+        // Log audit log
+        const auditChanges = [];
+        if (draft.role) auditChanges.push(`role to "${draft.role}"`);
+        if (draft.status) auditChanges.push(`status to "${draft.status}"`);
+
+        await logAudit(
+          'USER_STATUS_TOGGLED',
+          `Modified staff credentials for "${target.username}" (${target.email}): changed ${auditChanges.join(' and ')}.`,
+          id
+        );
+      });
+
+      await Promise.all(updatePromises);
+      toast.success(`Successfully saved edits for ${keys.length} accounts.`);
+      setDrafts({});
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save edits.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Bind custom save trigger from parent settings
+  useEffect(() => {
+    const handleSaveTrigger = () => {
+      handleSaveAllDrafts(drafts);
+    };
+    window.addEventListener('trigger-rates-save', handleSaveTrigger);
+    return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
+  }, [drafts, usersList]);
+
+  // Bind cancel triggers to discard local drafts
+  useEffect(() => {
+    const handleCancelTrigger = () => {
+      setDrafts({});
+      toast.info('Changes discarded.');
+    };
+    window.addEventListener('trigger-rates-cancel', handleCancelTrigger);
+    return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
+  }, []);
 
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,7 +307,6 @@ export const UserManagement: React.FC = () => {
     try {
       setIsDeletingUser(deleteTargetUser.id);
 
-      // 1. Clean up avatar file from Supabase Storage using the Storage API
       if (deleteTargetUser.avatar_url) {
         const cleanPath = deleteTargetUser.avatar_url.includes('/avatars/') 
           ? deleteTargetUser.avatar_url.split('/avatars/').pop() 
@@ -232,7 +323,6 @@ export const UserManagement: React.FC = () => {
         }
       }
 
-      // 2. Execute database user deletion RPC
       const { error } = await supabase.rpc('admin_delete_user', {
         target_user_id: deleteTargetUser.id
       });
@@ -257,12 +347,11 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  const handleToggleUserStatus = async (
+// Draft Toggle Status handler (Saves to drafts maps first)
+  const handleToggleUserStatus = (
     targetId: string, 
-    currentStatus: string, 
-    targetEmail: string, 
-    targetRole: string, 
-    targetName: string
+    currentStatus: 'active' | 'inactive' | 'pending', 
+    targetRole: string
   ) => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own account status.');
@@ -275,30 +364,55 @@ export const UserManagement: React.FC = () => {
     }
 
     if (currentStatus === 'pending') {
-      toast.info(`Account for ${targetName} is pending verification and will activate on first login.`);
+      toast.info(`Account status is pending first verification verification.`);
       return;
     }
     
-    const nextStatus = currentStatus === 'inactive' ? 'active' : 'inactive';
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ status: nextStatus })
-        .eq('id', targetId);
-
-      if (error) throw error;
-
-      await logAudit(
-        'USER_STATUS_TOGGLED',
-        `Changed account status for "${targetEmail}" to "${nextStatus}".`,
-        targetId
-      );
+    setDrafts(prev => {
+      const draft = prev[targetId] || {};
+      const targetUser = usersList.find(u => u.id === targetId);
+      const originalStatus = targetUser?.status || 'active';
       
-      toast.success(`Status for "${targetName}" username changed to ${nextStatus}.`);
-      fetchUsers();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update user status.');
+      // Explicitly type-cast literal unions to prevent automatic conversion to broad string types
+      const nextStatus: 'active' | 'inactive' = (draft.status || currentStatus) === 'inactive' ? 'active' : 'inactive';
+
+      const updatedDraft: DraftChange = { ...draft, status: nextStatus };
+
+      // Revert key if matches initial DB settings
+      if (updatedDraft.status === originalStatus && (updatedDraft.role === undefined || updatedDraft.role === (targetUser?.role || 'staff'))) {
+        const { [targetId]: _, ...rest } = prev;
+        return rest;
+      }
+
+      return { ...prev, [targetId]: updatedDraft };
+    });
+  };
+
+  // Draft Toggle Role handler (Saves to drafts maps first)
+  const handleToggleUserRole = (targetId: string, currentRole: 'admin' | 'staff') => {
+    if (targetId === user?.id) {
+      toast.error('You cannot change your own permission role.');
+      return;
     }
+
+    setDrafts(prev => {
+      const draft = prev[targetId] || {};
+      const targetUser = usersList.find(u => u.id === targetId);
+      const originalRole = targetUser?.role || 'staff';
+      
+      // Explicitly type-cast literal unions to prevent automatic conversion to broad string types
+      const nextRole: 'admin' | 'staff' = (draft.role || currentRole) === 'admin' ? 'staff' : 'admin';
+
+      const updatedDraft: DraftChange = { ...draft, role: nextRole };
+
+      // Revert key if matches initial DB settings
+      if (updatedDraft.role === originalRole && (updatedDraft.status === undefined || updatedDraft.status === (targetUser?.status || 'active'))) {
+        const { [targetId]: _, ...rest } = prev;
+        return rest;
+      }
+
+      return { ...prev, [targetId]: updatedDraft };
+    });
   };
 
   // Compile full row dataset
@@ -382,14 +496,46 @@ export const UserManagement: React.FC = () => {
           );
         }
 
-        return (
-          <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold ${
-            u.role === 'admin' 
+        const draft = drafts[u.id];
+        const isModified = draft && draft.role !== undefined && draft.role !== u.role;
+        const currentRole = draft?.role || u.role || 'staff';
+
+        const getRoleBadge = (role: string) => (
+          <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
+            role === 'admin' 
               ? 'bg-rose-500/10 text-rose-450 border border-rose-500/20' 
               : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
           }`}>
-            {u.role || 'staff'}
+            {role}
           </span>
+        );
+
+        if (isSelfUser) {
+          return getRoleBadge(u.role || 'staff');
+        }
+
+        return (
+          <button
+            type="button"
+            onClick={() => handleToggleUserRole(u.id, u.role || 'staff')}
+            title="Click to toggle account role draft"
+            className="hover:opacity-85 cursor-pointer text-left transition-opacity"
+          >
+            {isModified ? (
+              /* Silhouette Effect: Shows previous value grayed out and struck through */
+              <div className="flex items-center gap-1.5">
+                <span className="opacity-40 line-through scale-90 origin-left block">
+                  {getRoleBadge(u.role || 'staff')}
+                </span>
+                <span className="text-[10px] text-blue-500 font-bold">→</span>
+                <span className="animate-pulse block">
+                  {getRoleBadge(currentRole)}
+                </span>
+              </div>
+            ) : (
+              getRoleBadge(currentRole)
+            )}
+          </button>
         );
       }
     },
@@ -400,23 +546,37 @@ export const UserManagement: React.FC = () => {
       render: (u) => {
         const isSelfUser = u.id === user?.id;
 
+        const draft = drafts[u.id];
+        const isModified = draft && draft.status !== undefined && draft.status !== u.status;
+        const currentStatus = draft?.status || u.status || 'pending';
+
+        const getStatusBadge = (status: string) => {
+          if (status === 'inactive') {
+            return (
+              <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
+                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
+                Inactive
+              </span>
+            );
+          } else if (status === 'pending') {
+            return (
+              <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                Pending
+              </span>
+            );
+          } else {
+            return (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                Active
+              </span>
+            );
+          }
+        };
+
         if (isSelfUser) {
-          return u.status === 'inactive' ? (
-            <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
-              <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
-              Inactive
-            </span>
-          ) : u.status === 'pending' ? (
-            <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold">
-              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-              Pending
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              Active
-            </span>
-          );
+          return getStatusBadge(u.status || 'active');
         }
 
         return (
@@ -425,29 +585,24 @@ export const UserManagement: React.FC = () => {
             onClick={() => handleToggleUserStatus(
               u.id, 
               u.status || 'pending', 
-              u.email || 'Staff', 
-              u.role || 'staff',
-              u.username || 'Staff'
+              u.role || 'staff'
             )}
-            title="Click to toggle account status"
-            aria-label="Click to toggle account status"
-            className="cursor-pointer hover:opacity-80 transition-opacity outline-none"
+            title="Click to toggle account status draft"
+            className="cursor-pointer hover:opacity-80 transition-opacity outline-none text-left"
           >
-            {u.status === 'inactive' ? (
-              <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
-                Inactive
-              </span>
-            ) : u.status === 'pending' ? (
-              <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-                Pending
-              </span>
+            {isModified ? (
+              /* Silhouette Effect: Shows previous status grayed out and struck through */
+              <div className="flex items-center gap-1.5">
+                <span className="opacity-40 line-through scale-90 origin-left block">
+                  {getStatusBadge(u.status || 'active')}
+                </span>
+                <span className="text-[10px] text-blue-500 font-bold">→</span>
+                <span className="animate-pulse block">
+                  {getStatusBadge(currentStatus)}
+                </span>
+              </div>
             ) : (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                Active
-              </span>
+              getStatusBadge(currentStatus)
             )}
           </button>
         );
@@ -511,7 +666,7 @@ export const UserManagement: React.FC = () => {
         </button>
       </div>
 
-      {/* Render modular UI Table with proper pagination, default sorting, and Search features */}
+      {/* Reusable UI Table with dynamic page adjustments */}
       <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
         <Table<any>
           data={systemUsers}
@@ -526,7 +681,7 @@ export const UserManagement: React.FC = () => {
         />
       </div>
 
-      {/* Confirmation and invitations overlay portals */}
+      {/* Confirmation Overlay Portals */}
       <Modal
         isOpen={isDeleteModalOpen}
         onClose={() => {
@@ -671,7 +826,7 @@ export const UserManagement: React.FC = () => {
 
               <div className="field-wrap">
                 <input
-                  type={showNewUserPassword ? 'text' : 'password'} 
+                  type="password"
                   id="newUserPassword"
                   placeholder=" "
                   required
@@ -687,7 +842,7 @@ export const UserManagement: React.FC = () => {
           )}
 
           <div className="grid gap-1.5">
-            <label htmlFor="newUserRole" className="text-[10px] font-bold uppercase tracking-wider text-slate-450">
+            <label htmlFor="newUserRole" className="text-[10px] font-bold uppercase tracking-wider text-slate-455">
               Assigned Permissions
             </label>
             <select
@@ -704,7 +859,7 @@ export const UserManagement: React.FC = () => {
           </div>
 
           <div className="flex flex-col items-center gap-2 border border-dashed border-(--border-color) p-4 rounded-xl bg-(--bg-card)">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-450 text-center">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-455 text-center">
               Profile Photo (Optional)
             </span>
             <div className="flex items-center gap-3 w-full justify-center">

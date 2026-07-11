@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+//src/pages/reports/IncidentReports.tsx
+import React, { useState, useEffect, useContext, useRef  } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { AnimatePresence, motion } from 'framer-motion';
+import { HeaderActionsContext } from '../../routes';
+import { UndoToast } from '../../components/ui/UndoToast';
 import {
   Activity,
   Trash2,
@@ -26,7 +29,6 @@ import {
   Package,
   Flame,
   AlertOctagon,
-  Eye,
   AlertTriangle
 } from 'lucide-react';
 
@@ -70,12 +72,23 @@ const SUGGESTED_TAGS = [
 
 export const IncidentReports: React.FC = () => {
   const { user } = useAuthStore();
+  const { setActions } = useContext(HeaderActionsContext);
   
-  // Safe validation utilizing both app_metadata and user_metadata
   const isAdmin = 
     user?.app_metadata?.role === 'Admin' || 
     user?.user_metadata?.role === 'Admin' || 
     isSuperAdmin(user?.email);
+
+  // Mount Guard Ref
+  const isMountedRef = useRef(true);
+
+  // Initialize and clean up the mount guard
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // State Management
   const [reports, setReports] = useState<IncidentReport[]>([]);
@@ -84,14 +97,17 @@ export const IncidentReports: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
-  // New States
+  // Undo Countdown States
+  const [pendingDelete, setPendingDelete] = useState<IncidentReport | null>(null);
+  const [showUndoToast, setShowUndoToast] = useState(false);
+  
+  // Navigation States
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showContactsModal, setShowContactsModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Emergency Contacts state
+  // Emergency Contacts State
   const [contacts, setContacts] = useState<GymProfileContacts>({
     name1: 'Staff Ryan',
     number1: '09762607481',
@@ -116,17 +132,43 @@ export const IncidentReports: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = useResponsiveItemsPerPage();
 
-  // Fetch Gym Profile contacts
+  // centralize top action controls
+  useEffect(() => {
+    setActions(
+      <>
+        <button
+          onClick={() => setShowContactsModal(true)}
+          title="Escalated emergency contact directory"
+          aria-label="Emergency Escalation Contacts"
+          className="p-3 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center justify-center shrink-0"
+        >
+          <PhoneCall className="w-4 h-4 text-blue-500" />
+        </button>
+
+        {!isAdmin && (
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-5 py-3 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            New Report
+          </button>
+        )}
+      </>
+    );
+  }, [isAdmin, reports]);
+
+  // Fetch Gym Profile contacts safely without hardcoded ID constraints
   const fetchEmergencyContacts = async () => {
     try {
       const { data, error } = await supabase
         .from('gym_profile')
         .select('contact_name_1, contact_number_1, contact_name_2, contact_number_2')
-        .eq('id', 1)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (error) throw error;
-      if (data) {
+      if (data && isMountedRef.current) {
         setContacts({
           name1: data.contact_name_1 || 'Staff Ryan',
           number1: data.contact_number_1 || '09762607481',
@@ -135,14 +177,14 @@ export const IncidentReports: React.FC = () => {
         });
       }
     } catch {
-      // Graceful fallback to local config state if connection fails
+      // Fallback
     }
   };
 
   // Fetch Incident Reports
   const fetchIncidentReports = async () => {
     try {
-      setLoading(true);
+      if (isMountedRef.current) setLoading(true);
       let query = supabase.from('incident_reports').select('*');
 
       if (!isAdmin && user) {
@@ -152,17 +194,18 @@ export const IncidentReports: React.FC = () => {
       const { data, error } = await query;
       if (error) throw error;
 
-      if (data) {
+      if (data && isMountedRef.current) {
         const typedData = data as IncidentReport[];
         setReports(typedData);
-        if (typedData.length > 0 && !selectedReport) {
-          setSelectedReport(typedData[0]);
-        }
       }
     } catch (err: any) {
-      toast.error('Could not load incident files. Please check connection.');
+      if (isMountedRef.current) {
+        console.warn('INTERNET_ERR: Could not load incident files. Please check connection.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -175,12 +218,9 @@ export const IncidentReports: React.FC = () => {
       .channel('incident_reports_realtime_changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'incident_reports'
-        },
+        { event: '*', schema: 'public', table: 'incident_reports' },
         (payload) => {
+          if (!isMountedRef.current) return;
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
@@ -220,7 +260,7 @@ export const IncidentReports: React.FC = () => {
         created_at: new Date().toISOString()
       });
     } catch {
-      // Gracefully prevent background errors from interrupting workspace actions
+      // Prevent background errors
     }
   };
 
@@ -264,6 +304,24 @@ export const IncidentReports: React.FC = () => {
   const totalItems = filteredReports.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const paginatedReports = filteredReports.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Helper to group filtered reports by calendar days for timeline separation
+  const getGroupedReports = () => {
+    const groups: Record<string, IncidentReport[]> = {};
+    paginatedReports.forEach(report => {
+      const dateStr = new Date(report.created_at).toLocaleDateString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      if (!groups[dateStr]) {
+        groups[dateStr] = [];
+      }
+      groups[dateStr].push(report);
+    });
+    return groups;
+  };
 
   const handleAddTag = (tag: string) => {
     const cleaned = tag.trim();
@@ -337,7 +395,11 @@ export const IncidentReports: React.FC = () => {
         if (error) throw error;
 
         toast.success('Report updated successfully.');
-        await recordAuditLog('INCIDENT_REPORT_UPDATED', { id: selectedReport.id, title: titleClean });
+        await recordAuditLog('INCIDENT_REPORT_UPDATED', { 
+          title: titleClean, 
+          priority: formPriority,
+          tags: formTags 
+        });
       } else {
         const staffName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff Personnel';
         const { data, error } = await supabase
@@ -359,7 +421,12 @@ export const IncidentReports: React.FC = () => {
 
         toast.success('Report submitted successfully.');
         if (data) {
-          await recordAuditLog('INCIDENT_REPORT_CREATED', { id: data.id, title: titleClean });
+          await recordAuditLog('INCIDENT_REPORT_CREATED', { 
+            title: titleClean, 
+            priority: formPriority,
+            tags: formTags,
+            staff_name: staffName
+          });
         }
       }
 
@@ -372,34 +439,77 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  const handleDeleteReport = async (id: string) => {
-    try {
-      const target = reports.find(r => r.id === id);
-      if (!isAdmin && (target?.status !== 'Unread' || target?.is_archived)) {
-        toast.error('Cannot delete report after it has been reviewed or archived.');
-        return;
+  // Triggered when a report is selected
+  const handleSelectReport = async (report: IncidentReport) => {
+    if (selectedReport?.id === report.id) {
+      // Toggle unselect behavior
+      setSelectedReport(null);
+      setIsDetailModalOpen(false);
+    } else {
+      setSelectedReport(report);
+      setIsDetailModalOpen(true);
+      
+      // Automatically mark as Reviewed (Read) when clicked by an admin
+      if (isAdmin && report.status === 'Unread' && !report.is_archived) {
+        await updateStatus(report.id, 'Read');
       }
+    }
+  };
 
+  // Prepares the countdown timer toast for deletion
+  const startPendingDelete = (report: IncidentReport) => {
+    if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
+      toast.error('Reviewed or archived incidents cannot be deleted.');
+      return;
+    }
+    
+    setPendingDelete(report);
+    setShowUndoToast(true);
+
+    // Optimistically hide item from local list
+    setReports(prev => prev.filter(r => r.id !== report.id));
+    if (selectedReport?.id === report.id) {
+      setSelectedReport(null);
+      setIsDetailModalOpen(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
       const { error } = await supabase
         .from('incident_reports')
         .delete()
-        .eq('id', id);
+        .eq('id', pendingDelete.id);
 
       if (error) throw error;
 
-      toast.success('Report successfully removed.');
-      await recordAuditLog('INCIDENT_REPORT_DELETED', { id });
-      setSelectedReport(null);
-      setDeleteConfirmId(null);
-      setIsDetailModalOpen(false); 
-      fetchIncidentReports();
+      await recordAuditLog('INCIDENT_REPORT_DELETED', { 
+        title: pendingDelete.title,
+        staff_name: pendingDelete.staff_name
+      });
     } catch {
-      toast.error('Failed to delete transaction log.');
+      toast.error('Deletion failure. Restoring report file.');
+      // Fallback: put it back on connection error
+      setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    } finally {
+      setPendingDelete(null);
+      setShowUndoToast(false);
     }
+  };
+
+  const undoDelete = () => {
+    if (!pendingDelete) return;
+    // Restore file safely
+    setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    setPendingDelete(null);
+    setShowUndoToast(false);
+    toast.info('Operation successfully undone.');
   };
 
   const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
     try {
+      const target = reports.find(r => r.id === id);
       const { error } = await supabase
         .from('incident_reports')
         .update({
@@ -411,13 +521,21 @@ export const IncidentReports: React.FC = () => {
 
       if (error) throw error;
 
-      toast.success(`Report status marked as ${status === 'Read' ? 'Reviewed' : 'Unread'}.`);
-      await recordAuditLog(status === 'Read' ? 'INCIDENT_REPORT_MARKED_READ' : 'INCIDENT_REPORT_MARKED_UNREAD', { id });
+      await recordAuditLog(
+        status === 'Read' ? 'INCIDENT_REPORT_MARKED_READ' : 'INCIDENT_REPORT_MARKED_UNREAD', 
+        { 
+          title: target?.title || 'Unknown Title',
+          status: status === 'Read' ? 'Reviewed' : 'Unread',
+          staff_name: target?.staff_name || 'Unknown Staff'
+        }
+      );
       
       if (selectedReport?.id === id) {
         setSelectedReport(prev => prev ? { ...prev, status, read_at: status === 'Read' ? new Date().toISOString() : null } : null);
       }
-      fetchIncidentReports();
+      
+      // Preserve local state with silent sync
+      setReports(prev => prev.map(r => r.id === id ? { ...r, status, read_at: status === 'Read' ? new Date().toISOString() : null } : r));
     } catch {
       toast.error('Failed to change status attributes.');
     }
@@ -425,6 +543,7 @@ export const IncidentReports: React.FC = () => {
 
   const toggleArchive = async (id: string, archiveState: boolean) => {
     try {
+      const target = reports.find(r => r.id === id);
       const { error } = await supabase
         .from('incident_reports')
         .update({ is_archived: archiveState })
@@ -433,7 +552,13 @@ export const IncidentReports: React.FC = () => {
       if (error) throw error;
 
       toast.success(archiveState ? 'Report moved to archives.' : 'Report restored to workspace.');
-      await recordAuditLog(archiveState ? 'INCIDENT_REPORT_ARCHIVED' : 'INCIDENT_REPORT_RESTORATION', { id });
+      await recordAuditLog(
+        archiveState ? 'INCIDENT_REPORT_ARCHIVED' : 'INCIDENT_REPORT_RESTORATION', 
+        { 
+          title: target?.title || 'Unknown Title',
+          staff_name: target?.staff_name || 'Unknown Staff'
+        }
+      );
       
       if (selectedReport?.id === id) {
         setSelectedReport(prev => prev ? { ...prev, is_archived: archiveState } : null);
@@ -445,9 +570,12 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  // Bulk Actions
   const handleBulkAction = async (action: 'Read' | 'Unread' | 'Archive' | 'Delete') => {
     if (selectedIds.length === 0) return;
+
+    const targetReports = reports.filter(r => selectedIds.includes(r.id));
+    const targetTitles = targetReports.map(r => r.title);
+
     try {
       setLoading(true);
       if (action === 'Delete') {
@@ -457,7 +585,10 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully removed ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_DELETED', { ids: selectedIds });
+        await recordAuditLog('BULK_INCIDENT_REPORTS_DELETED', { 
+          titles: targetTitles,
+          count: targetTitles.length
+        });
       } else if (action === 'Archive') {
         const { error } = await supabase
           .from('incident_reports')
@@ -465,7 +596,10 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully archived ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_ARCHIVED', { ids: selectedIds });
+        await recordAuditLog('BULK_INCIDENT_REPORTS_ARCHIVED', { 
+          titles: targetTitles,
+          count: targetTitles.length
+        });
       } else {
         const { error } = await supabase
           .from('incident_reports')
@@ -477,7 +611,11 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully updated ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_STATUS_UPDATE', { ids: selectedIds, status: action });
+        await recordAuditLog('BULK_INCIDENT_REPORTS_STATUS_UPDATE', { 
+          titles: targetTitles,
+          status: action === 'Read' ? 'Reviewed' : 'Unread',
+          count: targetTitles.length
+        });
       }
       setSelectedIds([]);
       fetchIncidentReports();
@@ -525,7 +663,7 @@ export const IncidentReports: React.FC = () => {
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 dark:border-white/5 pb-4">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 flex-1 min-w-0">
             <span className={`px-2 py-0.5 rounded text-[9px] font-heading tracking-widest uppercase ${
               report.priority === 'High' 
                 ? 'bg-red-500/10 text-red-500' 
@@ -568,7 +706,7 @@ export const IncidentReports: React.FC = () => {
             </div>
           </div>
 
-          <div className="sm:text-right self-start sm:self-center">
+          <div className="flex items-center gap-2 self-start shrink-0">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-heading tracking-widest uppercase ${
               report.status === 'Unread' && !report.is_archived
                 ? 'bg-red-500/10 text-red-500 border border-red-500/20'
@@ -577,6 +715,17 @@ export const IncidentReports: React.FC = () => {
               <span className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' && !report.is_archived ? 'bg-red-500' : 'bg-green-500'}`} />
               {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
             </span>
+            
+            {/* Desktop Only Close Button to allow Unselecting */}
+            {!isModalContext && (
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+                title="Unselect current report file"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -644,7 +793,7 @@ export const IncidentReports: React.FC = () => {
                 )}
 
                 <button
-                  onClick={() => setDeleteConfirmId(report.id)}
+                  onClick={() => startPendingDelete(report)}
                   className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -672,8 +821,8 @@ export const IncidentReports: React.FC = () => {
                     Edit Details
                   </button>
                   <button
-                    onClick={() => setDeleteConfirmId(report.id)}
-                    className="px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    onClick={() => startPendingDelete(report)}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
                   >
                     Delete Report
                   </button>
@@ -693,50 +842,18 @@ export const IncidentReports: React.FC = () => {
 
   return (
     <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
-      
-      {/* 1. Header Area (No KPI Row) */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
-            Reports / Incident Reports
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
-            Incident Reports
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-            Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {/* Friendly floating contacts dialog trigger */}
-          <button
-            onClick={() => setShowContactsModal(true)}
-            title="Escalated emergency contact directory"
-            aria-label="Emergency Escalation Contacts"
-            className="p-3 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center justify-center shrink-0"
-          >
-            <PhoneCall className="w-4 h-4 text-blue-500" />
-          </button>
-
-          {!isAdmin && (
-            <button
-              onClick={openCreateModal}
-              className="flex items-center gap-2 px-5 py-3 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              New Report
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Main Dashboard Workspace */}
+      {/* 2. Main Dashboard Workspace (Supports animated layout shifts) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* Left Column: List Section */}
-        <div className="lg:col-span-5 space-y-4">
-
+        {/* Left Column: Directory List Section */}
+        <motion.div 
+          layout
+          className={selectedReport 
+            ? "lg:col-span-5 space-y-4" 
+            : "lg:col-span-8 lg:col-start-2 xl:col-span-6 xl:col-start-3 space-y-4"
+          }
+        >
           {/* Soft Warning at >= 10 unread reports */}
           {stats.unread >= 10 && (
             <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-[11px] flex items-center gap-2 font-medium animate-slide-up">
@@ -760,25 +877,44 @@ export const IncidentReports: React.FC = () => {
               />
             </div>
 
-            {/* Quick Filters */}
-            <div className="flex items-center justify-between border-t border-slate-100 dark:border-white/5 pt-3">
-              <div className="flex gap-1 overflow-x-auto no-scrollbar py-0.5">
-                {(['All', 'Unread', 'Read', 'Archived'] as const).map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => { setStatusFilter(filter); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
-                      statusFilter === filter
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
-                    }`}
-                  >
-                    {filter === 'Unread' ? 'Unread' : filter === 'Read' ? 'Read' : filter}
-                  </button>
-                ))}
+            {/* Quick Filters & Select All Checkbox */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100 dark:border-white/5 pt-3">
+              <div className="flex items-center gap-3">
+                {/* Unified Select All Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={paginatedReports.length > 0 && paginatedReports.every(r => selectedIds.includes(r.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds(paginatedReports.map(r => r.id));
+                      } else {
+                        setSelectedIds([]);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                  />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Select All</span>
+                </label>
+
+                <div className="flex gap-1 overflow-x-auto no-scrollbar py-0.5">
+                  {(['All', 'Unread', 'Read', 'Archived'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => { setStatusFilter(filter); setCurrentPage(1); }}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
+                        statusFilter === filter
+                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5 pl-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
                 <label htmlFor="priority-filter-select" className="sr-only">Priority Filter</label>
                 <select
@@ -800,26 +936,9 @@ export const IncidentReports: React.FC = () => {
           {/* Bulk Select Action Bar (Only visible when checkbox is checked) */}
           {selectedIds.length > 0 && (
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold animate-scale-up">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={paginatedReports.length > 0 && paginatedReports.every(r => selectedIds.includes(r.id))}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      const pageIds = paginatedReports.map(r => r.id);
-                      setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
-                    } else {
-                      const pageIds = paginatedReports.map(r => r.id);
-                      setSelectedIds((prev) => prev.filter(id => !pageIds.includes(id)));
-                    }
-                  }}
-                  className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  title="Select all on this page"
-                />
-                <span className="text-blue-600 dark:text-blue-400 font-mono">
-                  {selectedIds.length} Selected
-                </span>
-              </div>
+              <span className="text-blue-600 dark:text-blue-400 font-mono">
+                {selectedIds.length} Selected
+              </span>
               <div className="flex gap-1 flex-wrap">
                 <button
                   onClick={() => handleBulkAction('Read')}
@@ -845,14 +964,13 @@ export const IncidentReports: React.FC = () => {
                 <button
                   onClick={() => handleBulkAction('Delete')}
                   title="Delete selected"
-                  className="px-2 py-1 bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                  className="px-2 py-1 bg-red-500/10 text-red-650 border border-red-500/20 hover:bg-red-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
                 >
                   Delete
                 </button>
                 <button
                   onClick={() => setSelectedIds([])}
-                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                  title="Cancel selection"
+                  className="p-1 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -860,7 +978,7 @@ export const IncidentReports: React.FC = () => {
             </div>
           )}
 
-          {/* Records list */}
+          {/* Directory lists styled in dynamic timeline groups */}
           {loading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -870,7 +988,6 @@ export const IncidentReports: React.FC = () => {
                     <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-1/6" />
                   </div>
                   <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-1/2" />
-                  <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-1/3" />
                 </div>
               ))}
             </div>
@@ -885,101 +1002,107 @@ export const IncidentReports: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="space-y-3 animate-slide-up">
-              {paginatedReports.map((report) => {
-                const isSelected = selectedReport?.id === report.id;
-                const isHigh = report.priority === 'High';
-                
-                return (
-                  <div
-                    key={report.id}
-                    onClick={() => {
-                      setSelectedReport(report);
-                      setIsDetailModalOpen(true);
-                    }}
-                    className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
-                      isSelected
-                        ? 'bg-[#123c73]/5 dark:bg-[#bf0202]/5 border-[#123c73] dark:border-[#bf0202]'
-                        : 'bg-white dark:bg-[#161920] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15'
-                    }`}
-                  >
-                    <div className={`absolute top-0 left-0 bottom-0 w-1 ${
-                      report.priority === 'High' 
-                        ? 'bg-red-500' 
-                        : report.priority === 'Medium' 
-                          ? 'bg-amber-500' 
-                          : 'bg-green-500'
-                    }`} />
+            <div className="space-y-6">
+              {Object.entries(getGroupedReports()).map(([dateLabel, groupReports]) => (
+                <div key={dateLabel} className="space-y-3 relative">
+                  {/* Timeline separators showing dynamic day records */}
+                  <div className="flex items-center gap-2 py-1 select-none">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#123c73] dark:bg-[#bf0202]" />
+                    <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                      {dateLabel}
+                    </span>
+                    <div className="flex-1 h-[1px] bg-slate-200/50 dark:bg-white/5" />
+                  </div>
 
-                    {/* Bulk Selection Checkbox */}
-                    <div className="pt-1 select-none shrink-0 z-10">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(report.id)}
-                        onChange={() => {}}
-                        onClick={(e) => handleToggleSelect(report.id, e)}
-                        title={`Select report: ${report.title}`}
-                        aria-label={`Select report: ${report.title}`}
-                        className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
-                      />
-                    </div>
+                  {groupReports.map((report) => {
+                    const isSelected = selectedReport?.id === report.id;
+                    const isHigh = report.priority === 'High';
+                    
+                    return (
+                      <motion.div
+                        layoutId={`report-card-${report.id}`}
+                        key={report.id}
+                        onClick={() => handleSelectReport(report)}
+                        className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
+                          isSelected
+                            ? 'bg-[#123c73]/5 dark:bg-[#bf0202]/5 border-[#123c73] dark:border-[#bf0202]'
+                            : 'bg-white dark:bg-[#161920] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15'
+                        }`}
+                      >
+                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${
+                          report.priority === 'High' 
+                            ? 'bg-red-500' 
+                            : report.priority === 'Medium' 
+                              ? 'bg-amber-500' 
+                              : 'bg-green-500'
+                        }`} />
 
-                    <div className="pl-1.5 flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#123c73] dark:group-hover:text-[#bf0202] transition-colors leading-snug line-clamp-1">
-                          {report.title}
-                        </h4>
-                        
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                            isHigh 
-                              ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
-                              : report.priority === 'Medium'
-                                ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                                : 'bg-green-500/10 text-green-500 border border-green-500/20'
-                          }`}>
-                            {report.priority}
-                          </span>
+                        <div className="pt-1 select-none shrink-0 z-10" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(report.id)}
+                            onChange={() => handleToggleSelect(report.id, { stopPropagation: () => {} } as any)}
+                            title={`Select report: ${report.title}`}
+                            aria-label={`Select report: ${report.title}`}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                          />
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
-                        <span className="font-semibold text-slate-600 dark:text-slate-300">
-                          {report.staff_name}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          {new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
-                        <span>•</span>
-                        <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}>
-                          {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
-                        </span>
-                      </div>
+                        <div className="pl-1.5 flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#123c73] dark:group-hover:text-[#bf0202] transition-colors leading-snug line-clamp-1">
+                              {report.title}
+                            </h4>
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
+                              isHigh 
+                                ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
+                                : report.priority === 'Medium'
+                                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                  : 'bg-green-500/10 text-green-500 border border-green-500/20'
+                            }`}>
+                              {report.priority}
+                            </span>
+                          </div>
 
-                      {report.tags && report.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2.5">
-                          {report.tags.slice(0, 3).map((tag, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-[8px] text-slate-500 font-semibold uppercase tracking-wider">
-                              {getTagIcon(tag)}
-                              {tag}
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
+                            <span className="font-semibold text-slate-700 dark:text-slate-350">
+                              {report.staff_name}
                             </span>
-                          ))}
-                          {report.tags.length > 3 && (
-                            <span className="text-[8px] text-slate-400 font-bold self-center">
-                              +{report.tags.length - 3} more
+                            <span>•</span>
+                            <span>
+                              {new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                             </span>
+                            <span>•</span>
+                            <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-455'}`}>
+                              {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
+                            </span>
+                          </div>
+
+                          {report.tags && report.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2.5">
+                              {report.tags.slice(0, 3).map((tag, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-[8px] text-slate-500 font-semibold uppercase tracking-wider">
+                                  {getTagIcon(tag)}
+                                  {tag}
+                                </span>
+                              ))}
+                              {report.tags.length > 3 && (
+                                <span className="text-[8px] text-slate-400 font-bold self-center">
+                                  +{report.tags.length - 3} more
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Pagination Controls - ACCESSIBILITY COMPLIANT */}
+          {/* Pagination Controls */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-slate-200 dark:border-white/5 pt-4 text-xs">
               <span className="text-slate-400 font-medium text-[11px]">
@@ -989,7 +1112,7 @@ export const IncidentReports: React.FC = () => {
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  title="Go to previous pagination page"
+                  title="Previous Page"
                   aria-label="Previous Page"
                   className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161920] disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
@@ -1001,7 +1124,6 @@ export const IncidentReports: React.FC = () => {
                       key={idx}
                       onClick={() => setCurrentPage(idx + 1)}
                       title={`Go to page ${idx + 1}`}
-                      aria-label={`Go to page ${idx + 1}`}
                       className={`w-7 h-7 rounded-lg text-[10px] font-heading tracking-widest transition-all cursor-pointer ${
                         currentPage === idx + 1
                           ? 'bg-[#123c73] dark:bg-[#bf0202] text-white'
@@ -1015,7 +1137,7 @@ export const IncidentReports: React.FC = () => {
                 <button
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  title="Go to next pagination page"
+                  title="Next Page"
                   aria-label="Next Page"
                   className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161920] disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
@@ -1024,30 +1146,36 @@ export const IncidentReports: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
+        </motion.div>
 
         {/* Right Column: Desktop Inline Detail Panel */}
-        <div className="hidden lg:block lg:col-span-7">
-          {selectedReport ? (
-            <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
-              {renderDetailPanelContent(selectedReport, false)}
-            </div>
-          ) : (
-            <div className="py-24 bg-white dark:bg-[#161920] border border-dashed border-slate-200 dark:border-white/5 rounded-2xl text-center space-y-4">
-              <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto text-slate-400">
-                <Eye className="w-8 h-8" />
+        <AnimatePresence>
+          {selectedReport && (
+            <motion.div 
+              initial={{ opacity: 0, x: 20, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="hidden lg:block lg:col-span-7"
+            >
+              <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
+                {renderDetailPanelContent(selectedReport, false)}
               </div>
-              <div className="space-y-1">
-                <h4 className="font-heading text-xs tracking-wider uppercase">Select a Report</h4>
-                <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Choose an incident report log from the directory list on the left to see full description tags, logs, and escalated actions.
-                </p>
-              </div>
-            </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
 
       </div>
+
+      {/* Reusable universal 5-second countdown timer for deleted items */}
+      <UndoToast
+        isOpen={showUndoToast}
+        message={`Incident report "${pendingDelete?.title}" deleted.`}
+        duration={10}
+        onConfirm={confirmDelete}
+        onUndo={undoDelete}
+        onClose={() => setShowUndoToast(false)}
+      />
 
       {/* Mobile & Tablet Detail Modal Overlay */}
       <AnimatePresence>
@@ -1058,7 +1186,7 @@ export const IncidentReports: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/40" 
-              onClick={() => setIsDetailModalOpen(false)} 
+              onClick={() => setSelectedReport(null)} 
             />
             <motion.div 
               initial={{ opacity: 0, y: 50, scale: 0.95 }}
@@ -1067,20 +1195,16 @@ export const IncidentReports: React.FC = () => {
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
               className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-2xl relative w-full max-w-lg max-h-[90vh] overflow-y-auto z-[2001]"
             >
-              {/* Close Button */}
               <button
                 type="button"
-                onClick={() => setIsDetailModalOpen(false)}
+                onClick={() => setSelectedReport(null)}
                 className="absolute top-4 right-4 z-50 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg cursor-pointer transition-colors"
                 title="Close report modal"
-                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Render reusable details component styled inside the modal wrapper */}
               {renderDetailPanelContent(selectedReport, true)}
-
             </motion.div>
           </div>
         )}
@@ -1307,48 +1431,10 @@ export const IncidentReports: React.FC = () => {
         </div>
       )}
 
-      {/* 5. Destructive Confirm Dialog modal */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-xl p-5 text-center space-y-4 animate-scale-up text-xs">
-            
-            <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto">
-              <Trash2 className="w-5 h-5" />
-            </div>
-
-            <div className="space-y-1.5">
-              <h4 className="font-heading text-xs tracking-wider uppercase text-slate-900 dark:text-slate-100">
-                Confirm Destruction
-              </h4>
-              <p className="text-slate-400 font-bold">
-                Are you absolutely sure you want to permanently delete this report? This transaction cannot be undone.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-center gap-2 pt-2">
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-              >
-                No, Keep It
-              </button>
-              <button
-                onClick={() => handleDeleteReport(deleteConfirmId)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-              >
-                Yes, Delete
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
     </div>
   );
 };
 
-// Tag Icon fallback component
 const TagIcon: React.FC = () => (
   <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581a1.125 1.125 0 001.59 0l4.318-4.318a1.125 1.125 0 000-1.59l-9.58-9.581A1.125 1.125 0 009.568 3z" />

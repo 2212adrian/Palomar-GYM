@@ -1,19 +1,42 @@
-//src/components/ui/Modal.tsx
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+
+// 1. Create a depth context to track nesting levels
+const ModalDepthContext = createContext(0);
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  zIndex?: number; // Optional prop to manually override if needed
+  className?: string; // Support layout/size customization
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+export const Modal: React.FC<ModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  title, 
+  children,
+  zIndex: customZIndex,
+  className = "max-w-sm text-center p-8" // Default styles reside entirely here
+}) => {
+  // 2. Consume parent depth and calculate current depth
+  const parentDepth = useContext(ModalDepthContext);
+  const currentDepth = parentDepth + 1;
+
+  // 3. Compute dynamic z-index. Base level is 1000, adding 10 per nesting level.
+  const baseZIndex = 1000;
+  const computedZIndex = customZIndex ?? (baseZIndex + currentDepth * 10);
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-1000 flex items-center justify-center p-4">
+        /* Use style instead of Tailwind class since z-index is dynamic */
+        <div 
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: computedZIndex }}
+        >
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -26,12 +49,16 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 15, scale: 0.95 }}
             transition={{ duration: 0.25 }}
-            className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4 font-body z-10"
+            className={`relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl space-y-4 font-body z-10 ${className}`}
           >
             <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">
               {title}
             </h3>
-            {children}
+            
+            {/* 4. Provide the incremented depth to any nested Modals inside children */}
+            <ModalDepthContext.Provider value={currentDepth}>
+              {children}
+            </ModalDepthContext.Provider>
           </motion.div>
         </div>
       )}

@@ -1,5 +1,6 @@
-import React from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+//src/routes/index.tsx
+import React, { useState, useEffect, createContext } from 'react';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
 import { IncidentReports } from '../pages/reports/IncidentReports';
@@ -14,8 +15,70 @@ import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
 // Import newly created Sales / Inventory component
 import { Products } from '../pages/sales/Products';
 
-// Shared Layout Placeholders
 const RegisterSalePlaceholder = () => <div className="p-4 text-slate-900 dark:text-white font-heading">Register Sale Interface</div>;
+
+// Shared context for dynamic header buttons
+export const HeaderActionsContext = createContext<{
+  setActions: React.Dispatch<React.SetStateAction<React.ReactNode>>;
+}>({ setActions: () => {} });
+
+// Centralized Header Configuration Directory
+const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; description: string }> = {
+  '/dashboard': {
+    subtitle: 'Console / Performance',
+    title: 'System Dashboard',
+    description: 'Real-time overview of active gym operations, financial metrics, and performance charts.'
+  },
+  '/sales/products': {
+    subtitle: 'Sales / Store Catalog',
+    title: 'My Store Catalog',
+    description: 'Manage your store inventory catalog, barcodes, prices, and stock indicators.'
+  },
+  '/reports/incident-reports': {
+    subtitle: 'Reports / Incident Reports',
+    title: 'Incident Reports',
+    description: 'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.'
+  },
+};
+
+const HeaderLayout: React.FC = () => {
+  const location = useLocation();
+  const [actions, setActions] = useState<React.ReactNode>(null);
+
+  // Clear slots upon routing
+  useEffect(() => {
+    setActions(null);
+  }, [location.pathname]);
+
+  const headerInfo = ROUTE_HEADERS[location.pathname] || 
+                     Object.entries(ROUTE_HEADERS).find(([k]) => location.pathname.startsWith(k))?.[1];
+
+  return (
+    <HeaderActionsContext.Provider value={{ setActions }}>
+      <div className="space-y-6 min-h-screen pt-2 pb-24 md:pb-6 relative animate-fade-in text-(--color-text)">
+        {headerInfo && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                {headerInfo.subtitle}
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
+                {headerInfo.title}
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                {headerInfo.description}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {actions}
+            </div>
+          </div>
+        )}
+        <Outlet />
+      </div>
+    </HeaderActionsContext.Provider>
+  );
+};
 
 const router = createBrowserRouter([
   // Public Routes (Outside of the secure console layout shell)
@@ -30,38 +93,41 @@ const router = createBrowserRouter([
       {
         element: <SystemLayout />,
         children: [
-          
-          // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
           {
-            element: <ProtectedRoute allowedRoles={['admin']} />,
+            element: <HeaderLayout />, // Consolidated dynamic page headers
             children: [
-              { path: '/dashboard', element: <Dashboard /> },
-              { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
-              { path: '/members/list', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Member List</div> },
-              { path: '/members/id-maker', element: <div className="p-4 text-slate-900 dark:text-white font-heading">ID Maker (Subscribed Only)</div> },
-              { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
-              { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
-              { path: '/sales/products', element: <Products /> }, // Mounted the dynamic Products dashboard here
-              { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
-              { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
-            ]
-          },
+              // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
+              {
+                element: <ProtectedRoute allowedRoles={['admin']} />,
+                children: [
+                  { path: '/dashboard', element: <Dashboard /> },
+                  { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
+                  { path: '/members/list', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Member List</div> },
+                  { path: '/members/id-maker', element: <div className="p-4 text-slate-900 dark:text-white font-heading">ID Maker (Subscribed Only)</div> },
+                  { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
+                  { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
+                  { path: '/sales/products', element: <Products /> }, // Mounted the dynamic Products dashboard here
+                  { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
+                  { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
+                ]
+              },
 
-          // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
-          {
-            element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
-            children: [
-              { path: '/sales/register', element: <RegisterSalePlaceholder /> },
-              { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
-              { path: '/reports/incident-reports', element: <IncidentReports /> }, 
-              
-              // Standardized settings routes (No redirects at the router configuration level)
-              { path: '/settings/:activeTab', element: <Settings /> },
-              { path: '/settings', element: <Settings /> },
-              { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
+              // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
+              {
+                element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
+                children: [
+                  { path: '/sales/register', element: <RegisterSalePlaceholder /> },
+                  { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
+                  { path: '/reports/incident-reports', element: <IncidentReports /> }, 
+                  
+                  // Standardized settings routes (No redirects at the router configuration level)
+                  { path: '/settings/:activeTab', element: <Settings /> },
+                  { path: '/settings', element: <Settings /> },
+                  { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
+                ]
+              }
             ]
           }
-
         ]
       }
     ]
