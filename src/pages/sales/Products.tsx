@@ -10,8 +10,6 @@ import { compressImage } from '../../lib/imageCompressor';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-import { AnimatePresence, motion } from 'framer-motion';
-import type { Variants } from 'framer-motion';
 
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
@@ -59,43 +57,6 @@ interface ProductsProps {
   hideHeaderActions?: boolean;
 }
 
-const menuContainerVariants: Variants = {
-  hidden: { 
-    opacity: 0,
-    transition: {
-      staggerChildren: 0.04,
-      staggerDirection: -1
-    }
-  },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.06,
-      delayChildren: 0.02
-    }
-  }
-};
-
-const menuItemVariants: Variants = {
-  hidden: { 
-    opacity: 0, 
-    y: 16, 
-    scale: 0.88,
-    filter: 'blur(3px)'
-  },
-  show: { 
-    opacity: 1, 
-    y: 0, 
-    scale: 1,
-    filter: 'blur(0px)',
-    transition: { 
-      type: 'spring' as const,
-      stiffness: 260, 
-      damping: 20 
-    } 
-  }
-};
-
 export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false }) => {
   const { user } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
@@ -137,9 +98,6 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
   
   // Selection States for Bulk actions
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-
-  // Mobile Expandable Floating Action Button Menu State
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Form States (Single Edit)
   const [formName, setFormName] = useState('');

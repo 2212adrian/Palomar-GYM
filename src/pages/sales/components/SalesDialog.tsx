@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { 
-  Search, Plus, Trash2, Check, X, ShoppingCart 
+  Search, Check, X, ShoppingCart 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';

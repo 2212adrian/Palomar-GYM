@@ -160,11 +160,6 @@ export const Sales: React.FC = () => {
     return subview === 'products' ? 'inventory' : 'register';
   }, [subview]);
 
-  // Compute slide directions: Going to inventory slides right (1), going to register slides left (-1)
-  const direction = useMemo(() => {
-    return activeView === 'inventory' ? 1 : -1;
-  }, [activeView]);
-
   // --- STATE FOR ROLE SIMULATION ---
   const [role, setRole] = useState<'admin' | 'staff'>('admin');
 
@@ -228,7 +223,7 @@ export const Sales: React.FC = () => {
 
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-  const [deletedTransactions, setDeletedTransactions] = useState<any[]>([]);
+  const [, setDeletedTransactions] = useState<any[]>([]);
 
   // Load deleted transactions on mount
   useEffect(() => {
@@ -412,46 +407,6 @@ export const Sales: React.FC = () => {
     setIsUndoToastOpen(false);
     loadLocalStorageData();
     toast.success('Transaction deleted. Stored in daily Recycle Bin.');
-  };
-
-  const handleRestoreFromBin = (tx: any) => {
-    // 1. Verify product inventory remains sufficient
-    let insufficientStock = false;
-    const restoredProducts = products.map((p: any) => {
-      const txItems = tx.items || [{ productId: tx.productId, quantity: tx.quantity }];
-      const matchedItem = txItems.find((item: any) => item.productId === p.id);
-      if (matchedItem) {
-        const stock = p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : -1);
-        if (stock !== null && stock !== undefined && stock !== -1) {
-          if (stock < matchedItem.quantity) {
-            insufficientStock = true;
-          }
-          const updatedStock = Math.max(0, stock - matchedItem.quantity);
-          return p.stock_quantity !== undefined ? { ...p, stock_quantity: updatedStock } : { ...p, stock: updatedStock };
-        }
-      }
-      return p;
-    });
-
-    if (insufficientStock) {
-      toast.error('Cannot restore: Insufficient inventory stock available.');
-      return;
-    }
-
-    // 2. Commit restored transaction back to ledger
-    localStorage.setItem('products', JSON.stringify(restoredProducts));
-    const txString = localStorage.getItem('transactions') || '[]';
-    const allTx = JSON.parse(txString);
-    allTx.unshift(tx);
-    localStorage.setItem('transactions', JSON.stringify(allTx));
-
-    // 3. Remove from deleted list
-    const remainingDeleted = deletedTransactions.filter((t: any) => t.id !== tx.id);
-    localStorage.setItem('deleted_transactions', JSON.stringify(remainingDeleted));
-    setDeletedTransactions(remainingDeleted);
-
-    loadLocalStorageData();
-    toast.success('Transaction restored and stock deducted.');
   };
 
   const handleUndoDelete = () => {

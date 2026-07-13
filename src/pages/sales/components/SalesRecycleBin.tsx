@@ -1,10 +1,10 @@
 // src/pages/sales/components/SalesRecycleBin.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  X, RotateCcw, Search, Check, AlertCircle, ShoppingBag, 
+  X, RotateCcw, Search, AlertCircle, ShoppingBag, 
   ChevronLeft, ChevronRight, CheckSquare, Square 
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal } from '../../../components/ui/Modal';

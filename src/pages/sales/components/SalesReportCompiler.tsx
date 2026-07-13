@@ -6,8 +6,7 @@ import {
   startOfMonth, endOfMonth, 
   subMonths, startOfYear, endOfYear 
 } from 'date-fns';
-import { X, FileSpreadsheet, Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { X, Loader2 } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { toast } from 'react-toastify';
