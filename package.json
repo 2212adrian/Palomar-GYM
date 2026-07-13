@@ -12,6 +12,7 @@
   "dependencies": {
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.2.1",
     "@capacitor/core": "^8.4.1",
     "@hookform/resolvers": "^5.4.0",
     "@netlify/functions": "^5.3.0",

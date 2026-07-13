@@ -1,9 +1,13 @@
 // src/App.tsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { AppRoutes } from './routes';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+
+// Component Imports
+import { Modal } from './components/ui/Modal';
+import { Button } from './components/ui/Button';
 
 // Capacitor and Supabase Imports
 import { App as CapApp } from '@capacitor/app';
@@ -12,6 +16,17 @@ import { supabase } from './lib/supabase/client';
 
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
+  
+  // State to manage the exit confirmation modal
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  
+  // Ref to track modal state inside the persistent listener closure
+  const isExitModalOpenRef = useRef(isExitModalOpen);
+
+  // Keep the ref up-to-date with state changes
+  useEffect(() => {
+    isExitModalOpenRef.current = isExitModalOpen;
+  }, [isExitModalOpen]);
 
   // Global Theme Initialization (Survives hard page refreshes on protected routes)
   useEffect(() => {
@@ -30,6 +45,41 @@ export const App: React.FC = () => {
     // Automatically retrieve the session state on page load/mount
     checkSession();
   }, [checkSession]);
+
+  // ─── Native Back Button Listener with Modal Dialog ───
+  useEffect(() => {
+    // Only register the back button listener on native platforms (Android/iOS)
+    if (!Capacitor.isNativePlatform()) return;
+
+    let activeBackButtonListener: any;
+
+    const setupBackButtonListener = async () => {
+      activeBackButtonListener = await CapApp.addListener('backButton', ({ canGoBack }) => {
+        const currentPath = window.location.pathname;
+        
+        // Define route paths where hitting the Android back button should prompt an exit dialog
+        const rootPaths = ['/', '/login', '/dashboard'];
+
+        // If the confirmation modal is already open, pressing back will close it
+        if (isExitModalOpenRef.current) {
+          setIsExitModalOpen(false);
+        } else if (!canGoBack || rootPaths.includes(currentPath)) {
+          // Open the exit confirmation modal instead of shutting down immediately
+          setIsExitModalOpen(true);
+        } else {
+          window.history.back();
+        }
+      });
+    };
+
+    setupBackButtonListener();
+
+    return () => {
+      if (activeBackButtonListener) {
+        activeBackButtonListener.remove();
+      }
+    };
+  }, []);
 
   // ─── Native Deep Link Listener for Google OAuth ───
   useEffect(() => {
@@ -80,6 +130,8 @@ export const App: React.FC = () => {
   return (
     <>
       <AppRoutes />
+      
+      {/* Toast Notification Layer */}
       <ToastContainer
         position="top-right"
         autoClose={4000}
@@ -92,6 +144,32 @@ export const App: React.FC = () => {
         pauseOnHover
         theme="dark"
       />
+
+      {/* Exit Confirmation Modal */}
+      <Modal
+        isOpen={isExitModalOpen}
+        onClose={() => setIsExitModalOpen(false)}
+        title="Exit App"
+        className="max-w-xs text-center p-6"
+      >
+        <p className="text-sm font-body text-slate-600 dark:text-slate-400 mt-2">
+          Are you sure you want to close the application?
+        </p>
+        <div className="flex gap-3 mt-4">
+          <Button 
+            variant="secondary" 
+            onClick={() => setIsExitModalOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={() => CapApp.exitApp()}
+          >
+            Exit
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 };

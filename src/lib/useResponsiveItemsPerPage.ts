@@ -1,3 +1,4 @@
+// src/lib/useResponsiveItemsPerPage.ts
 import { useState, useEffect } from 'react';
 
 export function useResponsiveItemsPerPage() {

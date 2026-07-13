@@ -1,4 +1,3 @@
-//src/pages/sales/Products.tsx
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
@@ -51,9 +50,13 @@ interface Product {
   created_at: string;
   updated_at: string;
   
-  // Clean, consolidated manufacturer database tracking
   manufacturer_barcode?: string | null;
   manufacturer_source?: string;
+}
+
+// Prop definitions to handle nesting lock
+interface ProductsProps {
+  hideHeaderActions?: boolean;
 }
 
 const menuContainerVariants: Variants = {
@@ -93,8 +96,7 @@ const menuItemVariants: Variants = {
   }
 };
 
-
-export const Products: React.FC = () => {
+export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false }) => {
   const { user } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
@@ -179,6 +181,22 @@ export const Products: React.FC = () => {
   };
 
   useEffect(() => {
+  const handleCreate = () => handleCreateClick();
+  const handlePrint = () => setShowPrintModal(true);
+  const handleRecovery = () => setShowRecoveryModal(true);
+
+  window.addEventListener('trigger-product-create', handleCreate);
+  window.addEventListener('trigger-product-print', handlePrint);
+  window.addEventListener('trigger-product-recovery', handleRecovery);
+
+  return () => {
+    window.removeEventListener('trigger-product-create', handleCreate);
+    window.removeEventListener('trigger-product-print', handlePrint);
+    window.removeEventListener('trigger-product-recovery', handleRecovery);
+  };
+}, [products]);
+
+  useEffect(() => {
     fetchProducts();
 
     const channel = supabase
@@ -225,14 +243,15 @@ export const Products: React.FC = () => {
  const location = useLocation();
   // Dynamically push the header action buttons to the unified layout container
   useEffect(() => {
+    if (hideHeaderActions) return; // SKIP registration if nested in Sales sliding layout!
+
     const updateHeaderActions = () => {
-      // Only show the header actions if the user is an admin and NO rows are selected
       if (isAdmin && selectedProductIds.length === 0) {
         setActions(
           <>
             <button
               onClick={() => setShowRecoveryModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer animate-fade-in"
               title="View and restore soft-deleted products"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
@@ -241,7 +260,7 @@ export const Products: React.FC = () => {
 
             <button
               onClick={() => setShowPrintModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#1e232d] hover:bg-slate-800 text-white border border-white/5 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#1e232d] hover:bg-slate-800 text-white border border-white/5 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer animate-fade-in"
               title="Quickly generate printable sheet labels"
             >
               <Printer className="w-3.5 h-3.5 text-blue-500" />
@@ -250,7 +269,7 @@ export const Products: React.FC = () => {
 
             <button
               onClick={handleCreateClick}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-500/10"
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-500/10 animate-fade-in"
             >
               <Plus className="w-3.5 h-3.5" />
               Add New Item
@@ -258,20 +277,17 @@ export const Products: React.FC = () => {
           </>
         );
       } else {
-        // Clear actions if rows are selected or user is not authorized
         setActions(null);
       }
     };
 
-    // Defer action registration until the parent layout mounts completely
     const timer = setTimeout(updateHeaderActions, 0);
 
-    // Safely cleanup header slots on component unmount
     return () => {
       clearTimeout(timer);
       setActions(null);
     };
-  }, [isAdmin, selectedProductIds.length, location.pathname, setActions]);
+  }, [isAdmin, selectedProductIds.length, location.pathname, setActions, hideHeaderActions]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1083,7 +1099,7 @@ export const Products: React.FC = () => {
                   Confirm Deletion
                 </h4>
                 <p className="text-slate-455 text-[11px] font-medium leading-relaxed">
-                  You are about to permanently delete this item from your store catalog. This action cannot be undone.
+                  You are about to permanently delete this item from your products inventory. This action cannot be undone.
                 </p>
               </div>
 
@@ -1200,109 +1216,6 @@ export const Products: React.FC = () => {
             fetchProducts();
           }}
         />
-      )}
-
-     {/* 
-        11. Redesigned Mobile Expandable Floating Action Menu (FAB):
-        Includes full backdrop overlays and staggered micro-interactions.
-      */}
-      {isAdmin && selectedProductIds.length === 0 && (
-        <>
-          {/* Backdrop Blur Focus Shield Overlay */}
-          <AnimatePresence>
-            {isMobileMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
-              />
-            )}
-          </AnimatePresence>
-
-          {/* Floating Action Menu Container */}
-          <div className="md:hidden fixed bottom-24 right-4 z-40 flex flex-col items-end gap-3">
-            <AnimatePresence>
-              {isMobileMenuOpen && (
-                <motion.div 
-                  variants={menuContainerVariants}
-                  initial="hidden"
-                  animate="show"
-                  exit="hidden"
-                  className="flex flex-col items-end gap-2.5 mb-1"
-                >
-                  {/* Option 1: Recycle Bin */}
-                  <motion.button
-                    variants={menuItemVariants}
-                    whileTap={{ scale: 0.95 }}
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setShowRecoveryModal(true);
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4 text-amber-500" />
-                    <span>Recycle Bin</span>
-                  </motion.button>
-
-                  {/* Option 2: Print Sheet Labels */}
-                  <motion.button
-                    variants={menuItemVariants}
-                    whileTap={{ scale: 0.95 }}
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setShowPrintModal(true);
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4 text-blue-500" />
-                    <span>Print Labels</span>
-                  </motion.button>
-                  
-                  {/* Option 3: Add New Item */}
-                  <motion.button
-                    variants={menuItemVariants}
-                    whileTap={{ scale: 0.95 }}
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      handleCreateClick();
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 hover:bg-slate-850 dark:hover:bg-neutral-850 text-slate-100 border border-white/5 dark:border-white/10 text-[10px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-emerald-500" />
-                    <span>Add Product</span>
-                  </motion.button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Core Trigger Button */}
-            <motion.button
-              type="button"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              whileTap={{ scale: 0.9 }}
-              animate={{
-                backgroundColor: isMobileMenuOpen ? 'var(--color-primary)' : '#10b981',
-                boxShadow: isMobileMenuOpen 
-                  ? '0 10px 25px -5px rgba(0, 0, 0, 0.4)' 
-                  : '0 10px 25px -5px rgba(16, 185, 129, 0.45)'
-              }}
-              className="flex items-center justify-center w-14 h-14 text-white rounded-full cursor-pointer border border-white/10 shadow-lg"
-              title="Open actions menu"
-            >
-              <motion.div
-                animate={{ rotate: isMobileMenuOpen ? 135 : 0 }}
-                transition={{ type: 'spring', stiffness: 220, damping: 16 }}
-              >
-                <Plus className="w-6 h-6" />
-              </motion.div>
-            </motion.button>
-          </div>
-        </>
       )}
 
     </div>

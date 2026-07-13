@@ -22,10 +22,9 @@ export const TabLoadingContext = createContext<TabLoadingContextType>({
 
 export const useTabLoading = () => useContext(TabLoadingContext);
 
-// Centralized directory of paths that actively query database APIs on mount
+// Centralized directory of paths that actively query database APIs on mount (Removed Products Inventory)
 const DATA_LOADING_PATHS = [
   '/dashboard',
-  '/sales/products',
   '/reports/incident-reports',
   '/system/audit-logs'
 ];
@@ -52,8 +51,12 @@ export const SystemLayout: React.FC = () => {
 
   // Handle route change transitions selectively based on destination and active loading scopes
   useEffect(() => {
-    // 1. Disable loading overlay completely on any Settings views and sub-tabs
-    if (location.pathname.startsWith('/settings')) {
+    // 1. Disable loading overlay completely on any Settings, Sales, or Members views and sub-tabs
+    if (
+      location.pathname.startsWith('/settings') ||
+      location.pathname.startsWith('/sales') ||
+      location.pathname.startsWith('/members')
+    ) {
       setActivePath(location.pathname);
       return;
     }

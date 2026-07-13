@@ -1,5 +1,5 @@
-//src/routes/index.tsx
-import React, { useState, useEffect, createContext } from 'react';
+// src/routes/index.tsx
+import React, { useState, useEffect, createContext, useRef } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
@@ -13,9 +13,7 @@ import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
 
 // Import newly created Sales / Inventory component
-import { Products } from '../pages/sales/Products';
-
-const RegisterSalePlaceholder = () => <div className="p-4 text-slate-900 dark:text-white font-heading">Register Sale Interface</div>;
+import { Sales } from '../pages/sales/Sales';
 
 // Shared context for dynamic header buttons
 export const HeaderActionsContext = createContext<{
@@ -30,9 +28,14 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
     description: 'Real-time overview of active gym operations, financial metrics, and performance charts.'
   },
   '/sales/products': {
-    subtitle: 'Sales / Store Catalog',
-    title: 'My Store Catalog',
+    subtitle: 'Sales / Products',
+    title: 'My Products',
     description: 'Manage your store inventory catalog, barcodes, prices, and stock indicators.'
+  },
+  '/sales/register': {
+    subtitle: 'Sales / Register',
+    title: 'Sales Register',
+    description: 'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.'
   },
   '/reports/incident-reports': {
     subtitle: 'Reports / Incident Reports',
@@ -44,10 +47,18 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
 const HeaderLayout: React.FC = () => {
   const location = useLocation();
   const [actions, setActions] = useState<React.ReactNode>(null);
+  const prevPathRef = useRef(location.pathname);
 
-  // Clear slots upon routing
+  // Clear slots upon routing ONLY if the user is leaving the main section entirely
   useEffect(() => {
-    setActions(null);
+    const getBaseSegment = (p: string) => '/' + p.split('/').filter(Boolean)[0];
+    const oldBase = getBaseSegment(prevPathRef.current);
+    const newBase = getBaseSegment(location.pathname);
+
+    if (oldBase !== newBase) {
+      setActions(null);
+    }
+    prevPathRef.current = location.pathname;
   }, [location.pathname]);
 
   const headerInfo = ROUTE_HEADERS[location.pathname] || 
@@ -57,20 +68,22 @@ const HeaderLayout: React.FC = () => {
     <HeaderActionsContext.Provider value={{ setActions }}>
       <div className="space-y-6 min-h-screen pt-2 pb-24 md:pb-6 relative animate-fade-in text-(--color-text)">
         {headerInfo && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
-                {headerInfo.subtitle}
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
-                {headerInfo.title}
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                {headerInfo.description}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {actions}
+          <div className="hidden md:block">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                  {headerInfo.subtitle}
+                </span>
+                <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
+                  {headerInfo.title}
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                  {headerInfo.description}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {actions}
+              </div>
             </div>
           </div>
         )}
@@ -106,7 +119,6 @@ const router = createBrowserRouter([
                   { path: '/members/id-maker', element: <div className="p-4 text-slate-900 dark:text-white font-heading">ID Maker (Subscribed Only)</div> },
                   { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
                   { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
-                  { path: '/sales/products', element: <Products /> }, // Mounted the dynamic Products dashboard here
                   { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
                   { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
                 ]
@@ -116,7 +128,8 @@ const router = createBrowserRouter([
               {
                 element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
                 children: [
-                  { path: '/sales/register', element: <RegisterSalePlaceholder /> },
+                  { path: '/sales', element: <Navigate to="/sales/register" replace /> },
+                  { path: '/sales/:subview', element: <Sales /> }, // Consolidated dynamic parameter path
                   { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
                   { path: '/reports/incident-reports', element: <IncidentReports /> }, 
                   
