@@ -10,7 +10,6 @@ BEGIN
 END $$;
 
 -- 2. Create the unique random receipt generator function
--- Generates values in 'TS-XXXXXXXXXXXX' format, where XXXXXXXXXXXX is a 12-digit random string
 CREATE OR REPLACE FUNCTION public.generate_unique_receipt_no()
 RETURNS TEXT AS $$
 DECLARE
@@ -18,10 +17,8 @@ DECLARE
     done BOOLEAN := FALSE;
 BEGIN
     WHILE NOT done LOOP
-        -- Generates random 12-digit numeric sequence
         new_receipt := 'TS-' || lpad(floor(random() * 1000000000000)::numeric::text, 12, '0');
         
-        -- Safe check using dynamic query to prevent compile issues if table does not exist yet
         IF NOT EXISTS (
             SELECT 1 
             FROM pg_catalog.pg_class c
@@ -44,13 +41,14 @@ $$ LANGUAGE plpgsql VOLATILE;
 CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     receipt_no VARCHAR(15) NOT NULL UNIQUE DEFAULT public.generate_unique_receipt_no(),
-    items JSONB NOT NULL, -- List of products purchased on a single transaction
-    product_name TEXT NOT NULL, -- Compact display text (e.g., "2x Whey Protein, 1x Water")
+    items JSONB NOT NULL, 
+    product_name TEXT NOT NULL, 
     payment_method public.payment_method NOT NULL DEFAULT 'Cash'::public.payment_method,
     amount_received DECIMAL(10,2) DEFAULT 0.00,
     change_calculated DECIMAL(10,2) DEFAULT 0.00,
     total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     gcash_fee_applied DECIMAL(10,2) DEFAULT 0.00,
+    reference_number VARCHAR(50) DEFAULT NULL, -- Added GCash Reference Number Column
     deleted_at TIMESTAMPTZ DEFAULT NULL,
     deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -58,6 +56,7 @@ CREATE TABLE IF NOT EXISTS public.sales (
 );
 
 -- Defensive columns addition: safe fallback if the table already existed previously
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS reference_number VARCHAR(50) DEFAULT NULL;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL;
 
@@ -72,23 +71,19 @@ CREATE TRIGGER update_sales_updated_at
 
 
 -- 5. Set up transparent Soft Delete interception trigger
--- Intercepts actual physical deletes and redirects them into logical updates
--- Upgraded: Checks if row is already soft-deleted to allow physical deletion to proceed
 CREATE OR REPLACE FUNCTION public.handle_sales_soft_delete()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If the row is already soft-deleted, allow physical deletion
     IF OLD.deleted_at IS NOT NULL THEN
         RETURN OLD;
     END IF;
 
-    -- Otherwise, intercept and perform logical soft-delete
     UPDATE public.sales
     SET deleted_at = now(),
         deleted_by = auth.uid()
     WHERE id = OLD.id;
     
-    return NULL; -- Suppress physical deletion for active rows
+    return NULL; 
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -110,8 +105,6 @@ DROP POLICY IF EXISTS "Allow authenticated users to insert sales" ON public.sale
 DROP POLICY IF EXISTS "Allow authorized users to update sales" ON public.sales;
 DROP POLICY IF EXISTS "Allow authorized users to delete sales" ON public.sales;
 
--- View Permission (Staff can only view today's transactions for privacy. Admins can view everything)
--- Corrected: changed "auth.jwt() -> biographies ->> 'email'" to "auth.jwt() ->> 'email'"
 CREATE POLICY "Allow authenticated users to view sales" ON public.sales
     FOR SELECT
     TO authenticated
@@ -123,7 +116,6 @@ CREATE POLICY "Allow authenticated users to view sales" ON public.sales
         )
     );
 
--- Add Permission (Any staff or admin can register a transaction)
 CREATE POLICY "Allow authenticated users to insert sales" ON public.sales
     FOR INSERT
     TO authenticated
@@ -131,7 +123,6 @@ CREATE POLICY "Allow authenticated users to insert sales" ON public.sales
         deleted_at IS NULL
     );
 
--- Edit Permission (Only Admin can modify existing sales data)
 CREATE POLICY "Allow authorized users to update sales" ON public.sales
     FOR UPDATE
     TO authenticated
@@ -144,7 +135,6 @@ CREATE POLICY "Allow authorized users to update sales" ON public.sales
         auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
     );
 
--- Delete Permission (Staff and Admin can delete today's transactions; past transactions can only be soft-deleted by Admin)
 CREATE POLICY "Allow authorized users to delete sales" ON public.sales
     FOR DELETE
     TO authenticated
@@ -174,11 +164,10 @@ END $$;
 
 
 -- 9. Auto-Deletion Schedule (Runs every 24 hours of Manila time)
--- 12:00 AM Manila Time corresponds to 4:00 PM UTC (16:00)
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 SELECT cron.schedule(
     'daily-purge-old-soft-deleted-sales',
-    '0 16 * * *', -- Everyday at 16:00 UTC (12:00 AM Manila local time)
+    '0 16 * * *', 
     $$ DELETE FROM public.sales WHERE deleted_at IS NOT NULL AND deleted_at < now() - INTERVAL '24 hours'; $$
 );

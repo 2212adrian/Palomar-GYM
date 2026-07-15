@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns';
 import { X, Download, Printer } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
-import { supabase } from '../../../lib/supabase/client'; // Adjust directory path based on your design setup
+import { supabase } from '../../../lib/supabase/client'; 
 
 interface SalesOfficialReceiptProps {
   isOpen: boolean;
@@ -50,7 +50,7 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     return 'N/A';
   }, [tx, createdAtStr]);
 
-  // Load backend branding & tax rates configuration profiles [1, 2]
+  // Load backend branding & tax rates configuration profiles
   useEffect(() => {
     if (!isOpen) return;
 
@@ -223,7 +223,7 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     ctx.font = 'bold 16px sans-serif';
     ctx.fillText(gymName, 200, 45);
 
-    // Multi-line wrap helper to securely isolate long dynamic store address values
+    // Multi-line wrap helper to securely isolate long store address values
     const drawWrappedText = (text: string, x: number, startY: number, maxWidth: number, lineHeight: number) => {
       ctx.font = '10px sans-serif';
       ctx.fillStyle = '#64748b';
@@ -352,11 +352,8 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
       renderRow('CASH RECEIVED', `₱${amountReceived.toFixed(2)}`, itemY);
       renderRow('CHANGE DUE', `₱${changeCalculated.toFixed(2)}`, itemY + 20);
       itemY += 40;
-    } else if (paymentMethod === 'GCash' && tx.reference_number) {
-      renderRow('GCASH REF NO', tx.reference_number, itemY);
-      itemY += 20;
-    } else if (paymentMethod === 'GCash' && tx.referenceNumber) {
-      renderRow('GCASH REF NO', tx.referenceNumber, itemY);
+    } else if (paymentMethod === 'GCash' && (tx.reference_number || tx.referenceNumber)) {
+      renderRow('GCASH REF NO', tx.reference_number || tx.referenceNumber, itemY);
       itemY += 20;
     }
 
@@ -412,82 +409,135 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
       <div className="space-y-4 pt-2 leading-normal">
         <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-(--color-primary) to-(--color-primary-light) opacity-80" />
 
-        {/* --- THERMAL RECEIPT CARD --- */}
-        <div id="thermal-receipt-card" className="bg-white p-4 border border-dashed border-slate-200 rounded-2xl text-black shadow-inner space-y-4">
-          <div className="text-center space-y-1">
-            <img src="/favicon.svg" alt="Wolf Gym Logo" className="mx-auto w-10 h-10 object-contain mb-1" />
-            <h4 className="font-heading text-xs tracking-wider text-slate-900 uppercase leading-none">{gymName}</h4>
-            <p className="text-[8px] text-slate-500 uppercase tracking-tight max-w-[240px] mx-auto leading-normal">
-              {gymAddress}
-            </p>
-            <p className="text-[8px] text-slate-500 uppercase tracking-wider font-semibold">{staffContact}</p>
+        {/* --- SKELETON LOADER VS THERMAL RECEIPT CARD --- */}
+        {loadingConfig ? (
+          <div className="bg-white p-4 border border-dashed border-slate-200 rounded-2xl text-black shadow-inner space-y-4 animate-pulse">
+            <div className="text-center space-y-2">
+              <div className="mx-auto w-10 h-10 bg-slate-200 rounded-full" />
+              <div className="mx-auto h-3 w-32 bg-slate-200 rounded" />
+              <div className="mx-auto h-2 w-48 bg-slate-100 rounded" />
+              <div className="mx-auto h-2 w-36 bg-slate-100 rounded" />
+            </div>
+
+            <div className="border-b border-dashed border-slate-200" />
+            <div className="mx-auto h-3 w-36 bg-slate-200 rounded" />
+            <div className="border-b border-dashed border-slate-200" />
+
+            <div className="space-y-2.5">
+              <div className="flex justify-between">
+                <div className="h-2 w-16 bg-slate-100 rounded" />
+                <div className="h-2 w-20 bg-slate-200 rounded" />
+              </div>
+              <div className="flex justify-between">
+                <div className="h-2 w-24 bg-slate-100 rounded" />
+                <div className="h-2 w-12 bg-slate-200 rounded" />
+              </div>
+              <div className="flex justify-between">
+                <div className="h-2 w-28 bg-slate-100 rounded" />
+                <div className="h-2 w-24 bg-slate-200 rounded" />
+              </div>
+            </div>
+
+            <div className="border-b border-dashed border-slate-200" />
+            <div className="h-2.5 w-24 bg-slate-200 rounded" />
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <div className="h-2 w-36 bg-slate-100 rounded" />
+                <div className="h-2 w-10 bg-slate-200 rounded" />
+              </div>
+              <div className="flex justify-between">
+                <div className="h-2 w-28 bg-slate-100 rounded" />
+                <div className="h-2 w-10 bg-slate-200 rounded" />
+              </div>
+            </div>
+
+            <div className="border-b border-dashed border-slate-200" />
+
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <div className="h-2 w-14 bg-slate-100 rounded" />
+                <div className="h-2 w-10 bg-slate-200 rounded" />
+              </div>
+              <div className="h-10 w-full bg-slate-100 border border-slate-200/50 rounded-xl" />
+            </div>
           </div>
+        ) : (
+          <div id="thermal-receipt-card" className="bg-white p-4 border border-dashed border-slate-200 rounded-2xl text-black shadow-inner space-y-4">
+            <div className="text-center space-y-1">
+              <img src="/favicon.svg" alt="Wolf Gym Logo" className="mx-auto w-10 h-10 object-contain mb-1" />
+              <h4 className="font-heading text-xs tracking-wider text-slate-900 uppercase leading-none">{gymName}</h4>
+              <p className="text-[8px] text-slate-500 uppercase tracking-tight max-w-[240px] mx-auto leading-normal">
+                {gymAddress}
+              </p>
+              <p className="text-[8px] text-slate-500 uppercase tracking-wider font-semibold">{staffContact}</p>
+            </div>
 
-          <div className="border-b border-dashed border-slate-200" />
-          <div className="text-center font-bold tracking-wider text-slate-900 uppercase text-[9px]">Product Official Receipt</div>
-          <div className="border-b border-dashed border-slate-200" />
+            <div className="border-b border-dashed border-slate-200" />
+            <div className="text-center font-bold tracking-wider text-slate-900 uppercase text-[9px]">Product Official Receipt</div>
+            <div className="border-b border-dashed border-slate-200" />
 
-          <div className="space-y-1.5 text-[9px] text-slate-700">
-            <div className="flex justify-between"><span className="text-slate-500">RECEIPT NO</span><span className="font-semibold">{receiptNo}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">PAYMENT METHOD</span><span className="font-semibold uppercase">{paymentMethod}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">TRANSACTION DATE</span><span className="font-semibold">{txDateStr} • {formattedTimeStr}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">PROCESSED BY</span><span className="font-semibold uppercase">Staff</span></div>
-          </div>
+            <div className="space-y-1.5 text-[9px] text-slate-700">
+              <div className="flex justify-between"><span className="text-slate-500">RECEIPT NO</span><span className="font-semibold">{receiptNo}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">PAYMENT METHOD</span><span className="font-semibold uppercase">{paymentMethod}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">TRANSACTION DATE</span><span className="font-semibold">{txDateStr} • {formattedTimeStr}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">PROCESSED BY</span><span className="font-semibold uppercase">Staff</span></div>
+            </div>
 
-          <div className="border-b border-dashed border-slate-200" />
+            <div className="border-b border-dashed border-slate-200" />
 
-          <div className="space-y-2 text-left">
-            <span className="text-slate-900 text-[9px] font-bold block uppercase tracking-wider">Purchased Items</span>
-            <div className="space-y-1.5">
-              {receiptItems.map((item: any, i: number) => (
-                <div key={i} className="flex justify-between items-start text-[9px] text-slate-800">
-                  <span>{item.quantity}x {item.productName || item.product_name}</span>
-                  <span className="font-semibold font-mono">₱{(item.price * item.quantity).toFixed(2)}</span>
+            <div className="space-y-2 text-left">
+              <span className="text-slate-900 text-[9px] font-bold block uppercase tracking-wider">Purchased Items</span>
+              <div className="space-y-1.5">
+                {receiptItems.map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between items-start text-[9px] text-slate-800">
+                    <span>{item.quantity}x {item.productName || item.product_name}</span>
+                    <span className="font-semibold font-mono">₱{(item.price * item.quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-b border-dashed border-slate-200" />
+
+            <div className="space-y-1.5 text-xs text-slate-900">
+              <div className="flex justify-between font-bold text-[9px]"><span className="text-slate-500">SUBTOTAL</span><span>₱{totalAmount.toFixed(2)}</span></div>
+              <div className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-extrabold text-xs">
+                <span>TOTAL PAID</span><span className="text-[#bf0202]">₱{totalAmount.toFixed(2)}</span>
+              </div>
+
+              {paymentMethod === 'Cash' && amountReceived !== null && (
+                <div className="space-y-1 pt-1 text-[9px] text-slate-500">
+                  <div className="flex justify-between"><span>CASH RECEIVED</span><span>₱{amountReceived.toFixed(2)}</span></div>
+                  <div className="flex justify-between font-bold text-slate-800"><span>CHANGE DUE</span><span>₱{changeCalculated.toFixed(2)}</span></div>
                 </div>
-              ))}
-            </div>
-          </div>
+              )}
 
-          <div className="border-b border-dashed border-slate-200" />
-
-          <div className="space-y-1.5 text-xs text-slate-900">
-            <div className="flex justify-between font-bold text-[9px]"><span className="text-slate-500">SUBTOTAL</span><span>₱{totalAmount.toFixed(2)}</span></div>
-            <div className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-extrabold text-xs">
-              <span>TOTAL PAID</span><span className="text-[#bf0202]">₱{totalAmount.toFixed(2)}</span>
+              {paymentMethod === 'GCash' && (tx.reference_number || tx.referenceNumber) && (
+                <div className="p-2 rounded bg-slate-50 border border-slate-200 text-[8px] font-mono flex items-center justify-between text-slate-700">
+                  <span>GCash REF NO:</span><span className="font-black text-emerald-600">{tx.reference_number || tx.referenceNumber}</span>
+                </div>
+              )}
             </div>
 
-            {paymentMethod === 'Cash' && amountReceived !== null && (
-              <div className="space-y-1 pt-1 text-[9px] text-slate-500">
-                <div className="flex justify-between"><span>CASH RECEIVED</span><span>₱{amountReceived.toFixed(2)}</span></div>
-                <div className="flex justify-between font-bold text-slate-800"><span>CHANGE DUE</span><span>₱{changeCalculated.toFixed(2)}</span></div>
-              </div>
-            )}
+            <div className="border-b border-dashed border-slate-200" />
+            <div className="space-y-1 text-[8px] text-slate-500 font-sans uppercase">
+              {vatEnabled ? (
+                <>
+                  <div className="flex justify-between"><span>VATABLE SALES</span><span>₱{vatableSales.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>VAT ({vatPercentage}% INCLUSIVE)</span><span>₱{vatAmount.toFixed(2)}</span></div>
+                </>
+              ) : (
+                <></>
+              )}
+            </div>
 
-            {paymentMethod === 'GCash' && (tx.reference_number || tx.referenceNumber) && (
-              <div className="p-2 rounded bg-slate-50 border border-slate-200 text-[8px] font-mono flex items-center justify-between text-slate-700">
-                <span>GCash REF NO:</span><span className="font-black text-emerald-600">{tx.reference_number || tx.referenceNumber}</span>
-              </div>
-            )}
+            <div className="border-b border-dashed border-slate-200" />
+            <div className="text-center space-y-1 text-[8px] text-slate-400 font-sans">
+              <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice</p>
+              <p>Thank you for choosing {gymProfile?.gym_name ? gymProfile.gym_name.replace('WOLF ', '') : 'Wolf Gym'}.</p>
+            </div>
           </div>
-
-          <div className="border-b border-dashed border-slate-200" />
-          <div className="space-y-1 text-[8px] text-slate-500 font-sans uppercase">
-            {vatEnabled ? (
-              <>
-                <div className="flex justify-between"><span>VATABLE SALES</span><span>₱{vatableSales.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>VAT ({vatPercentage}% INCLUSIVE)</span><span>₱{vatAmount.toFixed(2)}</span></div>
-              </>
-            ) : (
-              <></>
-            )}
-          </div>
-
-          <div className="border-b border-dashed border-slate-200" />
-          <div className="text-center space-y-1 text-[8px] text-slate-400 font-sans">
-            <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice</p>
-            <p>Thank you for choosing {gymProfile?.gym_name ? gymProfile.gym_name.replace('WOLF ', '') : 'Wolf Gym'}.</p>
-          </div>
-        </div>
+        )}
 
         {/* --- CONTROL BLOCK ACTIONS --- */}
         <div className="grid grid-cols-2 gap-2.5 pt-2">

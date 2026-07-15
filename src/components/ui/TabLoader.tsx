@@ -8,11 +8,16 @@ interface TabLoaderProps {
 }
 
 const STATUS_PHRASES = [
-  "Retrieving localized configurations...",
-  "Compiling audit trail logs...",
-  "Optimizing workspace viewport...",
-  "Syncing real-time records...",
-  "Waiting for remote database response..."
+  "Preparing your workspace...",
+  "Loading gym records...",
+  "Syncing latest data...",
+  "Fetching information...",
+  "Updating dashboard...",
+  "Loading member information...",
+  "Preparing system modules...",
+  "Organizing your data...",
+  "Checking for recent updates...",
+  "Finalizing your workspace..."
 ];
 
 export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
@@ -76,7 +81,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
 
   return (
     <div
-      className={`absolute inset-0 z-40 flex flex-col items-center justify-center bg-slate-50/95 dark:bg-[#070a13]/95 backdrop-blur-md transition-all duration-500 ease-in-out pointer-events-none ${
+      className={`fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-slate-50/95 dark:bg-[#070a13]/95 backdrop-blur-md transition-all duration-500 ease-in-out pointer-events-none ${
         isVisible ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 scale-95 pointer-events-none'
       }`}
     >
@@ -116,7 +121,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
           50% {
             opacity: 0.9;
             transform: scale(1.02);
-            fill: #d97706; /* Warning Amber offline indicator */
+            fill: #d97706; 
           }
         }
 

@@ -575,7 +575,8 @@ export const Sales: React.FC = () => {
           amount_received: newTx.amountReceived,
           change_calculated: newTx.changeCalculated,
           total_amount: newTx.totalAmount,
-          gcash_fee_applied: calculatedGcashFee
+          gcash_fee_applied: calculatedGcashFee,
+          reference_number: newTx.referenceNumber || newTx.reference_number || null // Added reference number input mapping
         }])
         .select()
         .single();
@@ -602,7 +603,6 @@ export const Sales: React.FC = () => {
         }
       }
 
-      // Log action in audit history with Tab/Newline formatting
       const itemsList = newTx.items?.map((i: any) => `\t- ${i.productName} (${i.quantity}x)`).join('\n') || `\t- ${newTx.productName}`;
       const auditDetails = `Recorded sale transaction: ${newTx.id}\n` +
         `Payment Method: ${newTx.paymentMethod}\n` +
@@ -615,7 +615,6 @@ export const Sales: React.FC = () => {
         actor_username: user?.email || 'System'
       }]);
 
-      // Friendly non-technical success summary toast
       if (newTx.items && newTx.items.length === 1) {
         const singleItem = newTx.items[0];
         toast.success(`Success! ${singleItem.productName} (${singleItem.quantity}x) has been successfully saved to your sale.`);
@@ -631,7 +630,9 @@ export const Sales: React.FC = () => {
     } catch (err) {
       console.error(err);
       toast.error('There was a problem saving your transaction. Please try again.');
-    } 
+    } finally {
+      setLoading(false); // Replaced "fill-in;" typo to correctly switch off loading state
+    }
   };
 
   const handleDeleteTransaction = (tx: any) => {
