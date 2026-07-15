@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
+import { supabase } from '../../../lib/supabase/client'; // Imported Supabase Client
 
 interface SalesDialogProps {
   isOpen: boolean;
@@ -33,10 +34,32 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // For UI visual states
+  const [isSubmitting, setIsSubmitting] = useState(false); 
+  const [ratesConfig, setRatesConfig] = useState<any>(null); // Added rates config state
 
   // Synchronous ref to instantly block spam clicks in the microsecond range
   const isSubmittingRef = useRef(false);
+
+  // Fetch rates configurations from database
+  useEffect(() => {
+    const fetchRatesConfig = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('rates_config')
+          .select('*')
+          .eq('id', 1)
+          .single();
+        if (!error && data) {
+          setRatesConfig(data);
+        }
+      } catch (err) {
+        console.error('Error fetching rates_config inside SalesDialog:', err);
+      }
+    };
+    if (isOpen) {
+      fetchRatesConfig();
+    }
+  }, [isOpen]);
 
   // Schema-independent helper attributes
   const getProductName = (p: any) => p.product_name || p.name || 'Unnamed Product';
@@ -66,10 +89,17 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     });
   }, [products, searchTerm]);
 
-  // Compute total payable amount
+  // Compute GCash Convenience Fee based on payment method
+  const gcashFee = useMemo(() => {
+    if (paymentMethod !== 'GCash') return 0;
+    return ratesConfig?.gcash_fee !== undefined ? Number(ratesConfig.gcash_fee) : 10.00;
+  }, [paymentMethod, ratesConfig]);
+
+  // Compute total payable amount (includes GCash fee if applicable)
   const totalPayable = useMemo(() => {
-    return cart.reduce((sum, item) => sum + (getProductPrice(item.product) * item.quantity), 0);
-  }, [cart]);
+    const cartTotal = cart.reduce((sum, item) => sum + (getProductPrice(item.product) * item.quantity), 0);
+    return cartTotal + gcashFee;
+  }, [cart, gcashFee]);
 
   // AUTOMATIC CASH RECEIVED: Prefills exact total cost to speed up transactions
   useEffect(() => {
@@ -97,7 +127,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     } else {
       setCart([...cart, { product, quantity: 1 }]);
     }
-    setSearchTerm(''); // Reset search input on selection
+    setSearchTerm(''); 
   };
 
   const handleUpdateQuantity = (idx: number, delta: number) => {
@@ -121,7 +151,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   };
 
   const handleCompleteSale = () => {
-    // Check ref synchronously first to prevent multiple microsecond clicks
     if (isSubmittingRef.current || isSuccess) {
       return;
     }
@@ -144,9 +173,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       }
     }
 
-    // Set Ref synchronously to lock instantly
     isSubmittingRef.current = true;
-    setIsSubmitting(true); // Triggers loading UI states
+    setIsSubmitting(true); 
 
     // Process Stock Update for each cart item
     const updatedProducts = products.map((p: any) => {
@@ -166,7 +194,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       return p;
     });
 
-    // Register Transaction Object
     const now = new Date();
     const newTx = {
       id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -229,7 +256,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             exit={{ opacity: 0 }}
             className="space-y-4 text-left pt-2"
           >
-            {/* Product search lookup */}
             <div className="field-wrap">
               <input
                 type="text"
@@ -245,7 +271,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               </label>
             </div>
 
-            {/* Instant matching list */}
             {searchTerm && (
               <div className="max-h-40 overflow-y-auto border border-[var(--border-color)] bg-[var(--bg-input)] rounded-xl divide-y divide-[var(--border-color)] shadow-inner">
                 {filteredProducts.length > 0 ? (
@@ -283,7 +308,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               </div>
             )}
 
-            {/* Shopping Cart */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase">
                 <ShoppingCart className="w-4 h-4" />
@@ -304,7 +328,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         <span className="text-[10px] text-[var(--color-primary)] font-heading mt-0.5 block">₱{getProductPrice(item.product).toFixed(2)}</span>
                       </div>
 
-                      {/* Item Quantity counter */}
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
@@ -334,7 +357,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               )}
             </div>
 
-            {/* Payment Methods */}
             {cart.length > 0 && (
               <div className="space-y-3 border-t border-[var(--border-color)] pt-3">
                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
@@ -410,9 +432,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               </div>
             )}
 
-            {/* Total summary */}
             {cart.length > 0 && (
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-[var(--border-color)] space-y-1 text-xs font-sans">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-[var(--border-color)] space-y-1.5 text-xs font-sans">
                 <div className="flex justify-between text-slate-500">
                   <span>Unique Items:</span>
                   <span>{cart.length} items</span>
@@ -421,9 +442,15 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   <span>Total Units:</span>
                   <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>
                 </div>
+                {paymentMethod === 'GCash' && gcashFee > 0 && (
+                  <div className="flex justify-between text-slate-500">
+                    <span>GCash Fee Applied:</span>
+                    <span className="text-rose-500 font-bold">+₱{gcashFee.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="border-t border-[var(--border-color)] pt-1.5 flex justify-between font-heading text-sm text-[var(--color-text)]">
                   <span>TOTAL PAYABLE:</span>
-                  <span className="text-[var(--color-primary)]">
+                  <span className="text-[var(--color-primary)] font-extrabold">
                     ₱{totalPayable.toFixed(2)}
                   </span>
                 </div>
@@ -433,7 +460,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             <div className="pt-3">
               <Button
                 onClick={handleCompleteSale}
-                variant="primary"
                 disabled={cart.length === 0 || isSubmitting}
                 className={`py-3.5 ${isSubmitting ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
               >

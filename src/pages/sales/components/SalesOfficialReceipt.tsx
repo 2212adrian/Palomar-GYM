@@ -50,6 +50,17 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     return 'N/A';
   }, [tx, createdAtStr]);
 
+  // Extract recorded GCash Fee Applied from ledger
+  const gcashFeeApplied = useMemo(() => {
+    const val = tx?.gcash_fee_applied !== undefined ? tx.gcash_fee_applied : tx?.gcashFeeApplied;
+    return val !== null && val !== undefined ? Number(val) : 0;
+  }, [tx]);
+
+  // Derive pure product cost subtotal (excludes transaction fees)
+  const itemsSubtotal = useMemo(() => {
+    return totalAmount - gcashFeeApplied;
+  }, [totalAmount, gcashFeeApplied]);
+
   // Load backend branding & tax rates configuration profiles
   useEffect(() => {
     if (!isOpen) return;
@@ -109,13 +120,13 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     return [{
       productName: tx.product_name || tx.productName || 'Catalog Product',
       quantity: tx.quantity || 1,
-      price: totalAmount / (tx.quantity || 1)
+      price: itemsSubtotal / (tx.quantity || 1)
     }];
-  }, [tx, totalAmount]);
+  }, [tx, itemsSubtotal]);
 
   // --- COMPREHENSIVE TAX MATRICES ---
   const { vatableSales, vatAmount } = useMemo(() => {
-    const subtotal = totalAmount;
+    const subtotal = itemsSubtotal;
     if (vatEnabled && vatPercentage > 0) {
       const vatFactor = 1 + (vatPercentage / 100);
       const calculatedVatable = subtotal / vatFactor;
@@ -128,7 +139,7 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
       vatableSales: subtotal,
       vatAmount: 0.00
     };
-  }, [totalAmount, vatEnabled, vatPercentage]);
+  }, [itemsSubtotal, vatEnabled, vatPercentage]);
 
   // --- NATIVE ISOLATED SANDBOX PRINTER ---
   const handlePrintReceipt = () => {
@@ -208,7 +219,8 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     const baseHeight = 580;
     const itemsHeightBonus = receiptItems.length * 22;
     const cashMetaHeightBonus = (paymentMethod === 'Cash' && amountReceived !== null) ? 40 : 20;
-    canvas.height = baseHeight + itemsHeightBonus + cashMetaHeightBonus;
+    const gcashFeeHeightBonus = gcashFeeApplied > 0 ? 20 : 0;
+    canvas.height = baseHeight + itemsHeightBonus + cashMetaHeightBonus + gcashFeeHeightBonus;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -315,7 +327,19 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
     ctx.textAlign = 'right';
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(`₱${totalAmount.toFixed(2)}`, 370, itemY);
+    ctx.fillText(`₱${itemsSubtotal.toFixed(2)}`, 370, itemY);
+
+    if (gcashFeeApplied > 0) {
+      itemY += 18;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('GCASH CONVENIENCE FEE', 30, itemY);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(`+₱${gcashFeeApplied.toFixed(2)}`, 370, itemY);
+    }
 
     itemY += 15;
     ctx.fillStyle = '#f8fafc';
@@ -500,7 +524,15 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
             <div className="border-b border-dashed border-slate-200" />
 
             <div className="space-y-1.5 text-xs text-slate-900">
-              <div className="flex justify-between font-bold text-[9px]"><span className="text-slate-500">SUBTOTAL</span><span>₱{totalAmount.toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold text-[9px]"><span className="text-slate-500">SUBTOTAL</span><span>₱{itemsSubtotal.toFixed(2)}</span></div>
+              
+              {gcashFeeApplied > 0 && (
+                <div className="flex justify-between font-bold text-[9px] text-slate-700">
+                  <span className="text-slate-500">GCASH CONVENIENCE FEE</span>
+                  <span className="text-rose-500 font-extrabold">+₱{gcashFeeApplied.toFixed(2)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-extrabold text-xs">
                 <span>TOTAL PAID</span><span className="text-[#bf0202]">₱{totalAmount.toFixed(2)}</span>
               </div>
@@ -554,7 +586,7 @@ export const SalesOfficialReceipt: React.FC<SalesOfficialReceiptProps> = ({
             type="button"
             disabled={loadingConfig}
             onClick={handlePrintReceipt}
-            className="py-3 px-4 bg-[var(--bg-input)] hover:bg-slate-800 disabled:opacity-50 text-[var(--color-text)] border border-[var(--border-color)] font-heading text-[9.5px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
+            className="py-3 px-4 bg-(--bg-input) hover:bg-slate-800 disabled:opacity-50 text-(--color-text) border border-(--border-color) font-heading text-[9.5px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
           >
             <Printer className="w-4 h-4" />
             <span>Print Receipt</span>
