@@ -6,7 +6,6 @@ import {
   startOfWeek, 
   endOfWeek, 
   addDays, 
-  subDays, 
   isToday, 
   startOfDay, 
   addWeeks, 
@@ -21,18 +20,25 @@ import {
   ChevronLeft, 
   ChevronRight, 
   RotateCcw, 
-  Check, 
   ShoppingBag, 
   FileSpreadsheet,
   Printer 
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { toast } from 'react-toastify';
+
+import 'react-loading-skeleton/dist/skeleton.css';
+
+// Supabase & Authentication Stores
+import { supabase } from '../../lib/supabase/client'; 
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
 import { UndoToast } from '../../components/ui/UndoToast'; 
 import { TabLoader } from '../../components/ui/TabLoader'; 
+import { Modal } from '../../components/ui/Modal';
 import { HeaderActionsContext } from '../../routes';
 import { SalesDialog } from './components/SalesDialog';
 import { Products } from './Products'; 
@@ -43,174 +49,313 @@ import { SalesRecycleBin } from './components/SalesRecycleBin';
 import { SalesOfficialReceipt } from './components/SalesOfficialReceipt';
 import { SalesReportCompiler } from './components/SalesReportCompiler';
 
-// Explicitly type and define layout days loop
 const DAYS_OF_WEEK: string[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-const DEFAULT_PRODUCTS = [
-  { id: 'p1', name: 'Whey Protein Shake', sellingPrice: 150, stock: 25, barcode: '10001', manufacturerBarcode: '4801234567890', image: '', hidden: false },
-  { id: 'p2', name: 'Pre-Workout Energy Drink', sellingPrice: 120, stock: 40, barcode: '10002', manufacturerBarcode: '4802234567891', image: '', hidden: false },
-  { id: 'p3', name: 'Palomar Gym Lift Straps', sellingPrice: 350, stock: 15, barcode: '10003', manufacturerBarcode: '4803234567892', image: '', hidden: false },
-  { id: 'p4', name: 'Mineral Water (500ml)', sellingPrice: 25, stock: 100, barcode: '10004', manufacturerBarcode: '4804234567893', image: '', hidden: false },
-  { id: 'p5', name: 'Creatine Monohydrate (300g)', sellingPrice: 950, stock: 10, barcode: '10005', manufacturerBarcode: '4805234567894', image: '', hidden: false },
-  { id: 'p6', name: 'Premium Gym Towel', sellingPrice: 250, stock: 0, barcode: '10006', manufacturerBarcode: '4806234567895', image: '', hidden: false },
-];
-
-// --- GLOBAL TODAY TRANSACTION ONLY ROLLBACK FILTER ---
 const isTransactionDeletable = (tx: any) => {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  return tx.date === todayStr;
+  const txDate = tx.created_at ? format(new Date(tx.created_at), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  return txDate === todayStr;
 };
 
-const seedDataIfEmpty = () => {
-  if (!localStorage.getItem('products')) {
-    localStorage.setItem('products', JSON.stringify(DEFAULT_PRODUCTS));
-  }
-  if (!localStorage.getItem('transactions')) {
-    const today = new Date();
-    const yesterday = subDays(today, 1);
-    const threeDaysAgo = subDays(today, 3);
+// =============================================================================
+// SUB-COMPONENT: TRANSACTION SKELETON (Renders custom loading placeholders)
+// =============================================================================
+const TransactionSkeleton: React.FC = () => {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
+      <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
+        {/* Left indicator mock */}
+        <div className="flex flex-col items-center gap-1.5 shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+          <div className="h-4 w-12 bg-slate-200/60 dark:bg-zinc-800/60 rounded mt-0.5" />
+        </div>
 
-    const defaultTransactions = [
-      {
-        id: 'TX-90210',
-        items: [
-          { productId: 'p1', productName: 'Whey Protein Shake', quantity: 2, price: 150 }
-        ],
-        productName: '2x Whey Protein Shake',
-        barcode: '10001',
-        quantity: 2,
-        paymentMethod: 'Cash',
-        amountReceived: 300,
-        changeCalculated: 0,
-        totalAmount: 300,
-        createdAt: format(today, "yyyy-MM-dd'T'14:22:00"),
-        date: format(today, 'yyyy-MM-dd'),
-      },
-      {
-        id: 'TX-90211',
-        items: [
-          { productId: 'p2', productName: 'Pre-Workout Energy Drink', quantity: 1, price: 120 }
-        ],
-        productName: '1x Pre-Workout Energy Drink',
-        barcode: '10002',
-        quantity: 1,
-        paymentMethod: 'GCash',
-        referenceNumber: 'REF-119381A',
-        totalAmount: 120,
-        createdAt: format(today, "yyyy-MM-dd'T'10:15:00"),
-        date: format(today, 'yyyy-MM-dd'),
-      },
-      {
-        id: 'TX-90212',
-        items: [
-          { productId: 'p4', productName: 'Mineral Water (500ml)', quantity: 4, price: 25 }
-        ],
-        productName: '4x Mineral Water (500ml)',
-        barcode: '10004',
-        quantity: 4,
-        paymentMethod: 'Cash',
-        amountReceived: 100,
-        changeCalculated: 0,
-        totalAmount: 100,
-        createdAt: format(yesterday, "yyyy-MM-dd'T'16:45:00"),
-        date: format(yesterday, 'yyyy-MM-dd'),
-      },
-      {
-        id: 'TX-90213',
-        items: [
-          { productId: 'p3', productName: 'Palomar Gym Lift Straps', quantity: 1, price: 350 }
-        ],
-        productName: '1x Palomar Gym Lift Straps',
-        barcode: '10003',
-        quantity: 1,
-        paymentMethod: 'GCash',
-        referenceNumber: 'REF-229103B',
-        totalAmount: 350,
-        createdAt: format(yesterday, "yyyy-MM-dd'T'11:05:00"),
-        date: format(yesterday, 'yyyy-MM-dd'),
-      },
-      {
-        id: 'TX-90214',
-        items: [
-          { productId: 'p5', productName: 'Creatine Monohydrate (300g)', quantity: 1, price: 950 }
-        ],
-        productName: '1x Creatine Monohydrate (300g)',
-        barcode: '10005',
-        quantity: 1,
-        paymentMethod: 'Cash',
-        amountReceived: 1000,
-        changeCalculated: 50,
-        totalAmount: 950,
-        createdAt: format(threeDaysAgo, "yyyy-MM-dd'T'09:30:00"),
-        date: format(threeDaysAgo, 'yyyy-MM-dd'),
-      },
-    ];
-    localStorage.setItem('transactions', JSON.stringify(defaultTransactions));
-  }
+        {/* Content details block mock */}
+        <div className="min-w-0 flex-1 text-left space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="h-4.5 w-40 sm:w-56 bg-slate-200/60 dark:bg-zinc-800/60 rounded" />
+            <div className="h-4.5 w-16 bg-slate-100 dark:bg-zinc-800/80 rounded-full border border-(--border-color)" />
+          </div>
+
+          {/* Sub-item badges mock */}
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            <div className="h-5 w-24 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
+            <div className="h-5 w-32 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
+          </div>
+
+          {/* Metadata placeholders */}
+          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+            <div className="h-3 w-28 bg-slate-200/30 dark:bg-zinc-800/20 rounded" />
+            <span className="text-slate-200 dark:text-zinc-800">•</span>
+            <div className="h-3 w-16 bg-slate-200/30 dark:bg-zinc-800/20 rounded" />
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop action buttons mock */}
+      <div className="hidden md:flex items-center gap-2 shrink-0">
+        <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+        <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+      </div>
+    </div>
+  );
+};
+
+// =============================================================================
+// SUB-COMPONENT: TRANSACTION CARD (Isolates swipe physics cleanly) [3.1]
+// =============================================================================
+interface TransactionCardProps {
+  tx: any;
+  canDeleteTx: boolean;
+  onSelectReceipt: (tx: any) => void;
+  onTriggerDelete: (tx: any) => void;
+  onDragEnd: (_event: any, info: any, tx: any) => void;
+}
+
+const TransactionCard: React.FC<TransactionCardProps> = ({
+  tx,
+  canDeleteTx,
+  onSelectReceipt,
+  onTriggerDelete,
+  onDragEnd
+}) => {
+  const x = useMotionValue(0);
+
+  // Derive a clamped motion value so the card physically stops sliding at ±120px [3.1]
+  const clampedX = useTransform(x, (value) => Math.min(Math.max(value, -120), 120));
+
+  // Map reveal track opacities to clampedX with explicit boundaries to prevent extrapolation [3.1]
+  const receiptOpacity = useTransform(clampedX, [0, 80], [0, 1], { clamp: true });
+  const removeOpacity = useTransform(clampedX, [-80, 0], [1, 0], { clamp: true });
+
+  const totalUnits = tx.quantity || tx.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 1;
+  const formattedTime = tx.created_at ? format(parseISO(tx.created_at), 'hh:mm a') : 'N/A';
+
+  const summaryHeader = useMemo(() => {
+    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+      const firstItem = tx.items[0];
+      const firstItemName = firstItem.productName || firstItem.product_name;
+      if (tx.items.length > 1) {
+        return `${firstItemName} & ${tx.items.length - 1} other item${tx.items.length - 1 > 1 ? 's' : ''}`;
+      }
+      return firstItemName;
+    }
+    return tx.product_name || tx.productName || 'Sales Transaction';
+  }, [tx]);
+
+  // Determine if payment is GCash and extract reference metadata
+  const isGCash = tx.payment_method === 'GCash' || tx.paymentMethod === 'GCash';
+  const refNumber = tx.reference_number || tx.referenceNumber;
+  const receivedAmount = Number(tx.amount_received || tx.amountReceived || 0);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)">
+      {/* --- SWIPE REVEAL BACKGROUND TRACK COLOR MODULES WITH SUBPIXEL PROTECTION [3.1] --- */}
+      <div className="absolute inset-px rounded-[15px] pointer-events-none select-none z-0 overflow-hidden">
+        {/* Left Reveal (Swipe Right -> Open Blue Receipt) [3.1] */}
+        <motion.div 
+          style={{ opacity: receiptOpacity }}
+          className="absolute inset-y-0 left-0 bg-blue-600 dark:bg-blue-750 flex items-center pl-6 text-white text-[10px] font-heading tracking-wider font-extrabold w-1/2"
+        >
+          RECEIPT
+        </motion.div>
+        
+        {/* Right Reveal (Swipe Left -> Delete Red Remove) [3.1] */}
+        <motion.div 
+          style={{ opacity: removeOpacity }}
+          className="absolute inset-y-0 right-0 bg-rose-600 dark:bg-rose-700 flex items-center justify-end pr-6 text-white text-[10px] font-heading tracking-wider font-extrabold w-1/2"
+        >
+          REMOVE
+        </motion.div>
+      </div>
+
+      {/* --- SLIDING CARD ELEMENT LAYER --- */}
+      <motion.div
+        style={{ x: clampedX }} // Bind to the clamped value to apply the drag boundaries
+        drag="x"
+        dragDirectionLock={true} // Locks drag axis to X only
+        dragConstraints={{ left: 0, right: 0 }} // Snaps card back to origin on release
+        dragElastic={{ left: 0.5, right: 0.5 }}
+        onDragEnd={(e, info) => onDragEnd(e, info, tx)}
+        whileTap={{ scale: 0.99 }}
+        className="pointer-events-auto bg-(--bg-card) p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 cursor-pointer relative overflow-hidden select-none z-10 touch-none"
+      >
+        {/* ABSOLUTE TOP-RIGHT RECEIVED METRIC OR GCASH REFERENCE */}
+        <div className="absolute top-3 right-4 text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 whitespace-nowrap">
+          {isGCash ? (
+            refNumber ? `REF: ${refNumber}` : 'GCASH PAYMENT'
+          ) : (
+            `RECEIVED: ₱${receivedAmount.toFixed(2)}`
+          )}
+        </div>
+
+        <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
+          {/* Left indicator column: PCS Box & Total Cost directly below */}
+          <div className="flex flex-col items-center gap-1.5 shrink-0 select-none">
+            {/* Pieces count indicator */}
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-(--color-primary) dark:text-(--color-primary-light) border border-(--border-color) flex flex-col items-center justify-center">
+              <span className="text-[14px] font-heading font-extrabold leading-none">{totalUnits}</span>
+              <span className="text-[8px] font-heading font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">PCS</span>
+            </div>
+            {/* Price below indicator box */}
+            <div className="text-xs font-heading font-extrabold text-(--color-text) mt-0.5 whitespace-nowrap">
+              ₱{Number(tx.total_amount || tx.totalAmount).toFixed(2)}
+            </div>
+          </div>
+
+          <div className="min-w-0 flex-1 text-left space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm font-bold text-(--color-text) truncate">{summaryHeader}</h4>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 font-sans tracking-wider border border-(--border-color) shrink-0">
+                {tx.receipt_no}
+              </span>
+            </div>
+            
+            {/* Compact horizontal product badges */}
+            <div className="flex flex-wrap gap-1.5">
+              {tx.items && Array.isArray(tx.items) ? (
+                tx.items.map((item: any, idx: number) => (
+                  <span 
+                    key={idx} 
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-800/80 text-[10px] font-sans text-slate-600 dark:text-slate-400 border border-(--border-color) max-w-45 shrink-0"
+                  >
+                    <span className="font-heading font-extrabold text-[9px] text-(--color-primary-light)">
+                      {item.quantity}x
+                    </span>
+                    <span className="truncate">{item.productName || item.product_name}</span>
+                  </span>
+                ))
+              ) : (
+                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  {tx.product_name || tx.productName}
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span>Payment: {tx.payment_method}</span>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <span>Time: {formattedTime}</span>
+              {tx.change_calculated > 0 && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700">•</span>
+                  <span className="text-slate-455">Change: ₱{Number(tx.change_calculated).toFixed(2)}</span>
+                </>
+              )}
+              {tx.gcash_fee_applied > 0 && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700">•</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">+₱{Number(tx.gcash_fee_applied).toFixed(2)} Fee</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* --- DESKTOP ACTION COLUMN --- */}
+        <div className="hidden md:flex items-center gap-2 shrink-0 select-none">
+          {/* View Receipt Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectReceipt(tx);
+            }}
+            className="p-3 text-blue-500 dark:text-blue-400 hover:bg-blue-500/10 rounded-xl transition-all border border-transparent hover:border-blue-500/20 cursor-pointer shrink-0"
+            title="View Receipt"
+          >
+            <Printer className="w-4.5 h-4.5" />
+          </button>
+
+          {/* Remove Transaction Button */}
+          {canDeleteTx && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTriggerDelete(tx);
+              }}
+              className="p-3 text-red-500 dark:text-rose-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20 cursor-pointer shrink-0"
+              title="Remove this sale"
+            >
+              <Trash2 className="w-4.5 h-4.5" />
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
 };
 
 export const Sales: React.FC = () => {
   const { setActions } = useContext(HeaderActionsContext);
-  const [isMobileProductsMenuOpen, setIsMobileProductsMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { subview } = useParams<{ subview: string }>();
 
-  // activeView is derived from URL parameters to avoid resets during transitions
   const activeView = useMemo<'register' | 'inventory'>(() => {
     return subview === 'products' ? 'inventory' : 'register';
   }, [subview]);
 
-  // --- STATE FOR ROLE SIMULATION ---
-  const [role, setRole] = useState<'admin' | 'staff'>('admin');
+  const { user, profile } = useAuthStore() as any;
+  const role = useMemo<'admin' | 'staff'>(() => {
+    if (isSuperAdmin(user?.email)) return 'admin';
+    return (profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff');
+  }, [user, profile]);
 
-  // --- LEDGER TIMELINE STATES ---
+  const handlePcViewTransition = (view: 'register' | 'inventory') => {
+    if (view === 'inventory') {
+      navigate('/sales/products');
+    } else {
+      navigate('/sales');
+    }
+  };
+
+  useEffect(() => {
+    if (role === 'staff' && activeView === 'inventory') {
+      navigate('/sales', { replace: true });
+    }
+  }, [role, activeView, navigate]);
+
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
     startOfWeek(new Date(), { weekStartsOn: 0 })
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
   const [ledgerSearch, setLedgerSearch] = useState('');
   
-  // --- INVENTORY & TRANSACTION LOGS ---
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [ratesConfig, setRatesConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
-  // Pagination hook values
   const itemsPerPage = useResponsiveItemsPerPage();
   const [currentPage, setCurrentPage] = useState(1);
 
-  // POS Dialog toggle state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-
-  // Receipt Modal target state
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
-
-  // --- UNDO TOAST STATE STAGING ---
-  const [stagedDeletedTx, setStagedDeletedTx] = useState<any | null>(null);
-  const [isUndoToastOpen, setIsUndoToastOpen] = useState(false);
-
-  // --- DYNAMIC SALES REPORT COMPILER TOGGLE ---
+  const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  // Reference for the hidden Native date picker
   const dateInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync back to Topbar if we toggle view via PC boundaries or header slider
-  const handlePcViewTransition = (view: 'register' | 'inventory') => {
-    if (view === 'inventory') {
-      navigate('/sales/products');
-    } else {
-      navigate('/sales/register');
-    }
+  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
+  const [confirmDeleteTx, setConfirmDeleteTx] = useState<any | null>(null);
+
+  // Tracks nested selected product count to dynamically hide topbar actions
+  const [selectedProductsCount, setSelectedProductsCount] = useState(0);
+
+  const getProductThumbnail = (productId: string) => {
+    const matched = products.find(p => p.id === productId);
+    return matched?.image_url || matched?.image || null;
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) return;
     const pickedDate = new Date(e.target.value);
     
-    // Enforce role-based lockouts
     if (!isTabSelectable(pickedDate)) {
-      toast.warning(role === 'staff' ? 'Staff can only select today.' : 'Future dates are locked.');
+      toast.warning(role === 'staff' ? 'Staff members are only allowed to view today’s records.' : 'You cannot select dates in the future.');
       return;
     }
 
@@ -221,42 +366,115 @@ export const Sales: React.FC = () => {
     setSelectedDayIndex(dayIndex);
   };
 
-  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
-  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-  const [, setDeletedTransactions] = useState<any[]>([]);
-
-  // Load deleted transactions on mount
   useEffect(() => {
-    const deleted = localStorage.getItem('deleted_transactions') || '[]';
-    setDeletedTransactions(JSON.parse(deleted));
-  }, []);
+    if (role !== 'admin') return;
 
-  // Listen to Topbar mobile slide toggles
-  useEffect(() => {
     const handleSalesSlide = (e: Event) => {
       const customEvent = e as CustomEvent<'register' | 'inventory'>;
       if (customEvent.detail === 'inventory') {
         navigate('/sales/products');
       } else {
-        navigate('/sales/register');
+        navigate('/sales');
       }
     };
     window.addEventListener('toggle-sales-view', handleSalesSlide);
     return () => window.removeEventListener('toggle-sales-view', handleSalesSlide);
-  }, [navigate]);
+  }, [navigate, role]);
 
-  // Load Data
-  const loadLocalStorageData = () => {
-    const tx = localStorage.getItem('transactions') || '[]';
-    const prod = localStorage.getItem('products') || '[]';
-    setTransactions(JSON.parse(tx));
-    setProducts(JSON.parse(prod));
+  // Listens to product selection events triggered by Products component
+  useEffect(() => {
+    const handleSelectionChange = (e: Event) => {
+      const customEvent = e as CustomEvent<number>;
+      setSelectedProductsCount(customEvent.detail);
+    };
+    window.addEventListener('product-selection-change', handleSelectionChange);
+    return () => {
+      window.removeEventListener('product-selection-change', handleSelectionChange);
+    };
+  }, []);
+
+  const fetchRatesConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rates_config')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      if (!error && data) {
+        setRatesConfig(data);
+      }
+    } catch (err) {
+      console.error('Error fetching rates_config:', err);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      let query = supabase
+        .from('sales')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+
+      if (role === 'staff') {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        query = query.gte('created_at', todayStart.toISOString());
+      } else {
+        const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 0 }).toISOString();
+        const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 0 }).toISOString();
+        query = query.gte('created_at', weekStart).lte('created_at', weekEnd);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setTransactions(data || []);
+    } catch (err) {
+      console.error('Error loading sales ledger:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .is('deleted_at', null)
+        .order('product_name', { ascending: true });
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (err) {
+      console.error('Error loading products list:', err);
+    }
   };
 
   useEffect(() => {
-    seedDataIfEmpty();
-    loadLocalStorageData();
-  }, []);
+    fetchRatesConfig();
+    fetchProducts();
+    fetchTransactions();
+
+    const salesChannel = supabase
+      .channel('sales-realtime-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
+        fetchTransactions();
+      })
+      .subscribe();
+
+    const productsChannel = supabase
+      .channel('products-realtime-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        fetchProducts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(salesChannel);
+      supabase.removeChannel(productsChannel);
+    };
+  }, [currentWeekStart, role]);
 
   const isCurrentWeek = useMemo(() => {
     const realWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
@@ -284,14 +502,13 @@ export const Sales: React.FC = () => {
       }
       setSelectedDayIndex(fallbackIndex);
     }
-    setCurrentPage(1); // Reset page on day select
+    setCurrentPage(1);
   }, [currentWeekStart, role]);
 
   const selectedDate = useMemo(() => {
     return addDays(currentWeekStart, selectedDayIndex);
   }, [currentWeekStart, selectedDayIndex]);
 
-  // SELECTED WEEK DATE RANGE FOR ADMIN, DAY FOR STAFF
   const stickyHeaderDateText = useMemo(() => {
     if (role === 'admin') {
       const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 0 });
@@ -305,26 +522,26 @@ export const Sales: React.FC = () => {
     }
   }, [role, selectedDate, currentWeekStart]);
 
-  // Ledger Filter logic
   const dayTransactions = useMemo(() => {
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    return transactions.filter((t: any) => t.date === dateStr);
+    return transactions.filter((t: any) => {
+      const transactionDate = t.created_at ? format(new Date(t.created_at), 'yyyy-MM-dd') : '';
+      return transactionDate === dateStr;
+    });
   }, [selectedDate, transactions]);
 
   const filteredDayTransactions = useMemo(() => {
     return dayTransactions.filter((t: any) => {
       const q = ledgerSearch.toLowerCase();
       return (
-        t.productName?.toLowerCase().includes(q) ||
-        t.barcode?.toLowerCase().includes(q) ||
+        t.product_name?.toLowerCase().includes(q) ||
+        t.receipt_no?.toLowerCase().includes(q) ||
         t.id?.toLowerCase().includes(q) ||
-        (t.referenceNumber && t.referenceNumber.toLowerCase().includes(q)) ||
-        t.paymentMethod?.toLowerCase().includes(q)
+        t.payment_method?.toLowerCase().includes(q)
       );
     });
   }, [dayTransactions, ledgerSearch]);
 
-  // AUTO-PAGINATION SLICING
   const totalItems = filteredDayTransactions.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -337,94 +554,146 @@ export const Sales: React.FC = () => {
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const dailyRevenue = useMemo(() => {
-    return dayTransactions.reduce((acc, t) => acc + (t.totalAmount || 0), 0);
+    return dayTransactions.reduce((acc, t) => acc + (Number(t.total_amount) || 0), 0);
   }, [dayTransactions]);
 
   const dailyCount = useMemo(() => {
     return dayTransactions.length;
   }, [dayTransactions]);
 
-  const handleSaleSuccess = (newTx: any, updatedProductsList: any[]) => {
+  const handleSaleSuccess = async (newTx: any) => {
     setLoading(true);
-    setTimeout(() => {
-      localStorage.setItem('products', JSON.stringify(updatedProductsList));
-      const allTx = [newTx, ...transactions];
-      localStorage.setItem('transactions', JSON.stringify(allTx));
+    try {
+      const calculatedGcashFee = newTx.paymentMethod === 'GCash' ? (ratesConfig?.gcash_fee || 10.00) : 0.00;
 
-      loadLocalStorageData();
-      setLoading(false);
-      toast.success('Sales transaction committed to ledger.');
-    }, 600);
+      const { error } = await supabase
+        .from('sales')
+        .insert([{
+          items: newTx.items,
+          product_name: newTx.productName,
+          payment_method: newTx.paymentMethod,
+          amount_received: newTx.amountReceived,
+          change_calculated: newTx.changeCalculated,
+          total_amount: newTx.totalAmount,
+          gcash_fee_applied: calculatedGcashFee
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (newTx.items && Array.isArray(newTx.items)) {
+        for (const item of newTx.items) {
+          const { data: currentProduct } = await supabase
+            .from('products')
+            .select('stock_quantity')
+            .eq('id', item.productId)
+            .single();
+
+          if (currentProduct) {
+            const currentStock = currentProduct.stock_quantity ?? 0;
+            const updatedStock = Math.max(0, currentStock - item.quantity);
+            
+            await supabase
+              .from('products')
+              .update({ stock_quantity: updatedStock })
+              .eq('id', item.productId);
+          }
+        }
+      }
+
+      // Log action in audit history with Tab/Newline formatting
+      const itemsList = newTx.items?.map((i: any) => `\t- ${i.productName} (${i.quantity}x)`).join('\n') || `\t- ${newTx.productName}`;
+      const auditDetails = `Recorded sale transaction: ${newTx.id}\n` +
+        `Payment Method: ${newTx.paymentMethod}\n` +
+        `Total Amount: ₱${newTx.totalAmount.toFixed(2)}\n\n` +
+        `Items Purchased:\n${itemsList}`;
+
+      await supabase.from('audit_logs').insert([{
+        action: 'SALE_RECORDED',
+        details: auditDetails,
+        actor_username: user?.email || 'System'
+      }]);
+
+      // Friendly non-technical success summary toast
+      if (newTx.items && newTx.items.length === 1) {
+        const singleItem = newTx.items[0];
+        toast.success(`Success! ${singleItem.productName} (${singleItem.quantity}x) has been successfully saved to your sale.`);
+      } else if (newTx.items && newTx.items.length > 1) {
+        const summaryText = newTx.items.map((i: any) => `${i.productName} (${i.quantity}x)`).join(', ');
+        toast.success(`Success! Saved to your sale: ${summaryText}.`);
+      } else {
+        toast.success('Your sale has been successfully saved.');
+      }
+
+      fetchTransactions();
+      fetchProducts();
+    } catch (err) {
+      console.error(err);
+      toast.error('There was a problem saving your transaction. Please try again.');
+    } 
   };
 
   const handleDeleteTransaction = (tx: any) => {
     if (!isTransactionDeletable(tx)) {
-      toast.error('Rollback Lock: Only current day sales may be deleted.');
+      toast.error('Only sales made today can be deleted.');
       return;
     }
 
-    setStagedDeletedTx(tx);
-    setIsUndoToastOpen(true);
-
+    setStagedDeletions(prev => [...prev, tx]);
     setTransactions(prev => prev.filter(t => t.id !== tx.id));
   };
 
-  const handleConfirmDelete = () => {
-    if (!stagedDeletedTx) return;
+  const handleConfirmDelete = async (stagedTx: any) => {
+    try {
+      const { error } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', stagedTx.id);
 
-    // Move to permanently deleted list in localStorage
-    const txString = localStorage.getItem('transactions') || '[]';
-    const allTx = JSON.parse(txString);
-    const updatedTx = allTx.filter((t: any) => t.id !== stagedDeletedTx.id);
-    localStorage.setItem('transactions', JSON.stringify(updatedTx));
+      if (error) throw error;
 
-    // SAVE TO DAILY RECYCLE BIN
-    const deletedString = localStorage.getItem('deleted_transactions') || '[]';
-    const deletedTxList = JSON.parse(deletedString);
-    
-    // Append current deletion
-    const archivedTx = { ...stagedDeletedTx, archivedAt: new Date().toISOString() };
-    deletedTxList.unshift(archivedTx);
-    localStorage.setItem('deleted_transactions', JSON.stringify(deletedTxList));
-    setDeletedTransactions(deletedTxList);
+      // Log action in audit history with Tab/Newline formatting
+      const itemsList = stagedTx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${stagedTx.product_name}`;
+      const auditDetails = `Moved sale transaction to Recycle Bin: ${stagedTx.receipt_no || stagedTx.id}\n` +
+        `Payment Method: ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}\n` +
+        `Total Amount: ₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)}\n\n` +
+        `Items Removed:\n${itemsList}`;
 
-    // Restore Stock
-    const restoredProducts = products.map((p: any) => {
-      const txItems = stagedDeletedTx.items || [{ productId: stagedDeletedTx.productId, quantity: stagedDeletedTx.quantity }];
-      const matchedItem = txItems.find((item: any) => item.productId === p.id);
-      if (matchedItem) {
-        const stock = p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : -1);
-        if (stock !== null && stock !== undefined && stock !== -1) {
-          const restoredStock = stock + matchedItem.quantity;
-          return p.stock_quantity !== undefined ? { ...p, stock_quantity: restoredStock } : { ...p, stock: restoredStock };
-        }
-      }
-      return p;
-    });
-    localStorage.setItem('products', JSON.stringify(restoredProducts));
+      await supabase.from('audit_logs').insert([{
+        action: 'SALE_REMOVED',
+        details: auditDetails,
+        actor_username: user?.email || 'System'
+      }]);
 
-    setStagedDeletedTx(null);
-    setIsUndoToastOpen(false);
-    loadLocalStorageData();
-    toast.success('Transaction deleted. Stored in daily Recycle Bin.');
+      toast.success('This sale has been deleted and moved to your Recycle Bin.');
+    } catch (err) {
+      console.error(err);
+      toast.error('There was a problem deleting this sale. Please try again.');
+    } finally {
+      setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
+      fetchTransactions();
+      fetchProducts();
+    }
   };
 
-  const handleUndoDelete = () => {
-    if (!stagedDeletedTx) return;
-    
-    setTransactions(prev => [stagedDeletedTx, ...prev].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-    setStagedDeletedTx(null);
-    setIsUndoToastOpen(false);
-    toast.info('Deletion rolled back.');
+  const handleUndoDelete = (stagedTx: any) => {
+    setTransactions(prev => [stagedTx, ...prev].sort((a, b) => {
+      const dateA = a.created_at || a.createdAt || '';
+      const dateB = b.created_at || b.createdAt || '';
+      return dateB.localeCompare(dateA);
+    }));
+    setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
+    toast.info('Deletion canceled. The transaction has been put back.');
   };
 
-  // Connect Top bar actions dynamically
+  // Synchronize topbar header actions on layout mounts
   useEffect(() => {
     if ((activeView as string) === 'register') {
       setActions(
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
           
-         {/* PERSISTENT DAILY REVENUE CHIP (PC ONLY) */}
+          {/* Standardized Today's Sales Status Box */}
 <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
   <div className="text-left">
     <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
@@ -434,44 +703,16 @@ export const Sales: React.FC = () => {
   </div>
 </div>
 
-          {/* SIMULATION CONTROLS */}
-          <div className="flex bg-slate-200 dark:bg-zinc-800 p-1 rounded-xl text-xs font-bold gap-1 shadow-inner select-none">
-            <button
-              type="button"
-              onClick={() => { setRole('admin'); toast.info('Simulating Admin View'); }}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                role === 'admin' 
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md font-bold' 
-                  : 'text-slate-505 dark:text-slate-400 hover:text-(--color-text)'
-              }`}
-            >
-              ADMIN
-            </button>
-            <button
-              type="button"
-              onClick={() => { setRole('staff'); toast.info('Simulating Staff View'); }}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                role === 'staff' 
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md font-bold' 
-                  : 'text-slate-505 dark:text-slate-400 hover:text-(--color-text)'
-              }`}
-            >
-              STAFF
-            </button>
-          </div>
-
           {role === 'admin' && (
             <>
-              {/* RECYCLE BIN ON PC */}
               <Button
-                onClick={() => setIsRecycleBinOpen(true)}
-                variant="secondary"
-                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
-                title="View and restore today's deleted transactions"
-              >
-                <RotateCcw className="w-4 h-4 text-amber-500" />
-                <span>RECYCLE BIN</span>
-              </Button>
+  onClick={() => setIsRecycleBinOpen(true)}
+  variant="secondary"
+  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+>
+  <RotateCcw className="w-4 h-4 text-amber-500" />
+  <span>RECYCLE BIN</span>
+</Button>
 
               <Button
                 onClick={() => setIsReportModalOpen(true)}
@@ -495,107 +736,117 @@ export const Sales: React.FC = () => {
         </div>
       );
     } else {
-      // RENDER PRODUCTS INVENTORY HEADER ACTIONS WHEN SWITCHED TO INVENTORY VIEW
-      setActions(
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
-          
-          {/* PERSISTENT DAILY REVENUE CHIP (PC ONLY) */}
-          <div className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-xl select-none leading-none">
-            <div className="text-left">
-              <span className="text-[7px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
-              <span className="text-xs font-heading text-(--color-primary) block mt-1">
-                ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
+      // activeView === 'inventory'
+      // Hide header actions if items are selected
+      if (selectedProductsCount > 0) {
+        setActions(null);
+      } else {
+        setActions(
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
+            
+           <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
+  <div className="text-left">
+    <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
+    <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
+      ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+    </span>
+  </div>
+</div>
+
+<Button
+  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
+  variant="secondary"
+  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+  title="View and restore soft-deleted products"
+>
+  <RotateCcw className="w-4 h-4 text-amber-500" />
+  <span>RECYCLE BIN</span>
+</Button>
+
+            <Button
+  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
+  variant="secondary"
+  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+>
+  <Printer className="w-4 h-4 text-blue-500" />
+  <span>PRINT SHEET LABELS</span>
+</Button>
+
+           <Button
+  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
+  variant="primary"
+  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+>
+  <Plus className="w-4 h-4" />
+  <span>ADD NEW ITEM</span>
+</Button>
           </div>
-
-          <button
-            onClick={() => setIsRecycleBinOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
-            <span>Recycle Bin</span>
-          </button>
-
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1e232d] hover:bg-slate-800 text-white border border-white/5 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-blue-500" />
-            <span>Print Sheet Labels</span>
-          </button>
-
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add New Item
-          </button>
-        </div>
-      );
+        );
+      }
     }
 
     return () => setActions(null);
-  }, [role, products, transactions, activeView, dailyRevenue]);
+  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
       <TabLoader isVisible={loading} />
 
-      {/* --- DESKTOP QUICK-VIEW SIDEBAR NAVIGATION TABS (PC ONLY) --- */}
-      <div className="hidden xl:block">
-        <AnimatePresence>
-          {(activeView as string) === 'register' ? (
-            <motion.button
-              key="to-inventory-arrow"
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 0.9, x: 0 }}
-              exit={{ opacity: 0, x: 30 }}
-              whileHover={{ scale: 1.02 }}
-              onClick={() => handlePcViewTransition('inventory')}
-              className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) pl-5 pr-4 py-6 rounded-l-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
-            >
-              <div className="text-right">
-                <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Store</span>
-                <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">INVENTORY</span>
-              </div>
-              <motion.div 
-                animate={{ x: [0, 4, 0] }} 
-                transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+      {/* --- DESKTOP NAVIGATION TABS (ADMIN ONLY) --- */}
+      {role === 'admin' && (
+        <div className="hidden xl:block">
+          <AnimatePresence>
+            {activeView === 'register' ? (
+              <motion.button
+                key="to-inventory-arrow"
+                initial={{ opacity: 0, x: 30 }}
+                animate={{ opacity: 0.9, x: 0 }}
+                exit={{ opacity: 0, x: 30 }}
+                whileHover={{ scale: 1.02 }}
+                onClick={() => handlePcViewTransition('inventory')}
+                className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) pl-5 pr-4 py-6 rounded-l-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
               >
-                <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
-              </motion.div>
-            </motion.button>
-          ) : (
-            <motion.button
-              key="to-register-arrow"
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 0.9, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
-              whileHover={{ scale: 1.02 }}
-              onClick={() => handlePcViewTransition('register')}
-              className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) pl-4 pr-5 py-6 rounded-r-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
-            >
-              <motion.div 
-                animate={{ x: [0, -4, 0] }} 
-                transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                <div className="text-right">
+                  <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Store</span>
+                  <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">INVENTORY</span>
+                </div>
+                <motion.div 
+                  animate={{ x: [0, 4, 0] }} 
+                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                >
+                  <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
+                </motion.div>
+              </motion.button>
+            ) : (
+              <motion.button
+                key="to-register-arrow"
+                initial={{ opacity: 0, x: -30 }}
+                animate={{ opacity: 0.9, x: 0 }}
+                exit={{ opacity: 0, x: -30 }}
+                whileHover={{ scale: 1.02 }}
+                onClick={() => handlePcViewTransition('register')}
+                className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) pl-4 pr-5 py-6 rounded-r-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
               >
-                <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
-              </motion.div>
-              <div className="text-left">
-                <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Cashier</span>
-                <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">REGISTER</span>
-              </div>
-            </motion.button>
-          )}
-        </AnimatePresence>
-      </div>
+                <motion.div 
+                  animate={{ x: [0, -4, 0] }} 
+                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                >
+                  <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
+                </motion.div>
+                <div className="text-left">
+                  <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Cashier</span>
+                  <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">REGISTER</span>
+                </div>
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
-      {/* --- PC/MOBILE ADAPTIVE SLIDER CANVAS --- */}
+      {/* --- TIMELINE CANVAS SCROLLER --- */}
       <div className="relative w-full h-full min-h-[80vh] overflow-hidden grid grid-cols-1 items-start">
         
-        {/* --- VIEW 1: CASHIER REGISTER (Slides out to the left) --- */}
+        {/* VIEW 1: CASHIER REGISTER */}
         <div 
           className="w-full h-full space-y-6 max-w-4xl mx-auto px-6 sm:px-12 pb-36 animate-fade-in"
           style={{
@@ -607,7 +858,7 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* --- WEEKLY TIMELINE SCROLLER STICKY CARD CONTAINER --- */}
+          {/* WEEKLY TIMELINE SCROLLER */}
           <div className="sticky top-0 z-30 bg-(--bg-page)/95 backdrop-blur-md pt-2 pb-4 -mx-6 px-6 sm:-mx-12 sm:px-12 border-b border-(--border-color) shadow-xs flex flex-col gap-4 animate-slide-down">
             <div className="flex items-center justify-between gap-2">
               
@@ -616,7 +867,7 @@ export const Sales: React.FC = () => {
                   onClick={() => setCurrentWeekStart(prev => subWeeks(prev, 1))}
                   className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-all cursor-pointer"
                 >
-                  <ChevronLeft className="w-5 h-5 text-[var(--color-text)]" />
+                  <ChevronLeft className="w-5 h-5 text-(--color-text)" />
                 </button>
               ) : (
                 <div className="w-10 h-10 hidden sm:block" /> 
@@ -630,12 +881,10 @@ export const Sales: React.FC = () => {
                   <span className="text-[10px] font-heading text-slate-555 dark:text-slate-455 tracking-widest block uppercase">
                     {role === 'admin' ? 'SELECTED WEEK DATE' : 'SELECTED DAY DATE'}
                   </span>
-                  {/* DISPLAY THE EXACT SELECTED DAY DATE */}
                   <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5">
                     {stickyHeaderDateText}
                   </span>
                   
-                  {/* Hidden Native Picker */}
                   <input 
                     ref={dateInputRef}
                     type="date"
@@ -663,15 +912,14 @@ export const Sales: React.FC = () => {
                     disabled={isCurrentWeek}
                     className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-all cursor-pointer"
                   >
-                    <ChevronRight className="w-5 h-5 text-[var(--color-text)]" />
+                    <ChevronRight className="w-5 h-5 text-(--color-text)" />
                   </button>
                 ) : (
-                  <div className="w-10 h-10 hidden sm:block" /> 
+                  <div className="w-10 h-10 hidden sm:block" />
                 )}
               </div>
             </div>
 
-            {/* DAY SELECTION TABS SUN - SAT */}
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {DAYS_OF_WEEK.map((day: string, idx: number) => {
                 const date = addDays(currentWeekStart, idx);
@@ -704,7 +952,7 @@ export const Sales: React.FC = () => {
             </div>
           </div>
 
-          {/* --- SEARCH TOOLBAR: Sits directly below the sticky weekly timeline scroller card --- */}
+          {/* SEARCH TOOLBAR */}
           <div className="field-wrap">
             <input
               type="text"
@@ -715,101 +963,111 @@ export const Sales: React.FC = () => {
             />
             <label className="field-label">
               <Search className="w-3.5 h-3.5" />
-              Search Transactions (Name, Barcode, TX-ID, Ref No, Method)
+              Search Transactions (Name, Receipt, Ref, Method)
             </label>
             {ledgerSearch && (
               <button 
                 onClick={() => setLedgerSearch('')} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 text-xs font-bold"
               >
                 CLEAR
               </button>
             )}
           </div>
 
-          {/* --- TIMELINE CHRONOLOGY CARD LEDGER --- */}
-          <div className="space-y-3">
+          {/* --- HOURLY LEDGER TIMELINE (Chronologically Segmented) --- */}
+          <div className="space-y-6">
             <AnimatePresence mode="popLayout">
-              {paginatedTransactions.length > 0 ? (
-                paginatedTransactions.map((tx: any) => {
-                  const formattedTime = tx.createdAt ? format(parseISO(tx.createdAt), 'hh:mm a') : 'N/A';
-                  const canDeleteTx = isTransactionDeletable(tx); // Only allow today deletions
+              {(() => {
+                // Render loading skeletons while transactions are fetching
+                if (loadingTransactions) {
+                  return (
+                    <div className="space-y-3">
+                      {Array.from({ length: 3 }).map((_, idx) => (
+                        <TransactionSkeleton key={idx} />
+                      ))}
+                    </div>
+                  );
+                }
 
+                const hourlyGroups: { label: string; txs: any[] }[] = [];
+                
+                paginatedTransactions.forEach(tx => {
+                  const rawTime = tx.created_at || tx.createdAt;
+                  let hourLabel = 'Unknown Time';
+                  if (rawTime) {
+                    try {
+                      const date = parseISO(rawTime);
+                      hourLabel = format(date, 'hh:00 a');
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }
+                  
+                  const existingGroup = hourlyGroups.find(g => g.label === hourLabel);
+                  if (existingGroup) {
+                    existingGroup.txs.push(tx);
+                  } else {
+                    hourlyGroups.push({ label: hourLabel, txs: [tx] });
+                  }
+                });
+
+                if (totalItems === 0) {
                   return (
                     <motion.div
-                      key={tx.id}
-                      onClick={() => setSelectedReceiptTx(tx)}
-                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className="rounded-2xl border border-(--border-color) bg-(--bg-card) p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer hover:border-(--color-primary)/50"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center"
                     >
-                      <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-(--color-primary) font-heading shrink-0 border border-(--border-color)">
-                          {tx.productName?.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1 text-left">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-bold text-(--color-text) truncate">{tx.productName}</h4>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 font-sans tracking-wider border border-(--border-color)">{tx.id}</span>
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-1 flex items-center gap-1 flex-wrap">
-                            <span className="truncate max-w-50">Barcode: {tx.barcode}</span>
-                            <span className="text-slate-300 dark:text-zinc-700">•</span>
-                            <span>Time: {formattedTime}</span>
-                          </div>
-                        </div>
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-450 dark:text-zinc-600 mb-4 animate-pulse">
+                        <ShoppingBag className="w-8 h-8" />
                       </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-5 w-full sm:w-auto border-t sm:border-0 border-(--border-color) pt-3 sm:pt-0">
-                        <div className="text-left sm:text-right">
-                          <div className="text-xs font-sans text-slate-500 dark:text-slate-400">
-                            {tx.quantity} unit{tx.quantity > 1 ? 's' : ''} × {tx.paymentMethod}
-                          </div>
-                          <div className="text-base font-heading text-(--color-text) mt-0.5">
-                            ₱{tx.totalAmount?.toFixed(2)}
-                          </div>
-                          {tx.referenceNumber && (
-                            <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-0.5">
-                              <Check className="w-3.5 h-3.5" /> {tx.referenceNumber}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* CONDITIONAL TRASH DELETE ACTION - HIDES IF PAST OR FUTURE */}
-                        {canDeleteTx && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTransaction(tx);
-                            }}
-                            className="p-3 text-red-500 dark:text-rose-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20 cursor-pointer"
-                            title="Rollback transaction"
-                          >
-                            <Trash2 className="w-4.5 h-4.5" />
-                          </button>
-                        )}
-                      </div>
+                      <h3 className="font-heading text-sm text-(--color-text) tracking-wider">NO TRANSACTIONS LOGGED</h3>
+                      <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
+                        No purchases or entries have been recorded for this specific date slot.
+                      </p>
                     </motion.div>
                   );
-                })
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center"
-                >
-                  <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 dark:text-zinc-600 mb-4 animate-pulse">
-                    <ShoppingBag className="w-8 h-8" />
+                }
+
+                const handleDragEnd = (_event: any, info: any, tx: any) => {
+                  const swipeThreshold = 80;
+                  if (info.offset.x > swipeThreshold) {
+                    setSelectedReceiptTx(tx);
+                  } else if (info.offset.x < -swipeThreshold) {
+                    if (isTransactionDeletable(tx)) {
+                      setConfirmDeleteTx(tx);
+                    } else {
+                      toast.warning('Rollback Lock: Only current day sales can be removed.');
+                    }
+                  }
+                };
+
+                return hourlyGroups.map((group) => (
+                  <div key={group.label} className="space-y-4">
+                    <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
+                      <div className="text-[9px] font-heading font-black tracking-widest text-(--color-primary-light) bg-(--color-primary)/10 border border-(--color-primary)/10 px-3 py-1 rounded-full uppercase shrink-0">
+                        {group.label}
+                      </div>
+                      <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {group.txs.map((tx) => (
+                        <TransactionCard
+                          key={tx.id}
+                          tx={tx}
+                          canDeleteTx={isTransactionDeletable(tx)}
+                          onSelectReceipt={setSelectedReceiptTx}
+                          onTriggerDelete={setConfirmDeleteTx}
+                          onDragEnd={handleDragEnd}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <h3 className="font-heading text-sm text-(--color-text) tracking-wider">NO TRANSACTIONS LOGGED</h3>
-                  <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
-                    No purchases or entries have been recorded for this specific date slot.
-                  </p>
-                </motion.div>
-              )}
+                ));
+              })()}
             </AnimatePresence>
           </div>
 
@@ -860,107 +1118,26 @@ export const Sales: React.FC = () => {
           )}
         </div>
 
-        {/* --- MOBILE PRODUCTS STICKY FLOATING FAB (ONLY IN INVENTORY VIEW) --- */}
-{(activeView as string) === 'inventory' && (
-  <>
-    {/* Floating Backdrop for Menu Focus */}
-    <AnimatePresence>
-      {isMobileProductsMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={() => setIsMobileProductsMenuOpen(false)}
-          className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
-        />
-      )}
-    </AnimatePresence>
-
-    {/* Floating Actions Menu Panel */}
-    <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
-      <AnimatePresence>
-        {isMobileProductsMenuOpen && (
-          <motion.div 
-            initial={{ opacity: 0, y: 15, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 15, scale: 0.9 }}
-            className="flex flex-col items-end gap-2.5 mb-1"
+        {/* --- VIEW 2: PRODUCTS INVENTORY (ADMINS ONLY) --- */}
+        {role === 'admin' && (
+          <div 
+            className="w-full h-full pb-36 max-w-full"
+            style={{
+              gridColumn: 1,
+              gridRow: 1,
+              transform: activeView === 'inventory' ? 'translate3d(0, 0, 0)' : 'translate3d(101%, 0, 0)',
+              opacity: activeView === 'inventory' ? 1 : 0,
+              pointerEvents: activeView === 'inventory' ? 'auto' : 'none',
+              transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+            }}
           >
-            {/* Action 1: Recycle Bin */}
-            <button
-              onClick={() => {
-                setIsMobileProductsMenuOpen(false);
-                window.dispatchEvent(new CustomEvent('trigger-product-recovery'));
-              }}
-              className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4 text-amber-500" />
-              <span>Recycle Bin</span>
-            </button>
-
-            {/* Action 2: Print Sheet Labels */}
-            <button
-              onClick={() => {
-                setIsMobileProductsMenuOpen(false);
-                window.dispatchEvent(new CustomEvent('trigger-product-print'));
-              }}
-              className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-            >
-              <Printer className="w-4 h-4 text-blue-500" />
-              <span>Print Labels</span>
-            </button>
-            
-            {/* Action 3: Add Product */}
-            <button
-              onClick={() => {
-                setIsMobileProductsMenuOpen(false);
-                window.dispatchEvent(new CustomEvent('trigger-product-create'));
-              }}
-              className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-emerald-500" />
-              <span>Add Product</span>
-            </button>
-          </motion.div>
+            <Products hideHeaderActions={true} />
+          </div>
         )}
-      </AnimatePresence>
-    </div>
-
-    {/* Primary Mobile FAB Trigger (Sticky bottom right, perfectly above bottom navigation) */}
-    <div className="md:hidden fixed bottom-24 right-4 z-40">
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.9 }}
-        onClick={() => setIsMobileProductsMenuOpen(!isMobileProductsMenuOpen)}
-        animate={{ rotate: isMobileProductsMenuOpen ? 135 : 0 }}
-        className="flex items-center justify-center w-12 h-12 text-white rounded-full cursor-pointer bg-[#10b981] hover:bg-[#0c2950] border border-white/10 shadow-lg"
-        title="Add product items"
-      >
-        <Plus className="w-5.5 h-5.5" />
-      </motion.button>
-    </div>
-  </>
-)}
-
-        {/* --- VIEW 2: PRODUCTS INVENTORY (Slides in from the right) --- */}
-        <div 
-          className="w-full h-full pb-36 max-w-full"
-          style={{
-            gridColumn: 1,
-            gridRow: 1,
-            transform: activeView === 'inventory' ? 'translate3d(0, 0, 0)' : 'translate3d(101%, 0, 0)',
-            opacity: activeView === 'inventory' ? 1 : 0,
-            pointerEvents: activeView === 'inventory' ? 'auto' : 'none',
-            transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
-          }}
-        >
-          {/* FIXED NESTING LOCK FLAG: Disables products list from registering duplicate top bar buttons */}
-          <Products hideHeaderActions={true} />
-        </div>
 
       </div>
 
-      {/* --- SEPARATED CREATE TRANSACTION MODAL DIALOG --- */}
+      {/* CREATE TRANSACTION MODAL DIALOG */}
       {isCreateModalOpen && (
         <SalesDialog
           isOpen={isCreateModalOpen}
@@ -970,7 +1147,7 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* --- MOUNTED OUTSOURCED REPORTS COMPILER OVERLAY DIALOG --- */}
+      {/* DYNAMIC REPORTS COMPILER OVERLAY */}
       {isReportModalOpen && (
         <SalesReportCompiler
           isOpen={isReportModalOpen}
@@ -979,7 +1156,7 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* --- MOUNTED OUTSOURCED RECEIPTS OVERLAY DIALOG --- */}
+      {/* OFFICIAL RECEIPTS OVERLAY */}
       {selectedReceiptTx && (
         <SalesOfficialReceipt
           isOpen={!!selectedReceiptTx}
@@ -988,32 +1165,126 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* --- DAILY RECYCLE BIN MODAL DIALOG --- */}
+      {/* DAILY RECYCLE BIN MODAL */}
       {isRecycleBinOpen && (
         <SalesRecycleBin
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
           products={products}
           onRestoreSuccess={() => {
-            loadLocalStorageData(); // Automatically reloads ledger logs & metrics
+            fetchTransactions();
+            fetchProducts();
           }}
         />
       )}
 
-      {/* --- DETACHED RESILIENT UNDO TOAST NOTIFIER --- */}
-      <UndoToast
-        isOpen={isUndoToastOpen}
-        message={stagedDeletedTx ? `Removing transaction ${stagedDeletedTx.id} from ledger database...` : ''}
-        duration={5}
-        onConfirm={handleConfirmDelete}
-        onUndo={handleUndoDelete}
-        onClose={() => setIsUndoToastOpen(false)}
-      />
+      {/* --- DETACHED CUSTOM REMOVAL CONFIRMATION MODAL --- */}
+      {confirmDeleteTx && (
+        <Modal
+          isOpen={!!confirmDeleteTx}
+          onClose={() => setConfirmDeleteTx(null)}
+          title="REMOVE TRANSACTION"
+          className="max-w-sm text-center p-6 animate-fade-in"
+        >
+          <div className="space-y-4 pt-1 font-body text-xs text-slate-500 dark:text-slate-400 text-left">
+            <p className="leading-relaxed text-center text-slate-600 dark:text-slate-450">
+              Are you sure you want to remove this transaction?
+            </p>
 
-      {/* --- RESPONSIVE MOBILE STICKY FLOATING BOTTOM-BAR --- */}
-      {(activeView as string) === 'register' && (
+            <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+              {confirmDeleteTx.items && Array.isArray(confirmDeleteTx.items) ? (
+                confirmDeleteTx.items.map((item: any, idx: number) => {
+                  const imageUrl = getProductThumbnail(item.productId);
+                  return (
+                    <div 
+                      key={idx} 
+                      className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)"
+                    >
+                      {imageUrl ? (
+                        <img 
+                          src={imageUrl} 
+                          alt={item.productName || item.product_name} 
+                          className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0" 
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-xs shrink-0 select-none uppercase">
+                          {(item.productName || item.product_name || 'P')[0]}
+                        </div>
+                      )}
+                      
+                      <div className="min-w-0 flex-1 text-left">
+                        <span className="font-semibold block truncate text-xs text-slate-900 dark:text-white">
+                          {item.productName || item.product_name}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                          Quantity: {item.quantity} • Price: ₱{Number(item.price).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)">
+                  <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-bold text-xs shrink-0 select-none">
+                    T
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <span className="font-semibold block truncate text-xs text-slate-900 dark:text-white">
+                      {confirmDeleteTx.product_name || confirmDeleteTx.productName}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                      Quantity: {confirmDeleteTx.quantity || 1} • Price: ₱{Number(confirmDeleteTx.total_amount || confirmDeleteTx.totalAmount || 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTx(null)}
+                className="py-2.5 border border-(--border-color) bg-(--bg-card) hover:bg-slate-500/5 text-slate-500 dark:text-slate-400 rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleDeleteTransaction(confirmDeleteTx);
+                  setConfirmDeleteTx(null);
+                }}
+                className="py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer shadow-md transition-all font-bold"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* --- DETACHED CUSTOM REMOVAL CONFIRMATION NOTIFIER --- */}
+      <div className="fixed bottom-40 md:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col gap-2 w-[calc(100vw-24px)] md:w-auto items-center pointer-events-none">
+        <AnimatePresence mode="popLayout">
+          {stagedDeletions.map((stagedTx) => (
+            <UndoToast
+              key={stagedTx.id}
+              isOpen={true}
+              message={`Removing transaction ${stagedTx.receipt_no || stagedTx.id} from database ledger...`}
+              duration={5}
+              onConfirm={() => handleConfirmDelete(stagedTx)}
+              onUndo={() => handleUndoDelete(stagedTx)}
+              onClose={() => {
+                setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
+              }}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
+
+      {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
+      {activeView === 'register' && (
         <>
-          {/* Floating Backdrop for Menu Focus */}
           <AnimatePresence>
             {isMobileActionsOpen && (
               <motion.div
@@ -1026,7 +1297,6 @@ export const Sales: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Floating Actions Menu Panel */}
           <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
             <AnimatePresence>
               {isMobileActionsOpen && (
@@ -1036,28 +1306,29 @@ export const Sales: React.FC = () => {
                   exit={{ opacity: 0, y: 15, scale: 0.9 }}
                   className="flex flex-col items-end gap-2.5 mb-1"
                 >
-                  {/* Action 1: Recycle Bin */}
-                  <button
-                    onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4 text-amber-500" />
-                    <div className="text-right">
-                      <span className="block">Recycle Bin</span>
-                      <span className="block text-[7px] text-slate-400 font-sans font-bold capitalize">Clears at end of day</span>
-                    </div>
-                  </button>
+                  {role === 'admin' && (
+                    <button
+                      onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
+                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4 text-amber-500" />
+                      <div className="text-right">
+                        <span className="block">Recycle Bin</span>
+                        <span className="block text-[7px] text-slate-400 font-sans font-bold capitalize">Clears at end of day</span>
+                      </div>
+                    </button>
+                  )}
 
-                  {/* Action 2: Generate Report */}
-                  <button
-                    onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                    <span>Generate Report</span>
-                  </button>
+                  {role === 'admin' && (
+                    <button
+                      onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
+                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                      <span>Generate Report</span>
+                    </button>
+                  )}
                   
-                  {/* Action 3: New Sale */}
                   <button
                     onClick={() => { setIsMobileActionsOpen(false); setIsCreateModalOpen(true); }}
                     className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
@@ -1070,7 +1341,6 @@ export const Sales: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          {/* Bottom Bar Content wrapper */}
           <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
             <div className="space-y-0.5 text-left select-none">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
@@ -1084,7 +1354,6 @@ export const Sales: React.FC = () => {
               </span>
             </div>
 
-            {/* Primary Mobile FAB Trigger */}
             <motion.button
               type="button"
               whileTap={{ scale: 0.9 }}
@@ -1097,6 +1366,91 @@ export const Sales: React.FC = () => {
           </div>
         </>
       )}
+
+      {/* MOBILE STICKY BOTTOM BAR FOR PRODUCTS INVENTORY */}
+      {activeView === 'inventory' && selectedProductsCount === 0 && (
+        <>
+          <AnimatePresence>
+            {isMobileActionsOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileActionsOpen(false)}
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+              />
+            )}
+          </AnimatePresence>
+
+          <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
+            <AnimatePresence>
+              {isMobileActionsOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
+                  className="flex flex-col items-end gap-2.5 mb-1"
+                >
+                  <button
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-recovery'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-500" />
+                    <span>Recycle Bin</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-print'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-blue-500" />
+                    <span>Print Sheet Labels</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-create'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-500" />
+                    <span>Add New Item</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
+            <div className="space-y-0.5 text-left select-none">
+              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
+                PRODUCT INVENTORY
+              </span>
+              <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
+                {products.length} Items Listed
+              </span>
+            </div>
+
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+              className="flex items-center justify-center w-12 h-12 text-white rounded-full cursor-pointer bg-[#10b981] hover:bg-emerald-600 border border-white/10 shadow-lg"
+              title="Inventory Actions"
+            >
+              <Plus className="w-5.5 h-5.5" />
+            </motion.button>
+          </div>
+        </>
+      )}
+
     </div>
   );
 };

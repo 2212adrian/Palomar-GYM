@@ -1,5 +1,5 @@
 // src/pages/sales/components/SalesDialog.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import { 
   Search, Check, X, ShoppingCart 
@@ -33,12 +33,25 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // For UI visual states
+
+  // Synchronous ref to instantly block spam clicks in the microsecond range
+  const isSubmittingRef = useRef(false);
 
   // Schema-independent helper attributes
   const getProductName = (p: any) => p.product_name || p.name || 'Unnamed Product';
   const getProductPrice = (p: any) => Number(p.selling_price || p.sellingPrice || 0);
-  const getProductStock = (p: any) => p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : -1);
+  const getProductStock = (p: any) => p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 0);
   const getProductBarcode = (p: any) => p.barcode_id || p.barcode || 'N/A';
+  const hasStockLimit = (p: any) => p.has_stock_limit === true || p.hasStockLimit === true;
+
+  // Reset submit references when modal opens or closes
+  useEffect(() => {
+    if (isOpen) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
 
   // Product instant lookup
   const filteredProducts = useMemo(() => {
@@ -70,11 +83,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const handleAddToCart = (product: any) => {
     const stock = getProductStock(product);
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
+    const limitActive = hasStockLimit(product);
 
     if (existingIndex > -1) {
       const currentQty = cart[existingIndex].quantity;
-      const hasLimit = stock !== null && stock !== undefined && stock !== -1;
-      if (!hasLimit || currentQty < stock) {
+      if (!limitActive || currentQty < stock) {
         const updatedCart = [...cart];
         updatedCart[existingIndex].quantity += 1;
         setCart(updatedCart);
@@ -92,12 +105,12 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     const item = updatedCart[idx];
     const stock = getProductStock(item.product);
     const newQty = item.quantity + delta;
+    const limitActive = hasStockLimit(item.product);
 
     if (newQty <= 0) {
       updatedCart.splice(idx, 1);
     } else {
-      const hasLimit = stock !== null && stock !== undefined && stock !== -1;
-      if (!hasLimit || newQty <= stock) {
+      if (!limitActive || newQty <= stock) {
         item.quantity = newQty;
       } else {
         toast.error('Limit reached. Cannot exceed available inventory.');
@@ -108,6 +121,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   };
 
   const handleCompleteSale = () => {
+    // Check ref synchronously first to prevent multiple microsecond clicks
+    if (isSubmittingRef.current || isSuccess) {
+      return;
+    }
+
     if (cart.length === 0) {
       toast.error('Your shopping cart is empty.');
       return;
@@ -126,12 +144,17 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       }
     }
 
+    // Set Ref synchronously to lock instantly
+    isSubmittingRef.current = true;
+    setIsSubmitting(true); // Triggers loading UI states
+
     // Process Stock Update for each cart item
     const updatedProducts = products.map((p: any) => {
       const cartItem = cart.find(item => item.product.id === p.id);
       if (cartItem) {
         const stock = getProductStock(p);
-        if (stock !== null && stock !== undefined && stock !== -1) {
+        const limitActive = hasStockLimit(p);
+        if (limitActive) {
           const newStock = Math.max(0, stock - cartItem.quantity);
           if (p.stock_quantity !== undefined) {
             return { ...p, stock_quantity: newStock };
@@ -143,7 +166,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       return p;
     });
 
-    // Register Transaction Object (Formated to handle multiple items under one ledger card)
+    // Register Transaction Object
     const now = new Date();
     const newTx = {
       id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -153,7 +176,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         quantity: item.quantity,
         price: getProductPrice(item.product),
       })),
-      // For legacy display compatibility: Join list with commas
       productName: cart.map(item => `${item.quantity}x ${getProductName(item.product)}`).join(', '),
       barcode: cart.map(item => getProductBarcode(item.product)).join(', '),
       quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -171,6 +193,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     setTimeout(() => {
       onSaleSuccess(newTx, updatedProducts);
       setIsSuccess(false);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       setCart([]);
       setSearchTerm('');
       setAmountReceived('');
@@ -186,9 +210,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       title="RECORD SALE TRANSACTION"
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body relative"
     >
-      {/* EXPLICIT CLOSE BUTTON */}
       <button
         type="button"
+        disabled={isSubmitting}
         onClick={onClose}
         className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
         aria-label="Close Dialog"
@@ -210,6 +234,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               <input
                 type="text"
                 placeholder=" "
+                disabled={isSubmitting}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="field-input"
@@ -225,15 +250,16 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               <div className="max-h-40 overflow-y-auto border border-[var(--border-color)] bg-[var(--bg-input)] rounded-xl divide-y divide-[var(--border-color)] shadow-inner">
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map((p: any) => {
-                    const isOutOfStock = getProductStock(p) === 0;
+                    const limitActive = hasStockLimit(p);
+                    const isOutOfStock = limitActive && getProductStock(p) <= 0;
                     return (
                       <button
                         key={p.id}
                         type="button"
-                        disabled={isOutOfStock}
+                        disabled={isOutOfStock || isSubmitting}
                         onClick={() => handleAddToCart(p)}
                         className={`w-full p-2.5 flex items-center justify-between text-left transition-all hover:bg-slate-200/50 dark:hover:bg-zinc-800 ${
-                          isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                          isOutOfStock || isSubmitting ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
                         }`}
                       >
                         <div>
@@ -243,7 +269,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         <div className="text-right">
                           <div className="text-xs font-heading text-[var(--color-text)]">₱{getProductPrice(p)}</div>
                           <div className="text-[9px] font-sans font-bold text-slate-400">
-                            {isOutOfStock ? 'OUT OF STOCK' : `Stock: ${getProductStock(p)}`}
+                            {isOutOfStock ? 'OUT OF STOCK' : (!limitActive ? 'UNLIMITED' : `Stock: ${getProductStock(p)}`)}
                           </div>
                         </div>
                       </button>
@@ -257,7 +283,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               </div>
             )}
 
-            {/* Dynamic Multi-item Shopping Cart */}
+            {/* Shopping Cart */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase">
                 <ShoppingCart className="w-4 h-4" />
@@ -278,20 +304,22 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         <span className="text-[10px] text-[var(--color-primary)] font-heading mt-0.5 block">₱{getProductPrice(item.product).toFixed(2)}</span>
                       </div>
 
-                      {/* Item Quantity control counter */}
+                      {/* Item Quantity counter */}
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
+                          disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, -1)}
-                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           -
                         </button>
                         <span className="font-heading w-4 text-center text-xs">{item.quantity}</span>
                         <button
                           type="button"
+                          disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, 1)}
-                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           +
                         </button>
@@ -301,7 +329,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 </div>
               ) : (
                 <div className="p-4 border border-dashed border-[var(--border-color)] rounded-xl text-center text-xs text-slate-400">
-                  Cart is empty. Search products above to add items.
+                  Cart is empty. Please search for products above to add them to this card.
                 </div>
               )}
             </div>
@@ -315,8 +343,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => setPaymentMethod('Cash')}
-                    className={`py-2.5 rounded-xl font-heading text-xs uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`py-2.5 rounded-xl font-heading text-xs uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'Cash'
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
                         : 'bg-transparent border-[var(--border-color)] text-slate-500'
@@ -326,8 +355,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   </button>
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => setPaymentMethod('GCash')}
-                    className={`py-2.5 rounded-xl font-heading text-xs uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`py-2.5 rounded-xl font-heading text-xs uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'GCash'
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
                         : 'bg-transparent border-[var(--border-color)] text-slate-500'
@@ -342,6 +372,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     <input
                       type="number"
                       placeholder=" "
+                      disabled={isSubmitting}
                       value={amountReceived}
                       onChange={(e) => setAmountReceived(e.target.value)}
                       className="field-input"
@@ -362,6 +393,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     <input
                       type="text"
                       placeholder=" "
+                      disabled={isSubmitting}
                       value={referenceNumber}
                       onChange={(e) => setReferenceNumber(e.target.value)}
                       className="field-input uppercase"
@@ -378,7 +410,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               </div>
             )}
 
-            {/* Total summary block */}
+            {/* Total summary */}
             {cart.length > 0 && (
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-[var(--border-color)] space-y-1 text-xs font-sans">
                 <div className="flex justify-between text-slate-500">
@@ -402,10 +434,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               <Button
                 onClick={handleCompleteSale}
                 variant="primary"
-                disabled={cart.length === 0}
-                className="py-3.5 cursor-pointer"
+                disabled={cart.length === 0 || isSubmitting}
+                className={`py-3.5 ${isSubmitting ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
               >
-                COMPLETE TRANSACTION
+                {isSubmitting ? 'PROCESSING...' : 'COMPLETE TRANSACTION'}
               </Button>
             </div>
           </motion.div>

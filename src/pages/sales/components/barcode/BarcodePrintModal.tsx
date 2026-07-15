@@ -1,5 +1,6 @@
-//src/pages/sales/components/barcode/BarcodePrintModal.tsx
+// src/pages/sales/components/barcode/BarcodePrintModal.tsx
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 // Explicit type-only imports resolve verbatimModuleSyntax constraints
 import type { 
   BarcodeSettingsState, PrintableItem, LabelTemplateType
@@ -125,8 +126,9 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     triggerBrowserPrint('barcode-printable-area');
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] bg-[var(--bg-page)]/95 backdrop-blur-md flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
+  // Uses React Portals to guarantee this print modal mounts at the body root (z-index safe)
+  return createPortal(
+    <div className="fixed inset-0 z-[16000] bg-[var(--bg-page)] flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
       
       {/* Header Bar */}
       <div className="px-6 py-4 border-b border-(--border-color) bg-[var(--bg-card)] flex items-center justify-between shrink-0">
@@ -174,16 +176,15 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
       {/* Main Grid Workspace */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
         
-        {/* LEFT CONTROL SIDEBAR PANEL - Re-enabled scroll bar for easy setup navigation */}
+        {/* LEFT CONTROL SIDEBAR PANEL */}
         <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-[180px] md:pb-6 ${
           activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
         }`}>
           <div className="flex flex-col gap-4 overflow-y-hidden flex-1">
             
-            {/* Selection Drawer - Flex-1 styling allows the card selection area to automatically expand when other accordions are collapsed */}
+            {/* Selection Drawer */}
             <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[220px] flex-1">
               <div className="flex items-center justify-between shrink-0">
-                {/* Resolved low-contrast slate shade warning */}
                 <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Items to Print</h4>
                 <div className="flex gap-2">
                   <button
@@ -223,7 +224,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       onClick={() => setSelectedIds(prev => 
                         prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
                       )}
-                      // Upgraded row style contrast cards for perfect light mode theme legibility
                       className={`p-2 rounded-xl flex items-center justify-between cursor-pointer border transition-colors ${
                         isSelected 
                           ? 'bg-blue-500/20 dark:bg-blue-500/10 border-blue-500 text-[var(--color-text)]' 
@@ -255,7 +255,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 onClick={() => setIsLayoutPresetOpen(!isLayoutPresetOpen)}
                 className="w-full flex items-center justify-between p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
               >
-                {/* Resolved low-contrast slate shade warning */}
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Layout Preset</span>
@@ -294,7 +293,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 onClick={() => setIsDisplayParamsOpen(!isDisplayParamsOpen)}
                 className="w-full flex items-center justify-between p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none mb-4"
               >
-                {/* Resolved low-contrast slate shade warning */}
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <Sliders className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Display Parameters</span>
@@ -364,11 +362,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
           </div>
 
-          {/* 
-            ACTION ROW PANEL: 
-            - Set to fixed bottom-0 left-0 right-0 on mobile viewports so it cleanly covers and hides the bottom navigation bar
-            - Aligned with standard relative styles on desktop viewports
-          */}
+          {/* Action Row Panel */}
           <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -400,7 +394,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           </div>
         </div>
 
-        {/* RIGHT PREVIEW PANEL - Converted container theme backgrounds to adaptive CSS variables */}
+        {/* RIGHT PREVIEW PANEL */}
         <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative ${
           activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
         }`}>
@@ -444,7 +438,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
               <div>
                 <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">Live Layout Sheets</h4>
-                {/* Resolved low-contrast slate shade warning */}
                 <span className="text-[10px] text-slate-700 dark:text-slate-400 font-bold block mt-0.5">
                   Format: {LETTER_PAPER.name} • {template.labelsPerPage} Labels/Sheet
                 </span>
@@ -453,7 +446,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 <span className="text-xs font-mono font-bold text-blue-400 block">
                   {expandedItemsList.length} Total Stickers
                 </span>
-                {/* Resolved low-contrast slate shade warning */}
                 <span className="text-[10px] text-slate-700 dark:text-slate-400 font-bold block mt-0.5">
                   Requires {totalPagesRequired} {totalPagesRequired === 1 ? 'Page' : 'Pages'}
                 </span>
@@ -461,11 +453,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             </div>
 
             <div className="flex-1 overflow-auto p-4 flex flex-col items-center justify-start gap-6 no-scrollbar">
-              {/* 
-                MATHEMATICAL BOUNDING BOX WRAPPER:
-                - Calculates the exact visually-scaled bounds in millimeters of the active paper layout 
-                - Uses transform-origin: top left to prevent visual elements clipping off the left scroll gutter 
-              */}
               <div 
                 style={{
                   width: `${scaledWidthMm}mm`,
@@ -496,16 +483,16 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                         }}
                       >
                         <div 
-                        className="grid"
-                        style={{
-                          paddingTop: `${template.marginTop}mm`,
-                          paddingLeft: `${template.marginLeft}mm`,
-                          gridTemplateColumns: `repeat(${template.cols}, ${template.labelWidth}mm)`,
-                          gap: `${template.gapVertical}mm ${template.gapHorizontal}mm`,
-                          alignContent: 'start',
-                          alignItems: 'start',
-                        }}
-                      >
+                          className="grid"
+                          style={{
+                            paddingTop: `${template.marginTop}mm`,
+                            paddingLeft: `${template.marginLeft}mm`,
+                            gridTemplateColumns: `repeat(${template.cols}, ${template.labelWidth}mm)`,
+                            gap: `${template.gapVertical}mm ${template.gapHorizontal}mm`,
+                            alignContent: 'start',
+                            alignItems: 'start',
+                          }}
+                        >
                           {pageLabels.map((item, idx) => (
                             <div 
                               key={`${pageIdx}-${idx}-${item.id}`}
@@ -560,6 +547,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
       </div>
 
-    </div>
+    </div>,
+    document.body
   );
 };

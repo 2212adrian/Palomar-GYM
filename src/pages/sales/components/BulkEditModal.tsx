@@ -1,5 +1,6 @@
-//src/pages/sales/components/BulkEditModal.tsx
+// src/pages/sales/components/BulkEditModal.tsx
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase/client';
 import { compressImage } from '../../../lib/imageCompressor';
 import { 
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { logAudit } from '../../../lib/supabase/audit';
+
 export interface BulkEditProduct {
   id: string;
   barcode_id: string;
@@ -231,7 +233,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
           : 'border-(--border-color)'
       }`}
     >
-      {/* Top Header: Image, Status, and Barcode ID */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {modified ? (
@@ -272,7 +273,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </div>
       </div>
 
-      {/* Field: Product Name */}
       <div className="space-y-1">
         <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Product Name *</label>
         <input
@@ -287,7 +287,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         />
       </div>
 
-      {/* Field Grid: Selling Price & Cashier visibility status */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Price *</label>
@@ -336,7 +335,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </div>
       </div>
 
-      {/* Field: Stock Limit select dropdown */}
       <div className="space-y-1">
         <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Type</label>
         <select
@@ -352,7 +350,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </select>
       </div>
 
-      {/* Field Row: Conditional Stock Quantity & Warnings */}
       {p.has_stock_limit && (
         <div className="grid grid-cols-2 gap-3 animate-slide-up">
           <div className="space-y-1">
@@ -386,7 +383,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </div>
       )}
 
-      {/* Footer Rollback Reset Button */}
       <div className="flex justify-end pt-1">
         <button
           type="button"
@@ -416,7 +412,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   selectedProducts,
   onSaveSuccess,
 }) => {
-  // Toggle body portal opens to hide the mobile navigation bar completely
   useEffect(() => {
     document.body.classList.add('print-portal-open');
     return () => {
@@ -447,11 +442,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [rowUploadingId, setRowUploadingId] = useState<string | null>(null);
 
-  // Quick Action States
   const [quickVisibility, setQuickVisibility] = useState<'Active' | 'Inactive'>('Active');
   const [quickStockType, setQuickHasStockLimit] = useState(false);
   
-  // Refactored Price Adjuster state variables
   const [priceAdjType, setPriceAdjType] = useState<'pct_inc' | 'pct_dec' | 'flat_inc' | 'flat_dec' | 'fixed'>('pct_inc');
   const [priceAdjValue, setPriceAdjValue] = useState('');
 
@@ -519,7 +512,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     toast.info(`Updated stock tracking parameter to ${quickStockType ? 'Limited' : 'Unlimited'} for all rows.`);
   };
 
-  // Expanded multi-purpose price batch update calculation handler
   const handleApplyPriceAdjustment = () => {
     const val = parseFloat(priceAdjValue);
     if (isNaN(val) || val < 0) {
@@ -633,30 +625,25 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     try {
       setSaving(true);
 
-      // Compiles granular audit modifications showing "before" and "after" state changes
       const auditDetails = modifiedItems.map(p => {
         const original = originalMap.get(p.id);
         if (!original) return `"${p.product_name.trim()}"`;
 
         const changes: string[] = [];
 
-        // Track Product Name Changes
         if (p.product_name.trim() !== original.product_name) {
           changes.push(`Name: "${original.product_name}" -> "${p.product_name.trim()}"`);
         }
 
-        // Track Price Changes
         const priceNum = parseFloat(p.selling_price);
         if (priceNum !== original.selling_price) {
           changes.push(`Price: ₱${original.selling_price.toFixed(2)} -> ₱${priceNum.toFixed(2)}`);
         }
 
-        // Track Cashier Visibility Changes
         if (p.status !== original.status) {
           changes.push(`Visibility: ${original.status} -> ${p.status}`);
         }
 
-        // Track Inventory Stock Type and Quantity Changes
         if (p.has_stock_limit !== original.has_stock_limit) {
           changes.push(`Stock Type: ${original.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${p.has_stock_limit ? 'Limited' : 'Unlimited'}`);
         } else if (p.has_stock_limit) {
@@ -694,7 +681,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       toast.success(`Successfully saved ${modifiedItems.length} products.`);
 
-      // Log detailed description audit track with both before/after parameters
       try {
         await logAudit(
           'BULK_PRODUCTS_UPDATED',
@@ -715,8 +701,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[10000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-xs text-(--color-text)">
+  // Uses React Portals to guarantee this modal mounts at the body root (z-index safe)
+  return createPortal(
+    <div className="fixed inset-0 z-[16000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-xs text-(--color-text)">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-[95vw] max-w-[1400px] h-[92vh] max-h-[95vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
         
         {/* MODAL HEADER */}
@@ -744,7 +731,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         {/* MODAL CONTENT WORKSPACE */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 flex flex-col min-h-0 bg-(--bg-page)">
           
-          {/* TOP TOOLBAR - Hidden on mobile and tablet screen viewports */}
+          {/* TOP TOOLBAR */}
           <div className="hidden xl:grid grid-cols-1 xl:grid-cols-12 gap-4 shrink-0 bg-(--bg-card) border border-(--border-color) p-4 rounded-2xl shadow-sm">
             <div className="xl:col-span-4 space-y-2.5">
               <div className="relative">
@@ -816,7 +803,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                 </div>
               </div>
 
-              {/* Multi-Purpose Batch Price Adjuster Widget */}
               <div className="space-y-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Batch Price Adjuster</span>
                 <div className="flex gap-1">
@@ -851,7 +837,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             </div>
           </div>
 
-          {/* MOBILE/TABLET VIEW: Highly aligned vertical form cards displayed strictly on small screens */}
+          {/* MOBILE/TABLET VIEW */}
           <div className="md:hidden flex flex-col gap-4 overflow-y-auto no-scrollbar pb-[100px] flex-1">
             {displayedProducts.map(p => {
               const modified = isRowModified(p);
@@ -869,7 +855,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             })}
           </div>
 
-          {/* DESKTOP VIEW: Spreadsheet horizontal table grid displayed strictly on larger screens */}
+          {/* DESKTOP VIEW */}
           <div className="hidden md:flex flex-col flex-1 border border-(--border-color) rounded-2xl overflow-hidden bg-(--bg-card) min-h-0">
             <div className="flex-1 overflow-auto no-scrollbar">
               <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
@@ -910,7 +896,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
         </div>
 
-        {/* MODAL FOOTER - Aligned as dual row grid on small viewports */}
+        {/* MODAL FOOTER */}
         <div className="px-6 py-4 border-t border-(--border-color) flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 bg-[var(--bg-card)]">
           <div className="flex items-center gap-1.5 justify-center md:justify-start w-full md:w-auto">
             <Info className="w-4 h-4 text-blue-500 shrink-0" />
@@ -948,6 +934,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

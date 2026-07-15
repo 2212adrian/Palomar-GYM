@@ -30,9 +30,9 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
   '/sales/products': {
     subtitle: 'Sales / Products',
     title: 'My Products',
-    description: 'Manage your store inventory catalog, barcodes, prices, and stock indicators.'
+    description: 'Manage your product inventory catalog, barcodes, prices, and stock indicators.'
   },
-  '/sales/register': {
+  '/sales': {
     subtitle: 'Sales / Register',
     title: 'Sales Register',
     description: 'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.'
@@ -128,7 +128,8 @@ const router = createBrowserRouter([
               {
                 element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
                 children: [
-                  { path: '/sales', element: <Navigate to="/sales/register" replace /> },
+                  // Corrected: Removed infinite redirect loop. Map '/sales' directly to Sales element.
+                  { path: '/sales', element: <Sales /> },
                   { path: '/sales/:subview', element: <Sales /> }, // Consolidated dynamic parameter path
                   { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
                   { path: '/reports/incident-reports', element: <IncidentReports /> }, 

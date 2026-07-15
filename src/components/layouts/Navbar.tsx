@@ -21,7 +21,7 @@ export const Navbar: React.FC = () => {
       
       {/* 1. Sales (Left side - occupies 1 column) */}
       <Link 
-        to="/sales/register" 
+        to="/sales" 
         className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/sales')}`}
       >
         <ShoppingBag className="w-4.5 h-4.5" />

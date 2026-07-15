@@ -29,7 +29,7 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'Cash' | 'GCash'>('all');
   const [isCompiling, setIsCompiling] = useState(false);
 
-  // --- RECONSTRUCTED PRESETS LOGIC ---
+  // --- PRESETS LOGIC ---
   const handleQuickPreset = (preset: 'day' | 'week' | 'month' | 'prev_month' | 'year') => {
     const now = new Date();
     let startRange = now;
@@ -63,21 +63,35 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
     setEndDate(format(endRange, 'yyyy-MM-dd'));
   };
 
+  // Filter transactions with schema normalization and deletion exclusion
   const filteredReportTransactions = useMemo(() => {
     return transactions.filter((t: any) => {
-      const isWithinRange = t.date >= startDate && t.date <= endDate;
-      const isMatchingMethod = paymentFilter === 'all' || t.paymentMethod === paymentFilter;
+      // Exclude soft-deleted sales
+      if (t.deleted_at) return false;
+
+      // Extract transaction date (fallback to formatting created_at)
+      const txDate = t.date || (t.created_at ? format(new Date(t.created_at), 'yyyy-MM-dd') : '');
+      
+      // Extract payment method (fallback to payment_method)
+      const txMethod = t.paymentMethod || t.payment_method || 'Cash';
+
+      const isWithinRange = txDate >= startDate && txDate <= endDate;
+      const isMatchingMethod = paymentFilter === 'all' || txMethod === paymentFilter;
+
       return isWithinRange && isMatchingMethod;
     });
   }, [transactions, startDate, endDate, paymentFilter]);
 
   const totalAmount = useMemo(() => {
-    return filteredReportTransactions.reduce((acc, t) => acc + (t.totalAmount || 0), 0);
+    return filteredReportTransactions.reduce((acc, t) => {
+      const amt = Number(t.totalAmount ?? t.total_amount ?? 0);
+      return acc + amt;
+    }, 0);
   }, [filteredReportTransactions]);
 
   const handleCompilePdfReport = async () => {
     if (filteredReportTransactions.length === 0) {
-      toast.error('No matching transactions found.');
+      toast.error('No sales records were found for the selected date range.');
       return;
     }
 
@@ -105,11 +119,20 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
         color: rgb(0.4, 0.4, 0.4),
       });
 
-      const totalQty = filteredReportTransactions.reduce((acc, t) => acc + (t.quantity || 0), 0);
-      const cashTotal = filteredReportTransactions.filter(t => t.paymentMethod === 'Cash').reduce((acc, t) => acc + (t.totalAmount || 0), 0);
-      const gcashTotal = filteredReportTransactions.filter(t => t.paymentMethod === 'GCash').reduce((acc, t) => acc + (t.totalAmount || 0), 0);
+      const totalQty = filteredReportTransactions.reduce((acc, t) => {
+        const qty = t.quantity || (Array.isArray(t.items) ? t.items.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0) : 1);
+        return acc + qty;
+      }, 0);
 
-      // summary panel box
+      const cashTotal = filteredReportTransactions
+        .filter(t => (t.paymentMethod || t.payment_method) === 'Cash')
+        .reduce((acc, t) => acc + Number(t.totalAmount ?? t.total_amount ?? 0), 0);
+
+      const gcashTotal = filteredReportTransactions
+        .filter(t => (t.paymentMethod || t.payment_method) === 'GCash')
+        .reduce((acc, t) => acc + Number(t.totalAmount ?? t.total_amount ?? 0), 0);
+
+      // Summary panel box
       page.drawRectangle({
         x: 40,
         y: 635,
@@ -142,7 +165,7 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
         color: rgb(0.07, 0.24, 0.45),
       });
 
-      page.drawText('TRANSACTION ID', { x: 45, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+      page.drawText('RECEIPT / ID', { x: 45, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
       page.drawText('DATE', { x: 140, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
       page.drawText('PRODUCT ITEMS', { x: 210, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
       page.drawText('METHOD', { x: 420, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
@@ -163,14 +186,20 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
           });
         }
 
-        page.drawText(t.id || 'N/A', { x: 45, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(t.date || 'N/A', { x: 140, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
+        const txId = t.receipt_no || t.id || 'N/A';
+        const txDate = t.date || (t.created_at ? format(new Date(t.created_at), 'yyyy-MM-dd') : 'N/A');
+        const txName = t.productName || t.product_name || 'Sales Transaction';
+        const txMethod = t.paymentMethod || t.payment_method || 'N/A';
+        const txAmount = Number(t.totalAmount ?? t.total_amount ?? 0);
+
+        page.drawText(txId, { x: 45, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(txDate, { x: 140, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
         
-        const truncatedName = t.productName.length > 38 ? t.productName.substring(0, 35) + '...' : t.productName;
+        const truncatedName = txName.length > 38 ? txName.substring(0, 35) + '...' : txName;
         page.drawText(truncatedName, { x: 210, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
         
-        page.drawText(t.paymentMethod || 'N/A', { x: 420, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(`Php ${Number(t.totalAmount || 0).toFixed(2)}`, { x: 495, y: rowY, size: 7.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+        page.drawText(txMethod, { x: 420, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(`Php ${txAmount.toFixed(2)}`, { x: 495, y: rowY, size: 7.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
 
         rowY -= 18;
       });
@@ -186,10 +215,10 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
       const pdfBytes = await doc.save();
       const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
       saveAs(blob, `Palomar_Sales_Report_${startDate}_to_${endDate}.pdf`);
-      toast.success('Sales PDF exported!');
+      toast.success('Your sales PDF report has been generated and downloaded successfully!');
       onClose();
     } catch {
-      toast.error('Failed to compile report.');
+      toast.error('Could not generate the PDF report. Please try again.');
     } finally {
       setIsCompiling(false);
     }

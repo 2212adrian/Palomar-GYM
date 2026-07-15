@@ -62,7 +62,7 @@ export const ConfirmSignUp: React.FC = () => {
 
     // Only redirect if they are logged in under a fully activated 'active' account
     if (user && profile?.status === 'active') {
-      const targetRoute = profile?.role === 'staff' ? '/sales/register' : '/dashboard';
+      const targetRoute = profile?.role === 'staff' ? '/sales' : '/dashboard';
       navigate(targetRoute, { replace: true });
     }
   }, [initialized, user, profile, navigate]);

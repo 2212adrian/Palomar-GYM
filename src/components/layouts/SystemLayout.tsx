@@ -22,13 +22,6 @@ export const TabLoadingContext = createContext<TabLoadingContextType>({
 
 export const useTabLoading = () => useContext(TabLoadingContext);
 
-// Centralized directory of paths that actively query database APIs on mount (Removed Products Inventory)
-const DATA_LOADING_PATHS = [
-  '/dashboard',
-  '/reports/incident-reports',
-  '/system/audit-logs'
-];
-
 export const SystemLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,43 +33,16 @@ export const SystemLayout: React.FC = () => {
   const [slideOut, setSlideOut] = useState(false);
 
   // Tab transition & network state
-  const [activePath, setActivePath] = useState(location.pathname);
+  const [,setActivePath] = useState(location.pathname);
   const [activeTasks, setActiveTasks] = useState<string[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Determine if the URL path has changed but hasn't completed loading yet
-  const isDataLoadingRoute = DATA_LOADING_PATHS.some(path => location.pathname.startsWith(path));
-  const isRouteChanging = isDataLoadingRoute && (location.pathname !== activePath);
-  const isTabLoading = activeTasks.length > 0 || isRouteChanging;
+  // Upgraded: tab loader is now strictly bound to heavy background tasks
+  const isTabLoading = activeTasks.length > 0;
 
-  // Handle route change transitions selectively based on destination and active loading scopes
+  // Track path mutations instantly without triggering artificial loading screen blocks
   useEffect(() => {
-    // 1. Disable loading overlay completely on any Settings, Sales, or Members views and sub-tabs
-    if (
-      location.pathname.startsWith('/settings') ||
-      location.pathname.startsWith('/sales') ||
-      location.pathname.startsWith('/members')
-    ) {
-      setActivePath(location.pathname);
-      return;
-    }
-
-    // 2. Do not show the loading screen if the target route has nothing to load
-    const isDataLoadingRoute = DATA_LOADING_PATHS.some(path => location.pathname.startsWith(path));
-    if (!isDataLoadingRoute) {
-      setActivePath(location.pathname);
-      return;
-    }
-
-    // 3. Trigger transition loaders only on data-heavy views
-    startLoading('route-transition');
-
-    const timer = setTimeout(() => {
-      setActivePath(location.pathname);
-      stopLoading('route-transition');
-    }, 650);
-
-    return () => clearTimeout(timer);
+    setActivePath(location.pathname);
   }, [location.pathname]);
 
   // Monitor network connection status
@@ -128,6 +94,9 @@ export const SystemLayout: React.FC = () => {
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
       <div className="relative h-screen overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
         
+        {/* TAB LOADING OVERLAY - Only visible during heavy task executions */}
+        <TabLoader isVisible={isTabLoading} />
+
         {/* SIDEBAR */}
         <Sidebar
           collapsed={desktopCollapsed}
@@ -149,10 +118,6 @@ export const SystemLayout: React.FC = () => {
 
           {/* Scrollable Main Content Pane */}
           <div className="flex-1 overflow-y-auto lg:overflow-hidden relative min-w-0 px-4 pt-16 h-full">
-            
-            {/* TAB LOADING OVERLAY */}
-            <TabLoader isVisible={isTabLoading} />
-
            {/* Main content viewport with conditional fade-out */}
             <main 
               className={`h-full pt-0 pb-4 sm:pt-0 sm:px-20 sm:pb-20 lg:pt-0 lg:px-16 lg:pb-16 overflow-y-auto ${
@@ -183,3 +148,5 @@ export const SystemLayout: React.FC = () => {
     </TabLoadingContext.Provider>
   );
 };
+
+export default SystemLayout;

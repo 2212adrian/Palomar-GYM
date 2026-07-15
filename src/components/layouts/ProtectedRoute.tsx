@@ -67,7 +67,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   // Verify role authorizations on custom restricted nodes
   if (allowedRoles) {
     if (!effectiveRole || !allowedRoles.includes(effectiveRole)) {
-      const targetFallback = effectiveRole === 'staff' ? '/sales/register' : '/dashboard';
+      const targetFallback = effectiveRole === 'staff' ? '/sales' : '/dashboard';
       return <Navigate to={targetFallback} replace />;
     }
   }

@@ -252,7 +252,7 @@ export const Login: React.FC = () => {
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
       
-      const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : safeFromPath;
+      const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFromPath;
       navigate(targetRoute, { replace: true });
     }
   }, [initialized, user, navigate, isLoggingIn, location.state, isPreview]);
@@ -527,7 +527,7 @@ export const Login: React.FC = () => {
       setTimeout(() => {
         sessionStorage.removeItem('outroActive');
         const userProfile = (useAuthStore.getState() as any).profile;
-        const targetRoute = userProfile?.role === 'staff' ? '/sales/register' : safeFrom;
+        const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFrom;
         navigate(targetRoute, { replace: true });
       }, 1800);
     } catch (err: any) {

@@ -1,9 +1,10 @@
-//src/pages/sales/components/ProductFormModal.tsx
+// src/pages/sales/components/ProductFormModal.tsx
 import React, { useRef, useMemo, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { 
-  X, ImageIcon, Loader2, Upload, CheckCircle2, 
+  X, ImageIcon, Loader2, Upload, CheckCircle2, Plus, Trash,
   Tag, DollarSign, SlidersHorizontal, ChevronUp, ChevronDown, Eye, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -25,7 +26,6 @@ interface ProductFormModalProps {
   formImageUrl: string;
   setFormImageUrl: (val: string) => void;
 
-  // Background metadata tracking states (aligned to database columns)
   formManufacturerBarcode: string;
   setFormManufacturerBarcode: (val: string) => void;
   formManufacturerSource: string;
@@ -36,7 +36,7 @@ interface ProductFormModalProps {
   saving: boolean;
   uploading: boolean;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSave: (e: React.FormEvent) => void;
+  onSave: (e: React.FormEvent, bulkItems?: any[]) => void;
   onClose: () => void;
   existingProducts: { id: string; product_name: string; image_url: string | null }[]; 
   editingProductId?: string | null; 
@@ -51,18 +51,14 @@ const sessionLookupCache: Record<string, {
 
 const formatQuantity = (qty: string): string => {
   if (!qty) return '';
-  
-  // Matches centiliter patterns like "33 cl", "33cl", "25 cl e" (case-insensitive)
   const clRegex = /^(\d+(?:\.\d+)?)\s*cl\b/i;
   const match = qty.trim().match(clRegex);
-  
   if (match) {
     const num = parseFloat(match[1]);
     if (!isNaN(num)) {
-      return `${num * 10} ml`; // Converts centiliters to milliliters
+      return `${num * 10} ml`;
     }
   }
-  
   return qty;
 };
 
@@ -102,6 +98,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [apiLoading, setApiLoading] = useState(false);
   const lastFetchedBarcode = useRef<string>('');
 
+  // Local states for bulk additions
+  const [isMultiAddMode, setIsMultiAddMode] = useState(false);
+  const [stagedItems, setStagedItems] = useState<any[]>([]);
+
+  // State for custom inline confirmation overlay
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    type: 'disable_multi_add' | 'close_modal';
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const isDuplicateName = useMemo(() => {
     const nameClean = formName.trim().toLowerCase();
     if (!nameClean) return false;
@@ -124,14 +132,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     setFormManufacturerBarcode(barcode);
     setFormManufacturerSource('openfoodfacts');
 
-    // Combine raw name and auto-formatted quantity parameter (e.g., "Coca-Cola - 330 ml")
     if (!formName) {
       const rawName = data.product_name || '';
       const weightVolume = formatQuantity(data.quantity || '');
       const combinedName = weightVolume ? `${rawName} - ${weightVolume}` : rawName;
       setFormName(combinedName);
     }
-    // Replace the scanned barcode string in the image field with the actual web image URL
     setFormImageUrl(data.image_front_url || '');
   };
 
@@ -154,7 +160,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setApiLoading(true);
       lastFetchedBarcode.current = trimmed;
 
-      // Project the name, image, and quantity parameters to display complete details
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v2/product/${trimmed}.json?fields=product_name,image_front_url,quantity`
       );
@@ -174,13 +179,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
         sessionLookupCache[trimmed] = mappedData;
         applyOFFData(mappedData, trimmed);
-        toast.success('Product details imported.');
+        toast.success(`Success! Details for "${mappedData.product_name}" were automatically imported.`);
       } else {
         sessionLookupCache[trimmed] = { notFound: true };
-        
         setFormManufacturerBarcode(trimmed);
         setFormManufacturerSource('manual');
-        toast.info('Barcode recorded as manual entry.');
+        toast.info('Barcode details are not available. Custom data can be typed manually.');
       }
     } catch {
       setFormManufacturerBarcode(trimmed);
@@ -190,7 +194,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  // Inspect image URL field changes directly to check for barcode strings
   useEffect(() => {
     const trimmed = formImageUrl?.trim() || '';
     if (!trimmed || !/^\d{8,14}$/.test(trimmed)) {
@@ -212,19 +215,176 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const cleaned = val.replace(/\s+/g, '');
     setFormImageUrl(cleaned);
 
-    // Only wipe out the barcode if they were in the middle of typing a raw numeric barcode and cleared it
     const wasTypingBarcode = /^\d+$/.test(formImageUrl);
-    
     if (!cleaned && wasTypingBarcode) {
       setFormManufacturerBarcode('');
       setFormManufacturerSource('manual');
     }
   };
-  
-  return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up text-(--color-text)">
+
+  // Safe Multi-Add Toggle with custom modal verification
+  const handleToggleMultiAddMode = (checked: boolean) => {
+    if (!checked && stagedItems.length > 0) {
+      setConfirmDialog({
+        isOpen: true,
+        type: 'disable_multi_add',
+        message: `Disabling Multi-Add Mode will clear all ${stagedItems.length} staged items currently in your queue.`,
+        onConfirm: () => {
+          setIsMultiAddMode(false);
+          setStagedItems([]);
+          setConfirmDialog(null);
+        }
+      });
+      return;
+    }
+    setIsMultiAddMode(checked);
+  };
+
+  // Safe Modal Close (via X or Cancel) with custom modal verification
+  const handleAttemptClose = () => {
+    if (stagedItems.length > 0) {
+      setConfirmDialog({
+        isOpen: true,
+        type: 'close_modal',
+        message: `Closing this modal will permanently discard all ${stagedItems.length} staged items currently in your queue.`,
+        onConfirm: () => {
+          setStagedItems([]);
+          setConfirmDialog(null);
+          onClose();
+        }
+      });
+      return;
+    }
+    onClose();
+  };
+
+  const handleAddCurrentToQueue = () => {
+    const nameClean = formName.trim();
+    const priceNum = parseFloat(formPrice);
+
+    if (!nameClean) {
+      toast.error('Product name is required to stage an item.');
+      return;
+    }
+    if (isNaN(priceNum) || priceNum < 0) {
+      toast.error('Please enter a valid price to stage an item.');
+      return;
+    }
+
+    const stockQty = formHasStockLimit ? parseInt(formStockQuantity) || 0 : 0;
+    const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) || null : null;
+
+    const newItem = {
+      product_name: nameClean,
+      selling_price: priceNum,
+      has_stock_limit: formHasStockLimit,
+      stock_quantity: stockQty,
+      low_stock_alert: alertQty,
+      status: formStatus,
+      image_url: formImageUrl.trim() || null,
+      manufacturer_barcode: formManufacturerBarcode.trim() || null,
+      manufacturer_source: formManufacturerSource,
+      updated_at: new Date().toISOString()
+    };
+
+    setStagedItems((prev) => [...prev, newItem]);
+    toast.success(`Success! "${newItem.product_name}" (1x) has been successfully added to your creation queue.`);
+
+    // Clear form states for next entry
+    setFormName('');
+    setFormPrice('');
+    setFormImageUrl('');
+    setFormHasStockLimit(false);
+    setFormStockQuantity('0');
+    setFormLowStockAlert('');
+    setFormManufacturerBarcode('');
+    setFormManufacturerSource('manual');
+  };
+
+  const handleFormSubmission = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (isMultiAddMode) {
+      const currentName = formName.trim();
+      const currentPrice = parseFloat(formPrice);
+      let itemsToSave = [...stagedItems];
+
+      // Automatically include inputs in current form fields if valid
+      if (currentName && !isNaN(currentPrice) && currentPrice >= 0) {
+        const stockQty = formHasStockLimit ? parseInt(formStockQuantity) || 0 : 0;
+        const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) || null : null;
+
+        const currentStagedItem = {
+          product_name: currentName,
+          selling_price: currentPrice,
+          has_stock_limit: formHasStockLimit,
+          stock_quantity: stockQty,
+          low_stock_alert: alertQty,
+          status: formStatus,
+          image_url: formImageUrl.trim() || null,
+          manufacturer_barcode: formManufacturerBarcode.trim() || null,
+          manufacturer_source: formManufacturerSource,
+          updated_at: new Date().toISOString()
+        };
+        itemsToSave.push(currentStagedItem);
+      }
+
+      if (itemsToSave.length === 0) {
+        toast.error('Staging queue is empty. Please configure and add at least one product.');
+        return;
+      }
+
+      onSave(e, itemsToSave);
+    } else {
+      onSave(e);
+    }
+  };
+
+  const isSaveDisabled = useMemo(() => {
+    if (isMultiAddMode) {
+      const hasFormContent = formName.trim().length > 0 && parseFloat(formPrice) >= 0;
+      return stagedItems.length === 0 && !hasFormContent;
+    }
+    return false;
+  }, [isMultiAddMode, stagedItems.length, formName, formPrice]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[16000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in text-xs text-(--color-text)">
+      <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up relative">
         
+        {/* --- CUSTOM BEAUTIFUL INLINE CONFIRMATION OVERLAY --- */}
+        {confirmDialog && confirmDialog.isOpen && (
+          <div className="absolute inset-0 z-[17000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl animate-scale-up">
+              <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
+                <AlertTriangle className="w-5 h-5 animate-bounce" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-heading text-xs uppercase tracking-wider text-amber-500 font-bold leading-none">Discard Queue?</h4>
+                <p className="text-slate-450 dark:text-slate-400 text-[10px] leading-relaxed pt-1.5">
+                  {confirmDialog.message}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(null)}
+                  className="py-2.5 border border-(--border-color) bg-(--bg-page) text-slate-500 dark:text-slate-450 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDialog.onConfirm}
+                  className="py-2.5 bg-red-650 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer font-bold shadow-lg shadow-red-500/15 transition-all"
+                >
+                  Yes, Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MODAL HEADER */}
         <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between">
           <h3 className="font-heading text-xs tracking-widest uppercase text-(--color-text) flex items-center gap-2">
@@ -232,7 +392,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </h3>
           <button 
             type="button"
-            onClick={onClose}
+            onClick={handleAttemptClose}
             className="text-slate-400 hover:text-slate-200 cursor-pointer p-1 rounded-lg border-none bg-transparent"
             title="Close modal"
           >
@@ -240,8 +400,49 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={onSave} className="p-5 space-y-4 text-xs overflow-y-auto max-h-[80vh] no-scrollbar text-left">
+        <form onSubmit={handleFormSubmission} className="p-5 space-y-4 text-xs overflow-y-auto max-h-[80vh] no-scrollbar text-left">
           
+          {/* Multi-Add Toggle Header Panel */}
+          {!isEditing && (
+            <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-dashed border-(--border-color) rounded-xl">
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Multi-Add Mode</h4>
+                <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Build a queue of items to save them all in one go</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={isMultiAddMode}
+                onChange={(e) => handleToggleMultiAddMode(e.target.checked)}
+                className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-(--color-primary) focus:ring-0 cursor-pointer accent-(--color-primary)"
+              />
+            </div>
+          )}
+
+          {/* Staged Items list panel */}
+          {isMultiAddMode && stagedItems.length > 0 && (
+            <div className="p-3.5 bg-slate-100 dark:bg-neutral-900/60 border border-(--border-color) rounded-xl space-y-2 animate-scale-up">
+              <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block leading-none">
+                Staged Creation Queue ({stagedItems.length} items staged)
+              </span>
+              <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1 text-slate-800 dark:text-slate-200">
+                {stagedItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-[11px] bg-(--bg-card) px-3 py-1.5 border border-(--border-color) rounded-lg shadow-sm">
+                    <span className="font-bold truncate max-w-[240px]">
+                      {item.product_name} • ₱{item.selling_price.toFixed(2)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setStagedItems((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-red-500 hover:text-red-750 font-bold uppercase text-[9px] tracking-wider transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                      <Trash className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Core Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid gap-1.5">
@@ -252,7 +453,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <Input
                 id="form-product-name"
                 type="text"
-                required
+                required={!isMultiAddMode || stagedItems.length === 0}
                 maxLength={100}
                 label="e.g., Water Bottle, Protein Shake"
                 value={formName}
@@ -275,7 +476,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 id="form-product-price"
                 type="number"
                 step="0.01"
-                required
+                required={!isMultiAddMode || stagedItems.length === 0}
                 min="0"
                 label="0.00"
                 value={formPrice}
@@ -284,7 +485,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             </div>
           </div>
 
-          {/* Product Image / Photo (Autofills Product Name and Image URL when Barcode is pasted) */}
+          {/* Product Image / Photo */}
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
               <ImageIcon className="w-3.5 h-3.5" />
@@ -324,7 +525,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       setFormManufacturerBarcode('');
                       setFormManufacturerSource('manual');
                     }}
-                    className="text-red-500 hover:text-red-650 cursor-pointer font-bold text-[9px] uppercase tracking-wider transition-colors border-none bg-transparent"
+                    className="text-red-500 hover:text-red-655 cursor-pointer font-bold text-[9px] uppercase tracking-wider transition-colors border-none bg-transparent"
                     title="Remove manufacturer barcode from product"
                   >
                     Remove
@@ -473,26 +674,47 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-2 border-t border-(--border-color) pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-red-500/20 hover:border-red-500/30 text-red-500 dark:text-red-400 bg-transparent hover:bg-red-500/5 dark:hover:bg-red-500/10 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200"
-            >
-              Cancel
-            </button>
+          {/* Action Buttons Footer row */}
+          <div className="flex items-center justify-between gap-2 border-t border-(--border-color) pt-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleAttemptClose}
+                className="px-4 py-2 border border-red-500/20 hover:border-red-500/30 text-red-500 dark:text-red-400 bg-transparent hover:bg-red-500/5 dark:hover:bg-red-500/10 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200"
+              >
+                Cancel
+              </button>
+              
+              {isMultiAddMode && (
+                <button
+                  type="button"
+                  onClick={handleAddCurrentToQueue}
+                  className="px-4 py-2 bg-[#123c73]/10 dark:bg-zinc-800 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer hover:bg-blue-500/10 transition-all duration-200 flex items-center gap-1 font-bold"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add to Queue</span>
+                </button>
+              )}
+            </div>
+
             <Button
               type="submit"
               loading={saving}
+              disabled={isSaveDisabled}
               className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200"
             >
-              {isEditing ? 'Save Changes' : 'Add Item'}
+              {isEditing 
+                ? 'Save Changes' 
+                : isMultiAddMode 
+                  ? `Add ${stagedItems.length + (formName.trim().length > 0 ? 1 : 0)} Items`
+                  : 'Add Item'
+              }
             </Button>
           </div>
 
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

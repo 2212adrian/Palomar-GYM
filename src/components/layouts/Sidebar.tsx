@@ -1,3 +1,4 @@
+// src/components/layouts/Sidebar.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
@@ -163,32 +164,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
       children: [
         { 
           name: 'Register Sale', 
-          path: '/sales/register', 
+          path: '/sales', 
           description: 'Left Tab — Cash register interface' 
         },
         { 
           name: 'Product List', 
           path: '/sales/products', 
-          description: 'Right Tab — Inventory setup & custom Barcode generation' 
+          description: 'Right Tab — Inventory setup & custom Barcode generation',
+          roles: ['admin'] // Restricted to Admins only
         }
       ]
     },
     {
       name: 'Reports',
       icon: <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin', 'staff'], // Opened group to both roles
+      roles: ['admin', 'staff'],
       children: [
         { 
           name: 'Incident Reports', 
           path: '/reports/incident-reports', 
           description: 'Infraction logs and security entries',
-          roles: ['admin', 'staff'] // Accessible to both
+          roles: ['admin', 'staff']
         },
         { 
           name: 'BIR Records', 
           path: '/reports/bir', 
           description: 'Tax export sheets and sales book compliance',
-          roles: ['admin'] // Only visible to admins
+          roles: ['admin']
         }
       ]
     }
@@ -422,8 +424,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* ─── NAV NAVIGATION BUTTONS ─── */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-3 relative z-10 font-body">
           {allowedMenu.map((item, index) => {
+            const visibleChildren = item.children || [];
+            const hasMultipleChildren = visibleChildren.length > 1;
+            const singleChild = visibleChildren[0];
+            const isChildActive = visibleChildren.some(child => location.pathname === child.path);
             const isExpanded = !collapsed && expandedMenu === item.name;
-            const isChildActive = item.children?.some(child => location.pathname === child.path);
+
+            // OPTIMIZATION: If the category only has EXACTLY ONE accessible child item,
+            // render it directly as a simple navigation link without dropdown toggles.
+            if (!hasMultipleChildren && singleChild) {
+              const isActive = location.pathname === singleChild.path;
+              return (
+                <div key={index} className="space-y-1.5">
+                  <div
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border ${
+                      isActive 
+                        ? 'bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-white/10 shadow-md' 
+                        : 'border-transparent hover:bg-slate-50 dark:hover:bg-neutral-900/30'
+                    } ${collapsed ? 'justify-center' : ''}`}
+                  >
+                    <span className={`absolute left-0 top-1/4 h-1/2 w-1 rounded-r-md transition-all duration-300 ${
+                      isActive 
+                        ? 'bg-[#1b365d] dark:bg-[#bf0202] scale-y-100 opacity-100 shadow-[0_0_8px_rgba(191,2,2,0.6)]' 
+                        : 'bg-slate-300 dark:bg-neutral-700 scale-y-0 opacity-0'
+                    }`} />
+
+                    <Link
+                      to={singleChild.path}
+                      className="flex items-center gap-3 flex-1 select-none cursor-pointer group"
+                      title={collapsed ? item.name : undefined}
+                    >
+                      <span className={`transition-all duration-300 ${
+                        isActive 
+                          ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
+                          : 'text-slate-400 dark:text-slate-505 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                      }`}>
+                        {item.icon}
+                      </span>
+                      <span className={`text-[11px] font-heading tracking-wider uppercase transition-all duration-300 origin-left overflow-hidden whitespace-nowrap ${
+                        collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'
+                      } ${isActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-500 dark:text-slate-400 font-bold group-hover:text-slate-800 dark:group-hover:text-slate-200'}`}>
+                        {item.name}
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div key={index} className="space-y-1.5">
@@ -441,14 +488,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`} />
 
                   <Link
-                    to={item.children?.[0]?.path || '#'}
+                    to={visibleChildren[0]?.path || '#'}
                     className="flex items-center gap-3 flex-1 select-none cursor-pointer group"
                     title={collapsed ? item.name : undefined}
                   >
                     <span className={`transition-all duration-300 ${
                       isChildActive 
                         ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                        : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                        : 'text-slate-400 dark:text-slate-505 group-hover:text-slate-800 dark:group-hover:text-slate-200'
                     }`}>
                       {item.icon}
                     </span>
@@ -459,7 +506,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   </Link>
 
-                  {!collapsed && item.children && (
+                  {!collapsed && (
                     <button
                       onClick={(e) => {
                         e.preventDefault();
@@ -474,13 +521,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
                 </div>
 
-                {!collapsed && item.children && (
+                {!collapsed && (
                   <div 
                     className={`pl-6 ml-5 border-l border-slate-200 dark:border-white/5 space-y-3 overflow-hidden transition-all duration-500 ease-in-out ${
                       isExpanded ? 'max-h-96 opacity-100 py-1' : 'max-h-0 opacity-0 pointer-events-none'
                     }`}
                   >
-                    {item.children.map((child, cIdx) => {
+                    {visibleChildren.map((child, cIdx) => {
                       const isActive = location.pathname === child.path;
                       return (
                         <Link
@@ -503,7 +550,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             )}
                           </div>
                           {child.description && (
-                            <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-0.5 leading-tight group-hover/item:text-slate-500 dark:group-hover/item:text-slate-400 transition-colors duration-200">
+                            <p className="text-[9px] text-slate-400 dark:text-slate-505 font-bold mt-0.5 leading-tight group-hover/item:text-slate-500 dark:group-hover/item:text-slate-400 transition-colors duration-200">
                               {child.description}
                             </p>
                           )}
@@ -594,11 +641,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
         <aside 
          className={`fixed top-0 right-0 bottom-0 w-80 max-w-full bg-white dark:bg-(--bg-card) border-l border-slate-200 dark:border-white/5 p-6 flex flex-col justify-between transition-transform duration-300 ${
-  mobileOpen ? 'translate-x-0' : 'translate-x-full'
-}`}
+           mobileOpen ? 'translate-x-0' : 'translate-x-full'
+         }`}
         >
           <div 
-            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none transform-gpu will-change-transform" 
+            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none transform-gpu" 
             style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
           />
 
@@ -612,7 +659,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => setMobileOpen(false)} 
                   aria-label="Close Mobile Drawer"
                   title="Close Drawer"
-                  className="text-slate-500 dark:text-slate-400 cursor-pointer p-1.5 rounded-lg bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5"
+                  className="text-slate-505 dark:text-slate-400 cursor-pointer p-1.5 rounded-lg bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -631,14 +678,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <nav className="space-y-4 pt-2 overflow-y-auto max-h-[55vh] pr-1">
                 {allowedMenu.map((item, idx) => {
+                  const visibleChildren = item.children || [];
+                  const hasMultipleChildren = visibleChildren.length > 1;
+                  const singleChild = visibleChildren[0];
+                  const isChildActive = visibleChildren.some(child => location.pathname === child.path);
                   const isMobileExpanded = mobileExpandedMenu === item.name;
-                  const isChildActive = item.children?.some(child => location.pathname === child.path);
+
+                  // OPTIMIZATION: If the category only has EXACTLY ONE accessible child item,
+                  // render it directly as a simple navigation link without dropdown toggles on Mobile.
+                  if (!hasMultipleChildren && singleChild) {
+                    const isActive = location.pathname === singleChild.path;
+                    return (
+                      <div key={idx} className="space-y-2 animate-fade-in">
+                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none">
+                          <Link
+                            to={singleChild.path}
+                            onClick={() => setMobileOpen(false)}
+                            className="flex items-center gap-2 hover:opacity-85"
+                          >
+                            <span className={`transition-all duration-300 ${
+                              isActive 
+                                ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
+                                : 'text-slate-500 dark:text-slate-400'
+                            }`}>
+                              {item.icon}
+                            </span>
+                            <span className={`font-heading text-[10px] tracking-widest uppercase transition-colors duration-300 ${
+                              isActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-400 dark:text-slate-350'
+                            }`}>
+                              {item.name}
+                            </span>
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div key={idx} className="space-y-2">
                       <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none">
                         <Link
-                          to={item.children?.[0]?.path || '#'}
+                          to={visibleChildren[0]?.path || '#'}
                           onClick={() => setMobileOpen(false)}
                           className="flex items-center gap-2 hover:opacity-85"
                         >
@@ -656,63 +736,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </span>
                         </Link>
 
-                        {item.children && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMobileExpandedMenu(prev => prev === item.name ? null : item.name);
-                            }}
-                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                            aria-label={`Toggle ${item.name} Sub-options`}
-                          >
-                            <ChevronDown 
-                              className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                                isMobileExpanded ? 'rotate-180 text-[#1b365d] dark:text-[#bf0202]' : ''
-                              }`} 
-                            />
-                          </button>
-                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMobileExpandedMenu(prev => prev === item.name ? null : item.name);
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                          aria-label={`Toggle ${item.name} Sub-options`}
+                        >
+                          <ChevronDown 
+                            className={`w-3.5 h-3.5 transition-transform duration-300 ${
+                              isMobileExpanded ? 'rotate-180 text-[#1b365d] dark:text-[#bf0202]' : ''
+                            }`} 
+                          />
+                        </button>
                       </div>
 
-                      {item.children && (
-                        <div 
-                          className={`pl-3 space-y-3 overflow-hidden transition-all duration-300 ease-in-out ${
-                            isMobileExpanded ? 'max-h-64 opacity-100 py-1' : 'max-h-0 opacity-0 pointer-events-none'
-                          }`}
-                        >
-                          {item.children.map((child, cIdx) => {
-                            const isActive = location.pathname === child.path;
-                            return (
-                              <Link
-                                key={cIdx}
-                                to={child.path}
-                                onClick={() => setMobileOpen(false)}
-                                className="block group/mob"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className={`text-[11px] font-heading tracking-wider uppercase ${
-                                    isActive 
-                                      ? 'text-[#1b365d] dark:text-[#bf0202] font-black' 
-                                      : 'text-slate-600 dark:text-slate-300 group-hover/mob:text-slate-900 group-hover/mob:text-white'
+                      <div 
+                        className={`pl-3 space-y-3 overflow-hidden transition-all duration-300 ease-in-out ${
+                          isMobileExpanded ? 'max-h-64 opacity-100 py-1' : 'max-h-0 opacity-0 pointer-events-none'
+                        }`}
+                      >
+                        {visibleChildren.map((child, cIdx) => {
+                          const isActive = location.pathname === child.path;
+                          return (
+                            <Link
+                              key={cIdx}
+                              to={child.path}
+                              onClick={() => setMobileOpen(false)}
+                              className="block group/mob"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[11px] font-heading tracking-wider uppercase ${
+                                  isActive 
+                                    ? 'text-[#1b365d] dark:text-[#bf0202] font-black' 
+                                    : 'text-slate-600 dark:text-slate-300 group-hover/mob:text-slate-900 group-hover/mob:text-white'
                                   }`}>
-                                    {child.name}
+                                  {child.name}
+                                </span>
+                                {child.badge && (
+                                  <span className="text-[7px] font-heading font-black tracking-widest px-1 py-0.5 bg-red-500/10 text-[#bf0202] dark:text-[#bf0202] border border-red-500/20 rounded">
+                                    {child.badge}
                                   </span>
-                                  {child.badge && (
-                                    <span className="text-[7px] font-heading font-black tracking-widest px-1 py-0.5 bg-red-500/10 text-[#bf0202] dark:text-[#bf0202] border border-red-500/20 rounded">
-                                      {child.badge}
-                                    </span>
-                                  )}
-                                </div>
-                                {child.description && (
-                                  <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
-                                    {child.description}
-                                  </p>
                                 )}
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      )}
+                              </div>
+                              {child.description && (
+                                <p className="text-[9px] text-slate-400 dark:text-slate-505 font-bold mt-0.5">
+                                  {child.description}
+                                </p>
+                              )}
+                            </Link>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
@@ -754,7 +830,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={triggerMobileConfirm}
                   className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
                 >
-                  <LogOut className="w-4 h-4 animate-duration-3000" />
+                  <LogOut className="w-4 h-4" />
                   <span>LOGOUT</span>
                 </button>
               )}

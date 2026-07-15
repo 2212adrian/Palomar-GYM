@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Menu, ChevronLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -15,6 +17,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const [currentTime, setCurrentTime] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
   const [timeOffset, setTimeOffset] = useState<number>(0);
+
+  // Retrieve user authentication info and profile state
+  const { user, profile } = useAuthStore() as any;
+
+  // Resolve admin state consistently with authorization helpers
+  const isAdmin = 
+    user?.app_metadata?.role === 'Admin' || 
+    user?.app_metadata?.role === 'admin' || 
+    user?.user_metadata?.role === 'Admin' || 
+    user?.user_metadata?.role === 'admin' || 
+    profile?.role?.toLowerCase() === 'admin' ||
+    isSuperAdmin(user?.email);
 
   // Synchronize dynamic settings tab events
   useEffect(() => {
@@ -81,11 +95,11 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     if (salesView === 'register') {
       navigate('/sales/products');
     } else {
-      navigate('/sales/register');
+      // Corrected: Navigates back to the root sales path directly
+      navigate('/sales');
     }
   };
 
-  // Resolves the breadcrumbs path string (e.g., "SETTINGS / USER MANAGEMENT")
   const getBreadcrumbsString = () => {
     const paths = location.pathname.split('/').filter(Boolean);
     if (paths.length === 0) return 'DASHBOARD';
@@ -98,9 +112,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       baseBreadcrumb = 'SETTINGS';
     }
 
-    // BREADCRUMBS FIX: Dynamically update based on the sliding viewport state
     if (isSalesPath) {
-      baseBreadcrumb = salesView === 'register' ? 'SALES / REGISTER' : 'SALES / INVENTORY';
+      baseBreadcrumb = salesView === 'register' ? 'SALES' : 'SALES / INVENTORY';
     }
 
     if (subTab) {
@@ -143,8 +156,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
   return (
     <header className="h-16 border-b border-[#123c73]/25 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.05)] dark:shadow-[0_2px_8px_rgba(191,2,2,0.05)] bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-6 z-20 select-none">
-      
-      {/* Far Left Container */}
       <div className="flex items-center gap-3.5 min-w-[200px]">
         {subTab && (
           <button
@@ -157,28 +168,23 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           </button>
         )}
 
-        {/* Mobile / Tablet Breadcrumbs */}
         <div className="xl:hidden font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
           {renderStyledBreadcrumbs()}
         </div>
       </div>
 
-      {/* Centered Breadcrumbs Wrapper (Desktop Viewports Only) */}
       <div className="hidden xl:block absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
         {renderStyledBreadcrumbs()}
       </div>
 
-      {/* Real-time clock and mobile navigation items */}
       <div className="flex items-center gap-4 ml-auto">
-        
-        {/* MOBILE SLIDE NAVIGATION TRIGGER */}
-        {isSalesPath && (
+        {isSalesPath && isAdmin && (
           <button
             onClick={handleToggleSalesView}
             className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up"
-            title={salesView === 'register' ? "Slide to Inventory" : "Slide to Register"}
+            title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
           >
-            {salesView === 'register' ? 'Products →' : '← Register'}
+            {salesView === 'register' ? 'Products →' : '← Sales'}
           </button>
         )}
 
@@ -186,7 +192,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           {currentTime}
         </div>
 
-        {/* Mobile hamburger */}
         <button 
           onClick={onMenuClick}
           aria-label="Open Navigation Drawer"
