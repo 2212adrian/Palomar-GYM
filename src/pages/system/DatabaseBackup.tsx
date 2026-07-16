@@ -24,7 +24,8 @@ import {
 
 export const DatabaseBackup: React.FC = () => {
   const [backups, setBackups] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Initializing to true prevents layout flashing before query fires
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
@@ -608,7 +609,7 @@ export const DatabaseBackup: React.FC = () => {
                     onClick={() => handleUnarchiveBackup(b.id)}
                     className="w-full px-3.5 py-2 hover:bg-(--bg-input) text-(--color-text) opacity-85 hover:opacity-100 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <Archive className="w-4 h-4 text-emerald-450 rotate-180" />
+                    <Archive className="w-4 h-4 text-emerald-455 rotate-180" />
                     Unarchive Backup
                   </button>
                 )}
@@ -684,46 +685,87 @@ export const DatabaseBackup: React.FC = () => {
 
       {/* Dynamic KPI Info Widgets - Hidden on mobile viewports */}
       <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-5">
+        
+        {/* KPI 1 */}
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi1.colorClass}`}>
             {kpiConfig.kpi1.icon}
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi1.title}</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wide mt-0.5 block">
-              {kpiConfig.kpi1.value}
+          <div className="space-y-1.5 flex-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              {kpiConfig.kpi1.title}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi1.subtext}</span>
+            {isLoading ? (
+              <div className="h-6 w-20 bg-slate-200 dark:bg-white/10 rounded animate-pulse mt-0.5" />
+            ) : (
+              <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wide mt-0.5 block animate-fade-in">
+                {kpiConfig.kpi1.value}
+              </span>
+            )}
+            {isLoading ? (
+              <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
+            ) : (
+              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+                {kpiConfig.kpi1.subtext}
+              </span>
+            )}
           </div>
         </div>
 
+        {/* KPI 2 */}
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi2.colorClass}`}>
             {kpiConfig.kpi2.icon}
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi2.title}</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {kpiConfig.kpi2.value}
+          <div className="space-y-1.5 flex-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              {kpiConfig.kpi2.title}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi2.subtext}</span>
+            {isLoading ? (
+              <div className="h-6 w-20 bg-slate-200 dark:bg-white/10 rounded animate-pulse mt-0.5" />
+            ) : (
+              <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block animate-fade-in">
+                {kpiConfig.kpi2.value}
+              </span>
+            )}
+            {isLoading ? (
+              <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
+            ) : (
+              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+                {kpiConfig.kpi2.subtext}
+              </span>
+            )}
           </div>
         </div>
 
+        {/* KPI 3 */}
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi3.colorClass}`}>
             {kpiConfig.kpi3.icon}
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi3.title}</span>
-            <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {kpiConfig.kpi3.value}
+          <div className="space-y-1.5 flex-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              {kpiConfig.kpi3.title}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi3.subtext}</span>
+            {isLoading ? (
+              <div className="h-6 w-20 bg-slate-200 dark:bg-white/10 rounded animate-pulse mt-0.5" />
+            ) : (
+              <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block animate-fade-in">
+                {kpiConfig.kpi3.value}
+              </span>
+            )}
+            {isLoading ? (
+              <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
+            ) : (
+              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+                {kpiConfig.kpi3.subtext}
+              </span>
+            )}
           </div>
         </div>
-      </div>
 
+      </div>
+      
       {/* Filter Options & Search Block */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-4 rounded-2xl border border-(--border-color)">
         <div className="relative flex-1 max-w-md">

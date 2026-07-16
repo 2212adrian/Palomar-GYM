@@ -2,12 +2,12 @@
 -- 20260707190000_create_products.sql
 
 -- 1. Safely create custom ENUM type for product status if it does not exist
-DO $$
+DO $type_creation$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'product_status') THEN
         CREATE TYPE public.product_status AS ENUM ('Active', 'Inactive');
     END IF;
-END $$;
+END $type_creation$;
 
 -- 2. Create the unique random barcode ID generator function
 -- Generates values in 'PR-XXXX' format, where XXXX is a 4-digit random string (e.g., PR-4832)
@@ -165,7 +165,7 @@ CREATE POLICY "Allow authorized users to delete products" ON public.products
 
 
 -- 9. Enable Realtime Postgres Changes safely
-DO $$
+DO $realtime_setup$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
         IF NOT EXISTS (
@@ -178,15 +178,14 @@ BEGIN
             ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
         END IF;
     END IF;
-END $$;
+END $realtime_setup$;
 
 
--- 10. Auto-Deletion Schedule (30 Days Retention)
--- Ensures the pg_cron extension is enabled and schedules a daily hard delete job
+-- 10. Auto-Deletion Schedule (30 Days Retention) - Everyday at 8:00 AM UTC
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 SELECT cron.schedule(
     'purge-old-soft-deleted-products',
-    '0 2 * * *', -- Everyday at 8:00 AM UTC
-    $$ DELETE FROM public.products WHERE deleted_at IS NOT NULL AND deleted_at < now() - INTERVAL '30 days'; $$
+    '0 2 * * *',
+    'DELETE FROM public.products WHERE deleted_at IS NOT NULL AND deleted_at < now() - INTERVAL ''30 days'''
 );

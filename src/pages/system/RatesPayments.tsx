@@ -1,4 +1,4 @@
-//src/pages/system/RatesPayments.tsx
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -10,7 +10,6 @@ import {
   Percent, 
   User, 
   Receipt,
-  Loader2,
   Info
 } from 'lucide-react';
 
@@ -41,7 +40,6 @@ export const RatesPayments: React.FC = () => {
   const loadedConfig = getInitialRatesConfig();
   const { profile, user } = useAuthStore();
 
-  // 1. Reactive state configuration settings
   const [monthlyRate, setMonthlyRate] = useState<number>(loadedConfig.monthlyRate);
   const [yearlyRate, setYearlyRate] = useState<number>(loadedConfig.yearlyRate);
   const [regularWalkIn, setRegularWalkIn] = useState<number>(loadedConfig.regularWalkIn);
@@ -52,18 +50,15 @@ export const RatesPayments: React.FC = () => {
   const [vatEnabled, setVatEnabled] = useState<boolean>(loadedConfig.vatEnabled);
   const [vatPercentage, setVatPercentage] = useState<number>(loadedConfig.vatPercentage);
   
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [, setIsSaving] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [initialConfig, setInitialConfig] = useState<any>(loadedConfig);
   
-  // Dynamic business brand state to feed the receipt header
   const [gymProfileData, setGymProfileData] = useState<any>(null);
 
-  // Refs guarantee event listeners always access the correct states without stale closures or re-binding
   const initialConfigRef = useRef<any>(loadedConfig);
   const currentConfigRef = useRef<any>(null);
 
-  // Sync current config ref on every render state change
   currentConfigRef.current = {
     monthlyRate,
     yearlyRate,
@@ -76,7 +71,6 @@ export const RatesPayments: React.FC = () => {
     vatPercentage
   };
 
-  // Fetch configuration parameters directly from Supabase rates_config table
   const fetchRatesConfig = async () => {
     try {
       setIsLoading(true);
@@ -120,7 +114,6 @@ export const RatesPayments: React.FC = () => {
     }
   };
 
-  // Fetch active branding context to render dynamically in the thermal receipt
   const fetchGymProfile = async () => {
     try {
       const { data, error } = await supabase
@@ -143,14 +136,12 @@ export const RatesPayments: React.FC = () => {
     fetchGymProfile();
   }, []);
 
-  // 2. Receipt Preview States (Cash simulation states completely removed)
   const [previewPlan, setPreviewPlan] = useState<'monthly' | 'yearly' | 'regular_walkin' | 'student_walkin' | 'yearly_walkin'>('monthly');
   const [previewPaymentMethod, setPreviewPaymentMethod] = useState<'cash' | 'gcash'>('cash');
   const [previewNewCard, setPreviewNewCard] = useState<boolean>(false);
-  const [showReceipt, setShowReceipt] = useState<boolean>(true); // Receipt collapse toggle
-  const [currentTimeString, setCurrentTimeString] = useState<string>(''); // Live clock string
+  const [showReceipt, setShowReceipt] = useState<boolean>(true);
+  const [currentTimeString, setCurrentTimeString] = useState<string>('');
 
-  // Real-time clock synchronization for the simulated receipt transaction date
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -171,22 +162,9 @@ export const RatesPayments: React.FC = () => {
       );
     };
     updateTime();
-    const interval = setInterval(updateTime, 1000); // Tick once per second
+    const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
-
-  // Compute dirty state
-  const isDirty = initialConfig && (
-    monthlyRate !== initialConfig.monthlyRate ||
-    yearlyRate !== initialConfig.yearlyRate ||
-    regularWalkIn !== initialConfig.regularWalkIn ||
-    studentWalkIn !== initialConfig.studentWalkIn ||
-    yearlyWalkIn !== initialConfig.yearlyWalkIn ||
-    gcashFee !== initialConfig.gcashFee ||
-    newCardFee !== initialConfig.newCardFee ||
-    vatEnabled !== initialConfig.vatEnabled ||
-    vatPercentage !== initialConfig.vatPercentage
-  );
 
   const handleSaveConfig = async () => {
     setIsSaving(true);
@@ -211,14 +189,13 @@ export const RatesPayments: React.FC = () => {
 
       if (error) throw error;
 
-      // Log the system change (DB automatic trigger also logs this; this serves as client-side backup)
       await logAudit(
         'SYSTEM_RATES_UPDATED',
         `Rates updated: Monthly sub = ₱${current.monthlyRate}, Yearly sub = ₱${current.yearlyRate}, Regular Walk-In = ₱${current.regularWalkIn}, Student Walk-In = ₱${current.studentWalkIn}, Yearly Member Walk-In = ₱${current.yearlyWalkIn}.`
       );
 
       setInitialConfig(current);
-      initialConfigRef.current = current; // Keep ref updated
+      initialConfigRef.current = current;
       toast.success('Rates and transaction rules saved to cloud database.');
     } catch (err: any) {
       toast.error(err.message || 'Failed to sync modifications.');
@@ -227,7 +204,6 @@ export const RatesPayments: React.FC = () => {
     }
   };
 
-  // Bind saving trigger to custom portal event (No state variables in dependency array)
   useEffect(() => {
     const handleSaveTrigger = () => {
       handleSaveConfig();
@@ -236,7 +212,6 @@ export const RatesPayments: React.FC = () => {
     return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, []);
 
-  // Bind cancel trigger to revert states immediately (No state variables in dependency array)
   useEffect(() => {
     const handleCancelTrigger = () => {
       const config = initialConfigRef.current;
@@ -257,23 +232,6 @@ export const RatesPayments: React.FC = () => {
     return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
   }, []);
 
-  // Sync state with parent component
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-      detail: { isDirty, isSaving } 
-    }));
-  }, [isDirty, isSaving]);
-
-  // Clean up dirty state on unmount
-  useEffect(() => {
-    return () => {
-      window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-        detail: { isDirty: false, isSaving: false } 
-      }));
-    };
-  }, []);
-
-  // Dynamic BIR VAT Calculations
   const calculateReceipt = () => {
     let basePrice = 0;
     let description = '';
@@ -303,12 +261,10 @@ export const RatesPayments: React.FC = () => {
 
     let extraCharges = 0;
 
-    // GCash Surcharge
     if (previewPaymentMethod === 'gcash') {
       extraCharges += gcashFee;
     }
 
-    // New Card Fee Surcharge
     const isSubscription = previewPlan === 'monthly' || previewPlan === 'yearly';
     if (previewNewCard && isSubscription) {
       extraCharges += newCardFee;
@@ -330,7 +286,7 @@ export const RatesPayments: React.FC = () => {
     }
 
     return {
-      basePrice, // Exposed base price to render separately from extra fees
+      basePrice,
       description,
       subtotal,
       totalDue,
@@ -345,15 +301,6 @@ export const RatesPayments: React.FC = () => {
 
   const isSubscription = previewPlan === 'monthly' || previewPlan === 'yearly';
   const processedByUsername = profile?.username || user?.user_metadata?.full_name || 'Staff';
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 max-w-md mx-auto">
-        <Loader2 className="w-8 h-8 animate-spin text-(--color-primary-light)" />
-        <p className="text-sm text-slate-400">Loading system rates database settings...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 font-body text-(--color-text)">
@@ -382,37 +329,45 @@ export const RatesPayments: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-1.5">
                 <label htmlFor="monthlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Monthly Plan Rate</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="monthlyRateInput"
-                    type="number"
-                    value={monthlyRate}
-                    placeholder="0"
-                    title="Monthly Plan Rate"
-                    onChange={(e) => setMonthlyRate(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="monthlyRateInput"
+                      type="number"
+                      value={monthlyRate}
+                      placeholder="0"
+                      title="Monthly Plan Rate"
+                      onChange={(e) => setMonthlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-1.5">
                 <label htmlFor="yearlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Yearly Registration Fee</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="yearlyRateInput"
-                    type="number"
-                    value={yearlyRate}
-                    placeholder="0"
-                    title="Yearly Plan Rate"
-                    onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="yearlyRateInput"
+                      type="number"
+                      value={yearlyRate}
+                      placeholder="0"
+                      title="Yearly Plan Rate"
+                      onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
               </div>
             </div>
-            <p className="text-xs text-slate-450 leading-relaxed font-semibold">Monthly subscriptions grant free daily entry. Yearly memberships grant a discounted daily rate.</p>
+            <p className="text-xs text-slate-455 leading-relaxed font-semibold">Monthly subscriptions grant free daily entry. Yearly memberships grant a discounted daily rate.</p>
           </div>
 
           {/* Group 2: Regular & Student Walk-In Fees */}
@@ -424,54 +379,66 @@ export const RatesPayments: React.FC = () => {
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="regularWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Regular Non-Member</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="regularWalkInInput"
-                    type="number"
-                    value={regularWalkIn}
-                    placeholder="0"
-                    title="Regular Walk-In Fee"
-                    onChange={(e) => setRegularWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
+                <label htmlFor="regularWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">Regular Non-Member</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="regularWalkInInput"
+                      type="number"
+                      value={regularWalkIn}
+                      placeholder="0"
+                      title="Regular Walk-In Fee"
+                      onChange={(e) => setRegularWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="studentWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Student Non-Member</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="studentWalkInInput"
-                    type="number"
-                    value={studentWalkIn}
-                    placeholder="0"
-                    title="Student Walk-In Fee"
-                    onChange={(e) => setStudentWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
+                <label htmlFor="studentWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">Student Non-Member</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="studentWalkInInput"
+                      type="number"
+                      value={studentWalkIn}
+                      placeholder="0"
+                      title="Student Walk-In Fee"
+                      onChange={(e) => setStudentWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="yearlyWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Yearly Member Daily</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="yearlyWalkInInput"
-                    type="number"
-                    value={yearlyWalkIn}
-                    placeholder="0"
-                    title="Yearly Member Walk-In Fee"
-                    onChange={(e) => setYearlyWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
+                <label htmlFor="yearlyWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">Yearly Member Daily</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="yearlyWalkInInput"
+                      type="number"
+                      value={yearlyWalkIn}
+                      placeholder="0"
+                      title="Yearly Member Walk-In Fee"
+                      onChange={(e) => setYearlyWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
               </div>
             </div>
-            <p className="text-xs text-slate-450 leading-relaxed font-semibold">Student discounts apply to walk-in visitors only. Yearly members pay a heavily discounted daily rate.</p>
+            <p className="text-xs text-slate-455 leading-relaxed font-semibold">Student discounts apply to walk-in visitors only. Yearly members pay a heavily discounted daily rate.</p>
           </div>
 
           {/* Group 3: Surcharges & Miscellaneous */}
@@ -483,37 +450,45 @@ export const RatesPayments: React.FC = () => {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="gcashFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">GCash Extra Charge</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="gcashFeeInput"
-                    type="number"
-                    value={gcashFee}
-                    placeholder="0"
-                    title="GCash Extra Charge"
-                    onChange={(e) => setGcashFee(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
-                <p className="text-xs text-slate-450 leading-relaxed font-semibold">Convenience fee added when paying via GCash transfer.</p>
+                <label htmlFor="gcashFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">GCash Extra Charge</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="gcashFeeInput"
+                      type="number"
+                      value={gcashFee}
+                      placeholder="0"
+                      title="GCash Extra Charge"
+                      onChange={(e) => setGcashFee(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
+                <p className="text-xs text-slate-455 leading-relaxed font-semibold">Convenience fee added when paying via GCash transfer.</p>
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="newCardFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">New Card Fee</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
-                  <input
-                    id="newCardFeeInput"
-                    type="number"
-                    value={newCardFee}
-                    placeholder="0"
-                    title="New Card Fee"
-                    onChange={(e) => setNewCardFee(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  />
-                </div>
-                <p className="text-xs text-slate-450 leading-relaxed font-semibold">For printing new or replacement QR Membership Cards.</p>
+                <label htmlFor="newCardFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">New Card Fee</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <input
+                      id="newCardFeeInput"
+                      type="number"
+                      value={newCardFee}
+                      placeholder="0"
+                      title="New Card Fee"
+                      onChange={(e) => setNewCardFee(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    />
+                  </div>
+                )}
+                <p className="text-xs text-slate-455 leading-relaxed font-semibold">For printing new or replacement QR Membership Cards.</p>
               </div>
             </div>
           </div>
@@ -526,39 +501,47 @@ export const RatesPayments: React.FC = () => {
                 VAT Settings
               </h3>
               
-              <button
-                type="button"
-                onClick={() => setVatEnabled(!vatEnabled)}
-                aria-label="Toggle VAT Calculations"
-                title="Toggle VAT Calculations"
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                  vatEnabled ? 'bg-(--color-primary)' : 'bg-(--bg-input)'
-                }`}
-              >
-                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                  vatEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`} />
-              </button>
+              {isLoading ? (
+                <div className="w-11 h-6 bg-slate-100 dark:bg-white/5 rounded-full animate-pulse" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setVatEnabled(!vatEnabled)}
+                  aria-label="Toggle VAT Calculations"
+                  title="Toggle VAT Calculations"
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                    vatEnabled ? 'bg-(--color-primary)' : 'bg-(--bg-input)'
+                  }`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                    vatEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div className="grid gap-1.5">
-                <label htmlFor="vatPercentageInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">VAT Percentage (%)</label>
-                <div className="relative">
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs">%</span>
-                  <input
-                    id="vatPercentageInput"
-                    type="number"
-                    disabled={!vatEnabled}
-                    value={vatPercentage}
-                    placeholder="0"
-                    title="VAT Percentage"
-                    onChange={(e) => setVatPercentage(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full pl-4 pr-8 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) disabled:opacity-50 transition-all"
-                  />
-                </div>
+                <label htmlFor="vatPercentageInput" className="text-xs font-bold uppercase tracking-wider text-slate-455">VAT Percentage (%)</label>
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-(--border-color) animate-pulse" />
+                ) : (
+                  <div className="relative">
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs">%</span>
+                    <input
+                      id="vatPercentageInput"
+                      type="number"
+                      disabled={!vatEnabled}
+                      value={vatPercentage}
+                      placeholder="0"
+                      title="VAT Percentage"
+                      onChange={(e) => setVatPercentage(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full pl-4 pr-8 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) disabled:opacity-50 transition-all"
+                    />
+                  </div>
+                )}
               </div>
-              <div className="flex items-center text-xs text-slate-450 leading-normal font-semibold">
+              <div className="flex items-center text-xs text-slate-455 leading-normal font-semibold">
                 <span>Toggle to enable or disable VAT computations in receipts. Standard BIR compliance in the Philippines requires 12% inclusive VAT.</span>
               </div>
             </div>
@@ -566,7 +549,7 @@ export const RatesPayments: React.FC = () => {
 
         </div>
 
-        {/* Right Side: Interactive Payment Calculator & BIR Thermal Receipt */}
+        {/* Right Side: Interactive Payment Calculator & BIR Thermal Receipt (Fully dynamic and surgical) */}
         <div className="lg:col-span-5 space-y-6">
           
           <div className="p-6 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xs space-y-5 flex flex-col h-full justify-between">
@@ -579,7 +562,6 @@ export const RatesPayments: React.FC = () => {
                   </h3>
                 </div>
                 
-                {/* Collapsible Toggle */}
                 <button
                   onClick={() => setShowReceipt(!showReceipt)}
                   className="text-[10px] font-heading tracking-wider uppercase text-(--color-primary-light) hover:opacity-85 transition-opacity cursor-pointer border border-(--border-color) px-2 py-1 rounded-md bg-(--bg-page)"
@@ -588,15 +570,14 @@ export const RatesPayments: React.FC = () => {
                 </button>
               </div>
               
-              {/* Context usability instructions callout as requested */}
               <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-blue-400">
                 <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
                 <span>Edit your pricing parameters on the left, and instantly see how the customer's live thermal receipt looks on the right.</span>
               </div>
 
-              {/* Calculator Settings: Product/Check-In Selectors */}
+              {/* Calculator Settings (Available instantly) */}
               <div className="space-y-2.5 pt-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-450 block">1. Select Purchase Scenario</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-455 block">1. Select Purchase Scenario</span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => setPreviewPlan('monthly')}
@@ -660,10 +641,10 @@ export const RatesPayments: React.FC = () => {
                 </div>
               </div>
 
-              {/* Calculator Settings: Payment Gateway & Card fees toggles */}
+              {/* Calculator Settings */}
               <div className="grid grid-cols-2 gap-4 pt-1">
                 <div className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-450 block">2. Payment Method</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-455 block">2. Payment Method</span>
                   <div className="flex bg-(--bg-page) p-1 rounded-lg border border-(--border-color)">
                     <button
                       onClick={() => setPreviewPaymentMethod('cash')}
@@ -689,7 +670,7 @@ export const RatesPayments: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-450 block">3. Card Options</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-455 block">3. Card Options</span>
                   <button
                     disabled={previewPlan === 'regular_walkin' || previewPlan === 'student_walkin' || previewPlan === 'yearly_walkin'}
                     onClick={() => setPreviewNewCard(!previewNewCard)}
@@ -705,14 +686,12 @@ export const RatesPayments: React.FC = () => {
               </div>
             </div>
 
-            {/* BIR Thermal Receipt - Collapsible based on state */}
+            {/* BIR Thermal Receipt (Price output cells are safely loading-gated) */}
             {showReceipt && (
               <div className="border border-(--border-color) rounded-2xl bg-(--bg-page) p-5 shadow-md space-y-4 font-mono text-[10px] text-(--color-text) opacity-85 relative overflow-hidden transition-all duration-300 leading-normal animate-slide-up">
                 
-                {/* Paper indicator bar with dynamic branding line gradient */}
                 <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-(--color-primary) to-(--color-primary-light) opacity-80" />
 
-               {/* Receipt Header - Populated dynamically from cloud storage */}
                 <div className="text-center space-y-1">
                   <img 
                     src={gymProfileData?.gym_logo || "/favicon.svg"} 
@@ -737,7 +716,6 @@ export const RatesPayments: React.FC = () => {
                   {isSubscription ? 'Subscription Official Receipt' : 'Walk-In Official Receipt'}
                 </div>
 
-                {/* Scanning Reference QR Block - Conditionally hidden for non-subscriptions */}
                 {isSubscription && (
                   <div className="flex items-center gap-3.5 py-1 bg-(--bg-card) p-2.5 rounded-xl border border-(--border-color) animate-slide-up">
                     <svg className="w-12 h-12 text-(--color-text) shrink-0 select-none" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -752,9 +730,7 @@ export const RatesPayments: React.FC = () => {
 
                 <div className="border-b border-dashed border-(--border-color) my-2" />
 
-                {/* BIR Transaction Details metadata fields */}
                 <div className="space-y-1.5 text-[9px]">
-                  {/* Dynamic receipt identifiers - Conditionally hidden for non-subscriptions */}
                   {isSubscription && (
                     <>
                       <div className="flex justify-between">
@@ -778,30 +754,39 @@ export const RatesPayments: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Explicit Base Charge Line Item */}
                   <div className="flex justify-between">
                     <span className="text-slate-500">{isSubscription ? 'MEMBERSHIP FEE' : 'WALK-IN CHARGE'}</span>
                     <span className="font-semibold text-(--color-text)">
-                      ₱{receipt.basePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {isLoading ? (
+                        <span className="inline-block h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                      ) : (
+                        `₱${receipt.basePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      )}
                     </span>
                   </div>
 
-                  {/* Separate Card Fee Line Item */}
                   {previewNewCard && (previewPlan === 'monthly' || previewPlan === 'yearly') && (
                     <div className="flex justify-between animate-slide-up">
                       <span className="text-slate-500">CARD FEE</span>
                       <span className="font-semibold text-(--color-text)">
-                        +₱{newCardFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {isLoading ? (
+                          <span className="inline-block h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                        ) : (
+                          `+₱${newCardFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        )}
                       </span>
                     </div>
                   )}
 
-                  {/* Separate GCash Fee Line Item */}
                   {previewPaymentMethod === 'gcash' && (
                     <div className="flex justify-between animate-slide-up">
                       <span className="text-slate-500">GCASH CONVENIENCE FEE</span>
                       <span className="font-semibold text-(--color-text)">
-                        +₱{gcashFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {isLoading ? (
+                          <span className="inline-block h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                        ) : (
+                          `+₱${gcashFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        )}
                       </span>
                     </div>
                   )}
@@ -824,42 +809,61 @@ export const RatesPayments: React.FC = () => {
 
                 <div className="border-b border-dashed border-(--border-color) my-2" />
 
-                {/* Subtotal & Totals with high readability borders */}
                 <div className="space-y-1.5 text-xs">
                   <div className="flex justify-between font-bold">
                     <span>SUBTOTAL</span>
-                    <span>₱{receipt.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    {isLoading ? (
+                      <span className="h-3 w-16 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                    ) : (
+                      <span>₱{receipt.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    )}
                   </div>
 
-                  {/* Total Due highlighted box matching style specifications */}
                   <div className="flex justify-between items-center bg-(--bg-card) border border-(--border-color) rounded-xl px-3 py-2 text-(--color-text) font-extrabold text-sm">
                     <span>TOTAL DUE</span>
-                    <span className="text-(--color-primary-light)">₱{receipt.totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    {isLoading ? (
+                      <span className="h-4 w-16 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                    ) : (
+                      <span className="text-(--color-primary-light)">₱{receipt.totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    )}
                   </div>
-
-                  {/* Simulated cash drawer computations fully removed here */}
                 </div>
 
-                {/* Dynamic BIR Tax breakdown (Fully hidden instead of displaying zero when VAT is disabled) */}
                 {vatEnabled && (
                   <>
                     <div className="border-b border-dashed border-(--border-color) my-2" />
                     <div className="space-y-1 text-[9px] text-slate-500 animate-slide-up">
                       <div className="flex justify-between">
                         <span>VATABLE SALES</span>
-                        <span>₱{receipt.vatableSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {isLoading ? (
+                          <span className="h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                        ) : (
+                          <span>₱{receipt.vatableSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        )}
                       </div>
                       <div className="flex justify-between">
                         <span>VAT ({vatPercentage}%)</span>
-                        <span>₱{receipt.vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {isLoading ? (
+                          <span className="h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                        ) : (
+                          <span>₱{receipt.vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        )}
                       </div>
                       <div className="flex justify-between">
                         <span>VAT EXEMPT SALES</span>
-                        <span>₱{receipt.vatExemptSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {isLoading ? (
+                          <span className="h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                        ) : (
+                          <span>₱{receipt.vatExemptSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        )}
                       </div>
                       <div className="flex justify-between">
                         <span>ZERO-RATED SALES</span>
-                        <span>₱{receipt.zeroRatedSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {isLoading ? (
+                          <span className="h-3 w-12 bg-slate-100 dark:bg-white/5 rounded animate-pulse inline-block" />
+                        ) : (
+                          <span>₱{receipt.zeroRatedSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        )}
                       </div>
                     </div>
                   </>
@@ -867,7 +871,6 @@ export const RatesPayments: React.FC = () => {
 
                 <div className="border-b border-dashed border-(--border-color) my-2" />
 
-                {/* Invoice verification guidelines footer */}
                 <div className="text-center space-y-2 pt-1.5 text-[8px] text-slate-500 leading-normal">
                   <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice</p>
                   <div className="font-medium uppercase tracking-widest text-slate-500 space-y-0.5">

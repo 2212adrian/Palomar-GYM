@@ -30,7 +30,8 @@ export const UserManagement: React.FC = () => {
 
   // Profiles list directories state
   const [usersList, setUsersList] = useState<any[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  // Initializing to true prevents layout flashing before query fires
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
 
   // Local draft changes state (Silhouette state holder)
@@ -92,17 +93,14 @@ export const UserManagement: React.FC = () => {
     };
   }, [isAdmin]);
 
-  // Compute dirty parameters
   const isDirty = Object.keys(drafts).length > 0;
 
-  // Sync current dirty states with the parent configuration page
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
       detail: { isDirty, isSaving } 
     }));
   }, [isDirty, isSaving]);
 
-  // Clean up states on component dismount
   useEffect(() => {
     return () => {
       window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
@@ -111,7 +109,6 @@ export const UserManagement: React.FC = () => {
     };
   }, []);
 
-  // Save changes block
   const handleSaveAllDrafts = async (currentDrafts: Record<string, DraftChange>) => {
     const keys = Object.keys(currentDrafts);
     if (keys.length === 0) return;
@@ -134,7 +131,6 @@ export const UserManagement: React.FC = () => {
 
         if (error) throw error;
 
-        // Log audit log
         const auditChanges = [];
         if (draft.role) auditChanges.push(`role to "${draft.role}"`);
         if (draft.status) auditChanges.push(`status to "${draft.status}"`);
@@ -157,7 +153,6 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  // Bind custom save trigger from parent settings
   useEffect(() => {
     const handleSaveTrigger = () => {
       handleSaveAllDrafts(drafts);
@@ -166,7 +161,6 @@ export const UserManagement: React.FC = () => {
     return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, [drafts, usersList]);
 
-  // Bind cancel triggers to discard local drafts
   useEffect(() => {
     const handleCancelTrigger = () => {
       setDrafts({});
@@ -347,7 +341,6 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-// Draft Toggle Status handler (Saves to drafts maps first)
   const handleToggleUserStatus = (
     targetId: string, 
     currentStatus: 'active' | 'inactive' | 'pending', 
@@ -373,12 +366,10 @@ export const UserManagement: React.FC = () => {
       const targetUser = usersList.find(u => u.id === targetId);
       const originalStatus = targetUser?.status || 'active';
       
-      // Explicitly type-cast literal unions to prevent automatic conversion to broad string types
       const nextStatus: 'active' | 'inactive' = (draft.status || currentStatus) === 'inactive' ? 'active' : 'inactive';
 
       const updatedDraft: DraftChange = { ...draft, status: nextStatus };
 
-      // Revert key if matches initial DB settings
       if (updatedDraft.status === originalStatus && (updatedDraft.role === undefined || updatedDraft.role === (targetUser?.role || 'staff'))) {
         const { [targetId]: _, ...rest } = prev;
         return rest;
@@ -388,7 +379,6 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  // Draft Toggle Role handler (Saves to drafts maps first)
   const handleToggleUserRole = (targetId: string, currentRole: 'admin' | 'staff') => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own permission role.');
@@ -400,12 +390,10 @@ export const UserManagement: React.FC = () => {
       const targetUser = usersList.find(u => u.id === targetId);
       const originalRole = targetUser?.role || 'staff';
       
-      // Explicitly type-cast literal unions to prevent automatic conversion to broad string types
       const nextRole: 'admin' | 'staff' = (draft.role || currentRole) === 'admin' ? 'staff' : 'admin';
 
       const updatedDraft: DraftChange = { ...draft, role: nextRole };
 
-      // Revert key if matches initial DB settings
       if (updatedDraft.role === originalRole && (updatedDraft.status === undefined || updatedDraft.status === (targetUser?.status || 'active'))) {
         const { [targetId]: _, ...rest } = prev;
         return rest;
@@ -415,7 +403,6 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  // Compile full row dataset
   const systemUsers = [...usersList];
   const currentUserIncluded = systemUsers.some(u => u.id === user?.id);
   if (!currentUserIncluded && profile) {
@@ -429,7 +416,6 @@ export const UserManagement: React.FC = () => {
     });
   }
 
-  // Define Columns configuration for our reusable UI Table
   const columns: Column<any>[] = [
     {
       key: 'username',
@@ -472,7 +458,7 @@ export const UserManagement: React.FC = () => {
         return (
           <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
             {isLocalAccount ? (
-              <span className="text-slate-550 italic">{displayEmail}</span>
+              <span className="text-slate-555 italic">{displayEmail}</span>
             ) : (
               displayEmail
             )}
@@ -503,7 +489,7 @@ export const UserManagement: React.FC = () => {
         const getRoleBadge = (role: string) => (
           <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
             role === 'admin' 
-              ? 'bg-rose-500/10 text-rose-450 border border-rose-500/20' 
+              ? 'bg-rose-500/10 text-rose-455 border border-rose-500/20' 
               : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
           }`}>
             {role}
@@ -522,7 +508,6 @@ export const UserManagement: React.FC = () => {
             className="hover:opacity-85 cursor-pointer text-left transition-opacity"
           >
             {isModified ? (
-              /* Silhouette Effect: Shows previous value grayed out and struck through */
               <div className="flex items-center gap-1.5">
                 <span className="opacity-40 line-through scale-90 origin-left block">
                   {getRoleBadge(u.role || 'staff')}
@@ -591,7 +576,6 @@ export const UserManagement: React.FC = () => {
             className="cursor-pointer hover:opacity-80 transition-opacity outline-none text-left"
           >
             {isModified ? (
-              /* Silhouette Effect: Shows previous status grayed out and struck through */
               <div className="flex items-center gap-1.5">
                 <span className="opacity-40 line-through scale-90 origin-left block">
                   {getStatusBadge(u.status || 'active')}

@@ -25,7 +25,6 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
-// Category filter chip definitions
 const CATEGORIES = [
   { id: 'all', label: 'All Activities' },
   { id: 'members', label: 'Members' },
@@ -39,7 +38,8 @@ const CATEGORIES = [
 
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Initializing to true prevents content flashing on initial mount
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeSeverity, setActiveSeverity] = useState<string>('all');
@@ -298,6 +298,15 @@ export const AuditLogs: React.FC = () => {
     setExpandedGroupId((prev) => (prev === groupId ? null : groupId));
   };
 
+  // Helper trigger to scroll back to timeline focus on index switches
+  const handlePageChange = (direction: 'next' | 'prev') => {
+    setCurrentPage((prev) => {
+      const target = direction === 'next' ? Math.min(totalPages, prev + 1) : Math.max(1, prev - 1);
+      return target;
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="w-full space-y-6 font-body text-(--color-text) pr-1 pl-1 sm:px-0 min-w-0">
       
@@ -326,10 +335,9 @@ export const AuditLogs: React.FC = () => {
         </button>
       </div>
 
-      {/* KPI Info Widgets Container - Hidden on mobile, visible on md screens and up */}
+      {/* KPI Info Widgets Container */}
       <div className="hidden md:block group/kpis relative transition-all duration-500 ease-in-out border border-transparent hover:border-(--border-color)/40 rounded-3xl p-1">
         
-        {/* Hover disclosure bar */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-slate-500/5 border border-dashed border-(--border-color) rounded-2xl text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer transition-all hover:bg-slate-500/10">
           <span className="flex items-center gap-2">
             <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
@@ -339,7 +347,7 @@ export const AuditLogs: React.FC = () => {
           <span className="text-[9px] text-slate-500 font-bold hidden group-hover/kpis:inline">Collapse metrics</span>
         </div>
         
-        {/* KPI Grid */}
+        {/* KPI Grid (Card values skeletonized surgically during loading) */}
         <div className="opacity-0 max-h-0 scale-y-95 origin-top overflow-hidden group-hover/kpis:opacity-100 group-hover/kpis:max-h-96 group-hover/kpis:scale-y-100 group-hover/kpis:mt-4 transition-all duration-500 ease-in-out grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           
           <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
@@ -348,9 +356,13 @@ export const AuditLogs: React.FC = () => {
               <Activity className="w-4 h-4 text-slate-400" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
-                {summaryMetrics.total}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                  {summaryMetrics.total}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Total Events</span>
             </div>
           </div>
@@ -361,9 +373,13 @@ export const AuditLogs: React.FC = () => {
               <AlertTriangle className="w-4 h-4 text-red-500" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-red-500 font-mono block">
-                {summaryMetrics.critical}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-red-500 font-mono block">
+                  {summaryMetrics.critical}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Requires Review</span>
             </div>
           </div>
@@ -374,9 +390,13 @@ export const AuditLogs: React.FC = () => {
               <Users className="w-4 h-4 text-blue-400" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
-                {summaryMetrics.operators}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                  {summaryMetrics.operators}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Active Staff</span>
             </div>
           </div>
@@ -387,9 +407,13 @@ export const AuditLogs: React.FC = () => {
               <Calendar className="w-4 h-4 text-emerald-450" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-emerald-450 font-mono block">
-                {summaryMetrics.today}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-emerald-450 font-mono block">
+                  {summaryMetrics.today}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">System Events</span>
             </div>
           </div>
@@ -400,9 +424,13 @@ export const AuditLogs: React.FC = () => {
               <Database className="w-4 h-4 text-amber-500" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-amber-500 font-mono block">
-                {summaryMetrics.backups}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-amber-500 font-mono block">
+                  {summaryMetrics.backups}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Auto & Manual</span>
             </div>
           </div>
@@ -413,9 +441,13 @@ export const AuditLogs: React.FC = () => {
               <LogIn className="w-4 h-4 text-blue-400" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-(--color-text) font-mono block">
-                {summaryMetrics.auth}
-              </span>
+              {isLoading ? (
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
+              ) : (
+                <span className="text-lg font-extrabold text-(--color-text) font-mono block">
+                  {summaryMetrics.auth}
+                </span>
+              )}
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Session Logins</span>
             </div>
           </div>
@@ -426,7 +458,6 @@ export const AuditLogs: React.FC = () => {
       {/* Filter and Search Section */}
       <div className="space-y-4 bg-(--bg-card) p-4 sm:p-5 rounded-2xl border border-(--border-color) shadow-xs text-left">
         
-        {/* Row 1: Search and Selection Filters */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
           {/* Search Input block */}
           <div className="relative flex-1 max-w-md w-full">
@@ -443,9 +474,8 @@ export const AuditLogs: React.FC = () => {
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           </div>
 
-          {/* New Inline Filters block (Split into 2-columns on mobile, flex row on tablet/desktop) */}
+          {/* Inline Filters block */}
           <div className="grid grid-cols-2 gap-3 w-full lg:flex lg:flex-row lg:items-center lg:gap-4 lg:w-auto">
-            {/* Severity Filter Select */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 w-full">
               <label htmlFor="severity-filter" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Severity:</label>
               <select
@@ -466,7 +496,6 @@ export const AuditLogs: React.FC = () => {
               </select>
             </div>
 
-            {/* Operator/User Filter Select */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 w-full">
               <label htmlFor="operator-filter" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">User:</label>
               <select
@@ -516,9 +545,48 @@ export const AuditLogs: React.FC = () => {
       {/* Unified Timeline Layout */}
       <div className="space-y-6">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-(--bg-card) rounded-2xl border border-(--border-color)">
-            <Loader2 className="w-8 h-8 animate-spin text-(--color-primary)" />
-            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Accessing security logbook indexes...</p>
+          /* Timeline Surgical Skeleton Container */
+          <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-2.5 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
+            {[...Array(2)].map((_, groupIdx) => (
+              <div key={groupIdx} className="space-y-4 relative">
+                {/* Date header placeholder */}
+                <div className="relative z-10 -ml-1 sm:ml-0 text-left">
+                  <div className="h-6 w-28 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-full animate-pulse" />
+                </div>
+
+                {/* Sub-events timeline items */}
+                <div className="space-y-3 pl-6 sm:pl-10">
+                  {[...Array(groupIdx === 0 ? 2 : 1)].map((_, itemIdx) => (
+                    <div 
+                      key={itemIdx} 
+                      className="relative rounded-2xl border bg-(--bg-card) border-(--border-color) p-3.5 sm:p-5 shadow-xs overflow-hidden animate-pulse"
+                    >
+                      <div className="absolute hidden sm:block sm:left-[-22px] top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) border-slate-700/50" />
+                      
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-4 flex-1 min-w-0">
+                          {/* Left icon box skeleton */}
+                          <div className="w-10 h-10 bg-slate-100 dark:bg-[#13161a] border border-(--border-color) rounded-xl shrink-0" />
+                          
+                          {/* Inner details skeleton */}
+                          <div className="space-y-2 text-left flex-1 min-w-0">
+                            <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-1/4" />
+                            <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-3/4" />
+                            <div className="h-2.5 bg-slate-200 dark:bg-white/10 rounded w-16" />
+                          </div>
+                        </div>
+
+                        {/* Right dynamic states skeleton */}
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <div className="h-4 bg-slate-200 dark:bg-white/10 rounded-full w-14" />
+                          <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-4" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         ) : paginatedTimelineGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center bg-(--bg-card) rounded-2xl border border-(--border-color) space-y-3">
@@ -527,7 +595,6 @@ export const AuditLogs: React.FC = () => {
             <p className="text-xs text-slate-500">Try modifying your search query or selecting a different category filter.</p>
           </div>
         ) : (
-          /* Adjust vertical line inset coordinates on mobile screens (before:left-2.5 sm:before:left-6) */
           <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-2.5 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
             
             {paginatedTimelineGroups.map((dayGroup) => (
@@ -540,7 +607,7 @@ export const AuditLogs: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Consecutive grouped cards - adjusted left padding to pl-6 on mobile */}
+                {/* Consecutive grouped cards */}
                 <div className="space-y-3 pl-6 sm:pl-10">
                   {dayGroup.items.map((group: any) => {
                     const isExpanded = expandedGroupId === group.id;
@@ -556,7 +623,6 @@ export const AuditLogs: React.FC = () => {
                         }`}
                       >
                         
-                        {/* Bullet Marker dot overlapping vertical line (hidden on mobile, visible on sm and up) */}
                         <div className={`absolute hidden sm:block sm:left-[-22px] top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) transition-all ${
                           group.severity === 'critical'
                             ? 'border-red-500 shadow-md shadow-red-500/10'
@@ -604,9 +670,7 @@ export const AuditLogs: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Right Controls Column - shrink-0 prevents status badges from clipping */}
                           <div className="flex flex-col items-end gap-2 shrink-0 ml-1">
-                            {/* Severity Badge */}
                             {group.severity === 'critical' ? (
                               <span className="px-2.5 py-0.5 bg-red-500/10 text-[9px] text-red-400 border border-red-500/20 rounded-full font-bold tracking-widest uppercase">
                                 Critical
@@ -621,7 +685,6 @@ export const AuditLogs: React.FC = () => {
                               </span>
                             )}
 
-                            {/* Dropdown toggle state indicator */}
                             <span className="text-slate-500 group-hover:text-slate-300 transition-colors">
                               {isExpanded ? <ChevronUp className="w-4.5 h-4.5" /> : <ChevronDown className="w-4.5 h-4.5" />}
                             </span>
@@ -693,14 +756,14 @@ export const AuditLogs: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    onClick={() => handlePageChange('prev')}
                     className="px-3.5 py-1.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Previous
                   </button>
                   <button
                     disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    onClick={() => handlePageChange('next')}
                     className="px-3.5 py-1.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Next

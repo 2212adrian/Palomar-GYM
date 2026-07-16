@@ -104,6 +104,18 @@ DECLARE
     backup_filename TEXT;
     payload_size BIGINT;
 BEGIN
+    -- Security Guard: Restrict web-client execution to authorized admins and the superadmin email only
+    -- Allow background workers/cron (where current_setting('request.jwt.claims', true) is missing or empty) to execute automatically
+    IF NULLIF(current_setting('request.jwt.claims', true), '') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE profiles.id = auth.uid() 
+              AND LOWER(profiles.role::text) IN ('admin', 'superadmin')
+        ) AND LOWER(COALESCE(auth.jwt() ->> 'email', '')) != 'wolf.palomar@gmail.com' THEN
+            RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to generate database backups.';
+        END IF;
+    END IF;
+
     -- Loop through all user-defined public tables, ignoring system/metadata tables
     FOR r IN 
         SELECT table_name 

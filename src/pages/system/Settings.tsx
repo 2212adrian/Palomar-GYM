@@ -8,6 +8,7 @@ import { UserManagement } from './UserManagement';
 import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
+import { SystemInformation } from './SystemInformation';
 import { 
   User as UserIcon, 
   Building, 
@@ -23,7 +24,7 @@ import {
   Moon
 } from 'lucide-react';
 
-export type TabID = 'account' | 'gym-profile' | 'rates' | 'users' | 'backup' | 'audit';
+export type TabID = 'account' | 'gym-profile' | 'rates' | 'users' | 'backup' | 'audit' | 'info';
 
 export interface TabItem {
   id: TabID;
@@ -76,6 +77,13 @@ const TABS: TabItem[] = [
     icon: FileText, 
     adminOnly: true 
   },
+  { 
+    id: 'info', 
+    label: 'System Information', 
+    description: 'Storage metrics & specifications', 
+    icon: FileText, 
+    adminOnly: true 
+  },
 ];
 
 const TAB_URL_MAP: Record<TabID, string> = {
@@ -84,7 +92,8 @@ const TAB_URL_MAP: Record<TabID, string> = {
   'rates': 'rates-and-payments',
   'users': 'user-management',
   'backup': 'database-backup',
-  'audit': 'audit-logs'
+  'audit': 'audit-logs',
+  'info': 'system-information' 
 };
 
 const URL_TAB_MAP: Record<string, TabID> = {
@@ -93,7 +102,8 @@ const URL_TAB_MAP: Record<string, TabID> = {
   'rates-and-payments': 'rates',
   'user-management': 'users',
   'database-backup': 'backup',
-  'audit-logs': 'audit'
+  'audit-logs': 'audit',
+  'system-information': 'info'
 };
 
 export default function Settings() {
@@ -485,14 +495,15 @@ export default function Settings() {
           )}
 
           {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
-          <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
-            {activeTab === 'personal-account' && <PersonalAccount />}
-            {activeTab === 'gym-profile' && <GymProfile />}
-            {activeTab === 'rates-and-payments' && <RatesPayments />}
-            {activeTab === 'user-management' && <UserManagement />}
-            {activeTab === 'database-backup' && <DatabaseBackup />}
-            {activeTab === 'audit-logs' && <AuditLogs />}
-          </div>
+          <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
+  {activeTab === 'personal-account' && <PersonalAccount />}
+  {activeTab === 'gym-profile' && <GymProfile />}
+  {activeTab === 'rates-and-payments' && <RatesPayments />}
+  {activeTab === 'user-management' && <UserManagement />}
+  {activeTab === 'database-backup' && <DatabaseBackup />}
+  {activeTab === 'audit-logs' && <AuditLogs />}
+  {activeTab === 'system-information' && <SystemInformation />}
+</div>
         </div>
       </div>
 

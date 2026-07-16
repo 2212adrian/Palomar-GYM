@@ -1,14 +1,12 @@
-//src/pages/system/GymProfile.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
-import { compressImage } from '../../lib/imageCompressor'; // Import from safe shared helper path
+import { compressImage } from '../../lib/imageCompressor';
 import { 
   Building, 
   Upload, 
   Trash2, 
-  Loader2, 
   Image as ImageIcon, 
   Info,
   ExternalLink,
@@ -26,8 +24,8 @@ const getInitialGymConfig = () => {
     contactName2: 'Admin Wolf',
     contactNumber2: '09123456789',
     emailAddress: 'contact@wolfpalomargym.com',
-    gymLogo: '', // Base64 data URL
-    carouselImages: [] as string[] // Array of Base64 data URLs
+    gymLogo: '',
+    carouselImages: [] as string[]
   };
   if (saved) {
     try {
@@ -44,7 +42,6 @@ export const GymProfile: React.FC = () => {
   const loadedConfig = getInitialGymConfig();
   const { user } = useAuthStore();
 
-  // 1. Reactive state settings - Gym Name is fully editable
   const [gymName, setGymName] = useState<string>(loadedConfig.gymName);
   const [gymDescription, setGymDescription] = useState<string>(loadedConfig.gymDescription);
   const [gymAddress, setGymAddress] = useState<string>(loadedConfig.gymAddress);
@@ -57,7 +54,7 @@ export const GymProfile: React.FC = () => {
   const [carouselImages, setCarouselImages] = useState<string[]>(loadedConfig.carouselImages);
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [initialConfig, setInitialConfig] = useState<any>(loadedConfig);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +62,6 @@ export const GymProfile: React.FC = () => {
   const initialConfigRef = useRef<any>(loadedConfig);
   const currentConfigRef = useRef<any>(null);
 
-  // Fetch configuration parameters directly from Supabase gym_profile table
   const fetchGymProfile = async () => {
     try {
       setIsLoading(true);
@@ -115,7 +111,6 @@ export const GymProfile: React.FC = () => {
     fetchGymProfile();
   }, []);
 
-  // Sync current config ref on every state change
   currentConfigRef.current = {
     gymName,
     gymDescription,
@@ -129,7 +124,6 @@ export const GymProfile: React.FC = () => {
     carouselImages
   };
 
-  // Automatically save current states to local storage draft to drive the Login Preview tab
   useEffect(() => {
     const draft = {
       gymName,
@@ -146,7 +140,6 @@ export const GymProfile: React.FC = () => {
     localStorage.setItem('palomar_gym_profile_draft', JSON.stringify(draft));
   }, [gymName, gymDescription, gymAddress, contactName1, contactNumber1, contactName2, contactNumber2, emailAddress, gymLogo, carouselImages]);
 
-  // Compute dirty state
   const isDirty = initialConfig && (
     gymName !== initialConfig.gymName ||
     gymDescription !== initialConfig.gymDescription ||
@@ -184,7 +177,7 @@ export const GymProfile: React.FC = () => {
 
       if (error) throw error;
 
-      localStorage.removeItem('palomar_gym_profile_draft'); // Clean up drafts
+      localStorage.removeItem('palomar_gym_profile_draft');
       setInitialConfig(current);
       initialConfigRef.current = current;
       toast.success('GYM profile settings saved successfully.');
@@ -195,7 +188,6 @@ export const GymProfile: React.FC = () => {
     }
   };
 
-  // Bind custom save trigger from parent settings
   useEffect(() => {
     const handleSaveTrigger = () => {
       handleSaveConfig();
@@ -204,7 +196,6 @@ export const GymProfile: React.FC = () => {
     return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, []);
 
-  // Bind cancel triggers to discard local drafts
   useEffect(() => {
     const handleCancelTrigger = () => {
       const config = initialConfigRef.current;
@@ -219,7 +210,7 @@ export const GymProfile: React.FC = () => {
         setEmailAddress(config.emailAddress);
         setGymLogo(config.gymLogo);
         setCarouselImages(config.carouselImages);
-        localStorage.removeItem('palomar_gym_profile_draft'); // Clear draft
+        localStorage.removeItem('palomar_gym_profile_draft');
         toast.info('Changes discarded.');
       }
     };
@@ -227,14 +218,12 @@ export const GymProfile: React.FC = () => {
     return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
   }, [initialConfig]);
 
-  // Sync state with parent components
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
       detail: { isDirty, isSaving } 
     }));
   }, [isDirty, isSaving]);
 
-  // Clean up dirty state and drafts on unmount
   useEffect(() => {
     return () => {
       window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
@@ -244,7 +233,6 @@ export const GymProfile: React.FC = () => {
     };
   }, []);
 
-  // Convert files to Base64
   const convertToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -254,7 +242,6 @@ export const GymProfile: React.FC = () => {
     });
   };
 
-  // Handle Gym Logo upload (compressed to 1024KB / 1MB)
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -276,7 +263,6 @@ export const GymProfile: React.FC = () => {
     }
   };
 
-  // Handle Carousel uploads (compressed to 2048KB / 2MB)
   const handleCarouselUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -321,15 +307,6 @@ export const GymProfile: React.FC = () => {
     window.open('/login?preview=true', '_blank');
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 max-w-md mx-auto">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-[#bf0202]" />
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading GYM business profile settings...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 font-body">
       <div>
@@ -356,117 +333,149 @@ export const GymProfile: React.FC = () => {
             <div className="grid gap-4">
               <div className="grid gap-1.5">
                 <label htmlFor="gymNameInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Gym Name</label>
-                <input
-                  id="gymNameInput"
-                  type="text"
-                  value={gymName}
-                  placeholder="Enter business name"
-                  title="Gym Name"
-                  onChange={(e) => setGymName(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                  required
-                />
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                ) : (
+                  <input
+                    id="gymNameInput"
+                    type="text"
+                    value={gymName}
+                    placeholder="Enter business name"
+                    title="Gym Name"
+                    onChange={(e) => setGymName(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                    required
+                  />
+                )}
               </div>
 
               <div className="grid gap-1.5">
                 <label htmlFor="gymDescriptionInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Gym Description</label>
-                <textarea
-                  id="gymDescriptionInput"
-                  value={gymDescription}
-                  placeholder="Enter gym bio or access protocol description (displays on login screen)..."
-                  title="Gym Description"
-                  rows={3}
-                  onChange={(e) => setGymDescription(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
-                  required
-                />
+                {isLoading ? (
+                  <div className="h-20 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                ) : (
+                  <textarea
+                    id="gymDescriptionInput"
+                    value={gymDescription}
+                    placeholder="Enter gym bio or access protocol description (displays on login screen)..."
+                    title="Gym Description"
+                    rows={3}
+                    onChange={(e) => setGymDescription(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
+                    required
+                  />
+                )}
               </div>
 
               <div className="grid gap-1.5">
                 <label htmlFor="gymAddressInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Physical Address</label>
-                <input
-                  id="gymAddressInput"
-                  type="text"
-                  value={gymAddress}
-                  placeholder="Enter street, city, province"
-                  title="Physical Address"
-                  onChange={(e) => setGymAddress(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                  required
-                />
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                ) : (
+                  <input
+                    id="gymAddressInput"
+                    type="text"
+                    value={gymAddress}
+                    placeholder="Enter street, city, province"
+                    title="Physical Address"
+                    onChange={(e) => setGymAddress(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                    required
+                  />
+                )}
               </div>
 
               {/* Two Contacts Section */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 dark:border-white/5 pt-4">
                 <div className="grid gap-1.5">
                   <label htmlFor="contactName1Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Name 1</label>
-                  <input
-                    id="contactName1Input"
-                    type="text"
-                    value={contactName1}
-                    placeholder="E.g., Staff Ryan"
-                    title="Contact Name 1"
-                    onChange={(e) => setContactName1(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="contactName1Input"
+                      type="text"
+                      value={contactName1}
+                      placeholder="E.g., Staff Ryan"
+                      title="Contact Name 1"
+                      onChange={(e) => setContactName1(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
                 </div>
 
                 <div className="grid gap-1.5">
                   <label htmlFor="contactNumber1Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Number 1</label>
-                  <input
-                    id="contactNumber1Input"
-                    type="text"
-                    value={contactNumber1}
-                    placeholder="E.g., 09762607481"
-                    title="Contact Number 1"
-                    onChange={(e) => setContactNumber1(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="contactNumber1Input"
+                      type="text"
+                      value={contactNumber1}
+                      placeholder="E.g., 09762607481"
+                      title="Contact Number 1"
+                      onChange={(e) => setContactNumber1(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
                 </div>
 
                 <div className="grid gap-1.5 pt-1.5">
                   <label htmlFor="contactName2Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Name 2</label>
-                  <input
-                    id="contactName2Input"
-                    type="text"
-                    value={contactName2}
-                    placeholder="E.g., Admin Wolf"
-                    title="Contact Name 2"
-                    onChange={(e) => setContactName2(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="contactName2Input"
+                      type="text"
+                      value={contactName2}
+                      placeholder="E.g., Admin Wolf"
+                      title="Contact Name 2"
+                      onChange={(e) => setContactName2(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
                 </div>
 
                 <div className="grid gap-1.5 pt-1.5">
                   <label htmlFor="contactNumber2Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Number 2</label>
-                  <input
-                    id="contactNumber2Input"
-                    type="text"
-                    value={contactNumber2}
-                    placeholder="E.g., 09123456789"
-                    title="Contact Number 2"
-                    onChange={(e) => setContactNumber2(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="contactNumber2Input"
+                      type="text"
+                      value={contactNumber2}
+                      placeholder="E.g., 09123456789"
+                      title="Contact Number 2"
+                      onChange={(e) => setContactNumber2(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
                 </div>
               </div>
 
               <div className="grid gap-1.5 border-t border-slate-200 dark:border-white/5 pt-4">
                 <label htmlFor="emailAddressInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Business Email Address</label>
-                <input
-                  id="emailAddressInput"
-                  type="email"
-                  value={emailAddress}
-                  placeholder="Enter support email"
-                  title="Business Email"
-                  onChange={(e) => setEmailAddress(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                  required
-                />
+                {isLoading ? (
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                ) : (
+                  <input
+                    id="emailAddressInput"
+                    type="email"
+                    value={emailAddress}
+                    placeholder="Enter support email"
+                    title="Business Email"
+                    onChange={(e) => setEmailAddress(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                    required
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -481,7 +490,9 @@ export const GymProfile: React.FC = () => {
             {/* Logo Slot */}
             <div className="flex flex-col sm:flex-row items-center gap-5 p-4 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
               <div className="w-16 h-16 rounded-xl border border-slate-200 dark:border-white/10 flex items-center justify-center shrink-0 bg-white dark:bg-[#13161a] overflow-hidden">
-                {gymLogo ? (
+                {isLoading ? (
+                  <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] animate-pulse" />
+                ) : gymLogo ? (
                   <img src={gymLogo} alt="Logo preview" className="w-full h-full object-contain" />
                 ) : (
                   <Building className="w-6 h-6 text-slate-400" />
@@ -489,10 +500,6 @@ export const GymProfile: React.FC = () => {
               </div>
               <div className="text-center sm:text-left space-y-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">Gym Logo</span>
-                {/* 
-                  Camera capture prompt supported natively on mobile webviews 
-                  by using accept="image/*" without conflicting constraints.
-                */}
                 <input
                   type="file"
                   id="logoUpload"
@@ -505,12 +512,13 @@ export const GymProfile: React.FC = () => {
                 <div className="flex gap-2 justify-center sm:justify-start">
                   <button
                     type="button"
+                    disabled={isLoading}
                     onClick={() => logoInputRef.current?.click()}
-                    className="px-3 py-1.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider bg-white dark:bg-neutral-900 text-slate-700 dark:text-slate-300 hover:opacity-90 cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider bg-white dark:bg-neutral-900 text-slate-700 dark:text-slate-300 hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-30"
                   >
                     Select Photo / Camera
                   </button>
-                  {gymLogo && (
+                  {gymLogo && !isLoading && (
                     <button
                       type="button"
                       onClick={() => setGymLogo('')}
@@ -523,7 +531,7 @@ export const GymProfile: React.FC = () => {
               </div>
             </div>
 
-            {/* Carousel Images - Now styled as Widescreen aspect ratio */}
+            {/* Carousel Images */}
             <div className="space-y-3.5 pt-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
@@ -541,7 +549,7 @@ export const GymProfile: React.FC = () => {
                 />
                 <button
                   type="button"
-                  disabled={carouselImages.length >= 6}
+                  disabled={carouselImages.length >= 6 || isLoading}
                   onClick={() => carouselInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider bg-white dark:bg-neutral-900 text-slate-700 dark:text-slate-300 hover:opacity-90 disabled:opacity-30 cursor-pointer"
                 >
@@ -550,8 +558,13 @@ export const GymProfile: React.FC = () => {
                 </button>
               </div>
 
-              {carouselImages.length > 0 ? (
-                /* Widescreen aspect ratio (aspect-video / 16:9) applied cleanly */
+              {isLoading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                  {[...Array(3)].map((_, idx) => (
+                    <div key={idx} className="aspect-video bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 animate-pulse" />
+                  ))}
+                </div>
+              ) : carouselImages.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                   {carouselImages.map((src, index) => (
                     <div key={index} className="relative aspect-video rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-[#13161a] group animate-slide-up shadow-xs">
@@ -579,7 +592,7 @@ export const GymProfile: React.FC = () => {
 
         </div>
 
-        {/* Right Hand: Sandbox Navigation Redirect Block */}
+        {/* Right Hand: Sandbox Navigation Redirect Block (Always fully loaded and interactive) */}
         <div className="lg:col-span-5 space-y-6">
           <div className="p-6 bg-slate-50 dark:bg-[#111315] border border-slate-200 dark:border-white/5 rounded-2xl shadow-xs space-y-5 flex flex-col h-full justify-between">
             <div className="space-y-4">

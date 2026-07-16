@@ -1,3 +1,4 @@
+// src/components/ui/Modal.tsx
 import React, { createContext, useContext } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
