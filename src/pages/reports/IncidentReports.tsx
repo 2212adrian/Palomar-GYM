@@ -843,16 +843,16 @@ export const IncidentReports: React.FC = () => {
   return (
     <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
 
-      {/* 2. Main Dashboard Workspace (Supports animated layout shifts) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* 2. Main Dashboard Workspace (Flexbox with pure CSS transitions to eliminate column wrapping jank) */}
+      <div className="flex flex-col lg:flex-row gap-6 items-start justify-center w-full">
         
         {/* Left Column: Directory List Section */}
-        <motion.div 
-          layout
-          className={selectedReport 
-            ? "lg:col-span-5 space-y-4" 
-            : "lg:col-span-8 lg:col-start-2 xl:col-span-6 xl:col-start-3 space-y-4"
-          }
+        <div 
+          className={`transition-all duration-300 ease-in-out space-y-4 w-full shrink-0 ${
+            selectedReport 
+              ? "lg:w-[42%]" 
+              : "lg:w-[58%] max-w-2xl"
+          }`}
         >
           {/* Soft Warning at >= 10 unread reports */}
           {stats.unread >= 10 && (
@@ -1019,8 +1019,7 @@ export const IncidentReports: React.FC = () => {
                     const isHigh = report.priority === 'High';
                     
                     return (
-                      <motion.div
-                        layoutId={`report-card-${report.id}`}
+                      <div
                         key={report.id}
                         onClick={() => handleSelectReport(report)}
                         className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
@@ -1065,7 +1064,7 @@ export const IncidentReports: React.FC = () => {
                           </div>
 
                           <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
-                            <span className="font-semibold text-slate-700 dark:text-slate-350">
+                            <span className="font-semibold text-slate-700 dark:text-slate-355">
                               {report.staff_name}
                             </span>
                             <span>•</span>
@@ -1094,7 +1093,7 @@ export const IncidentReports: React.FC = () => {
                             </div>
                           )}
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })}
                 </div>
@@ -1146,24 +1145,20 @@ export const IncidentReports: React.FC = () => {
               </div>
             </div>
           )}
-        </motion.div>
+        </div>
 
         {/* Right Column: Desktop Inline Detail Panel */}
-        <AnimatePresence>
-          {selectedReport && (
-            <motion.div 
-              initial={{ opacity: 0, x: 20, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.98 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className="hidden lg:block lg:col-span-7"
-            >
-              <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
-                {renderDetailPanelContent(selectedReport, false)}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div 
+          className={`transition-all duration-300 ease-in-out hidden lg:block overflow-hidden shrink-0 ${
+            selectedReport 
+              ? "opacity-100 translate-x-0 w-[58%]" 
+              : "opacity-0 translate-x-4 w-0 h-0 pointer-events-none"
+          }`}
+        >
+          <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
+            {selectedReport && renderDetailPanelContent(selectedReport, false)}
+          </div>
+        </div>
 
       </div>
 

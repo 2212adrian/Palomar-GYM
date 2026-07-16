@@ -121,11 +121,15 @@ CREATE POLICY "Allow insert for authenticated" ON public.incident_reports
     TO authenticated
     WITH CHECK (true);
 
--- 2. Unrestricted read for logged-in users (Guarantees inserts returning representation never fail)
+-- 2. Secure read policy (Admins see all, Staff can only see their own reports)
 CREATE POLICY "Allow select for authenticated" ON public.incident_reports
     FOR SELECT
     TO authenticated
-    USING (true);
+    USING (
+        created_by = auth.uid() OR
+        public.get_user_role() = 'Admin' OR
+        auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
+    );
 
 -- 3. Strict Update Policy (Restricted to original creator while unread/unarchived, or Admins)
 CREATE POLICY "Allow update for creator or admin" ON public.incident_reports

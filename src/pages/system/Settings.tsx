@@ -126,7 +126,7 @@ export default function Settings() {
   const [isChildSaving, setIsChildSaving] = useState<boolean>(false);
   
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
-  const isAdmin = userRole === 'admin' || isSuperAdmin;
+  const isAdmin = userRole === 'admin' || isSuperAdmin(user?.email);
   const visibleTabs: TabItem[] = TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -259,7 +259,6 @@ export default function Settings() {
   };
 
   return (
-    /* Applied dynamic horizontal padding constraints (px-0 on audit mobile/tablet, px-4 for pc and other settings) */
     <div className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-6 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-8rem)] xl:max-h-[820px] flex flex-col overflow-visible xl:overflow-hidden relative`}>
       
       <style>{`
@@ -429,44 +428,44 @@ export default function Settings() {
                   );
                 })}
               </div>
-
-              {/* Dynamic Theme Toggle in PC Sidebar */}
-              <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 animate-slide-up">
-                <button
-                  onClick={toggleTheme}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-red-500 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#111315] shadow-xs border border-slate-200/50 dark:border-white/5">
-                      {theme === 'dark' ? (
-                        <Sun className="w-4 h-4 text-amber-500 shrink-0" />
-                      ) : (
-                        <Moon className="w-4 h-4 text-indigo-500 shrink-0" />
-                      )}
-                    </div>
-                    <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
-                      {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
-                    </span>
-                  </div>
-                  <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden scale-90" aria-hidden="true">
-                    {theme === 'dark' ? (
-                      <>
-                        <span className="w-2.5 h-2.5 bg-[#f0f4f8]" />
-                        <span className="w-2.5 h-2.5 bg-[#123c73]" />
-                        <span className="w-2.5 h-2.5 bg-[#ffffff]" />
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-2.5 h-2.5 bg-[#0c0e12]" />
-                        <span className="w-2.5 h-2.5 bg-[#bf0202]" />
-                        <span className="w-2.5 h-2.5 bg-[#161920]" />
-                      </>
-                    )}
-                  </div>
-                </button>
-              </div>
             </div>
           )}
+
+          {/* Dynamic Theme Toggle in PC Sidebar (Moved outside of the isAdmin block so Staff can see it) */}
+          <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 animate-slide-up">
+            <button
+              onClick={toggleTheme}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-red-500 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-white dark:bg-[#111315] shadow-xs border border-slate-200/50 dark:border-white/5">
+                  {theme === 'dark' ? (
+                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
+                  ) : (
+                    <Moon className="w-4 h-4 text-indigo-500 shrink-0" />
+                  )}
+                </div>
+                <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
+                  {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
+                </span>
+              </div>
+              <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden scale-90" aria-hidden="true">
+                {theme === 'dark' ? (
+                  <>
+                    <span className="w-2.5 h-2.5 bg-[#f0f4f8]" />
+                    <span className="w-2.5 h-2.5 bg-[#123c73]" />
+                    <span className="w-2.5 h-2.5 bg-[#ffffff]" />
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2.5 h-2.5 bg-[#0c0e12]" />
+                    <span className="w-2.5 h-2.5 bg-[#bf0202]" />
+                    <span className="w-2.5 h-2.5 bg-[#161920]" />
+                  </>
+                )}
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Conditional Workspace Frame */}

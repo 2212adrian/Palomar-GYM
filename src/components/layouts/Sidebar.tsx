@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Menu, X, ChevronDown, LogOut, LayoutDashboard, 
-  Users, ShoppingBag, ClipboardList, Settings
+  Users, ShoppingBag, ClipboardList, Settings, Loader2
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -101,6 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Inline Confirmation States and Ref Timers
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] = useState<boolean>(false);
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
+
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -215,6 +217,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (currentUser) {
@@ -242,7 +247,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const triggerDesktopConfirm = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (showLogoutConfirm) return;
+    if (showLogoutConfirm || isLoggingOut) return;
 
     setShowLogoutConfirm(true);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
@@ -254,6 +259,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const cancelDesktopConfirm = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isLoggingOut) return;
     setShowLogoutConfirm(false);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
   };
@@ -261,7 +267,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const triggerMobileConfirm = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (showMobileLogoutConfirm) return;
+    if (showMobileLogoutConfirm || isLoggingOut) return;
 
     setShowMobileLogoutConfirm(true);
     if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
@@ -273,6 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const cancelMobileConfirm = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isLoggingOut) return;
     setShowMobileLogoutConfirm(false);
     if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
   };
@@ -582,37 +589,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {showLogoutConfirm ? (
             collapsed ? (
               <div className="flex flex-col items-center justify-center rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-11 py-2 gap-2 font-heading text-[8px] font-black transition-all mx-auto">
-                <span className="text-[7px] tracking-tighter">SURE?</span>
+                <span className="text-[7px] tracking-tighter">{isLoggingOut ? 'WAIT...' : 'SURE?'}</span>
                 <div className="flex flex-col gap-1.5 w-full px-1">
                   <button
+                    disabled={isLoggingOut}
                     onClick={cancelDesktopConfirm}
-                    className="w-full py-1.5 rounded bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-black cursor-pointer text-[7px]"
+                    className="w-full py-1.5 rounded bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-black cursor-pointer text-[7px] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     NO
                   </button>
                   <button
+                    disabled={isLoggingOut}
                     onClick={handleLogout}
-                    className="w-full py-1.5 rounded bg-red-600 hover:bg-red-700 text-white font-black cursor-pointer text-[7px]"
+                    className="w-full py-1.5 rounded bg-red-600 hover:bg-red-700 text-white font-black cursor-pointer text-[7px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    YES
+                    {isLoggingOut ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'YES'}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex items-center justify-between rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-full p-2.5 font-heading text-[10px] tracking-widest font-black transition-all">
-                <span className="text-[9px] mr-1 shrink-0">ARE YOU SURE?</span>
+                <span className="text-[9px] mr-1 shrink-0">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
                 <div className="flex gap-2.5">
                   <button
+                    disabled={isLoggingOut}
                     onClick={cancelDesktopConfirm}
-                    className="px-4 py-2 rounded-lg bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px]"
+                    className="px-4 py-2 rounded-lg bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     NO
                   </button>
                   <button
+                    disabled={isLoggingOut}
                     onClick={handleLogout}
-                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px]"
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    YES
+                    {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
                   </button>
                 </div>
               </div>
@@ -725,7 +736,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span className={`transition-all duration-300 ${
                             isChildActive 
                               ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                              : 'text-slate-500 dark:text-slate-400'
+                              : 'text-slate-505 dark:text-slate-400'
                           }`}>
                             {item.icon}
                           </span>
@@ -781,7 +792,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 )}
                               </div>
                               {child.description && (
-                                <p className="text-[9px] text-slate-400 dark:text-slate-505 font-bold mt-0.5">
+                                <p className="text-[9px] text-slate-400 dark:text-slate-555 font-bold mt-0.5">
                                   {child.description}
                                 </p>
                               )}
@@ -809,19 +820,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {showMobileLogoutConfirm ? (
                 <div className="w-full flex items-center justify-between p-3 rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all shadow-inner">
-                  <span className="text-[9px]">ARE YOU SURE?</span>
+                  <span className="text-[9px]">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
                   <div className="flex gap-2.5">
                     <button
+                      disabled={isLoggingOut}
                       onClick={cancelMobileConfirm}
-                      className="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px]"
+                      className="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       NO
                     </button>
                     <button
+                      disabled={isLoggingOut}
                       onClick={handleLogout}
-                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px]"
+                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      YES
+                      {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
                     </button>
                   </div>
                 </div>
