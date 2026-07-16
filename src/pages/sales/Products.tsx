@@ -25,7 +25,7 @@ import { BarcodePrintModal } from './components/barcode/BarcodePrintModal';
 import type { PrintableItem } from './utils/barcodePdfHelper';
 
 // Product Restoration Recovery Bin import
-import { ProductRecoveryModal } from './components/ProductRecoveryModal';
+import { ProductRecoveryModal } from './components/ProductRecycleBin';
 
 // Shared Layout Header Context
 import { HeaderActionsContext } from '../../routes';

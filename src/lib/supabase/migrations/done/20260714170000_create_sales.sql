@@ -1,6 +1,6 @@
--- Migration: Update Sales Table with Stock Restoration and RLS Fixes
--- Description: Adds BEFORE DELETE trigger to restore product stock. Consolidates triggers and standardizes RLS.
--- Timestamp: 20260714170000_update_sales_stock_rls.sql
+-- Migration: Create Sales Table with Soft Delete, Stock Restoration, and pg_cron Purging
+-- Description: Creates the sales transaction table, triggers for stock restoration / soft deleting, and schedules a daily cron job.
+-- Timestamp: 20260714170000_create_sales.sql
 
 BEGIN;
 
@@ -47,7 +47,7 @@ $$ LANGUAGE plpgsql VOLATILE;
 -- PART 2: TABLE STRUCTURE
 -- ==============================================================================
 
--- Create the sales transaction ledger table if not exists
+-- Create the sales transaction ledger table
 CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     receipt_no VARCHAR(15) NOT NULL UNIQUE DEFAULT public.generate_unique_receipt_no(),
@@ -65,16 +65,11 @@ CREATE TABLE IF NOT EXISTS public.sales (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Defensive columns addition (idempotent)
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS reference_number VARCHAR(50) DEFAULT NULL;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL;
-
 -- ==============================================================================
--- PART 3: TRIGGER FUNCTIONS
+-- PART 3: TRIGGER & MAINTENANCE FUNCTIONS
 -- ==============================================================================
 
--- FUNCTION: f_tr_sales_restore_stock_on_delete (NEW)
+-- FUNCTION: f_tr_sales_restore_stock_on_delete
 -- Reads OLD.items JSONB and restores stock to public.products.
 CREATE OR REPLACE FUNCTION public.f_tr_sales_restore_stock_on_delete()
 RETURNS TRIGGER AS $$
@@ -83,6 +78,12 @@ DECLARE
     product_id_val UUID;
     quantity_val INT;
 BEGIN
+    -- Guard Clause: If this row has already been soft-deleted (deleted_at is NOT NULL),
+    -- do NOT restore stock again during the final physical purge.
+    IF OLD.deleted_at IS NOT NULL THEN
+        RETURN OLD;
+    END IF;
+
     -- Loop through the items array in the deleted transaction
     FOR item_record IN SELECT * FROM jsonb_array_elements(OLD.items) LOOP
         -- Extract values, ensuring correct types
@@ -103,7 +104,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- FUNCTION: handle_sales_soft_delete (EXISTING)
+-- FUNCTION: handle_sales_soft_delete
 -- Converts physical DELETE to logical UPDATE.
 CREATE OR REPLACE FUNCTION public.handle_sales_soft_delete()
 RETURNS TRIGGER AS $$
@@ -124,6 +125,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- FUNCTION: purge_old_soft_deleted_sales
+-- Performs physical cleanup of soft-deleted records. Bypasses RLS limits via SECURITY DEFINER.
+CREATE OR REPLACE FUNCTION public.purge_old_soft_deleted_sales()
+RETURNS void AS $$
+BEGIN
+    -- Permanently delete ALL soft-deleted items currently in the recycle bin
+    DELETE FROM public.sales 
+    WHERE deleted_at IS NOT NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ==============================================================================
 -- PART 4: TRIGGERS
 -- ==============================================================================
@@ -135,14 +147,14 @@ CREATE TRIGGER update_sales_updated_at
     FOR EACH ROW
     EXECUTE PROCEDURE update_updated_at_column();
 
--- 2. Restore Stock on Delete (NEW: Must run BEFORE soft delete)
+-- 2. Restore Stock on Delete (Runs BEFORE soft delete interceptor)
 DROP TRIGGER IF EXISTS tr_sales_restore_stock_on_delete ON public.sales;
 CREATE TRIGGER tr_sales_restore_stock_on_delete
     BEFORE DELETE ON public.sales
     FOR EACH ROW
     EXECUTE FUNCTION public.f_tr_sales_restore_stock_on_delete();
 
--- 3. Soft Delete Interceptor (EXISTING: Must run BEFORE DELETE, after stock restore)
+-- 3. Soft Delete Interceptor (Runs BEFORE DELETE, after stock restore)
 DROP TRIGGER IF EXISTS tr_sales_soft_delete ON public.sales;
 CREATE TRIGGER tr_sales_soft_delete
     BEFORE DELETE ON public.sales
@@ -216,11 +228,19 @@ CREATE POLICY "Allow authorized users to delete sales" ON public.sales
 -- Ensure pg_cron is enabled
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Schedule daily purge of sales older than 24 hours in the recycle bin (Manila time)
+-- Safely unschedule existing job if it exists to avoid duplication
+DO $$
+BEGIN
+    PERFORM cron.unschedule('daily-purge-old-soft-deleted-sales');
+EXCEPTION WHEN OTHERS THEN
+    -- Ignore error if the job wasn't scheduled yet
+END $$;
+
+-- Schedule daily purge of sales (Runs at 16:00 UTC / 12:00 AM Manila Time)
 SELECT cron.schedule(
     'daily-purge-old-soft-deleted-sales',
     '0 16 * * *', 
-    $$ DELETE FROM public.sales WHERE deleted_at IS NOT NULL AND deleted_at < now() - INTERVAL '24 hours'; $$
+    'SELECT public.purge_old_soft_deleted_sales();'
 );
 
 -- ==============================================================================
