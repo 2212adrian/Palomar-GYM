@@ -1,5 +1,5 @@
 //src/pages/system/DatabaseBackup.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { Table } from '../../components/ui/Table';
@@ -324,6 +324,7 @@ export const DatabaseBackup: React.FC = () => {
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
   };
+
   // Look for any existing auto-safety backup point
   const safetyBackupPoint = backups.find(b => b.notes === 'Pre-Restore Backup (Auto-Safety)');
 
@@ -335,6 +336,115 @@ export const DatabaseBackup: React.FC = () => {
     if (selectedTypeFilter === 'all') return true;
     return b.type === selectedTypeFilter;
   });
+
+  // Calculate dynamic stats for KPI widget displays
+  const manualBackupsCount = backups.filter(b => b.type === 'manual' && b.notes !== 'Pre-Restore Backup (Auto-Safety)').length;
+  const autoBackupsCount = backups.filter(b => b.type === 'auto').length;
+  const archivedBackupsCount = backups.filter(b => b.type === 'archived').length;
+  const totalFilteredCount = filteredBackups.length;
+
+  // Build the configuration for the three KPI widgets dynamically depending on selectedTypeFilter
+  const kpiConfig = useMemo(() => {
+    switch (selectedTypeFilter) {
+      case 'auto':
+        return {
+          kpi1: {
+            title: "AUTOMATED DAILY FILES",
+            value: `${autoBackupsCount} / 7`,
+            subtext: "Active daily rotation slots",
+            colorClass: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+            icon: <RefreshCw className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+          },
+          kpi2: {
+            title: "ROTATION PERIOD",
+            value: "7 DAY CYCLE",
+            subtext: "One snapshot saved daily",
+            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+            icon: <Calendar className="w-6 h-6 text-slate-400" />
+          },
+          kpi3: {
+            title: "RETENTION POLICY",
+            value: "AUTO-DELETE",
+            subtext: "Oldest rotated out at limit",
+            colorClass: "bg-blue-500/10 text-blue-550 border-blue-500/20",
+            icon: <CheckCircle2 className="w-6 h-6 text-blue-400" />
+          }
+        };
+      case 'manual':
+        return {
+          kpi1: {
+            title: "MANUAL CHECKPOINTS",
+            value: `${manualBackupsCount} / 5`,
+            subtext: "Active custom-saved checkpoints",
+            colorClass: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />
+          },
+          kpi2: {
+            title: "MANUAL ROTATION",
+            value: "LIMIT: 5 FILES",
+            subtext: "Oldest deleted if exceeded",
+            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+            icon: <RefreshCw className="w-6 h-6 text-slate-400" />
+          },
+          kpi3: {
+            title: "RETENTION POLICY",
+            value: "PERMANENT",
+            subtext: "Exempt from auto daily rotation",
+            colorClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+            icon: <Lock className="w-6 h-6 text-emerald-400" />
+          }
+        };
+      case 'archived':
+        return {
+          kpi1: {
+            title: "ARCHIVED SNAPSHOTS",
+            value: `${archivedBackupsCount} / 3`,
+            subtext: "Checkpoints saved indefinitely",
+            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+            icon: <Archive className="w-6 h-6 text-amber-500" />
+          },
+          kpi2: {
+            title: "ARCHIVE LIMIT",
+            value: "LIMIT: 3 FILES",
+            subtext: "Oldest deleted if exceeded",
+            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+            icon: <RefreshCw className="w-6 h-6 text-slate-400" />
+          },
+          kpi3: {
+            title: "RETENTION POLICY",
+            value: "LOCK PRESERVED",
+            subtext: "Bypasses automatic rotation",
+            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+            icon: <Lock className="w-6 h-6 text-amber-500" />
+          }
+        };
+      case 'all':
+      default:
+        return {
+          kpi1: {
+            title: "TOTAL RECOVERY FILES",
+            value: `${totalFilteredCount} ACTIVE`,
+            subtext: "Across all categories",
+            colorClass: "bg-slate-500/10 text-(--color-primary-light) border-slate-500/20",
+            icon: <Database className="w-6 h-6 text-(--color-primary-light)" />
+          },
+          kpi2: {
+            title: "MANUAL CHECKPOINTS",
+            value: `${manualBackupsCount} / 5`,
+            subtext: "Manual storage usage",
+            colorClass: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />
+          },
+          kpi3: {
+            title: "ARCHIVED SNAPSHOTS",
+            value: `${archivedBackupsCount} / 3`,
+            subtext: "Archived storage usage",
+            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+            icon: <Archive className="w-6 h-6 text-amber-500" />
+          }
+        };
+    }
+  }, [selectedTypeFilter, manualBackupsCount, autoBackupsCount, archivedBackupsCount, totalFilteredCount]);
 
   // Main UI Column definitions
   const columns: Column<any>[] = [
@@ -521,13 +631,13 @@ export const DatabaseBackup: React.FC = () => {
               <ArrowLeftRight className="w-6 h-6 animate-pulse" />
             </div>
             <div className="space-y-1">
-  <h4 className="text-sm font-heading tracking-wide text-amber-500 uppercase">
-    Backup Restored Successfully
-  </h4>
-  <p className="text-xs text-slate-400 font-semibold leading-relaxed">
-    Your backup has been restored. Please take a few moments to check your members, payments, schedules, and other records to make sure everything looks correct.
-  </p>
-</div>
+              <h4 className="text-sm font-heading tracking-wide text-amber-500 uppercase">
+                Backup Restored Successfully
+              </h4>
+              <p className="text-xs text-slate-400 font-semibold leading-relaxed">
+                Your backup has been restored. Please take a few moments to check your members, payments, schedules, and other records to make sure everything looks correct.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
             {/* Revert Rollback Action */}
@@ -572,44 +682,44 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Info Widgets - Hidden on mobile viewports */}
+      {/* Dynamic KPI Info Widgets - Hidden on mobile viewports */}
       <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-450 border border-emerald-500/20">
-            <Database className="w-6 h-6 text-emerald-500" />
+          <div className={`p-3 rounded-xl border ${kpiConfig.kpi1.colorClass}`}>
+            {kpiConfig.kpi1.icon}
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AVAILABLE RECOVERY POINTS</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi1.title}</span>
             <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wide mt-0.5 block">
-              {filteredBackups.length} RECOVERY FILES
+              {kpiConfig.kpi1.value}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Across 7 days</span>
+            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi1.subtext}</span>
           </div>
         </div>
 
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20">
-            <RefreshCw className="w-6 h-6" />
+          <div className={`p-3 rounded-xl border ${kpiConfig.kpi2.colorClass}`}>
+            {kpiConfig.kpi2.icon}
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AUTOMATION SCHEDULE</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi2.title}</span>
             <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              EVERY 24 HOURS
+              {kpiConfig.kpi2.value}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Next backup: Tomorrow, 8:00 AM</span>
+            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi2.subtext}</span>
           </div>
         </div>
 
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
-          <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20">
-            <CheckCircle2 className="w-6 h-6" />
+          <div className={`p-3 rounded-xl border ${kpiConfig.kpi3.colorClass}`}>
+            {kpiConfig.kpi3.icon}
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">RETENTION POLICY</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{kpiConfig.kpi3.title}</span>
             <span className="text-lg font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              7 DAY ROTATION
+              {kpiConfig.kpi3.value}
             </span>
-            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">Auto-delete after 7 days</span>
+            <span className="text-[10px] font-bold text-slate-500 block mt-0.5">{kpiConfig.kpi3.subtext}</span>
           </div>
         </div>
       </div>
@@ -662,9 +772,9 @@ export const DatabaseBackup: React.FC = () => {
       <div className="flex items-start gap-4 p-5 bg-amber-500/5 border border-amber-500/20 rounded-2xl text-xs text-amber-500 leading-normal max-w-full">
         <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
         <div className="space-y-1.5 text-left">
-          <p className="font-heading tracking-wider uppercase text-xs">Automated Daily Backups Information</p>
+          <p className="font-heading tracking-wider uppercase text-xs">Automated & Manual Backups Retention Rules</p>
           <p className="text-[11px] font-semibold text-slate-400 opacity-90 leading-relaxed">
-            The system automatically creates backups every 24 hours. Only the last 7 days are kept to save storage space. You can archive up to 3 backups to save them indefinitely. Storing more than 5 manual backups or 3 archived backups automatically deletes the oldest manual or archived file.
+            The system automatically saves a snapshot daily and keeps up to 7 automated recovery files (one for each of the last 7 days). You can save up to 5 manual backups and archive up to 3 checkpoints to preserve them indefinitely. Exceeding these limits will automatically rotate out the oldest file in that respective category.
           </p>
         </div>
       </div>

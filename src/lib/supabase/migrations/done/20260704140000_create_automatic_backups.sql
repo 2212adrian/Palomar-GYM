@@ -147,6 +147,19 @@ BEGIN
         END LOOP;
     END IF;
 
+    -- Enforcement Rule 2: Rotate automated backups if saving auto and count >= 7 (keeps up to 7 files)
+    IF backup_type = 'auto' THEN
+        WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'auto') >= 7 LOOP
+            DELETE FROM public.database_backups 
+            WHERE id = (
+                SELECT id FROM public.database_backups 
+                WHERE type = 'auto' 
+                ORDER BY created_at ASC 
+                LIMIT 1
+            );
+        END LOOP;
+    END IF;
+
     -- Insert the new backup
     INSERT INTO public.database_backups (filename, backup_data, notes, type, size_bytes)
     VALUES (
@@ -157,9 +170,10 @@ BEGIN
         payload_size
     );
 
-    -- Automatic 7-Day rotation (delete auto backups older than 7 days)
+    -- Clean up any lingering auto backups older than 7 days
     DELETE FROM public.database_backups 
-    WHERE type = 'auto' AND created_at < (now() - INTERVAL '7 days');
+    WHERE type = 'auto' 
+      AND created_at < ((timezone('Asia/Manila', now())::date - INTERVAL '7 days' + INTERVAL '8 hours') AT TIME ZONE 'Asia/Manila');
 
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -182,7 +196,7 @@ BEGIN
     SET type = 'archived' 
     WHERE id = target_backup_id;
 
-    -- Enforcement Rule 2: Limit archived backups to max 3 (delete oldest archived if exceeded)
+    -- Enforcement Rule 3: Limit archived backups to max 3 (delete oldest archived if exceeded)
     WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'archived') > 3 LOOP
         DELETE FROM public.database_backups 
         WHERE id = (

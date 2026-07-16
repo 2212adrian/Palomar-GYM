@@ -45,7 +45,7 @@ export function Table<T>({
   itemsPerPage: propItemsPerPage,
   loading = false,
   getRowClassName,
-  onRowClick, // Properly deconstructed the new prop hook
+  onRowClick,
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<string>(defaultSortKey);
@@ -143,8 +143,8 @@ export function Table<T>({
     <div className="space-y-4">
       {searchKeys.length > 0 && (
         <div className="relative max-w-sm">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-slate-500">
-            <Search className="w-4 h-4" />
+          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500 dark:text-slate-400">
+            <Search className="w-4 h-4" aria-hidden="true" />
           </span>
           <input
             type="text"
@@ -160,28 +160,47 @@ export function Table<T>({
         <table className="w-full min-w-max border-collapse text-left text-sm">  
           <thead className="bg-slate-100 dark:bg-[#13161a] border-b border-slate-200 dark:border-white/5">
             <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => col.sortable && handleSort(col.key)}
-                  className={`py-3 px-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${
-                    col.sortable ? 'cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800/30 transition-colors' : ''
-                  } ${col.headerClassName || ''}`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>{col.header}</span>
-                    {col.sortable && (
-                      <span className="text-slate-400 dark:text-slate-500">
-                        {sortKey === col.key ? (
-                          sortDirection === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-60" />
-                        )}
-                      </span>
+              {columns.map((col) => {
+                const isSortedColumn = sortKey === col.key;
+                
+                // Set native ARIA sort values [ascending | descending | none]
+                const ariaSort = col.sortable 
+                  ? (isSortedColumn ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none') 
+                  : undefined;
+
+                return (
+                  <th
+                    key={col.key}
+                    aria-sort={ariaSort}
+                    className={`py-2 px-4 text-xs font-heading tracking-wider uppercase text-slate-600 dark:text-slate-400 select-none whitespace-nowrap ${col.headerClassName || ''}`}
+                  >
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key)}
+                        className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 dark:focus-visible:ring-[#bf0202] rounded px-1 -mx-1 py-1 transition-colors w-full text-left"
+                      >
+                        <span>{col.header}</span>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          {isSortedColumn ? (
+                            sortDirection === 'asc' ? (
+                              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 opacity-60" aria-hidden="true" />
+                          )}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <span>{col.header}</span>
+                      </div>
                     )}
-                  </div>
-                </th>
-              ))}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-white/5">
@@ -210,11 +229,26 @@ export function Table<T>({
             ) : (
               paginatedData.map((item, rowIdx) => {
                 const rowStyleClass = getRowClassName ? getRowClassName(item) : '';
+                const isClickableRow = !!onRowClick;
+
+                // Handle keyboard enter/space triggered actions on the row
+                const handleRowKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                  if (isClickableRow && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onRowClick(item);
+                  }
+                };
+
                 return (
                   <tr 
                     key={rowIdx} 
                     onClick={() => onRowClick?.(item)}
-                    className={`group/row hover:bg-slate-100/50 dark:hover:bg-neutral-900/10 transition-colors duration-150 cursor-pointer ${rowStyleClass}`}
+                    onKeyDown={handleRowKeyDown}
+                    tabIndex={isClickableRow ? 0 : undefined}
+                    role={isClickableRow ? 'button' : undefined}
+                    className={`group/row hover:bg-slate-100/50 dark:hover:bg-neutral-900/10 focus-visible:outline-none focus-visible:bg-slate-100/50 dark:focus-visible:bg-neutral-900/10 transition-colors duration-150 ${
+                      isClickableRow ? 'cursor-pointer' : ''
+                    } ${rowStyleClass}`}
                   >
                     {columns.map((col) => (
                       <td 
@@ -234,7 +268,8 @@ export function Table<T>({
 
       {!loading && totalItems > 0 && totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 py-2 text-xs font-body">
-          <span className="text-slate-500 dark:text-slate-400">
+          {/* Enhanced slate contrast color for body text */}
+          <span className="text-slate-600 dark:text-slate-300">
             Showing <span className="font-semibold text-slate-900 dark:text-white">{startIndex + 1}</span> to{' '}
             <span className="font-semibold text-slate-900 dark:text-white">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
             <span className="font-semibold text-slate-900 dark:text-white">{totalItems}</span> entries
