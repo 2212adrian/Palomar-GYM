@@ -52,7 +52,7 @@ export const RatesPayments: React.FC = () => {
   
   const [, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [initialConfig, setInitialConfig] = useState<any>(loadedConfig);
+  const [, setInitialConfig] = useState<any>(loadedConfig);
   
   const [gymProfileData, setGymProfileData] = useState<any>(null);
 
