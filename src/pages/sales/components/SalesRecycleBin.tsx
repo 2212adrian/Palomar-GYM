@@ -36,7 +36,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   onRestoreSuccess,
 }) => {
   const [deletedTransactions, setDeletedTransactions] = useState<any[]>([]);
-  const [, setDbProducts] = useState<any[]>(parentProducts);
+  const [dbProducts, setDbProducts] = useState<any[]>(parentProducts);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,6 +45,11 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   // Local pagination parameters (Compact size of 5 items per page for modal viewports)
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
+
+  // Synchronize dbProducts whenever parentProducts prop changes
+  useEffect(() => {
+    setDbProducts(parentProducts);
+  }, [parentProducts]);
 
   // Fetch soft-deleted records from Supabase
   const fetchDeletedTransactions = async () => {
@@ -134,6 +139,40 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     return () => clearInterval(interval);
   }, [isOpen]);
 
+  // Evaluates transaction eligibility based on timing, catalog availability, and stock limits
+  const getRestorationStatus = (tx: any) => {
+    const isExpired = isOlderThan24Hours(tx.archivedAt);
+    
+    let hasOutOfStock = false;
+    let hasInsufficientStock = false;
+    let productNotFound = false;
+
+    if (tx.items && Array.isArray(tx.items)) {
+      for (const item of tx.items) {
+        const product = dbProducts.find((p: any) => p.id === item.productId);
+        if (!product) {
+          productNotFound = true;
+        } else if (product.has_stock_limit) {
+          if (product.stock_quantity === 0) {
+            hasOutOfStock = true;
+          } else if (product.stock_quantity < item.quantity) {
+            hasInsufficientStock = true;
+          }
+        }
+      }
+    }
+
+    const cannotRestore = isExpired || hasOutOfStock || hasInsufficientStock || productNotFound;
+
+    return {
+      isExpired,
+      hasOutOfStock,
+      hasInsufficientStock,
+      productNotFound,
+      cannotRestore
+    };
+  };
+
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return deletedTransactions.filter((t: any) => {
@@ -214,16 +253,18 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const handleBulkRestore = async (selectedList: any[]) => {
-    const restorableList = selectedList.filter((t: any) => !isOlderThan24Hours(t.archivedAt));
+    const restorableList = selectedList.filter((t: any) => !getRestorationStatus(t).cannotRestore);
     if (restorableList.length === 0) {
-      toast.error('No restorable items selected. Selected items are older than 24 hours.');
+      toast.error('No restorable items selected. Verify that stock limits are not exceeded.');
       return;
     }
+
     setLoading(true);
 
     try {
       const selectedTxIds = restorableList.map((t: any) => t.id);
       
+      // 1. Update sales record status to restore the transaction
       const { error: restoreError } = await supabase
         .from('sales')
         .update({
@@ -233,6 +274,39 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         .in('id', selectedTxIds);
 
       if (restoreError) throw restoreError;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = user?.email || 'System';
+
+      // 2. Perform sequential inventory updates and logs
+      for (const tx of restorableList) {
+        if (tx.items && Array.isArray(tx.items)) {
+          for (const item of tx.items) {
+            const matchedProduct = dbProducts.find((p: any) => p.id === item.productId);
+            if (matchedProduct && matchedProduct.has_stock_limit) {
+              const currentStock = matchedProduct.stock_quantity ?? 0;
+              const updatedStock = Math.max(0, currentStock - item.quantity);
+              
+              await supabase
+                .from('products')
+                .update({ stock_quantity: updatedStock })
+                .eq('id', item.productId);
+            }
+          }
+        }
+
+        const itemsList = tx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${tx.productName || tx.product_name}`;
+        const auditDetails = `Restored sale transaction from Recycle Bin: ${tx.receipt_no || tx.id}\n` +
+          `Payment Method: ${tx.paymentMethod || tx.payment_method || 'Cash'}\n` +
+          `Total Amount: ₱${Number(tx.totalAmount || tx.total_amount || 0).toFixed(2)}\n\n` +
+          `Items Restored:\n${itemsList}`;
+
+        await supabase.from('audit_logs').insert([{
+          action: 'SALE_RESTORED',
+          details: auditDetails,
+          actor_username: actor
+        }]);
+      }
 
       setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));
       onRestoreSuccess();
@@ -246,8 +320,8 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     }
   };
 
-  const handleRowSelect = (id: string, isExpired: boolean) => {
-    if (isExpired) return;
+  const handleRowSelect = (id: string, canBeRestored: boolean) => {
+    if (!canBeRestored) return;
     setSelectedIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
@@ -256,7 +330,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const isGroupFullySelected = (groupId: string) => {
     const groupItemIds = (groupMeta[groupId]?.ids || []).filter(id => {
       const tx = deletedTransactions.find(t => t.id === id);
-      return tx && !isOlderThan24Hours(tx.archivedAt);
+      return tx && !getRestorationStatus(tx).cannotRestore;
     });
     if (groupItemIds.length === 0) return false;
     return groupItemIds.every(id => selectedIds.includes(id));
@@ -265,7 +339,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const handleGroupSelect = (groupId: string) => {
     const groupItemIds = (groupMeta[groupId]?.ids || []).filter(id => {
       const tx = deletedTransactions.find(t => t.id === id);
-      return tx && !isOlderThan24Hours(tx.archivedAt);
+      return tx && !getRestorationStatus(tx).cannotRestore;
     });
     const allSelected = groupItemIds.length > 0 && groupItemIds.every(id => selectedIds.includes(id));
     
@@ -278,7 +352,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
   const handleToggleSelectAll = () => {
     const currentPageIds = paginatedTransactions
-      .filter((t: any) => !isOlderThan24Hours(t.archivedAt))
+      .filter((t: any) => !getRestorationStatus(t).cannotRestore)
       .map((t: any) => t.id);
     const allSelectedOnPage = currentPageIds.length > 0 && currentPageIds.every(id => selectedIds.includes(id));
 
@@ -333,7 +407,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="field-input pr-10"
           />
-          <label className="field-label flex items-center gap-1.5 text-slate-450 uppercase tracking-widest text-[9px]">
+          <label className="field-label flex items-center gap-1.5 text-slate-455 uppercase tracking-widest text-[9px]">
             <Search className="w-3.5 h-3.5" />
             <span>Search Deletions...</span>
           </label>
@@ -351,12 +425,12 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
           <div className="flex justify-between items-center bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
             <button
               onClick={handleToggleSelectAll}
-              disabled={loading || paginatedTransactions.every((t: any) => isOlderThan24Hours(t.archivedAt))}
+              disabled={loading || paginatedTransactions.every((t: any) => getRestorationStatus(t).cannotRestore)}
               className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50"
             >
               {paginatedTransactions.length > 0 && 
                paginatedTransactions
-                 .filter((t: any) => !isOlderThan24Hours(t.archivedAt))
+                 .filter((t: any) => !getRestorationStatus(t).cannotRestore)
                  .every((t: any) => selectedIds.includes(t.id)) ? (
                 <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
               ) : (
@@ -376,7 +450,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
               const isSelected = selectedIds.includes(tx.id);
               const groupSelected = isGroupFullySelected(tx.groupId);
-              const isExpired = isOlderThan24Hours(tx.archivedAt);
+              const {
+                isExpired,
+                hasOutOfStock,
+                hasInsufficientStock,
+                productNotFound,
+                cannotRestore
+              } = getRestorationStatus(tx);
 
               return (
                 <div key={tx.id} className="space-y-1.5 animate-fade-in">
@@ -386,7 +466,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                         type="button"
                         disabled={loading || (groupMeta[tx.groupId]?.ids || []).every(id => {
                           const item = deletedTransactions.find(t => t.id === id);
-                          return item && isOlderThan24Hours(item.archivedAt);
+                          return item && getRestorationStatus(item).cannotRestore;
                         })}
                         onClick={() => handleGroupSelect(tx.groupId)}
                         className="flex items-center gap-2 cursor-pointer hover:opacity-80 text-left disabled:opacity-50"
@@ -407,11 +487,11 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                   )}
 
                   <div
-                    onClick={() => !loading && !isExpired && handleRowSelect(tx.id, isExpired)}
+                    onClick={() => !loading && !cannotRestore && handleRowSelect(tx.id, !cannotRestore)}
                     className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
                       isSelected 
                         ? 'bg-blue-500/10 border-blue-500' 
-                        : isExpired
+                        : cannotRestore
                           ? 'bg-slate-200/50 dark:bg-zinc-950/50 border-dashed border-slate-300 dark:border-zinc-800 opacity-60 cursor-not-allowed'
                           : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-(--border-color)'
                     } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
@@ -420,9 +500,9 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          disabled={loading || isExpired}
-                          checked={isSelected && !isExpired}
-                          onChange={() => handleRowSelect(tx.id, isExpired)}
+                          disabled={loading || cannotRestore}
+                          checked={isSelected && !cannotRestore}
+                          onChange={() => handleRowSelect(tx.id, !cannotRestore)}
                           className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
@@ -431,12 +511,29 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                         <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
                           {tx.receipt_no} • ₱{tx.totalAmount.toFixed(2)}
                           {isExpired && <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">(Locked - Older than 24h)</span>}
+                          {!isExpired && hasOutOfStock && <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">(Out of Stock)</span>}
+                          {!isExpired && !hasOutOfStock && hasInsufficientStock && <span className="text-amber-500 dark:text-amber-400 ml-2 font-bold">(Low Stock)</span>}
+                          {!isExpired && productNotFound && <span className="text-stone-500 dark:text-stone-400 ml-2 font-bold">(Missing Catalog Item)</span>}
                         </span>
                       </div>
                     </div>
-                    {isExpired ? (
-                      <span className="py-1.5 px-3 bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border border-slate-400/20">
-                        Expired
+                    {cannotRestore ? (
+                      <span className={`py-1.5 px-3 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border ${
+                        isExpired 
+                          ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 border-slate-400/20'
+                          : hasOutOfStock 
+                            ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                            : hasInsufficientStock 
+                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                              : 'bg-stone-500/10 text-stone-500 border-stone-500/20'
+                      }`}>
+                        {isExpired 
+                          ? 'Expired' 
+                          : hasOutOfStock 
+                            ? 'Out of Stock' 
+                            : hasInsufficientStock 
+                              ? 'Low Stock' 
+                              : 'Missing Prod'}
                       </span>
                     ) : (
                       <button
@@ -518,13 +615,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
-              className="pt-2 border-t border-(--border-color) flex gap-2 w-full animate-fade-in"
+              className="pt-2 border-t border-(--border-color) flex gap-2 w-full"
             >
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => setSelectedIds([])}
-                className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-50 transition-colors font-black disabled:opacity-50"
+                className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors font-black disabled:opacity-50"
               >
                 Deselect All
               </button>
