@@ -127,30 +127,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
-      name: 'Members',
+      name: 'Logbook',
       icon: <Users className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
       roles: ['admin', 'staff'],
       children: [
         { 
-          name: 'Check-In', 
-          path: '/members/check-in', 
-          description: 'Left Tab — Instant gate/logbook telemetry' 
+          name: 'Logbook', 
+          path: '/logbook', 
+          description: 'Instant gate/logbook telemetry' 
         },
         { 
           name: 'Member List', 
           path: '/members/list', 
-          description: 'Right Tab — Accounts & profiles' 
-        },
-        { 
-          name: 'ID Maker', 
-          path: '/members/id-maker', 
-          description: 'Subscribed Only — Identity design suite',
-          badge: 'PRO' 
-        },
-        { 
-          name: 'Transactions', 
-          path: '/members/transactions', 
-          description: 'Renew or subscribe payment records' 
+          description: 'Accounts & profiles' 
         },
         { 
           name: 'Membership Plans', 
@@ -184,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       children: [
         { 
           name: 'Incident Reports', 
-          path: '/reports/incident-reports', 
+          path: '/reports', 
           description: 'Infraction logs and security entries',
           roles: ['admin', 'staff']
         },
@@ -313,7 +302,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside 
-        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative select-none shrink-0 animate-fade-in"
+        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative z-[150] select-none shrink-0 animate-fade-in"
         style={{
           width: collapsed ? '5rem' : '18rem',
           transition: 'width 300ms cubic-bezier(0.77, 0, 0.175, 1)'

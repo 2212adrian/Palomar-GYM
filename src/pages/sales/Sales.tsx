@@ -1,5 +1,5 @@
 // src/pages/sales/Sales.tsx
-import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   format, 
@@ -8,15 +8,11 @@ import {
   addDays, 
   isToday, 
   startOfDay, 
-  addWeeks, 
-  subWeeks,
   getDay,
   parseISO 
 } from 'date-fns';
 import { 
-  Search, 
   Plus, 
-  Trash2, 
   ChevronLeft, 
   ChevronRight, 
   RotateCcw, 
@@ -24,7 +20,7 @@ import {
   FileSpreadsheet,
   Printer 
 } from 'lucide-react';
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -38,7 +34,7 @@ import { isSuperAdmin } from '../../constants/auth';
 import { Button } from '../../components/ui/Button';
 import { UndoToast } from '../../components/ui/UndoToast'; 
 import { TabLoader } from '../../components/ui/TabLoader'; 
-import { Modal } from '../../components/ui/Modal';
+import { TimelineBar } from '../../components/ui/TimelineBar';
 import { HeaderActionsContext } from '../../routes';
 import { SalesDialog } from './components/SalesDialog';
 import { Products } from './Products'; 
@@ -49,7 +45,8 @@ import { SalesRecycleBin } from './components/SalesRecycleBin';
 import { SalesOfficialReceipt } from './components/SalesOfficialReceipt';
 import { SalesReportCompiler } from './components/SalesReportCompiler';
 
-const DAYS_OF_WEEK: string[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+// Unified UI TimelineCard
+import { TimelineCard } from '../../components/ui/TimelineCard';
 
 const isTransactionDeletable = (tx: any) => {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -97,192 +94,6 @@ const TransactionSkeleton: React.FC = () => {
         <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
         <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
       </div>
-    </div>
-  );
-};
-
-// =============================================================================
-// SUB-COMPONENT: TRANSACTION CARD (Isolates swipe physics cleanly) [3.1]
-// =============================================================================
-interface TransactionCardProps {
-  tx: any;
-  canDeleteTx: boolean;
-  onSelectReceipt: (tx: any) => void;
-  onTriggerDelete: (tx: any) => void;
-  onDragEnd: (_event: any, info: any, tx: any) => void;
-}
-
-const TransactionCard: React.FC<TransactionCardProps> = ({
-  tx,
-  canDeleteTx,
-  onSelectReceipt,
-  onTriggerDelete,
-  onDragEnd
-}) => {
-  const x = useMotionValue(0);
-
-  // Derive a clamped motion value so the card physically stops sliding at ±120px [3.1]
-  const clampedX = useTransform(x, (value) => Math.min(Math.max(value, -120), 120));
-
-  // Map reveal track opacities to clampedX with explicit boundaries to prevent extrapolation [3.1]
-  const receiptOpacity = useTransform(clampedX, [0, 80], [0, 1], { clamp: true });
-  const removeOpacity = useTransform(clampedX, [-80, 0], [1, 0], { clamp: true });
-
-  const totalUnits = tx.quantity || tx.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 1;
-  const formattedTime = tx.created_at ? format(parseISO(tx.created_at), 'hh:mm a') : 'N/A';
-
-  const summaryHeader = useMemo(() => {
-    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
-      const firstItem = tx.items[0];
-      const firstItemName = firstItem.productName || firstItem.product_name;
-      if (tx.items.length > 1) {
-        return `${firstItemName} & ${tx.items.length - 1} other item${tx.items.length - 1 > 1 ? 's' : ''}`;
-      }
-      return firstItemName;
-    }
-    return tx.product_name || tx.productName || 'Sales Transaction';
-  }, [tx]);
-
-  // Determine if payment is GCash and extract reference metadata
-  const isGCash = tx.payment_method === 'GCash' || tx.paymentMethod === 'GCash';
-  const refNumber = tx.reference_number || tx.referenceNumber;
-  const receivedAmount = Number(tx.amount_received || tx.amountReceived || 0);
-
-  return (
-    <div className="relative overflow-hidden rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)">
-      {/* --- SWIPE REVEAL BACKGROUND TRACK COLOR MODULES WITH SUBPIXEL PROTECTION [3.1] --- */}
-      <div className="absolute inset-px rounded-[15px] pointer-events-none select-none z-0 overflow-hidden">
-        {/* Left Reveal (Swipe Right -> Open Blue Receipt) [3.1] */}
-        <motion.div 
-          style={{ opacity: receiptOpacity }}
-          className="absolute inset-y-0 left-0 bg-blue-600 dark:bg-blue-750 flex items-center pl-6 text-white text-[10px] font-heading tracking-wider font-extrabold w-1/2"
-        >
-          RECEIPT
-        </motion.div>
-        
-        {/* Right Reveal (Swipe Left -> Delete Red Remove) [3.1] */}
-        <motion.div 
-          style={{ opacity: removeOpacity }}
-          className="absolute inset-y-0 right-0 bg-rose-600 dark:bg-rose-700 flex items-center justify-end pr-6 text-white text-[10px] font-heading tracking-wider font-extrabold w-1/2"
-        >
-          REMOVE
-        </motion.div>
-      </div>
-
-      {/* --- SLIDING CARD ELEMENT LAYER --- */}
-      <motion.div
-        style={{ x: clampedX }} // Bind to the clamped value to apply the drag boundaries
-        drag="x"
-        dragDirectionLock={true} // Locks drag axis to X only
-        dragConstraints={{ left: 0, right: 0 }} // Snaps card back to origin on release
-        dragElastic={{ left: 0.5, right: 0.5 }}
-        onDragEnd={(e, info) => onDragEnd(e, info, tx)}
-        whileTap={{ scale: 0.99 }}
-        className="pointer-events-auto bg-(--bg-card) p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 cursor-pointer relative overflow-hidden select-none z-10 touch-none"
-      >
-        {/* ABSOLUTE TOP-RIGHT RECEIVED METRIC OR GCASH REFERENCE */}
-        <div className="absolute top-3 right-4 text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 whitespace-nowrap">
-          {isGCash ? (
-            refNumber ? `REF: ${refNumber}` : 'GCASH PAYMENT'
-          ) : (
-            `RECEIVED: ₱${receivedAmount.toFixed(2)}`
-          )}
-        </div>
-
-        <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
-          {/* Left indicator column: PCS Box & Total Cost directly below */}
-          <div className="flex flex-col items-center gap-1.5 shrink-0 select-none">
-            {/* Pieces count indicator */}
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-(--color-primary) dark:text-(--color-primary-light) border border-(--border-color) flex flex-col items-center justify-center">
-              <span className="text-[14px] font-heading font-extrabold leading-none">{totalUnits}</span>
-              <span className="text-[8px] font-heading font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">PCS</span>
-            </div>
-            {/* Price below indicator box */}
-            <div className="text-xs font-heading font-extrabold text-(--color-text) mt-0.5 whitespace-nowrap">
-              ₱{Number(tx.total_amount || tx.totalAmount).toFixed(2)}
-            </div>
-          </div>
-
-          <div className="min-w-0 flex-1 text-left space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="text-sm font-bold text-(--color-text) truncate">{summaryHeader}</h4>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 font-sans tracking-wider border border-(--border-color) shrink-0">
-                {tx.receipt_no}
-              </span>
-            </div>
-            
-            {/* Compact horizontal product badges */}
-            <div className="flex flex-wrap gap-1.5">
-              {tx.items && Array.isArray(tx.items) ? (
-                tx.items.map((item: any, idx: number) => (
-                  <span 
-                    key={idx} 
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-800/80 text-[10px] font-sans text-slate-600 dark:text-slate-400 border border-(--border-color) max-w-45 shrink-0"
-                  >
-                    <span className="font-heading font-extrabold text-[9px] text-(--color-primary-light)">
-                      {item.quantity}x
-                    </span>
-                    <span className="truncate">{item.productName || item.product_name}</span>
-                  </span>
-                ))
-              ) : (
-                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                  {tx.product_name || tx.productName}
-                </div>
-              )}
-            </div>
-
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 flex-wrap pt-0.5">
-              <span>Payment: {tx.payment_method}</span>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
-              <span>Time: {formattedTime}</span>
-              {tx.change_calculated > 0 && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700">•</span>
-                  <span className="text-slate-455">Change: ₱{Number(tx.change_calculated).toFixed(2)}</span>
-                </>
-              )}
-              {tx.gcash_fee_applied > 0 && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700">•</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">+₱{Number(tx.gcash_fee_applied).toFixed(2)} Fee</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* --- DESKTOP ACTION COLUMN --- */}
-        <div className="hidden md:flex items-center gap-2 shrink-0 select-none">
-          {/* View Receipt Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectReceipt(tx);
-            }}
-            className="p-3 text-blue-500 dark:text-blue-400 hover:bg-blue-500/10 rounded-xl transition-all border border-transparent hover:border-blue-500/20 cursor-pointer shrink-0"
-            title="View Receipt"
-          >
-            <Printer className="w-4.5 h-4.5" />
-          </button>
-
-          {/* Remove Transaction Button */}
-          {canDeleteTx && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onTriggerDelete(tx);
-              }}
-              className="p-3 text-red-500 dark:text-rose-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20 cursor-pointer shrink-0"
-              title="Remove this sale"
-            >
-              <Trash2 className="w-4.5 h-4.5" />
-            </button>
-          )}
-        </div>
-      </motion.div>
     </div>
   );
 };
@@ -336,35 +147,11 @@ export const Sales: React.FC = () => {
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  const dateInputRef = useRef<HTMLInputElement>(null);
-
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-  const [confirmDeleteTx, setConfirmDeleteTx] = useState<any | null>(null);
 
   // Tracks nested selected product count to dynamically hide topbar actions
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
-
-  const getProductThumbnail = (productId: string) => {
-    const matched = products.find(p => p.id === productId);
-    return matched?.image_url || matched?.image || null;
-  };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.value) return;
-    const pickedDate = new Date(e.target.value);
-    
-    if (!isTabSelectable(pickedDate)) {
-      toast.warning(role === 'staff' ? 'Staff members are only allowed to view today’s records.' : 'You cannot select dates in the future.');
-      return;
-    }
-
-    const newWeekStart = startOfWeek(pickedDate, { weekStartsOn: 0 });
-    const dayIndex = getDay(pickedDate);
-
-    setCurrentWeekStart(newWeekStart);
-    setSelectedDayIndex(dayIndex);
-  };
 
   useEffect(() => {
     if (role !== 'admin') return;
@@ -476,11 +263,6 @@ export const Sales: React.FC = () => {
     };
   }, [currentWeekStart, role]);
 
-  const isCurrentWeek = useMemo(() => {
-    const realWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
-    return startOfDay(currentWeekStart).getTime() >= startOfDay(realWeekStart).getTime();
-  }, [currentWeekStart]);
-
   const isTabSelectable = (date: Date) => {
     const today = new Date();
     if (role === 'staff') {
@@ -508,19 +290,6 @@ export const Sales: React.FC = () => {
   const selectedDate = useMemo(() => {
     return addDays(currentWeekStart, selectedDayIndex);
   }, [currentWeekStart, selectedDayIndex]);
-
-  const stickyHeaderDateText = useMemo(() => {
-    if (role === 'admin') {
-      const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 0 });
-      if (format(currentWeekStart, 'MMM') === format(weekEnd, 'MMM')) {
-        return `${format(currentWeekStart, 'MMMM d')} — ${format(weekEnd, 'd, yyyy')}`;
-      } else {
-        return `${format(currentWeekStart, 'MMMM d')} — ${format(weekEnd, 'MMMM d, yyyy')}`;
-      }
-    } else {
-      return format(selectedDate, 'EEEE, MMMM d, yyyy');
-    }
-  }, [role, selectedDate, currentWeekStart]);
 
   const dayTransactions = useMemo(() => {
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -631,7 +400,7 @@ export const Sales: React.FC = () => {
       console.error(err);
       toast.error('There was a problem saving your transaction. Please try again.');
     } finally {
-      setLoading(false); // Replaced "fill-in;" typo to correctly switch off loading state
+      setLoading(false); 
     }
   };
 
@@ -695,25 +464,25 @@ export const Sales: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
           
           {/* Standardized Today's Sales Status Box */}
-<div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
-  <div className="text-left">
-    <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
-    <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
-      ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-    </span>
-  </div>
-</div>
+          <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
+            <div className="text-left">
+              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
+              <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
+                ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
 
           {role === 'admin' && (
             <>
               <Button
-  onClick={() => setIsRecycleBinOpen(true)}
-  variant="secondary"
-  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
->
-  <RotateCcw className="w-4 h-4 text-amber-500" />
-  <span>RECYCLE BIN</span>
-</Button>
+                onClick={() => setIsRecycleBinOpen(true)}
+                variant="secondary"
+                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              >
+                <RotateCcw className="w-4 h-4 text-amber-500" />
+                <span>RECYCLE BIN</span>
+              </Button>
 
               <Button
                 onClick={() => setIsReportModalOpen(true)}
@@ -745,49 +514,49 @@ export const Sales: React.FC = () => {
         setActions(
           <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
             
-           <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
-  <div className="text-left">
-    <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
-    <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
-      ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-    </span>
-  </div>
-</div>
-
-<Button
-  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
-  variant="secondary"
-  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
-  title="View and restore soft-deleted products"
->
-  <RotateCcw className="w-4 h-4 text-amber-500" />
-  <span>RECYCLE BIN</span>
-</Button>
+            <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
+              <div className="text-left">
+                <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
+                <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
+                  ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
 
             <Button
-  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
-  variant="secondary"
-  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
->
-  <Printer className="w-4 h-4 text-blue-500" />
-  <span>PRINT SHEET LABELS</span>
-</Button>
+              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
+              variant="secondary"
+              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              title="View and restore soft-deleted products"
+            >
+              <RotateCcw className="w-4 h-4 text-amber-500" />
+              <span>RECYCLE BIN</span>
+            </Button>
 
-           <Button
-  onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
-  variant="primary"
-  className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
->
-  <Plus className="w-4 h-4" />
-  <span>ADD NEW ITEM</span>
-</Button>
+            <Button
+              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
+              variant="secondary"
+              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+            >
+              <Printer className="w-4 h-4 text-blue-500" />
+              <span>PRINT SHEET LABELS</span>
+            </Button>
+
+            <Button
+              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
+              variant="primary"
+              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ADD NEW ITEM</span>
+            </Button>
           </div>
         );
       }
     }
 
     return () => setActions(null);
-  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount]);
+  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount, setActions]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
@@ -859,122 +628,16 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* WEEKLY TIMELINE SCROLLER */}
-          <div className="sticky top-0 z-30 bg-(--bg-page)/95 backdrop-blur-md pt-2 pb-4 -mx-6 px-6 sm:-mx-12 sm:px-12 border-b border-(--border-color) shadow-xs flex flex-col gap-4 animate-slide-down">
-            <div className="flex items-center justify-between gap-2">
-              
-              {role === 'admin' ? (
-                <button
-                  onClick={() => setCurrentWeekStart(prev => subWeeks(prev, 1))}
-                  className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-all cursor-pointer"
-                >
-                  <ChevronLeft className="w-5 h-5 text-(--color-text)" />
-                </button>
-              ) : (
-                <div className="w-10 h-10 hidden sm:block" /> 
-              )}
-
-              <div className="text-center flex-1">
-                <div 
-                  onClick={() => dateInputRef.current?.showPicker()} 
-                  className="text-center cursor-pointer hover:opacity-80 active:scale-98 transition-all inline-block relative"
-                >
-                  <span className="text-[10px] font-heading text-slate-555 dark:text-slate-455 tracking-widest block uppercase">
-                    {role === 'admin' ? 'SELECTED WEEK DATE' : 'SELECTED DAY DATE'}
-                  </span>
-                  <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5">
-                    {stickyHeaderDateText}
-                  </span>
-                  
-                  <input 
-                    ref={dateInputRef}
-                    type="date"
-                    onChange={handleDateChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer pointer-events-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {!isCurrentWeek && role === 'admin' && (
-                  <button
-                    onClick={() => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 0 }))}
-                    className="p-2 text-xs text-(--color-primary) bg-(--color-primary)/10 font-sans tracking-wider rounded-xl flex items-center gap-1 font-bold hover:bg-(--color-primary)/20 transition-all cursor-pointer"
-                    title="Return to Current Week"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">CURRENT</span>
-                  </button>
-                )}
-                
-                {role === 'admin' ? (
-                  <button
-                    onClick={() => setCurrentWeekStart(prev => addWeeks(prev, 1))}
-                    disabled={isCurrentWeek}
-                    className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-all cursor-pointer"
-                  >
-                    <ChevronRight className="w-5 h-5 text-(--color-text)" />
-                  </button>
-                ) : (
-                  <div className="w-10 h-10 hidden sm:block" />
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 sm:gap-2">
-              {DAYS_OF_WEEK.map((day: string, idx: number) => {
-                const date = addDays(currentWeekStart, idx);
-                const active = selectedDayIndex === idx;
-                const selectable = isTabSelectable(date);
-                const isTodayDate = isToday(date);
-
-                return (
-                  <button
-                    key={day}
-                    onClick={() => selectable && setSelectedDayIndex(idx)}
-                    disabled={!selectable}
-                    className={`py-3 px-1 sm:px-2 rounded-xl flex flex-col items-center justify-center transition-all relative ${
-                      active 
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md scale-[1.03] z-10' 
-                        : selectable 
-                          ? 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-slate-700 dark:text-slate-300' 
-                          : 'bg-transparent text-slate-350 dark:text-zinc-755 opacity-40 cursor-not-allowed'
-                    }`}
-                  >
-                    <span className="text-[9px] font-heading tracking-wider">{day}</span>
-                    <span className="text-xs font-sans font-extrabold mt-1">{format(date, 'd')}</span>
-                    
-                    {isTodayDate && (
-                      <span className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-(--color-primary)'}`}></span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* SEARCH TOOLBAR */}
-          <div className="field-wrap">
-            <input
-              type="text"
-              placeholder=" "
-              value={ledgerSearch}
-              onChange={(e) => setLedgerSearch(e.target.value)}
-              className="field-input pr-10"
-            />
-            <label className="field-label">
-              <Search className="w-3.5 h-3.5" />
-              Search Transactions (Name, Receipt, Ref, Method)
-            </label>
-            {ledgerSearch && (
-              <button 
-                onClick={() => setLedgerSearch('')} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 text-xs font-bold"
-              >
-                CLEAR
-              </button>
-            )}
-          </div>
+          <TimelineBar
+            currentWeekStart={currentWeekStart}
+            onWeekStartChange={setCurrentWeekStart}
+            selectedDayIndex={selectedDayIndex}
+            onDayIndexChange={setSelectedDayIndex}
+            searchQuery={ledgerSearch}
+            onSearchQueryChange={setLedgerSearch}
+            role={role}
+            searchPlaceholder="Search Transactions (Name, Receipt, Ref, Method)"
+          />
 
           {/* --- HOURLY LEDGER TIMELINE (Chronologically Segmented) --- */}
           <div className="space-y-6">
@@ -1038,7 +701,7 @@ export const Sales: React.FC = () => {
                     setSelectedReceiptTx(tx);
                   } else if (info.offset.x < -swipeThreshold) {
                     if (isTransactionDeletable(tx)) {
-                      setConfirmDeleteTx(tx);
+                      handleDeleteTransaction(tx);
                     } else {
                       toast.warning('Rollback Lock: Only current day sales can be removed.');
                     }
@@ -1056,12 +719,13 @@ export const Sales: React.FC = () => {
 
                     <div className="space-y-2.5">
                       {group.txs.map((tx) => (
-                        <TransactionCard
+                        <TimelineCard
                           key={tx.id}
-                          tx={tx}
-                          canDeleteTx={isTransactionDeletable(tx)}
+                          mode="sale"
+                          data={tx}
+                          canDelete={isTransactionDeletable(tx)}
                           onSelectReceipt={setSelectedReceiptTx}
-                          onTriggerDelete={setConfirmDeleteTx}
+                          onTriggerDelete={handleDeleteTransaction}
                           onDragEnd={handleDragEnd}
                         />
                       ))}
@@ -1177,91 +841,6 @@ export const Sales: React.FC = () => {
             fetchProducts();
           }}
         />
-      )}
-
-      {/* --- DETACHED CUSTOM REMOVAL CONFIRMATION MODAL --- */}
-      {confirmDeleteTx && (
-        <Modal
-          isOpen={!!confirmDeleteTx}
-          onClose={() => setConfirmDeleteTx(null)}
-          title="REMOVE TRANSACTION"
-          className="max-w-sm text-center p-6 animate-fade-in"
-        >
-          <div className="space-y-4 pt-1 font-body text-xs text-slate-500 dark:text-slate-400 text-left">
-            <p className="leading-relaxed text-center text-slate-600 dark:text-slate-450">
-              Are you sure you want to remove this transaction?
-            </p>
-
-            <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
-              {confirmDeleteTx.items && Array.isArray(confirmDeleteTx.items) ? (
-                confirmDeleteTx.items.map((item: any, idx: number) => {
-                  const imageUrl = getProductThumbnail(item.productId);
-                  return (
-                    <div 
-                      key={idx} 
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)"
-                    >
-                      {imageUrl ? (
-                        <img 
-                          src={imageUrl} 
-                          alt={item.productName || item.product_name} 
-                          className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0" 
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-xs shrink-0 select-none uppercase">
-                          {(item.productName || item.product_name || 'P')[0]}
-                        </div>
-                      )}
-                      
-                      <div className="min-w-0 flex-1 text-left">
-                        <span className="font-semibold block truncate text-xs text-slate-900 dark:text-white">
-                          {item.productName || item.product_name}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                          Quantity: {item.quantity} • Price: ₱{Number(item.price).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color)">
-                  <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-bold text-xs shrink-0 select-none">
-                    T
-                  </div>
-                  <div className="min-w-0 flex-1 text-left">
-                    <span className="font-semibold block truncate text-xs text-slate-900 dark:text-white">
-                      {confirmDeleteTx.product_name || confirmDeleteTx.productName}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                      Quantity: {confirmDeleteTx.quantity || 1} • Price: ₱{Number(confirmDeleteTx.total_amount || confirmDeleteTx.totalAmount || 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteTx(null)}
-                className="py-2.5 border border-(--border-color) bg-(--bg-card) hover:bg-slate-500/5 text-slate-500 dark:text-slate-400 rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleDeleteTransaction(confirmDeleteTx);
-                  setConfirmDeleteTx(null);
-                }}
-                className="py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer shadow-md transition-all font-bold"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       {/* --- DETACHED CUSTOM REMOVAL CONFIRMATION NOTIFIER --- */}

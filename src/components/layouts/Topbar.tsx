@@ -11,6 +11,22 @@ interface TopbarProps {
   className?: string;
 }
 
+// Dictionary to map raw URL pathname segments to styled breadcrumb tags
+const SEGMENT_MAP: Record<string, string> = {
+  members: 'MEMBERS',
+  list: 'MEMBER LIST',
+  plans: 'MEMBERSHIP PLANS',
+  dashboard: 'DASHBOARD',
+  goals: 'REVENUE GOALS',
+  sales: 'SALES',
+  products: 'PRODUCT LIST',
+  reports: 'REPORTS',
+  bir: 'BIR RECORDS',
+  settings: 'SETTINGS',
+  'personal-account': 'PERSONAL ACCOUNT',
+  'audit-logs': 'AUDIT LOGS'
+};
+
 export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -91,12 +107,22 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const isSalesPath = location.pathname.startsWith('/sales');
   const salesView = location.pathname === '/sales/products' ? 'inventory' : 'register';
 
+  const isMembersPath = location.pathname.startsWith('/members');
+  const membersView = location.pathname === '/members/plans' ? 'plans' : 'directory';
+
   const handleToggleSalesView = () => {
     if (salesView === 'register') {
       navigate('/sales/products');
     } else {
-      // Corrected: Navigates back to the root sales path directly
       navigate('/sales');
+    }
+  };
+
+  const handleToggleMembersView = () => {
+    if (membersView === 'directory') {
+      navigate('/members/plans');
+    } else {
+      navigate('/members/list');
     }
   };
 
@@ -105,15 +131,11 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     if (paths.length === 0) return 'DASHBOARD';
     
     let baseBreadcrumb = paths
-      .map(p => p.replace(/-/g, ' ').toUpperCase())
+      .map(p => SEGMENT_MAP[p] || p.replace(/-/g, ' ').toUpperCase())
       .join(' / ');
 
     if (location.pathname.includes('/settings') || location.pathname.includes('/system/account')) {
       baseBreadcrumb = 'SETTINGS';
-    }
-
-    if (isSalesPath) {
-      baseBreadcrumb = salesView === 'register' ? 'SALES' : 'SALES / INVENTORY';
     }
 
     if (subTab) {
@@ -139,8 +161,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           <span 
             className={
               isFirst 
-                ? "text-[var(--color-primary)] font-bold" 
-                : "text-[var(--color-text)]" 
+                ? "text-[var(--color-primary)] font-bold animate-fade-in" 
+                : "text-[var(--color-text)] animate-fade-in" 
             }
           >
             {segment}
@@ -159,6 +181,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       <div className="flex items-center gap-3.5 min-w-[200px]">
         {subTab && (
           <button
+            type="button"
             onClick={handleGoBackTrigger}
             aria-label="Go Back"
             title="Go Back"
@@ -178,13 +201,27 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-4 ml-auto">
+        {/* Mobile slide transition button for Sales */}
         {isSalesPath && isAdmin && (
           <button
+            type="button"
             onClick={handleToggleSalesView}
             className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up"
             title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
           >
             {salesView === 'register' ? 'Products →' : '← Sales'}
+          </button>
+        )}
+
+        {/* Mobile slide transition button for Members */}
+        {isMembersPath && isAdmin && (
+          <button
+            type="button"
+            onClick={handleToggleMembersView}
+            className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
+            title={membersView === 'directory' ? "Slide to Plans" : "Slide to Directory"}
+          >
+            {membersView === 'directory' ? 'Plans →' : '← List'}
           </button>
         )}
 

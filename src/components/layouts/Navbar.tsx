@@ -30,8 +30,8 @@ export const Navbar: React.FC = () => {
 
       {/* 2. Logbook (Left side - occupies 1 column) */}
       <Link 
-        to="/members/check-in" 
-        className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/members/check-in')}`}
+        to="/logbook" 
+        className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/logbook')}`}
       >
         <ClipboardList className="w-4.5 h-4.5" />
         <span className="text-[9px] font-heading tracking-widest uppercase">Logbook</span>

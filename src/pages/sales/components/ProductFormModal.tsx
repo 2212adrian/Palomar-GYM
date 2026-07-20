@@ -349,7 +349,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   }, [isMultiAddMode, stagedItems.length, formName, formPrice]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[16000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in text-xs text-(--color-text)">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in text-xs text-(--color-text)">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up relative">
         
         {/* --- CUSTOM BEAUTIFUL INLINE CONFIRMATION OVERLAY --- */}
@@ -369,14 +369,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDialog(null)}
-                  className="py-2.5 border border-(--border-color) bg-(--bg-page) text-slate-500 dark:text-slate-450 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-colors"
+                  className="py-2.5 border border-(--border-color) bg-(--bg-page) text-slate-505 dark:text-slate-450 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={confirmDialog.onConfirm}
-                  className="py-2.5 bg-red-650 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer font-bold shadow-lg shadow-red-500/15 transition-all"
+                  className="py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer font-bold shadow-lg shadow-red-500/15 transition-all"
                 >
                   Yes, Discard
                 </button>
@@ -433,7 +433,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setStagedItems((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-red-500 hover:text-red-750 font-bold uppercase text-[9px] tracking-wider transition-colors border-none bg-transparent cursor-pointer"
+                      className="text-red-500 hover:text-red-755 font-bold uppercase text-[9px] tracking-wider transition-colors border-none bg-transparent cursor-pointer"
                     >
                       <Trash className="w-3.5 h-3.5" />
                     </button>
@@ -514,7 +514,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
                       formManufacturerSource === 'openfoodfacts' 
                         ? 'bg-blue-500/10 text-blue-500 dark:text-blue-400' 
-                        : 'bg-slate-500/10 text-slate-500 dark:text-slate-400'
+                        : 'bg-slate-500/10 text-slate-505 dark:text-slate-400'
                     }`}>
                       {formManufacturerSource}
                     </span>
@@ -540,7 +540,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 {uploading ? (
                   <div className="flex flex-col items-center justify-center py-2 space-y-2">
                     <Loader2 className="w-6 h-6 animate-spin text-[#123c73] dark:text-[#bf0202]" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest animate-pulse text-slate-500 dark:text-slate-400">
+                    <span className="text-[10px] font-bold uppercase tracking-widest animate-pulse text-slate-505 dark:text-slate-400">
                       Compressing photo...
                     </span>
                   </div>
@@ -619,7 +619,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <select
                   value={formStatus}
                   onChange={(e) => setFormStatus(e.target.value as any)}
-                  className="w-full px-4 py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-(--color-text) outline-none focus:border-slate-400 transition-all font-semibold cursor-pointer"
+                  className="w-full px-4 py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-(--color-text) outline-none focus:border-slate-400 transition-all font-semibold cursor-pointer font-bold"
                 >
                   <option value="Active">Yes (Visible in Storefront / Register)</option>
                   <option value="Inactive">No (Hidden / Out of Stock)</option>
@@ -718,3 +718,5 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     document.body
   );
 };
+
+export default ProductFormModal;

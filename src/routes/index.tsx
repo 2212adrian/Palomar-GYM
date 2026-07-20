@@ -14,6 +14,7 @@ import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
 
 // Import newly created Sales / Inventory component
 import { Sales } from '../pages/sales/Sales';
+import { LogbookPage } from '../pages/logbook/LogbookPage';
 
 // Shared context for dynamic header buttons
 export const HeaderActionsContext = createContext<{
@@ -37,7 +38,22 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
     title: 'Sales Register',
     description: 'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.'
   },
-  '/reports/incident-reports': {
+  '/logbook': {
+    subtitle: 'Check-in Records',
+    title: 'GYM LOGBOOK',
+    description: 'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.'
+  },   
+  '/members/list': {
+    subtitle: 'List of Members',
+    title: 'Member List',
+    description: 'Manage client accounts, track subscription statuses, and generate security access QR cards.'
+  },
+  '/members/plans': {
+    subtitle: 'List of Members',
+    title: 'Membership Plans',
+    description: 'Selectable catalog plans and setup configurations for security turnstiles.'
+  },
+  '/reports': {
     subtitle: 'Reports / Incident Reports',
     title: 'Incident Reports',
     description: 'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.'
@@ -55,7 +71,10 @@ const HeaderLayout: React.FC = () => {
     const oldBase = getBaseSegment(prevPathRef.current);
     const newBase = getBaseSegment(location.pathname);
 
-    if (oldBase !== newBase) {
+    // Treat logbook and members as the same continuous section to preserve sliding header actions
+    const isLogbookOrMember = (seg: string) => seg === '/logbook' || seg === '/members';
+
+    if (oldBase !== newBase && !(isLogbookOrMember(oldBase) && isLogbookOrMember(newBase))) {
       setActions(null);
     }
     prevPathRef.current = location.pathname;
@@ -115,10 +134,12 @@ const router = createBrowserRouter([
                 children: [
                   { path: '/dashboard', element: <Dashboard /> },
                   { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
-                  { path: '/members/list', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Member List</div> },
-                  { path: '/members/id-maker', element: <div className="p-4 text-slate-900 dark:text-white font-heading">ID Maker (Subscribed Only)</div> },
+                  
+                  // Redirecting member list and plans to LogbookPage to maintain container mounting
+                  { path: '/members/list', element: <LogbookPage /> },
+                  { path: '/members/plans', element: <LogbookPage /> },
+                  
                   { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
-                  { path: '/members/plans', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Membership Plans</div> },
                   { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
                   { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
                 ]
@@ -128,11 +149,14 @@ const router = createBrowserRouter([
               {
                 element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
                 children: [
-                  // Corrected: Removed infinite redirect loop. Map '/sales' directly to Sales element.
+                  // Removed infinite redirect loop. Map '/sales' directly to Sales element.
                   { path: '/sales', element: <Sales /> },
                   { path: '/sales/:subview', element: <Sales /> }, // Consolidated dynamic parameter path
-                  { path: '/members/check-in', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Check-In Interface</div> },
-                  { path: '/reports/incident-reports', element: <IncidentReports /> }, 
+                  
+                  // Replaced placeholder element with the actual LogbookPage component
+                  { path: '/logbook', element: <LogbookPage /> },
+                  
+                  { path: '/reports', element: <IncidentReports /> }, 
                   
                   // Standardized settings routes (No redirects at the router configuration level)
                   { path: '/settings/:activeTab', element: <Settings /> },

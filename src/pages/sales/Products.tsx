@@ -1070,8 +1070,8 @@ const getRowStyle = (product: Product) => {
         const productToDelete = products.find(p => p.id === deleteConfirmId);
         if (!productToDelete) return null;
         return (
-          <div className="fixed inset-0 z-10000 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
-            <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up text-xs text-(--color-text)">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in text-xs text-(--color-text)">
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up">
               
               <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
                 <Trash2 className="w-6 h-6 animate-bounce" />
