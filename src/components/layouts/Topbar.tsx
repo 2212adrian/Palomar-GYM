@@ -1,7 +1,17 @@
 // src/components/layouts/Topbar.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Menu, ChevronLeft } from 'lucide-react';
+import { 
+  Menu, 
+  ChevronLeft, 
+  LayoutDashboard, 
+  ClipboardList, 
+  Users, 
+  ShoppingBag, 
+  BarChart3, 
+  Settings, 
+  Layers 
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
@@ -13,6 +23,7 @@ interface TopbarProps {
 
 // Dictionary to map raw URL pathname segments to styled breadcrumb tags
 const SEGMENT_MAP: Record<string, string> = {
+  logbook: 'LOGBOOK',
   members: 'MEMBERS',
   list: 'MEMBER LIST',
   plans: 'MEMBERSHIP PLANS',
@@ -104,6 +115,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   }, [timeOffset]);
 
   // Derived slide view parameters matching Sales.tsx path-routing system
+  const isLogbookPath = location.pathname.startsWith('/logbook');
   const isSalesPath = location.pathname.startsWith('/sales');
   const salesView = location.pathname === '/sales/products' ? 'inventory' : 'register';
 
@@ -117,12 +129,26 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       navigate('/sales');
     }
   };
+  // Dynamically resolve section icon matching current page route
+  const getSectionIcon = () => {
+    const firstSegment = location.pathname.split('/').filter(Boolean)[0] || 'dashboard';
 
-  const handleToggleMembersView = () => {
-    if (membersView === 'directory') {
-      navigate('/members/plans');
-    } else {
-      navigate('/members/list');
+    switch (firstSegment) {
+      case 'dashboard':
+        return <LayoutDashboard className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      case 'logbook':
+        return <ClipboardList className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      case 'members':
+        return <Users className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      case 'sales':
+        return <ShoppingBag className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      case 'reports':
+        return <BarChart3 className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      case 'settings':
+      case 'system':
+        return <Settings className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
+      default:
+        return <Layers className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />;
     }
   };
 
@@ -161,7 +187,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           <span 
             className={
               isFirst 
-                ? "text-[var(--color-primary)] font-bold animate-fade-in" 
+                ? "text-(--color-primary) font-bold animate-fade-in" 
                 : "text-[var(--color-text)] animate-fade-in" 
             }
           >
@@ -191,38 +217,65 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           </button>
         )}
 
-        <div className="xl:hidden font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
-          {renderStyledBreadcrumbs()}
+        <div className="xl:hidden flex items-center font-heading text-[11px] sm:text-xs tracking-[1px] uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-55 sm:max-w-[320px]">
+          {getSectionIcon()}
+          <span>{renderStyledBreadcrumbs()}</span>
         </div>
       </div>
 
-      <div className="hidden xl:block absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
-        {renderStyledBreadcrumbs()}
+      <div className="hidden xl:flex items-center absolute left-1/2 -translate-x-1/2 font-heading text-sm tracking-[1.5px] uppercase whitespace-nowrap transition-all duration-300 ease-in-out">
+        {getSectionIcon()}
+        <span>{renderStyledBreadcrumbs()}</span>
       </div>
 
       <div className="flex items-center gap-4 ml-auto">
+        {/* Mobile slide transition button for Logbook */}
+        {isLogbookPath && isAdmin && (
+          <button
+            type="button"
+            onClick={() => navigate('/members/list')}
+            className="xl:hidden flex items-center gap-1 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
+            title="Slide to Member Directory"
+          >
+            Members →
+          </button>
+        )}
+
         {/* Mobile slide transition button for Sales */}
         {isSalesPath && isAdmin && (
           <button
             type="button"
             onClick={handleToggleSalesView}
-            className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up"
+            className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
             title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
           >
-            {salesView === 'register' ? 'Products →' : '← Sales'}
+            {salesView === 'register' ? 'Products' : '← Sales'}
           </button>
         )}
 
         {/* Mobile slide transition button for Members */}
         {isMembersPath && isAdmin && (
-          <button
-            type="button"
-            onClick={handleToggleMembersView}
-            className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
-            title={membersView === 'directory' ? "Slide to Plans" : "Slide to Directory"}
-          >
-            {membersView === 'directory' ? 'Plans →' : '← List'}
-          </button>
+          <div className="xl:hidden flex items-center gap-1.5">
+            {membersView === 'directory' ? (
+              <button
+                type="button"
+                onClick={() => navigate('/logbook')}
+                className="flex items-center gap-1 px-2.5 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
+                title="Slide to Logbook"
+              >
+                ← Logbook
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate('/members/list')}
+                className="flex items-center gap-1 px-2.5 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
+                title="Slide to Member Directory"
+              >
+                ← List
+              </button>
+            )}
+          </div>
         )}
 
         <div className="hidden sm:block text-[15px] font-mono text-slate-400 select-none">

@@ -1,4 +1,3 @@
-// src/components/ui/UndoToast.tsx
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RotateCcw, Trash2, X } from 'lucide-react';
@@ -22,10 +21,17 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   const [timeLeft, setTimeLeft] = useState(duration);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Reset internal processing and timer state whenever a new toast opens or message changes
   useEffect(() => {
-    if (!isOpen || isProcessing) return;
+    if (!isOpen) {
+      setIsProcessing(false);
+      setTimeLeft(duration);
+      return;
+    }
 
+    setIsProcessing(false);
     setTimeLeft(duration);
+
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -39,7 +45,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, duration, isProcessing]);
+  }, [isOpen, duration, message]);
 
   const handleUndoClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -58,6 +64,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center pointer-events-none pb-8 px-4">
         <motion.div
           initial={{ opacity: 0, y: 15, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -85,7 +92,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
               }`}
             >
               <RotateCcw className={`w-3.5 h-3.5 ${isProcessing ? '' : 'animate-spin-reverse'}`} />
-              <span>{isProcessing ? 'Processing' : `Undo (${timeLeft}s)`}</span>
+              <span>{isProcessing ? 'Processing...' : `Undo (${timeLeft}s)`}</span>
             </button>
 
             {/* Force Close / Confirm Deletion */}
@@ -106,12 +113,14 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
           {/* Countdown progress line */}
           <motion.div
+            key={message}
             initial={{ width: '100%' }}
             animate={{ width: isProcessing ? '100%' : '0%' }}
             transition={{ duration: isProcessing ? 0 : duration, ease: 'linear' }}
             className={`absolute bottom-0 left-0 h-1 rounded-b-2xl ${isProcessing ? 'bg-slate-700' : 'bg-amber-500'}`}
           />
         </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );

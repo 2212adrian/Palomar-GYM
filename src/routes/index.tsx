@@ -11,8 +11,12 @@ import { SystemLayout } from '../components/layouts/SystemLayout';
 import Settings from '../pages/system/Settings';
 import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
+import { StaffPlansConsole } from '../pages/members/components/StaffPlansConsole';
 
-// Import newly created Sales / Inventory component
+// Import Anonymous Pre-Registration Page
+import { OnlineRegistrationPage } from '../pages/members/components/OnlineRegistrationPage';
+
+// Import Sales / Inventory component
 import { Sales } from '../pages/sales/Sales';
 import { LogbookPage } from '../pages/logbook/LogbookPage';
 
@@ -118,6 +122,10 @@ const router = createBrowserRouter([
   { path: '/forgot-password', element: <ForgotPassword /> }, 
   { path: '/confirm-signup', element: <ConfirmSignUp /> }, 
 
+  // Public Anonymous Pre-Registration Routes
+  { path: '/register', element: <OnlineRegistrationPage /> },
+  { path: '/register-online', element: <OnlineRegistrationPage /> },
+
   // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {
     element: <ProtectedRoute />, // Standard session guard check
@@ -129,41 +137,40 @@ const router = createBrowserRouter([
             element: <HeaderLayout />, // Consolidated dynamic page headers
             children: [
               // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
-              {
-                element: <ProtectedRoute allowedRoles={['admin']} />,
-                children: [
-                  { path: '/dashboard', element: <Dashboard /> },
-                  { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
-                  
-                  // Redirecting member list and plans to LogbookPage to maintain container mounting
-                  { path: '/members/list', element: <LogbookPage /> },
-                  { path: '/members/plans', element: <LogbookPage /> },
-                  
-                  { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
-                  { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
-                  { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
-                ]
-              },
+{
+  element: <ProtectedRoute allowedRoles={['admin']} />,
+  children: [
+    { path: '/dashboard', element: <Dashboard /> },
+    { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
+    
+    // Moved /members/list & /members/plans out of here!
+    
+    { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
+    { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
+    { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
+  ]
+},
 
-              // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
-              {
-                element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
-                children: [
-                  // Removed infinite redirect loop. Map '/sales' directly to Sales element.
-                  { path: '/sales', element: <Sales /> },
-                  { path: '/sales/:subview', element: <Sales /> }, // Consolidated dynamic parameter path
-                  
-                  // Replaced placeholder element with the actual LogbookPage component
-                  { path: '/logbook', element: <LogbookPage /> },
-                  
-                  { path: '/reports', element: <IncidentReports /> }, 
-                  
-                  // Standardized settings routes (No redirects at the router configuration level)
-                  { path: '/settings/:activeTab', element: <Settings /> },
-                  { path: '/settings', element: <Settings /> },
-                  { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
-                ]
-              }
+// ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
+{
+  element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
+  children: [
+    { path: '/sales', element: <Sales /> },
+    { path: '/sales/:subview', element: <Sales /> },
+    
+    { path: '/logbook', element: <LogbookPage /> },
+
+    // 🟢 MOVED HERE SO STAFF CAN ACCESS THEM:
+    { path: '/members/list', element: <LogbookPage /> },
+    { path: '/members/plans', element: <StaffPlansConsole /> },
+    
+    { path: '/reports', element: <IncidentReports /> }, 
+    
+    { path: '/settings/:activeTab', element: <Settings /> },
+    { path: '/settings', element: <Settings /> },
+    { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
+  ]
+}
             ]
           }
         ]

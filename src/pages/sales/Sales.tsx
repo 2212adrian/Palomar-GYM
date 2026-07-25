@@ -1,4 +1,3 @@
-// src/pages/sales/Sales.tsx
 import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
@@ -42,8 +41,8 @@ import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { SalesRecycleBin } from './components/SalesRecycleBin';
 
 // Separated Modular Components
-import { SalesOfficialReceipt } from './components/SalesOfficialReceipt';
 import { SalesReportCompiler } from './components/SalesReportCompiler';
+import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 
 // Unified UI TimelineCard
 import { TimelineCard } from '../../components/ui/TimelineCard';
@@ -54,33 +53,26 @@ const isTransactionDeletable = (tx: any) => {
   return txDate === todayStr;
 };
 
-// =============================================================================
-// SUB-COMPONENT: TRANSACTION SKELETON (Renders custom loading placeholders)
-// =============================================================================
 const TransactionSkeleton: React.FC = () => {
   return (
     <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
       <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
-        {/* Left indicator mock */}
         <div className="flex flex-col items-center gap-1.5 shrink-0">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
           <div className="h-4 w-12 bg-slate-200/60 dark:bg-zinc-800/60 rounded mt-0.5" />
         </div>
 
-        {/* Content details block mock */}
         <div className="min-w-0 flex-1 text-left space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="h-4.5 w-40 sm:w-56 bg-slate-200/60 dark:bg-zinc-800/60 rounded" />
             <div className="h-4.5 w-16 bg-slate-100 dark:bg-zinc-800/80 rounded-full border border-(--border-color)" />
           </div>
 
-          {/* Sub-item badges mock */}
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             <div className="h-5 w-24 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
             <div className="h-5 w-32 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
           </div>
 
-          {/* Metadata placeholders */}
           <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
             <div className="h-3 w-28 bg-slate-200/30 dark:bg-zinc-800/20 rounded" />
             <span className="text-slate-200 dark:text-zinc-800">•</span>
@@ -89,7 +81,6 @@ const TransactionSkeleton: React.FC = () => {
         </div>
       </div>
 
-      {/* Desktop action buttons mock */}
       <div className="hidden md:flex items-center gap-2 shrink-0">
         <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
         <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
@@ -150,7 +141,6 @@ export const Sales: React.FC = () => {
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
-  // Tracks nested selected product count to dynamically hide topbar actions
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
 
   useEffect(() => {
@@ -168,7 +158,6 @@ export const Sales: React.FC = () => {
     return () => window.removeEventListener('toggle-sales-view', handleSalesSlide);
   }, [navigate, role]);
 
-  // Listens to product selection events triggered by Products component
   useEffect(() => {
     const handleSelectionChange = (e: Event) => {
       const customEvent = e as CustomEvent<number>;
@@ -345,7 +334,7 @@ export const Sales: React.FC = () => {
           change_calculated: newTx.changeCalculated,
           total_amount: newTx.totalAmount,
           gcash_fee_applied: calculatedGcashFee,
-          reference_number: newTx.referenceNumber || newTx.reference_number || null // Added reference number input mapping
+          reference_number: newTx.referenceNumber || newTx.reference_number || null
         }])
         .select()
         .single();
@@ -423,7 +412,6 @@ export const Sales: React.FC = () => {
 
       if (error) throw error;
 
-      // Log action in audit history with Tab/Newline formatting
       const itemsList = stagedTx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${stagedTx.product_name}`;
       const auditDetails = `Moved sale transaction to Recycle Bin: ${stagedTx.receipt_no || stagedTx.id}\n` +
         `Payment Method: ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}\n` +
@@ -457,13 +445,11 @@ export const Sales: React.FC = () => {
     toast.info('Deletion canceled. The transaction has been put back.');
   };
 
-  // Synchronize topbar header actions on layout mounts
   useEffect(() => {
     if ((activeView as string) === 'register') {
       setActions(
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
           
-          {/* Standardized Today's Sales Status Box */}
           <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
             <div className="text-left">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
@@ -506,8 +492,6 @@ export const Sales: React.FC = () => {
         </div>
       );
     } else {
-      // activeView === 'inventory'
-      // Hide header actions if items are selected
       if (selectedProductsCount > 0) {
         setActions(null);
       } else {
@@ -562,7 +546,7 @@ export const Sales: React.FC = () => {
     <div className="relative min-h-[85vh] w-full animate-fade-in">
       <TabLoader isVisible={loading} />
 
-      {/* --- DESKTOP NAVIGATION TABS (ADMIN ONLY) --- */}
+      {/* --- DESKTOP NAVIGATION TABS --- */}
       {role === 'admin' && (
         <div className="hidden xl:block">
           <AnimatePresence>
@@ -614,15 +598,15 @@ export const Sales: React.FC = () => {
       )}
 
       {/* --- TIMELINE CANVAS SCROLLER --- */}
-      <div className="relative w-full h-full min-h-[80vh] overflow-hidden grid grid-cols-1 items-start">
+      <div className="relative w-full h-full min-h-[80vh] overflow-x-clip grid grid-cols-1 items-start">
         
         {/* VIEW 1: CASHIER REGISTER */}
         <div 
-          className="w-full h-full space-y-6 max-w-4xl mx-auto px-6 sm:px-12 pb-36 animate-fade-in"
+          className="w-full h-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-36 animate-fade-in"
           style={{
             gridColumn: 1,
             gridRow: 1,
-            transform: activeView === 'register' ? 'translate3d(0, 0, 0)' : 'translate3d(-101%, 0, 0)',
+            transform: activeView === 'register' ? 'none' : 'translate3d(-101%, 0, 0)',
             opacity: activeView === 'register' ? 1 : 0,
             pointerEvents: activeView === 'register' ? 'auto' : 'none',
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
@@ -639,11 +623,10 @@ export const Sales: React.FC = () => {
             searchPlaceholder="Search Transactions (Name, Receipt, Ref, Method)"
           />
 
-          {/* --- HOURLY LEDGER TIMELINE (Chronologically Segmented) --- */}
+          {/* --- HOURLY LEDGER TIMELINE --- */}
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
               {(() => {
-                // Render loading skeletons while transactions are fetching
                 if (loadingTransactions) {
                   return (
                     <div className="space-y-3">
@@ -783,14 +766,14 @@ export const Sales: React.FC = () => {
           )}
         </div>
 
-        {/* --- VIEW 2: PRODUCTS INVENTORY (ADMINS ONLY) --- */}
+        {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
           <div 
             className="w-full h-full pb-36 max-w-full"
             style={{
               gridColumn: 1,
               gridRow: 1,
-              transform: activeView === 'inventory' ? 'translate3d(0, 0, 0)' : 'translate3d(101%, 0, 0)',
+              transform: activeView === 'inventory' ? 'none' : 'translate3d(101%, 0, 0)',
               opacity: activeView === 'inventory' ? 1 : 0,
               pointerEvents: activeView === 'inventory' ? 'auto' : 'none',
               transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
@@ -823,10 +806,27 @@ export const Sales: React.FC = () => {
 
       {/* OFFICIAL RECEIPTS OVERLAY */}
       {selectedReceiptTx && (
-        <SalesOfficialReceipt
+        <OfficialReceipt
           isOpen={!!selectedReceiptTx}
           onClose={() => setSelectedReceiptTx(null)}
-          tx={selectedReceiptTx}
+          data={{
+            receiptType: 'sales',
+            receiptNo: selectedReceiptTx.receipt_no || selectedReceiptTx.id,
+            customerName: 'Customer',
+            items: (selectedReceiptTx.items || []).map((item: any) => ({
+              productName: item.productName || item.product_name,
+              quantity: item.quantity,
+              price: item.price
+            })),
+            basePrice: selectedReceiptTx.items ? 0 : Number(selectedReceiptTx.total_amount || 0),
+            gcashFee: Number(selectedReceiptTx.gcash_fee_applied || 0),
+            paymentMethod: selectedReceiptTx.payment_method || selectedReceiptTx.paymentMethod || 'Cash',
+            amountReceived: selectedReceiptTx.amount_received !== null && selectedReceiptTx.amount_received !== undefined ? Number(selectedReceiptTx.amount_received) : undefined,
+            changeDue: Number(selectedReceiptTx.change_calculated || 0),
+            gcashRefNo: selectedReceiptTx.reference_number || selectedReceiptTx.referenceNumber,
+            transactionDate: selectedReceiptTx.created_at || selectedReceiptTx.createdAt,
+            processedBy: 'Staff'
+          }}
         />
       )}
 
@@ -843,7 +843,7 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* --- DETACHED CUSTOM REMOVAL CONFIRMATION NOTIFIER --- */}
+      {/* DETACHED CONFIRMATION NOTIFIER */}
       <div className="fixed bottom-40 md:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col gap-2 w-[calc(100vw-24px)] md:w-auto items-center pointer-events-none">
         <AnimatePresence mode="popLayout">
           {stagedDeletions.map((stagedTx) => (
@@ -924,7 +924,7 @@ export const Sales: React.FC = () => {
           <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
             <div className="space-y-0.5 text-left select-none">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                TODAY'S REVENUE
+                TODAY'S SALES MADE
               </span>
               <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
                 ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

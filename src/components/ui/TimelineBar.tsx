@@ -106,27 +106,27 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in font-body">
-      {/* ─── WEEKLY TIMELINE SCROLLER ─── */}
-      <div className="p-4 bg-slate-50/50 dark:bg-zinc-900/40 border border-(--border-color) rounded-2xl space-y-3 flex flex-col items-center">
+    <>
+      {/* ─── WEEKLY TIMELINE SCROLLER (UNBOXED / BORDERLESS FOR MAXIMUM MOBILE SPACE) ─── */}
+      <div className="sticky top-0 z-30 py-2.5 px-1 bg-(--bg-page)/95 backdrop-blur-md space-y-2.5 flex flex-col items-center transition-all mb-3 border-b border-(--border-color)/40">
         <div className="flex items-center justify-between w-full">
           {role === 'admin' ? (
             <button
               onClick={() => onWeekStartChange(subWeeks(currentWeekStart, 1))}
-              className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              className="p-1.5 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
-              <ChevronLeft className="w-5 h-5 text-(--color-text)" />
+              <ChevronLeft className="w-4 h-4 text-(--color-text)" />
             </button>
           ) : (
-            <div className="w-10 h-10 hidden sm:block" />
+            <div className="w-7 h-7 hidden sm:block" />
           )}
 
-          {/* Clicking header triggers browser calendar picker natively */}
+          {/* Header Date Picker */}
           <div 
             onClick={() => dateInputRef.current?.showPicker()} 
             className="text-center flex-1 cursor-pointer hover:opacity-85 transition-opacity relative"
           >
-            <span className="text-[10px] font-heading tracking-widest text-[#1b365d] dark:text-[#bf0202] uppercase select-none block">
+            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-[#bf0202] uppercase select-none block">
               SELECTED WEEK DATE
             </span>
             <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5 select-none">
@@ -145,11 +145,11 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {!isCurrentWeek && role === 'admin' && (
               <button
                 onClick={() => onWeekStartChange(startOfWeek(new Date(), { weekStartsOn: 0 }))}
-                className="p-2 text-xs text-(--color-primary) bg-(--color-primary)/10 font-sans tracking-wider rounded-xl flex items-center gap-1 font-bold hover:bg-(--color-primary)/20 transition-all cursor-pointer"
+                className="p-1.5 text-xs text-(--color-primary) bg-(--color-primary)/10 font-sans tracking-wider rounded-xl flex items-center gap-1 font-bold hover:bg-(--color-primary)/20 transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline uppercase text-[9px] tracking-wider font-heading">Current</span>
@@ -160,19 +160,19 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               <button
                 onClick={() => onWeekStartChange(addWeeks(currentWeekStart, 1))}
                 disabled={isCurrentWeek}
-                className="p-2 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors cursor-pointer"
+                className="p-1.5 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors cursor-pointer"
               >
-                <ChevronRight className="w-5 h-5 text-(--color-text)" />
+                <ChevronRight className="w-4 h-4 text-(--color-text)" />
               </button>
             ) : (
-              <div className="w-10 h-10 hidden sm:block" />
+              <div className="w-7 h-7 hidden sm:block" />
             )}
           </div>
         </div>
 
         {/* Weekly Day Rails */}
         {role === 'admin' && (
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 w-full">
+          <div className="grid grid-cols-7 gap-1 w-full">
             {DAYS_OF_WEEK.map((day: string, idx: number) => {
               const date = addDays(currentWeekStart, idx);
               const active = selectedDayIndex === idx;
@@ -184,18 +184,18 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                   key={day}
                   onClick={() => selectable && onDayIndexChange(idx)}
                   disabled={!selectable}
-                  className={`py-3 px-1 sm:px-2 rounded-xl border flex flex-col items-center justify-center transition-all relative ${
+                  className={`py-2 px-0.5 sm:px-1 rounded-xl border flex flex-col items-center justify-center transition-all relative ${
                     active 
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-[#fff] border-[#123c73] dark:border-[#bf0202] shadow-md scale-[1.03] z-10 font-bold' 
+                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-[#fff] border-[#123c73] dark:border-[#bf0202] shadow-sm scale-[1.02] z-10 font-bold' 
                       : selectable 
                         ? 'bg-(--bg-card) border-(--border-color) text-slate-700 dark:text-slate-300 hover:border-slate-350 dark:hover:border-white/10 font-bold' 
                         : 'bg-transparent border-transparent text-slate-350 dark:text-zinc-755 opacity-40 cursor-not-allowed'
                   }`}
                 >
-                  <span className="text-[9px] font-heading tracking-wider">{day}</span>
-                  <span className="text-xs font-sans font-extrabold mt-1">{format(date, 'd')}</span>
+                  <span className="text-[8px] sm:text-[9px] font-heading tracking-wider">{day}</span>
+                  <span className="text-xs font-sans font-extrabold mt-0.5">{format(date, 'd')}</span>
                   {isTodayDate && (
-                    <span className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-(--color-primary)'}`} />
+                    <span className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-(--color-primary)'}`} />
                   )}
                 </button>
               );
@@ -204,16 +204,16 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         )}
       </div>
 
-      {/* ─── SEARCH & FILTER TOOLBAR ─── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xs">
+      {/* ─── SEARCH & FILTER TOOLBAR (UNBOXED / CLEAN) ─── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-0 mb-4 bg-transparent border-0 shadow-none">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-3.5 w-4 h-4 text-slate-455" />
+          <Search className="absolute left-3 top-3 w-4 h-4 text-slate-455" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full pl-10 pr-4 py-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all"
+            className="w-full pl-9 pr-4 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
           />
         </div>
 
@@ -223,10 +223,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               <button
                 key={opt.value}
                 onClick={() => onFilterChange(opt.value)}
-                className={`px-3.5 py-2 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
                   activeFilter === opt.value
-                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-[#111315] text-slate-500 dark:text-slate-400 hover:opacity-85'
+                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs font-bold'
+                    : 'bg-(--bg-card) border border-(--border-color) text-slate-500 dark:text-slate-400 hover:opacity-85'
                 }`}
               >
                 {opt.label}
@@ -235,6 +235,6 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 };

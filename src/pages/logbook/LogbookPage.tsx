@@ -1,4 +1,3 @@
-// src/pages/logbook/LogbookPage.tsx
 import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { 
   format, 
@@ -30,14 +29,18 @@ import { TimelineBar } from '../../components/ui/TimelineBar';
 import { TabLoader } from '../../components/ui/TabLoader'; 
 import { HeaderActionsContext } from '../../routes';
 import { LogbookRecordAttendance } from './components/LogbookRecordAttendance';
-import { LogbookOfficialReceipt } from './components/LogbookOfficialReceipt';
 import { LogbookRecycleBin } from './components/LogbookRecycleBin';
 import { LogbookReportCompiler } from './components/LogbookReportCompiler';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 
-// Unified UI TimelineCard & Connected Member Page
+// Unified Official Receipt & TimelineCard
+import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
+
+// Storage Engine
+import { prototypeStorage, STORAGE_KEYS } from '../members/memberService';
+import type { AttendanceRecord } from '../../types/members';
 
 const ATTENDANCE_FILTERS = [
   { label: 'All', value: 'All' },
@@ -67,7 +70,36 @@ export const LogbookPage: React.FC = () => {
 
   const [logs, setLogs] = useState<LogRecord[]>(() => {
     const saved = localStorage.getItem('palomar_gym_logbook');
-    return saved ? JSON.parse(saved) : INITIAL_LOGS;
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Logbook parse error:', e);
+      }
+    }
+
+    // Hydrate from STORAGE_KEYS.ATTENDANCE if present
+    try {
+      const dbAttendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+      if (dbAttendance.length > 0) {
+        return dbAttendance.map((att: AttendanceRecord) => ({
+          id: att.id,
+          timestamp: att.check_in_time,
+          memberId: att.member_id || null,
+          customerName: att.customer_name,
+          customerType: att.customer_type,
+          categoryOrPlan: att.plan_name || 'Regular Pass',
+          paymentMethod: att.payment_method,
+          amountPaid: att.entry_fee,
+          paymentStatus: att.entry_fee > 0 ? 'Paid' : 'Free',
+          status: 'Active'
+        }));
+      }
+    } catch (e) {
+      console.error('Attendance hydration error:', e);
+    }
+
+    return INITIAL_LOGS;
   });
 
   useEffect(() => {
@@ -152,7 +184,9 @@ export const LogbookPage: React.FC = () => {
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   // Aggregate Metrics
-  const totalCheckedInToday = dayLogs.length;
+  const totalCollectedToday = useMemo(() => {
+    return dayLogs.reduce((acc, log) => acc + (log.amountPaid || 0), 0);
+  }, [dayLogs]);
 
   const handleCheckInSuccess = (newLog: LogRecord) => {
     setLogs(prev => [newLog, ...prev]);
@@ -220,7 +254,6 @@ export const LogbookPage: React.FC = () => {
     toast.success('Check-in record restored.');
   };
 
-  // Header Actions configuration
   useEffect(() => {
     if (activePage === 'logbook') {
       setActions(
@@ -233,7 +266,7 @@ export const LogbookPage: React.FC = () => {
                 className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
               >
                 <RotateCcw className="w-4 h-4 text-amber-500" />
-                <span>RECYCLE CACHE</span>
+                <span>RECYCLE BIN</span>
               </Button>
 
               <Button
@@ -258,12 +291,9 @@ export const LogbookPage: React.FC = () => {
         </div>
       );
     }
-    
+
     return () => {
-      // Guard layout clearance to prevent clearing the header when shifting focus to Members view
-      if (activePageRef.current === 'logbook') {
-        setActions(null);
-      }
+      setActions(null);
     };
   }, [role, setActions, activePage]);
 
@@ -326,11 +356,10 @@ export const LogbookPage: React.FC = () => {
     <div className="relative min-h-[85vh] w-full">
       <TabLoader isVisible={loading} />
 
-      {/* ─── DESKTOP SIDE ARROWS: DYNAMIC VIEWPORT BOUNDARY CONTROLS (ADMINS ONLY) ─── */}
+      {/* ─── DESKTOP SIDE ARROWS ─── */}
       {isAdmin && (
         <div className="hidden xl:block">
           <AnimatePresence mode="wait">
-            {/* Left side fixed boundary trigger */}
             {showLeftArrow && leftArrowTarget && (
               <motion.button
                 key={`left-arrow-${location.pathname}`}
@@ -354,7 +383,6 @@ export const LogbookPage: React.FC = () => {
               </motion.button>
             )}
 
-            {/* Right side fixed boundary trigger */}
             {showRightArrow && rightArrowTarget && (
               <motion.button
                 key={`right-arrow-${location.pathname}`}
@@ -382,16 +410,16 @@ export const LogbookPage: React.FC = () => {
       )}
 
       {/* ─── SLIDING TIMELINE CANVAS GRID SCROLLER ─── */}
-      <div className="relative w-full h-full min-h-[80vh] overflow-hidden grid grid-cols-1 items-start">
+      <div className="relative w-full h-full min-h-[80vh] overflow-x-clip grid grid-cols-1 items-start">
         
         {/* VIEW 1: LEFT SLIDE (LOGBOOK COUNTER) */}
         <div 
-          className="w-full h-full space-y-6 max-w-4xl mx-auto px-6 sm:px-12 pb-36"
+          className="w-full h-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-36"
           style={{
             gridColumn: 1,
             gridRow: 1,
             transform: activePage === 'logbook' 
-              ? 'translate3d(0, 0, 0)' 
+              ? 'none' 
               : 'translate3d(-101%, 0, 0)',
             opacity: activePage === 'logbook' ? 1 : 0,
             pointerEvents: activePage === 'logbook' ? 'auto' : 'none',
@@ -534,14 +562,14 @@ export const LogbookPage: React.FC = () => {
           )}
         </div>
 
-        {/* VIEW 2: RIGHT SLIDE (CONNECTED MEMBERS DIRECTORY & ACCESS CARD SETUPS) */}
+        {/* VIEW 2: RIGHT SLIDE */}
         {role === 'admin' && (
           <div 
             className="w-full h-full pb-36 max-w-full animate-fade-in"
             style={{
               gridColumn: 1,
               gridRow: 1,
-              transform: activePage === 'members' ? 'translate3d(0, 0, 0)' : 'translate3d(101%, 0, 0)',
+              transform: activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
               opacity: activePage === 'members' ? 1 : 0,
               pointerEvents: activePage === 'members' ? 'auto' : 'none',
               transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
@@ -553,7 +581,7 @@ export const LogbookPage: React.FC = () => {
 
       </div>
 
-      {/* 4. MODALS DE-COUPLED AT ROOT PORTALS [1] */}
+      {/* MODALS */}
       {isCreateModalOpen && (
         <LogbookRecordAttendance
           isOpen={isCreateModalOpen}
@@ -563,13 +591,22 @@ export const LogbookPage: React.FC = () => {
       )}
 
       {isReceiptModalOpen && selectedReceiptLog && (
-        <LogbookOfficialReceipt
+        <OfficialReceipt
           isOpen={isReceiptModalOpen}
           onClose={() => {
             setSelectedReceiptLog(null);
             setIsReceiptModalOpen(false);
           }}
-          tx={selectedReceiptLog}
+          data={{
+            receiptType: selectedReceiptLog.customerType === 'New Membership' ? 'subscription' : 'walkin',
+            receiptNo: (selectedReceiptLog as any).receipt_no || selectedReceiptLog.id,
+            customerName: selectedReceiptLog.customerName || 'Walk-In Guest',
+            planType: selectedReceiptLog.categoryOrPlan || 'Daily Pass',
+            basePrice: selectedReceiptLog.amountPaid,
+            paymentMethod: selectedReceiptLog.paymentMethod,
+            transactionDate: selectedReceiptLog.timestamp,
+            processedBy: 'WOLF PALOMAR STAFF'
+          }}
         />
       )}
 
@@ -608,7 +645,7 @@ export const LogbookPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* MOBILE STICKY BOTTOM BAR (MATCHING SALES REGION STYLE PACK) [1] */}
+      {/* MOBILE STICKY BOTTOM BAR */}
       {activePage === 'logbook' && (
         <>
           <AnimatePresence>
@@ -673,10 +710,10 @@ export const LogbookPage: React.FC = () => {
           <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
             <div className="space-y-0.5 text-left select-none">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                ATTENDANCE LOGS
+                TODAY'S LOGBOOK MADE
               </span>
               <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                {totalCheckedInToday} Checked In
+                ₱{totalCollectedToday.toFixed(2)}
               </span>
               <span className="text-[9px] font-sans text-slate-500 block leading-none font-semibold">
                 Filing Attendance History
@@ -699,12 +736,11 @@ export const LogbookPage: React.FC = () => {
   );
 };
 
-// Default Mock Data inside identical schema
 const INITIAL_LOGS: LogRecord[] = [
   {
     id: 'log-1',
     timestamp: '2026-07-17T08:34:00Z',
-    memberId: 'WOLF-M-2026-0042',
+    memberId: 'MEM-000001',
     customerName: 'John Dela Cruz',
     customerType: 'Existing Member',
     categoryOrPlan: 'Monthly Plan',
@@ -728,7 +764,7 @@ const INITIAL_LOGS: LogRecord[] = [
   {
     id: 'log-3',
     timestamp: '2026-07-17T19:45:00Z',
-    memberId: 'WOLF-M-2026-0089',
+    memberId: 'MEM-000002',
     customerName: 'Jane Santos',
     customerType: 'Existing Member',
     categoryOrPlan: 'Monthly Plan',

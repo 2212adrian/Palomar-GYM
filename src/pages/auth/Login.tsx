@@ -1,10 +1,10 @@
-//src/pages/auth/Login.tsx
-import React, { useState, useEffect, useRef } from 'react';
+// src/pages/auth/Login.tsx
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ShieldAlert, CheckCircle2, Sun, Moon, User } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
@@ -29,13 +29,16 @@ import carousel3 from '../../assets/3-carousel.webp';
 import carousel4 from '../../assets/4-carousel.webp';
 import carousel5 from '../../assets/5-carousel.webp';
 import carousel6 from '../../assets/6-carousel.webp';
-import landscapeLogo from '../../assets/landscape-logo.webp';
+import landscapeLogoDark from '../../assets/landscape-logo-dark.webp';
+import landscapeLogoLight from '../../assets/landscape-logo-light.webp';
 import googleIcon from '../../assets/Google_Icon.webp';
-import hexagonBg from '../../assets/textures/hexagons.svg';
 
 const CAROUSEL_IMAGES = [carousel1, carousel2, carousel3, carousel4, carousel5, carousel6];
 const TYPEWRITER_PHRASES = ['SECURE.', 'RELIABLE.', 'STRENGTH.', 'LIMITS.', 'ENDURANCE.', 'CAPACITY.'];
-const APP_VERSION = pkg.version || '2.0.0B';
+const APP_VERSION = pkg.version || '0.11.0';
+
+// ─── Hexagon Pattern SVG ─────────────────────────────────────────────────────
+const HEXAGON_PATTERN_URL = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='0.15'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`;
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -82,16 +85,47 @@ export const Login: React.FC = () => {
   const activeContactNumber2 = gymConfig?.contactNumber2 || '09123456789';
   const activeEmailAddress = gymConfig?.emailAddress || 'contact@wolfpalomargym.com';
 
-  // ─── Resolve Dynamic Media Assets (Declared first to prevent scoping errors) ───
-  const activeLogo = gymConfig?.gymLogo || landscapeLogo;
+  // ─── Core UI States ────────────────────────────────────────────────────────
+  const [isAssetPreloaded, setIsAssetPreloaded] = useState<boolean>(false);
+  const [isReady, setIsReady] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('loginIntroPlayed') === 'true';
+    }
+    return false;
+  });
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [isFlipped, setIsFlipped] = useState<boolean>(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
-  const activeCarouselImages = (gymConfig?.carouselImages && Array.isArray(gymConfig.carouselImages) && gymConfig.carouselImages.length > 0)
-    ? gymConfig.carouselImages 
-    : CAROUSEL_IMAGES;
+  // Responsive state to prevent duplicate inputs from stealing react-hook-form refs
+  const [isMobile, setIsMobile] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  );
+
+  // ─── Resolve Dynamic Media Assets ─────────────────────────────────────────
+  const defaultLogo = useMemo(() => {
+    return theme === 'dark' ? landscapeLogoDark : landscapeLogoLight;
+  }, [theme]);
+
+  const activeLogo = gymConfig?.gymLogo || defaultLogo;
+
+  const activeCarouselImages = useMemo(() => {
+    return (gymConfig?.carouselImages && Array.isArray(gymConfig.carouselImages) && gymConfig.carouselImages.length > 0)
+      ? gymConfig.carouselImages 
+      : CAROUSEL_IMAGES;
+  }, [gymConfig?.carouselImages]);
 
   const activeGymDescription = gymConfig?.gymDescription || 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
+  
+  // Track window resize to toggle mobile layout
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  // Retrieve active config (from database, or local draft if in Preview mode)
+  // Retrieve active config
   useEffect(() => {
     const loadBranding = async () => {
       let activeConfig = null;
@@ -152,18 +186,6 @@ export const Login: React.FC = () => {
     loadBranding();
   }, [isPreview]);
 
-  // ─── Core UI States ────────────────────────────────────────────────────────
-  const [isAssetPreloaded, setIsAssetPreloaded] = useState<boolean>(false);
-  const [isReady, setIsReady] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('loginIntroPlayed') === 'true';
-    }
-    return false;
-  });
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [isFlipped, setIsFlipped] = useState<boolean>(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
-
   // ─── Submitting & Visual Error States ──────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
@@ -173,7 +195,7 @@ export const Login: React.FC = () => {
   const [shakePassword, setShakePassword] = useState<boolean>(false);
   const [shakeRecovery, setShakeRecovery] = useState<boolean>(false);
 
-  // ─── Password Recovery States (Simplified) ──────────────────────────────────
+  // ─── Password Recovery States ──────────────────────────────────────────────
   const [recoveryEmail, setRecoveryEmail] = useState<string>('');
   const [isRecoverySubmitting, setIsRecoverySubmitting] = useState<boolean>(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -222,19 +244,22 @@ export const Login: React.FC = () => {
   const watchPassword = watchLogin('password');
   const watchRecoveryEmail = watchRecovery('email');
 
-  // Dynamic input label swapping
-  const dynamicLabel = watchIdentifier && watchIdentifier.includes('@')
-    ? 'Email Address'
-    : 'Username';
+  // Dynamic input label swapping based on content
+  const dynamicLabel = useMemo(() => {
+    if (!watchIdentifier || watchIdentifier.trim().length === 0) {
+      return 'Username / Email Address';
+    }
+    return watchIdentifier.includes('@') ? 'Email Address' : 'Username';
+  }, [watchIdentifier]);
 
-  // ─── Clear Stale Transition States on Mount ────────────────────────────────
+  // Clear transition states
   useEffect(() => {
     sessionStorage.removeItem('outroActive');
     sessionStorage.removeItem('playDashboardIntro');
     setIsLoggingIn(false);
   }, []);
 
-  // ─── Theme Sync ───────────────────────────────────────────────────────────
+  // Theme Sync
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
@@ -242,22 +267,20 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // ─── Session Guard (Bypassed entirely in preview mode) ────────────────────
+  // Session Guard
   useEffect(() => {
-    if (isPreview) return; // Prevent session routing inside sandbox
+    if (isPreview) return;
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
     if (initialized && user && !isLoggingIn && !isOutroActive) {
       const userProfile = (useAuthStore.getState() as any).profile;
-      
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
-      
       const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFromPath;
       navigate(targetRoute, { replace: true });
     }
   }, [initialized, user, navigate, isLoggingIn, location.state, isPreview]);
 
-  // ─── Handle OAuth Errors in URL ───────────────────────────────────────────
+  // Handle OAuth Errors
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const query = new URLSearchParams(window.location.search);
@@ -274,7 +297,7 @@ export const Login: React.FC = () => {
     }
   }, []);
 
-  // ─── Deduplicate Auth Store Errors ────────────────────────────────────────
+  // Deduplicate Auth Store Errors
   useEffect(() => {
     if (storeError) {
       toast.error(storeError, { toastId: 'unauthorized-access-toast' });
@@ -283,7 +306,7 @@ export const Login: React.FC = () => {
     }
   }, [storeError, setError]);
 
-  // ─── Intro Transition Activation ──────────────────────────────────────────
+  // Intro Transition Activation
   useEffect(() => {
     const hasLoggedOut = 
       (location.state as any)?.loggedOut || 
@@ -311,7 +334,7 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [location.search, location.state, navigate, isPreview]);
 
-  // ─── Carousel Cycle ───────────────────────────────────────────────────────
+  // Carousel Cycle
   useEffect(() => {
     if (!isAssetPreloaded) return;
     const interval = setInterval(() => {
@@ -320,7 +343,7 @@ export const Login: React.FC = () => {
     return () => clearInterval(interval);
   }, [gymConfig, activeCarouselImages.length, isAssetPreloaded]);
 
-  // ─── Typewriter Loop ──────────────────────────────────────────────────────
+  // Typewriter Loop
   useEffect(() => {
     if (!isAssetPreloaded) return;
     const current = TYPEWRITER_PHRASES[phraseIndex];
@@ -349,7 +372,7 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [typewriterText, isDeleting, phraseIndex, isAssetPreloaded]);
 
-  // ─── Flat Parallax System (Hardware Optimized & Pointer Coarse Aware) ──────
+  // Parallax System
   useEffect(() => {
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
     if (isTouch) return;
@@ -425,7 +448,7 @@ export const Login: React.FC = () => {
     };
   }, []);
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // Helpers
   const triggerShake = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(true);
     setTimeout(() => setter(false), 500);
@@ -446,9 +469,9 @@ export const Login: React.FC = () => {
     setRecoveryError(null);
   };
 
-  // ─── Auth Submission Logic ───────────────────────────────────────────────
+  // Auth Submission Logic
   const handleGoogleLogin = async () => {
-    if (isPreview) return; // Disable OAuth in sandbox preview
+    if (isPreview) return;
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
@@ -467,9 +490,8 @@ export const Login: React.FC = () => {
     }
   };
 
-  // 2. Insert into the onLoginSubmit function inside src/pages/auth/Login.tsx
   const onLoginSubmit = async (data: LoginFormValues) => {
-    if (isSubmitting || isPreview) return; // Disable logins in sandbox preview
+    if (isSubmitting || isPreview) return;
     setIsSubmitting(true);
     setShakeEmail(false);
     setShakePassword(false);
@@ -497,11 +519,10 @@ export const Login: React.FC = () => {
       const targetName = dbProfile?.full_name || loggedInUser?.email || data.usernameOrEmail;
 
       if (userStatus === 'inactive') {
-        // Audit a failed login attempt due to a deactivated profile before signing out
         await logAudit(
           'USER_LOGIN_FAILED',
           `Deactivated user "${targetName}" attempted to log in.`,
-           loggedInUser?.id ?? undefined
+          loggedInUser?.id ?? undefined
         );
 
         await supabase.auth.signOut();
@@ -509,13 +530,16 @@ export const Login: React.FC = () => {
         return;
       }
 
-      // ─── AUDIT LOG: Successful Login ─────────────────────────────────────────
       await logAudit(
         'USER_LOGIN',
         `User "${targetName}" logged in successfully.`,
-         loggedInUser?.id ?? undefined
+        loggedInUser?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
+
+      // Toast notification on successful login
+      toast.success(`Welcome back, ${targetName}!`, {
+        toastId: 'login-success-toast',
+      });
 
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
@@ -547,7 +571,7 @@ export const Login: React.FC = () => {
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
   const requestResetLink = async (email: string) => {
-    if (isPreview) return; // Disable recovery emails in sandbox preview
+    if (isPreview) return;
     setRecoveryError(null);
     setIsRecoverySubmitting(true);
 
@@ -585,66 +609,313 @@ export const Login: React.FC = () => {
     resetRecovery();
   };
 
-  return (
-    <div className="relative w-full h-screen overflow-hidden bg-(--bg-page) select-none font-sans text-(--color-text) font-body">
+  // ─── Inner Form JSX for Login ─────────────────────────────────────────────
+  const renderLoginForm = () => (
+    <div className="w-full font-body select-text">
       
-      {/* ─── Hardware Accelerated Hexagon Pattern Background Overlay ─── */}
-      <div 
-        className="absolute inset-0 z-0 pointer-events-none opacity-[0.04] dark:opacity-[0.02] mix-blend-normal"
-        style={{ 
-          backgroundImage: `url(${hexagonBg})`,
-          backgroundRepeat: 'repeat',
-          backgroundSize: '280px 280px',
-        }}
-      />
+      {/* Gym Logo */}
+      <div className="flex justify-center pt-2 mb-3 relative z-20">
+        <img 
+          src={activeLogo} 
+          alt="Wolf Palomar Logo" 
+          className="h-16 sm:h-20 object-contain drop-shadow-lg transition-all duration-300 transform hover:scale-105" 
+        />
+      </div>
 
-      {/* Dynamic Keyframes */}
+      {/* Title Section */}
+      <div className="text-center relative z-20 mb-4 sm:mb-2">
+        <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-0.5 select-none">
+          LOGIN
+        </h1>
+        <p className="font-heading text-[10px] sm:text-[11px] tracking-[2.5px] font-bold text-blue-600 dark:text-red-500 uppercase select-none">
+          GYM MANAGEMENT SYSTEM
+        </p>
+      </div>
+
+      {/* Login Form */}
+      <form onSubmit={handlePreLoginSubmit} className="space-y-3 font-body relative z-20 pointer-events-auto">
+        
+        {/* Username/Email Input */}
+        <div className="relative z-30">
+          <Input
+            {...registerLogin('usernameOrEmail')}
+            type="text"
+            label={dynamicLabel}
+            icon={<User className="w-4 h-4 text-slate-400 dark:text-slate-400" />}
+            error={!!loginErrors.usernameOrEmail}
+            shake={shakeEmail}
+            touched={touchedLogin.usernameOrEmail}
+            isPopulated={!!watchIdentifier}
+            disabled={isSubmitting || isLoggingIn}
+            className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+          />
+        </div>
+
+        {/* Password Input */}
+        <div className="relative z-30">
+          <Input
+            {...registerLogin('password')}
+            type={showPassword ? 'text' : 'password'}
+            label="Password"
+            icon={<Lock className="w-4 h-4 text-slate-400 dark:text-slate-400" />}
+            error={!!loginErrors.password}
+            shake={shakePassword}
+            touched={touchedLogin.password}
+            isPopulated={!!watchPassword}
+            disabled={isSubmitting || isLoggingIn}
+            className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+            rightElement={
+              <button
+                type="button"
+                onClick={() => setShowPassword((p) => !p)}
+                className="field-visibility-toggle cursor-pointer text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded transition-colors"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            }
+          />
+        </div>
+
+        {/* Terms Checkbox */}
+        <div className="flex items-center gap-2 pt-1 pb-1">
+          <input 
+            type="checkbox" 
+            id="loginAgreement" 
+            {...registerLogin('agree')} 
+            className="styled-checkbox accent-blue-600 dark:accent-red-600 rounded cursor-pointer w-3.5 h-3.5 pointer-events-auto" 
+          />
+          <label htmlFor="loginAgreement" className="checkbox-label cursor-pointer select-none">
+            <span className="text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 font-medium">
+              I agree to the <a href="#" className="text-blue-600 dark:text-red-500 font-bold hover:underline">Terms &amp; Conditions</a> and <a href="#" className="text-blue-600 dark:text-red-500 font-bold hover:underline">Privacy Policy</a>.
+            </span>
+          </label>
+        </div>
+
+        {/* Primary Login Button */}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+        >
+          {isSubmitting ? (
+            <span className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              VERIFYING...
+            </span>
+          ) : (
+            'LOGIN NOW'
+          )}
+        </button>
+
+        {/* Separator Divider */}
+        <div className="flex items-center my-2 gap-3 select-none">
+          <div className="flex-1 border-t border-slate-300/60 dark:border-white/10" />
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase">or</span>
+          <div className="flex-1 border-t border-slate-300/60 dark:border-white/10" />
+        </div>
+
+        {/* Google OAuth Button */}
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={isGoogleSubmitting}
+          className="w-full py-2.5 px-4 bg-white/80 dark:bg-[#161920]/80 border border-slate-200/80 dark:border-white/10 hover:bg-white dark:hover:bg-white/10 text-slate-800 dark:text-white font-heading font-bold text-[11px] tracking-wider uppercase rounded-xl backdrop-blur-md transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 select-none pointer-events-auto"
+        >
+          <img src={googleIcon} alt="Google" className="w-4 h-4 object-contain" />
+          <span>CONTINUE WITH GOOGLE</span>
+        </button>
+      </form>
+
+      {/* Bottom Notice & Footer */}
+      <div className="space-y-3 pt-3 relative z-20 font-body">
+        
+        {/* Access Protocol Notice Box */}
+        <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left shadow-xs">
+          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
+            <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-red-500 shrink-0" />
+            <span>ACCESS PROTOCOL</span>
+          </div>
+          <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+            {activeGymDescription}
+          </p>
+        </div>
+
+        {/* Forgot Password Toggle */}
+        <div className="text-center text-[12px] font-bold text-slate-500 dark:text-slate-400 select-none">
+          <button 
+            type="button"
+            onClick={() => { setIsFlipped(true); resetRecovery(); }} 
+            className="hover:text-blue-600 dark:hover:text-red-500 hover:underline transition-colors cursor-pointer pointer-events-auto"
+          >
+            Forgot Password?
+          </button>
+        </div>
+
+        {/* Footer Copyright Notice */}
+        <div className="text-center text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium tracking-tight select-none">
+          © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── Inner Form JSX for Recovery ──────────────────────────────────────────
+  const renderRecoveryForm = () => (
+    <div className="w-full font-body select-text">
+      {/* Gym Logo */}
+      <div className="flex justify-center pt-2 mb-3 relative z-20">
+        <img 
+          src={activeLogo} 
+          alt="Wolf Palomar Logo" 
+          className="h-16 sm:h-20  object-contain drop-shadow-lg transition-all duration-300 transform hover:scale-105" 
+        />
+      </div>
+
+      {/* Header & Indicator Section */}
+      <div className="text-center relative z-20">
+        <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-1 select-none">
+          RECOVERY MODE
+        </h1>
+        
+        {/* Indicator underline bar and dot */}
+        <div className="flex items-center justify-center gap-1.5 mb-4 select-none">
+          <div className="w-10 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-600 rounded-full transition-colors duration-500" />
+          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
+        </div>
+
+        <div className="animate-slide-up">
+          <p className="desc text-center text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed font-bold select-none">
+            Enter your authorized account email below to receive a secure password reset link.
+          </p>
+          
+          <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body pointer-events-auto">
+            <div className="relative z-30">
+              <Input
+                {...registerRecovery('email')}
+                type="email"
+                label="Email Address"
+                icon={<Mail className="w-4 h-4 text-slate-400 dark:text-slate-400" />}
+                error={!!recoveryErrors.email}
+                shake={shakeRecovery}
+                touched={touchedRecovery.email}
+                isPopulated={!!watchRecoveryEmail}
+                disabled={isRecoverySubmitting}
+                className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+              />
+            </div>
+            
+            {recoveryError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-[10px] text-red-500 font-mono text-center select-none">
+                {recoveryError}
+              </div>
+            )}
+            
+            <button
+              type="submit"
+              disabled={isRecoverySubmitting}
+              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+            >
+              {isRecoverySubmitting ? 'DISPATCHING LINK...' : 'SEND RESET LINK'}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Footer Elements */}
+      <div className="space-y-4 font-body mt-4">
+        <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left transition-colors duration-500">
+          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
+            <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-red-500 shrink-0" />
+            <span>RECOVERY PROTOCOL</span>
+          </div>
+          <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+            Please check your inbox and click the reset link to establish new login credentials.
+          </p>
+        </div>
+
+        <button 
+          type="button"
+          onClick={handleBackToLoginClick} 
+          className="w-full text-center text-xs text-slate-500 dark:text-slate-400 cursor-pointer font-body font-medium group transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99] hover:text-slate-800 dark:hover:text-slate-200 select-none pointer-events-auto"
+        >
+          Already have credentials?{' '}
+          <span className="text-blue-600 dark:text-red-400 font-bold underline decoration-transparent group-hover:decoration-blue-600 dark:group-hover:decoration-red-400 underline-offset-4 transition-all duration-300">
+            Back to Login
+          </span>
+        </button>
+
+        <div className="text-center text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium tracking-tight select-none">
+          © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-page)] font-sans text-[var(--color-text)] font-body">
+      
+      {/* Keyframe Animations & Liquid Ambient Styles */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0);    }
         }
+        @keyframes liquidFloat1 {
+          0%, 100% { transform: translate(0px, 0px) scale(1); }
+          50% { transform: translate(30px, -40px) scale(1.12); }
+        }
+        @keyframes liquidFloat2 {
+          0%, 100% { transform: translate(0px, 0px) scale(1); }
+          50% { transform: translate(-35px, 25px) scale(1.18); }
+        }
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-liquid-1 { animation: liquidFloat1 16s ease-in-out infinite; }
+        .animate-liquid-2 { animation: liquidFloat2 20s ease-in-out infinite; }
       `}} />
+
+      {/* ── Ambient Mobile Liquid Background Orbs ── */}
+      <div className="block sm:hidden absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
+        <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-indigo-400/20 to-sky-300/30 dark:from-red-600/25 dark:via-rose-800/15 dark:to-indigo-950/30 blur-3xl" />
+        <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-indigo-500/20 via-blue-300/20 to-purple-400/15 dark:from-rose-950/30 dark:via-red-900/20 dark:to-indigo-900/20 blur-3xl" />
+      </div>
 
       {/* ── Live Preview Mode Overlay Banner ── */}
       {isPreview && (
-        <div className="absolute top-0 inset-x-0 z-200 bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2">
-          <span>✨ Live Brand Preview Mode (Form Inputs & Actions Disabled)</span>
+        <div className="absolute top-0 inset-x-0 z-[200] bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2 select-none">
+          <span>✨ Live Brand Preview Mode (Form Inputs &amp; Actions Disabled)</span>
           <button 
             onClick={() => window.close()} 
-            className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors"
-            style={{ pointerEvents: 'auto' }}
+            className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors pointer-events-auto"
           >
             Close Preview
           </button>
         </div>
       )}
 
-      {/* ── Theme Toggle (Bypasses parent pointerEvents to be clickable in Preview) ── */}
+      {/* ── Theme Toggle Switch ── */}
       <button
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className={`absolute top-4 right-4 z-200 flex items-center gap-3 bg-white/80 dark:bg-neutral-900/80 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2.5 shadow-lg backdrop-blur-md cursor-pointer hover:opacity-95 transition-all duration-700 ease-out ${
+        className={`absolute top-4 right-4 z-[200] flex items-center gap-2.5 bg-white/80 dark:bg-neutral-900/80 border border-slate-200/80 dark:border-white/10 rounded-full px-3.5 py-2 shadow-lg backdrop-blur-xl cursor-pointer hover:opacity-95 transition-all duration-700 ease-out select-none pointer-events-auto ${
           isLoggingIn
             ? 'opacity-0 translate-y-4 pointer-events-none'
             : isReady
               ? 'opacity-100 translate-y-0'
               : 'opacity-0 -translate-y-4 pointer-events-none'
         }`}
-        style={{ pointerEvents: 'auto' }}
       >
         <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
           {theme === 'dark' ? (
             <>
-              <span className="w-3.5 h-3.5 bg-[#0c0e12]" />
-              <span className="w-3.5 h-3.5 bg-[#bf0202]" />
-              <span className="w-3.5 h-3.5 bg-[#161920]" />
+              <span className="w-3 h-3 bg-[#0c0e12]" />
+              <span className="w-3 h-3 bg-[#dc2626]" />
+              <span className="w-3 h-3 bg-[#161920]" />
             </>
           ) : (
             <>
-              <span className="w-3.5 h-3.5 bg-[#f0f4f8]" />
-              <span className="w-3.5 h-3.5 bg-[#123c73]" />
-              <span className="w-3.5 h-3.5 bg-[#ffffff]" />
+              <span className="w-3 h-3 bg-[#f0f4f8]" />
+              <span className="w-3 h-3 bg-[#2563eb]" />
+              <span className="w-3 h-3 bg-[#ffffff]" />
             </>
           )}
         </div>
@@ -657,17 +928,17 @@ export const Login: React.FC = () => {
         </span>
       </button>
 
-      {/* ─── SPLIT CONTAINER (Disabled mouse actions dynamically if in Preview) ─── */}
+      {/* ─── MAIN SPLIT CONTAINER ─── */}
       <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}>
 
-        {/* ── SIBLING 1: LEFT COLUMN ── */}
+        {/* ── SIBLING 1: LEFT COLUMN / LOGIN ── */}
         <div 
-          className={`auth-left h-full flex flex-col items-center justify-center ${
+          className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ${
             isLoggingIn 
               ? 'opacity-0 pointer-events-none' 
               : isFlipped 
                 ? 'opacity-0 pointer-events-none' 
-                : 'opacity-100'
+                : 'opacity-100 pointer-events-auto'
           }`}
           style={{ 
             transformStyle: 'flat',
@@ -678,114 +949,37 @@ export const Login: React.FC = () => {
                 : 'translateX(0)' 
           }}
         >
-          {/* Mobile Logo */}
-          <div className="block lg:hidden mx-auto animate-slide-up">
-            <Card isLoggingIn={isLoggingIn} className="w-32 h-32">
-              <div className="w-50 h-50 bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-3 flex items-center justify-center">
-                <img src="/favicon.svg" alt="Palomar Logo" className="w-full h-full object-contain" />
-              </div>
-            </Card>
-          </div>
+          {/* Background Hex Pattern */}
+          <div 
+            className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7"
+            style={{ 
+              backgroundImage: HEXAGON_PATTERN_URL,
+              backgroundRepeat: 'repeat',
+            }}
+          />
 
-          {/* Desktop Logo */}
-          <div className="hidden lg:block mb-8 shrink-0 relative z-20 animate-slide-up">
-            <Card isLoggingIn={isLoggingIn} className="w-56 h-40">
-              <div className="w-full h-full bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-xl p-4 flex items-center justify-center transition-all duration-500">
-                <img src={activeLogo} alt="Palomar Logo" className="w-full h-full object-contain rounded-2xl" />
-              </div>
-            </Card>
-          </div>
-
-         {/* Login Card */}
-          <Card isLoggingIn={isLoggingIn}>
-            <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
-              <div>
-                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-                  LOGIN
-                </div>
-                <p className="text-center font-heading text-[10px] tracking-[2.4px] text-[#1b365d] dark:text-blue-400 uppercase opacity-90 mb-2">
-                  GYM MANAGEMENT SYSTEM
-                </p>
-                <div className="flex justify-center mb-6">
-                  <span className="text-[9px] text-slate-500 dark:text-slate-300 tracking-widest border border-blue-500/30 dark:border-rose-500/30 bg-blue-500/5 dark:bg-rose-500/10 rounded-full px-3 py-1 font-mono uppercase">
-                    v{APP_VERSION}
-                  </span>
-                </div>
-
-                <form onSubmit={handlePreLoginSubmit} className="space-y-4 font-body">
-                  <Input
-                    {...registerLogin('usernameOrEmail')}
-                    type="text"
-                    label={dynamicLabel}
-                    icon={<Mail className="w-4 h-4 text-slate-400" />}
-                    error={!!loginErrors.usernameOrEmail}
-                    shake={shakeEmail}
-                    touched={touchedLogin.usernameOrEmail}
-                    isPopulated={!!watchIdentifier}
-                  />
-                  <Input
-                    {...registerLogin('password')}
-                    type={showPassword ? 'text' : 'password'}
-                    label="Password"
-                    icon={<Lock className="w-4 h-4 text-slate-400" />}
-                    error={!!loginErrors.password}
-                    shake={shakePassword}
-                    touched={touchedLogin.password}
-                    isPopulated={!!watchPassword}
-                    rightElement={
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((p) => !p)}
-                        className="field-visibility-toggle cursor-pointer"
-                        aria-label="Toggle password visibility"
-                      >
-                        {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                      </button>
-                    }
-                  />
-                  <div className="flex items-start gap-2.5 my-2">
-                    <input type="checkbox" id="loginAgreement" {...registerLogin('agree')} className="styled-checkbox" />
-                    <label htmlFor="loginAgreement" className="checkbox-label">
-                      <span className="checkbox-ui" />
-                      <span className="text-[10px] text-slate-900 dark:text-slate-400 font-bold">
-                        I agree to the <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Terms & Conditions</a> and <a href="#" className="text-[#1b365d] dark:text-sky-400 hover:underline">Privacy Policy</a>.
-                      </span>
-                    </label>
-                  </div>
-                  <Button type="submit" loading={isSubmitting} loadingLabel="VERIFYING...">Login Now</Button>
-                  <Button type="button" variant="google" onClick={handleGoogleLogin} loading={isGoogleSubmitting}>
-                    {/* Updated to imported Google webp icon asset */}
-                    <img src={googleIcon} alt="Google Icon" className="w-4 h-4 shrink-0 object-contain" />
-                    <span>Continue With Google</span>
-                  </Button>
-                </form>
-              </div>
-              <div className="space-y-4 mt-4 font-body">
-                <div className="flex items-center justify-center text-xs font-bold text-slate-400">
-                  <button onClick={() => { setIsFlipped(true); resetRecovery(); }} className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer">
-                    Forgot Password?
-                  </button>
-                </div>
-                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
-                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                    <span>ACCESS PROTOCOL</span>
-                  </div>
-                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    {activeGymDescription}
-                  </p>
-                </div>
-                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
-                  © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
-                </div>
-              </div>
+          {/* Dynamically Render Layout Based on Screen Size (Fixes Input Ref Lock) */}
+          {!isMobile ? (
+            <div className="w-[420px] max-w-full relative z-10">
+              <Card 
+                isLoggingIn={isLoggingIn} 
+                className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
+                badgeText={`v${APP_VERSION}`}
+                showWave={true}
+              >
+                {renderLoginForm()}
+              </Card>
             </div>
-          </Card>
+          ) : (
+            <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
+              {renderLoginForm()}
+            </div>
+          )}
         </div>
 
-        {/* ── SIBLING 2: RIGHT PANEL ── */}
+        {/* ── SIBLING 2: RIGHT PANEL (Carousel & Gym Details) ── */}
         <div 
-          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] ${
+          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none ${
             isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
           } ${isFlipped ? 'carousel-flipped' : ''}`}
           style={{ 
@@ -804,162 +998,116 @@ export const Login: React.FC = () => {
             }}
           >
             {isAssetPreloaded && activeCarouselImages.map((image: string, index: number) => {
-  const isCurrent = activeSlide === index;
-  const isImgLoaded = loadedImages[image];
-  return (
-    <img
-      key={index}
-      src={image}
-      alt={`Gym view ${index + 1}`}
-      onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
-      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ease-in-out ${
-        isCurrent && isImgLoaded ? 'opacity-100' : 'opacity-0'
-      }`}
-      style={{
-        willChange: 'opacity',
-        transitionProperty: 'opacity',
-      }}
-    />
-  );
-})}
+              const isCurrent = activeSlide === index;
+              const isImgLoaded = loadedImages[image];
+              return (
+                <img
+                  key={index}
+                  src={image}
+                  alt={`Gym view ${index + 1}`}
+                  onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
+                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ease-in-out ${
+                    isCurrent && isImgLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  style={{
+                    willChange: 'opacity',
+                    transitionProperty: 'opacity',
+                  }}
+                />
+              );
+            })}
           </div>
-          <div 
-            className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2" 
-            style={{
-              willChange: 'transform',
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              transform: 'translate3d(0, 0, 0)'
-            }}
-          />
-          <div 
-            className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none"
-            style={{ transformStyle: 'flat' }}
-          >
-            <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider">
+
+          <div className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2 pointer-events-none" />
+          
+          <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
+            <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
               BEYOND <br />
-              <span className="text-[#031d7d] dark:text-[#bf0202]">{typewriterText}</span>
-              <span className="text-[#031d7d] dark:text-[#bf0202] animate-[blink_0.8s_infinite]">|</span>
+              <span className="text-blue-500 dark:text-red-600">{typewriterText}</span>
+              <span className="text-blue-500 dark:text-red-600 animate-[blink_0.8s_infinite]">|</span>
             </h2>
-            <Card expandable={true} className="max-w-lg h-auto">
-              <div className="bg-black/50 border border-white/10 p-6 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 font-body text-left">
-                <p className="text-xs text-slate-200 leading-relaxed font-bold">
-                  {activeGymDescription}
-                  <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-normal animate-slide-up space-y-3">
-                    <span className="block border-t border-white/10 pt-3">
-                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">LOCATION</strong>
-                      <span className="text-slate-300">{activeGymAddress}</span>
-                    </span>
-                    <span className="block">
-                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">DIRECT SUPPORT</strong>
-                      <span className="text-slate-300">
-                        {activeContactName1}: {activeContactNumber1}
-                        {activeContactName2 && ` | ${activeContactName2}: ${activeContactNumber2}`}
-                      </span>
-                    </span>
-                    <span className="block">
-                      <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">EMAIL COMMUNICATIONS</strong>
-                      <span className="text-slate-300">{activeEmailAddress}</span>
+            
+            {/* Carousel Info Card */}
+            <Card expandable={true} variant="glass" className="max-w-lg h-auto">
+              <p className="text-xs text-slate-200 leading-relaxed font-bold">
+                {activeGymDescription}
+                <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-normal animate-slide-up space-y-3">
+                  <span className="block border-t border-white/10 pt-3">
+                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">LOCATION</strong>
+                    <span className="text-slate-300">{activeGymAddress}</span>
+                  </span>
+                  <span className="block">
+                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">DIRECT SUPPORT</strong>
+                    <span className="text-slate-300">
+                      {activeContactName1}: {activeContactNumber1}
+                      {activeContactName2 && ` | ${activeContactName2}: ${activeContactNumber2}`}
                     </span>
                   </span>
-                </p>
-                <div className="block group-[.expanded]:hidden text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-                  CLICK TO EXPAND GYM INFORMATION
-                </div>
-                <div className="hidden group-[.expanded]:block text-[8px] text-[#031d7d] dark:text-[#bf0202] tracking-widest font-heading uppercase mt-4">
-                  CLICK TO COLLAPSE GYM INFORMATION
-                </div>
+                  <span className="block">
+                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">EMAIL COMMUNICATIONS</strong>
+                    <span className="text-slate-300">{activeEmailAddress}</span>
+                  </span>
+                </span>
+              </p>
+              <div className="block group-[.expanded]:hidden text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                CLICK TO EXPAND GYM INFORMATION
+              </div>
+              <div className="hidden group-[.expanded]:block text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                CLICK TO COLLAPSE GYM INFORMATION
               </div>
             </Card>
           </div>
 
-          {/* Glowing divider lines nested inside the RIGHT PANEL (one left, one right) */}
-          <div className="auth-divider-line auth-line-left" />
-          <div className="auth-divider-line auth-line-right" />
+          <div className="auth-divider-line auth-line-left pointer-events-none" />
+          <div className="auth-divider-line auth-line-right pointer-events-none" />
         </div>
 
-        {/* ── SIBLING 3: ABSOLUTE RECOVERY CARD ── */}
+        {/* ── SIBLING 3: RECOVERY VIEW ── */}
         <div 
-          className="absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-4"
+          className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
+            isFlipped && !isLoggingIn 
+              ? 'pointer-events-auto opacity-100 z-20' 
+              : 'pointer-events-none opacity-0 invisible z-0'
+          }`}
           style={{
-            transformStyle: 'flat',
-            transform: isLoggingIn 
-              ? 'fixed inset-0 z-50 bg-[var(--bg-page)]' 
-              : isFlipped 
-                ? 'translateX(0) scale(1)' 
+            transform:
+              isFlipped
+                ? 'translateX(0) scale(1)'
                 : 'translateX(100%) scale(0.95)',
-            opacity: isLoggingIn ? 1 : isFlipped ? 1 : 0,
-            pointerEvents: isFlipped && !isLoggingIn ? 'auto' : 'none',
-            transition: 'transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1)'
+            transition:
+              'transform 1.2s cubic-bezier(0.77,0,0.175,1), opacity 1.2s cubic-bezier(0.77,0,0.175,1), visibility 1.2s',
           }}
         >
-          <Card isLoggingIn={isLoggingIn}>
-            <div className="flip-card-front flex flex-col justify-between h-full bg-transparent border-none shadow-none lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl font-body">
-              <div>
-                <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white pt-2 lg:pt-0">
-                  RECOVERY MODE
-                </div>
-                <div className="animate-slide-up">
-                  <p className="desc text-center text-xs text-slate-900 dark:text-slate-400 mb-6 leading-relaxed font-bold">
-                    Enter authorized email. We will send you secure password-reset link to your email inbox.
-                  </p>
-                  <form onSubmit={handlePreRecoverySubmit} className="space-y-4 font-body">
-                    <Input
-                      {...registerRecovery('email')}
-                      type="email"
-                      label="Email Address"
-                      icon={<Mail className="w-4 h-4 text-slate-400" />}
-                      error={!!recoveryErrors.email}
-                      shake={shakeRecovery}
-                      touched={touchedRecovery.email}
-                      isPopulated={!!watchRecoveryEmail}
-                    />
-                    
-                    {recoveryError && (
-                      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] text-red-500 font-mono text-center">
-                        {recoveryError}
-                      </div>
-                    )}
-                    
-                    <Button type="submit" loading={isRecoverySubmitting} loadingLabel="DISPATCHING LINK...">
-                      Change Password
-                    </Button>
-                  </form>
-                </div>
-              </div>
-              <div className="space-y-4 font-body mt-4">
-                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left animate-slide-up">
-                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
-                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                    <span>RECOVERY PROTOCOL</span>
-                  </div>
-                  <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    We will send a secure password reset link to your email address. Please check your inbox and follow the link to complete the reset.
-                  </p>
-                </div>
-                <div className="flex flex-col items-center gap-2">
-                  <button 
-                    type="button"
-                    onClick={handleBackToLoginClick} 
-                    className="w-full text-center text-xs font-bold text-slate-900 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-body"
-                  >
-                    Already have credentials? Back to Login
-                  </button>
-                </div>
-                <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold font-body">
-                  © {new Date().getFullYear()} WOLF PALOMAR.
-                </div>
-              </div>
+          {/* Hexagon pattern background */}
+          <div 
+            className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.18] dark:opacity-[0.1] dark:invert transition-opacity duration-300 sm:-top-14 sm:left-4 sm:w-[110%] sm:h-[110%] sm:-rotate-7"
+            style={{ 
+              backgroundImage: HEXAGON_PATTERN_URL,
+              backgroundRepeat: 'repeat',
+            }}
+          />
+
+          {/* Dynamically Render Layout Based on Screen Size (Fixes Input Ref Lock) */}
+          {!isMobile ? (
+            <div className="w-[420px] max-w-full relative z-10">
+              <Card
+                isLoggingIn={isLoggingIn}
+                className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
+                showWave={true}
+              >
+                {renderRecoveryForm()}
+              </Card>
             </div>
-          </Card>
+          ) : (
+            <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
+              {renderRecoveryForm()}
+            </div>
+          )}
         </div>
 
       </div>
 
-      {/* RIGHT PANEL: Dynamic Spacer */}
-      <div className="flex-1 h-full" />
-
-      {/* ── MODAL: Exit recovery confirm ── */}
+      {/* ── MODALS ── */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold font-body text-center">
           If you leave recovery, you must re-verify credentials. Discard this operation?
@@ -972,13 +1120,12 @@ export const Login: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ── MODAL: Recovery success ── */}
-       <Modal
+      <Modal
         isOpen={showSuccessModal}
         onClose={() => { setShowSuccessModal(false); setIsFlipped(false); resetRecovery(); }}
         title="Recovery Link Sent"
       >
-        <div className="space-y-6 font-body text-center">
+        <div className="space-y-6 font-body text-center select-text">
           <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
             We have successfully sent a secure password reset link to <span className="font-mono text-slate-950 dark:text-white select-all">{recoveryEmail}</span>. Please check your inbox and follow the link to complete the reset.

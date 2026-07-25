@@ -1,3 +1,4 @@
+// src/components/layouts/Navbar.tsx
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, ClipboardList, Scan, Target } from 'lucide-react';
@@ -50,16 +51,16 @@ export const Navbar: React.FC = () => {
             {/* Ambient outer pulsing shadow halo */}
             <span className="absolute -inset-1 rounded-full bg-[#123c73] dark:bg-red-500 opacity-20 group-hover:opacity-35 blur-xs transition-opacity animate-pulse" />
             
-            {/* Scanning icon element (Original icon preserved) */}
+            {/* Scanning icon element */}
             <Scan className="w-5 h-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
           </Link>
         </div>
       </div>
 
-      {/* 4. Subscription (Right side - occupies 2 columns, centered inside the remaining space) */}
+      {/* 4. Subscription (Right side - linked to Member Directory & Subscriptions) */}
       <Link 
-        to="/subscriptions/new" 
-        className={`flex flex-col items-center gap-1 col-span-2 justify-center transition-all ${getActiveColor('/subscriptions')}`}
+        to="/members/list" 
+        className={`flex flex-col items-center gap-1 col-span-2 justify-center transition-all ${getActiveColor('/members')}`}
       >
         <Target className="w-4.5 h-4.5" />
         <span className="text-[9px] font-heading tracking-widest uppercase">Subscription</span>

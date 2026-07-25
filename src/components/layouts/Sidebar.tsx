@@ -1,5 +1,5 @@
 // src/components/layouts/Sidebar.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Menu, X, ChevronDown, LogOut, LayoutDashboard, 
@@ -9,9 +9,14 @@ import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 
+// Package version retrieval matching Login.tsx reference
+import pkg from '../../../package.json';
+
 // Texture imports for background accent layers
 import axiomTexture from '../../assets/textures/hexagons.svg';
 import TwillTexture from '../../assets/textures/hexagons.svg';
+
+const APP_VERSION = pkg.version || '0.11.0';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -106,100 +111,118 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Menu structure (De-coupled sub items to support role permissions dynamically)
-  const navigationMenu: MenuItem[] = [
-    {
-      name: 'Dashboard',
-      icon: <LayoutDashboard className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin'],
-      children: [
-        { 
-          name: 'Revenue Summary', 
-          path: '/dashboard', 
-          description: 'Sales & Logbook real-time metrics' 
-        },
-        { 
-          name: 'Revenue Goals', 
-          path: '/dashboard/goals', 
-          description: 'Set custom goal limits (Day, Week, Month)',
-          badge: 'GOALS' 
-        }
-      ]
-    },
-    {
-      name: 'Logbook',
-      icon: <Users className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin', 'staff'],
-      children: [
-        { 
-          name: 'Logbook', 
-          path: '/logbook', 
-          description: 'Instant gate/logbook telemetry' 
-        },
-        { 
-          name: 'Member List', 
-          path: '/members/list', 
-          description: 'Accounts & profiles' 
-        },
-        { 
-          name: 'Membership Plans', 
-          path: '/members/plans', 
-          description: 'Creates custom QR Code for hardware access cards' 
-        }
-      ]
-    },
-    {
-      name: 'Sales',
-      icon: <ShoppingBag className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin', 'staff'],
-      children: [
-        { 
-          name: 'Register Sale', 
-          path: '/sales', 
-          description: 'Left Tab — Cash register interface' 
-        },
-        { 
-          name: 'Product List', 
-          path: '/sales/products', 
-          description: 'Right Tab — Inventory setup & custom Barcode generation',
-          roles: ['admin'] // Restricted to Admins only
-        }
-      ]
-    },
-    {
-      name: 'Reports',
-      icon: <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
-      roles: ['admin', 'staff'],
-      children: [
-        { 
-          name: 'Incident Reports', 
-          path: '/reports', 
-          description: 'Infraction logs and security entries',
-          roles: ['admin', 'staff']
-        },
-        { 
-          name: 'BIR Records', 
-          path: '/reports/bir', 
-          description: 'Tax export sheets and sales book compliance',
-          roles: ['admin']
-        }
-      ]
-    }
-  ];
+  // Dynamic Navigation Menu structure with active-route dynamic icon switching
+  const navigationMenu: MenuItem[] = useMemo(() => {
+    const isMemberSection = location.pathname.startsWith('/members');
+
+    return [
+      {
+        name: 'Dashboard',
+        icon: <LayoutDashboard className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        roles: ['admin'],
+        children: [
+          { 
+            name: 'Revenue Summary', 
+            path: '/dashboard', 
+            description: 'Sales & Logbook real-time metrics' 
+          },
+          { 
+            name: 'Revenue Goals', 
+            path: '/dashboard/goals', 
+            description: 'Set custom goal limits (Day, Week, Month)',
+            badge: 'GOALS' 
+          }
+        ]
+      },
+      {
+        name: 'Logbook & Plans',
+        icon: isMemberSection ? <Users className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" /> : <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        roles: ['admin', 'staff'],
+        children: [
+          { 
+            name: 'Logbook', 
+            path: '/logbook', 
+            description: 'Instant gate/logbook telemetry' 
+          },
+          { 
+            name: 'Member List', 
+            path: '/members/list', 
+            description: 'Accounts & profiles',
+            roles: ['admin'] // 🔒 HIDDEN FROM STAFF
+          },
+          { 
+            name: 'Membership Plans', 
+            path: '/members/plans', 
+            description: 'Creates custom QR Code for hardware access cards' 
+          }
+        ]
+      },
+      {
+        name: 'Sales',
+        icon: <ShoppingBag className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        roles: ['admin', 'staff'],
+        children: [
+          { 
+            name: 'Register Sale', 
+            path: '/sales', 
+            description: 'Left Tab — Cash register interface' 
+          },
+          { 
+            name: 'Product List', 
+            path: '/sales/products', 
+            description: 'Right Tab — Inventory setup & custom Barcode generation',
+            roles: ['admin']
+          }
+        ]
+      },
+      {
+        name: 'Reports',
+        icon: <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        roles: ['admin', 'staff'],
+        children: [
+          { 
+            name: 'Incident Reports', 
+            path: '/reports', 
+            description: 'Infraction logs and security entries',
+            roles: ['admin', 'staff']
+          },
+          { 
+            name: 'BIR Records', 
+            path: '/reports/bir', 
+            description: 'Tax export sheets and sales book compliance',
+            roles: ['admin']
+          }
+        ]
+      }
+    ];
+  }, [profile?.role, location.pathname]);
 
   // Dynamic filter structure reflecting nested child element access
-  const allowedMenu = navigationMenu
-    .filter(item => !item.roles || (profile && item.roles.includes(profile.role)))
-    .map(item => {
-      if (item.children) {
-        return {
-          ...item,
-          children: item.children.filter(child => !child.roles || (profile && child.roles.includes(profile.role)))
-        };
-      }
-      return item;
-    })
-    .filter(item => !item.children || item.children.length > 0);
+  const allowedMenu = useMemo(() => {
+    return navigationMenu
+      .filter(item => !item.roles || (profile && item.roles.includes(profile.role)))
+      .map(item => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter(child => !child.roles || (profile && child.roles.includes(profile.role)))
+          };
+        }
+        return item;
+      })
+      .filter(item => !item.children || item.children.length > 0);
+  }, [navigationMenu, profile]);
+
+  // Automatically expand active accordion menu matching current location route
+  useEffect(() => {
+    const activeParent = allowedMenu.find(item => 
+      item.children?.some(child => location.pathname === child.path)
+    );
+    if (activeParent) {
+      setExpandedMenu(activeParent.name);
+      setMobileExpandedMenu(activeParent.name);
+    }
+  }, [location.pathname, allowedMenu]);
 
   const toggleSubmenu = (menuName: string) => {
     setExpandedMenu(prev => (prev === menuName ? null : menuName));
@@ -320,7 +343,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <img src="/favicon.svg" alt="Icon" className="w-6 h-6" />
-              <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
+              <div className="flex flex-col">
+                <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
+                <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider">v{APP_VERSION}</span>
+              </div>
             </div>
             <button
               onClick={() => setCollapsed(true)}
@@ -351,7 +377,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   : 'text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              goal
+              GOAL
             </button>
           </div>
 
@@ -377,7 +403,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <div className="space-y-2.5 animate-slide-up text-[10px] font-bold text-slate-500 dark:text-slate-400 h-full flex flex-col justify-center text-left">
                 <div className="flex justify-between font-heading tracking-wider">
-                  <span>REVENUE goal:</span>
+                  <span>REVENUE GOAL:</span>
                   <span className="text-slate-900 dark:text-white font-mono font-black">₱5,000 / ₱8,000</span>
                 </div>
                 <div className="w-full h-2 bg-slate-200 dark:bg-neutral-800 rounded-full overflow-hidden p-px shadow-inner relative">
@@ -426,14 +452,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const isChildActive = visibleChildren.some(child => location.pathname === child.path);
             const isExpanded = !collapsed && expandedMenu === item.name;
 
-            // OPTIMIZATION: If the category only has EXACTLY ONE accessible child item,
-            // render it directly as a simple navigation link without dropdown toggles.
             if (!hasMultipleChildren && singleChild) {
               const isActive = location.pathname === singleChild.path;
               return (
                 <div key={index} className="space-y-1.5">
                   <div
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border ${
+                    onClick={() => {
+                      if (collapsed) {
+                        setCollapsed(false);
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border cursor-pointer ${
                       isActive 
                         ? 'bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-white/10 shadow-md' 
                         : 'border-transparent hover:bg-slate-50 dark:hover:bg-neutral-900/30'
@@ -471,7 +500,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <div key={index} className="space-y-1.5">
                 <div
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border ${
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border cursor-pointer ${
                     isChildActive 
                       ? 'bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-white/10 shadow-md' 
                       : 'border-transparent hover:bg-slate-50 dark:hover:bg-neutral-900/30'
@@ -483,8 +512,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : 'bg-slate-300 dark:bg-neutral-700 scale-y-0 opacity-0'
                   }`} />
 
+                  {/* Main parent link — Navigates to 1st child item path & expands sidebar/dropdown */}
                   <Link
                     to={visibleChildren[0]?.path || '#'}
+                    onClick={() => {
+                      if (collapsed) {
+                        setCollapsed(false);
+                      }
+                      setExpandedMenu(item.name);
+                    }}
                     className="flex items-center gap-3 flex-1 select-none cursor-pointer group"
                     title={collapsed ? item.name : undefined}
                   >
@@ -502,21 +538,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   </Link>
 
-                  {!collapsed && (
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        toggleSubmenu(item.name);
-                      }}
-                      className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer rounded-md hover:bg-slate-200/50 dark:hover:bg-neutral-800"
-                      aria-label={`Toggle ${item.name} submenu`}
-                    >
-                      <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-[#1b365d] dark:text-[#bf0202]' : ''}`} />
-                    </button>
-                  )}
+                  {/* Dedicated Dropdown Arrow Toggle */}
+{!collapsed && (
+  <button
+    onClick={(e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSubmenu(item.name);
+    }}
+    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer rounded-md hover:bg-slate-200/50 dark:hover:bg-neutral-800"
+    aria-label={`Toggle ${item.name} submenu`}
+  >
+    <ChevronDown 
+      className={`w-4 h-4 transition-transform duration-300 ${
+        !isExpanded ? 'rotate-180' : 'text-[#1b365d] dark:text-[#bf0202]'
+      }`} 
+    />
+  </button>
+)}
                 </div>
 
+                {/* Submenu Children Items Container */}
                 {!collapsed && (
                   <div 
                     className={`pl-6 ml-5 border-l border-slate-200 dark:border-white/5 space-y-3 overflow-hidden transition-all duration-500 ease-in-out ${
@@ -562,7 +604,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Sidebar Footer Controls */}
         <div className={`border-t border-slate-200 dark:border-white/5 mt-auto relative z-10 bg-slate-50/30 dark:bg-neutral-950/20 transition-all duration-300 ${
-          collapsed ? 'p-3 space-y-4' : 'p-4 space-y-3'
+          collapsed ? 'p-3 space-y-3' : 'p-4 space-y-3'
         }`}>
           <Link
             to="/settings"
@@ -630,6 +672,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT</span>
             </button>
           )}
+
+          {/* System Version Indicator */}
+          <div className="pt-1 text-center select-none">
+            <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500 tracking-widest uppercase font-bold opacity-80">
+              {collapsed ? `v${APP_VERSION}` : `SYSTEM VERSION v${APP_VERSION}`}
+            </span>
+          </div>
         </div>
       </aside>
 
@@ -653,7 +702,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="space-y-6">
               
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
-                <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
+                <div className="flex flex-col">
+                  <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
+                  <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider">v{APP_VERSION}</span>
+                </div>
 
                 <button 
                   onClick={() => setMobileOpen(false)} 
@@ -684,8 +736,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   const isChildActive = visibleChildren.some(child => location.pathname === child.path);
                   const isMobileExpanded = mobileExpandedMenu === item.name;
 
-                  // OPTIMIZATION: If the category only has EXACTLY ONE accessible child item,
-                  // render it directly as a simple navigation link without dropdown toggles on Mobile.
                   if (!hasMultipleChildren && singleChild) {
                     const isActive = location.pathname === singleChild.path;
                     return (
@@ -716,10 +766,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   return (
                     <div key={idx} className="space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none">
+                      <div 
+                        onClick={() => setMobileExpandedMenu(prev => prev === item.name ? null : item.name)}
+                        className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none cursor-pointer"
+                      >
                         <Link
                           to={visibleChildren[0]?.path || '#'}
-                          onClick={() => setMobileOpen(false)}
+                          onClick={() => {
+                            setMobileExpandedMenu(item.name);
+                            setMobileOpen(false);
+                          }}
                           className="flex items-center gap-2 hover:opacity-85"
                         >
                           <span className={`transition-all duration-300 ${
@@ -737,19 +793,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </Link>
 
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMobileExpandedMenu(prev => prev === item.name ? null : item.name);
-                          }}
-                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                          aria-label={`Toggle ${item.name} Sub-options`}
-                        >
-                          <ChevronDown 
-                            className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                              isMobileExpanded ? 'rotate-180 text-[#1b365d] dark:text-[#bf0202]' : ''
-                            }`} 
-                          />
-                        </button>
+  onClick={(e) => {
+    e.stopPropagation();
+    setMobileExpandedMenu(prev => prev === item.name ? null : item.name);
+  }}
+  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+  aria-label={`Toggle ${item.name} Sub-options`}
+>
+  <ChevronDown 
+    className={`w-3.5 h-3.5 transition-transform duration-300 ${
+      !isMobileExpanded ? 'rotate-180' : 'text-[#1b365d] dark:text-[#bf0202]'
+    }`} 
+  />
+</button>
                       </div>
 
                       <div 
@@ -797,7 +853,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Mobile Footer Buttons */}
             <div className="border-t border-slate-200 dark:border-white/5 pt-4 space-y-3 mt-auto">
-              
               <Link
                 to="/settings"
                 onClick={() => setMobileOpen(false)}
@@ -836,6 +891,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>LOGOUT</span>
                 </button>
               )}
+
+              {/* Mobile Drawer System Version Indicator */}
+              <div className="pt-2 text-center select-none">
+                <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500 tracking-widest uppercase font-bold opacity-80">
+                  SYSTEM VERSION v{APP_VERSION}
+                </span>
+              </div>
             </div>
           </div>
         </aside>
