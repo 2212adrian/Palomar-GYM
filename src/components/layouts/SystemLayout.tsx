@@ -172,15 +172,15 @@ export const SystemLayout: React.FC = () => {
         {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
         {!curtainHidden && (
           <div
-            className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+            className={`fixed inset-0 z-16000 pointer-events-none transition-transform duration-1500 ease-[cubic-bezier(0.77,0,0.175,1)] ${
               isLoggingOut
-                ? (logoutStarted ? "translate-x-0 scale-x-[-1]" : "-translate-x-[250%] scale-x-[-1]")
+                ? (logoutStarted ? "translate-x-0 scale-x-[-1]" : "translate-x-[-250%] scale-x-[-1]")
                 : (slideOut ? "translate-x-[250%] scale-x-100" : "translate-x-0 scale-x-100")
             }`}
           >
             <div className="relative w-full h-full bg-(--bg-page)">
               <div 
-                className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-1300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                   (isLoggingOut ? logoutResting : !slideOut) 
                     ? "scale-x-100" 
                     : "scale-x-[2.5] sm:scale-x-[8]"
@@ -198,7 +198,7 @@ export const SystemLayout: React.FC = () => {
                     blur-xl
                     sm:blur-2xl
                     opacity-80
-                    bg-gradient-to-l
+                    bg-linear-to-l
                     from-transparent
                     to-blue-600
                     dark:to-red-600
@@ -258,8 +258,8 @@ export const SystemLayout: React.FC = () => {
                     top-0
                     right-0
                     h-full
-                    w-[2px]
-                    sm:w-[3px]
+                    w-0.5
+                    sm:w-0.75
                     bg-white
                     dark:bg-red-100
                     shadow-[0_0_15px_rgba(255,255,255,1)]

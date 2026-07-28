@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import { X, Download, Printer } from 'lucide-react';
+import { saveAs } from 'file-saver';
 import { toast } from 'react-toastify';
 import { Modal } from './Modal';
 import { supabase } from '../../lib/supabase/client';
@@ -12,40 +13,31 @@ export interface ReceiptItem {
 }
 
 export interface ReceiptData {
-  // Context & IDs
   receiptType?: 'subscription' | 'walkin' | 'sales' | 'attendance';
   receiptNo?: string;
   paymentRef?: string;
   
-  // Customer details
   customerName?: string;
-  customerType?: string; // e.g. "MEMBER", "NON-MEMBER", "Walk-In Guest"
+  customerType?: string;
   
-  // Single plan details (Subscription / Walk-In)
   planType?: string;
   basePrice?: number;
   
-  // Multi-item details (Sales / POS)
   items?: ReceiptItem[];
   
-  // Extras
   cardFee?: number;
   gcashFee?: number;
   
-  // Payment Breakdown
-  paymentMethod?: string; // "cash" | "gcash" | "free"
+  paymentMethod?: string;
   amountReceived?: number;
   changeDue?: number;
   gcashRefNo?: string;
   
-  // Dates & Staff
   transactionDate?: string;
   processedBy?: string;
   
-  // QR Payload
   qrValue?: string;
   
-  // Config overrides (Optional - if omitted, fetches automatically from Supabase)
   gymProfile?: {
     gym_name?: string;
     gym_address?: string;
@@ -59,9 +51,13 @@ export interface ReceiptData {
   };
 }
 
+export interface OfficialReceiptRef {
+  handlePrint: () => void;
+  handleDownloadJpg: () => void;
+}
+
 interface OfficialReceiptProps {
   data: ReceiptData;
-  // Controls display mode: modal popup with action buttons vs inline container preview
   variant?: 'modal' | 'inline';
   isOpen?: boolean;
   onClose?: () => void;
@@ -70,7 +66,7 @@ interface OfficialReceiptProps {
   isLoading?: boolean;
 }
 
-export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
+export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptProps>(({
   data,
   variant = 'modal',
   isOpen = true,
@@ -78,18 +74,16 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
   showPrintButton = true,
   showDownloadButton = true,
   isLoading = false
-}) => {
+}, ref) => {
   const [gymProfile, setGymProfile] = useState<any>(data.gymProfile || null);
   const [ratesConfig, setRatesConfig] = useState<any>(data.ratesConfig || null);
   const [loadingConfig, setLoadingConfig] = useState(!data.gymProfile || !data.ratesConfig);
 
-  // Sync prop changes for inline preview modes
   useEffect(() => {
     if (data.gymProfile) setGymProfile(data.gymProfile);
     if (data.ratesConfig) setRatesConfig(data.ratesConfig);
   }, [data.gymProfile, data.ratesConfig]);
 
-  // Load backend branding & tax rates configuration if not provided in props
   useEffect(() => {
     if (data.gymProfile && data.ratesConfig) {
       setLoadingConfig(false);
@@ -121,18 +115,16 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     return () => { isMounted = false; };
   }, [isOpen, variant, data.gymProfile, data.ratesConfig]);
 
-  // Derived Branding & Tax Rules
   const gymName = gymProfile?.gym_name || "WOLF PALOMAR GYM";
-  const gymAddress = gymProfile?.gym_address || "123 Sample Street, Barangay Central, Quezon City, Metro Manila";
+  const gymAddress = gymProfile?.gym_address || "6B JUDGE A. ROLDAN ST., NAVOTAS CITY, METRO MANILA";
   const staffContact = gymProfile?.contact_number_1
-    ? `Staff Contact: ${gymProfile.contact_number_1}${gymProfile.contact_number_2 ? ` / ${gymProfile.contact_number_2}` : ''}`
-    : "Staff Contact: 09762607481";
+    ? `STAFF CONTACT: ${gymProfile.contact_number_1}${gymProfile.contact_number_2 ? ` / ${gymProfile.contact_number_2}` : ''}`
+    : "STAFF CONTACT: 09762607481 / 09123456789";
   const gymLogo = gymProfile?.gym_logo || "/favicon.svg";
 
   const vatEnabled = ratesConfig?.vat_enabled ?? true;
   const vatPercentage = Number(ratesConfig?.vat_percentage ?? 12);
 
-  // Determine Type & Title
   const receiptType = data.receiptType || (data.items && data.items.length > 0 ? 'sales' : 'subscription');
   const titleMap = {
     subscription: 'Subscription Official Receipt',
@@ -142,7 +134,6 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
   };
   const receiptTitle = titleMap[receiptType] || 'Official Receipt';
 
-  // Math Computations
   const basePrice = data.basePrice || 0;
   const cardFee = data.cardFee || 0;
   const gcashFee = data.gcashFee || 0;
@@ -160,10 +151,9 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
   const vatableSales = vatEnabled ? totalDue / (1 + vatPercentage / 100) : 0;
   const vatAmount = vatEnabled ? totalDue - vatableSales : 0;
 
-  // Formatting helpers
   const receiptNo = data.receiptNo || 'RCPT-PREVIEW-001';
   const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
-  const processedBy = data.processedBy || 'Staff';
+  const processedBy = data.processedBy || 'WOLF PALOMAR STAFF';
 
   const txDateStr = useMemo(() => {
     if (!data.transactionDate) return format(new Date(), 'MMM d, yyyy, h:mm:ss a');
@@ -174,7 +164,6 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     }
   }, [data.transactionDate]);
 
-  // QR Generation
   const qrPayload = data.qrValue || receiptNo;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
 
@@ -201,6 +190,7 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     });
 
     doc.write(`
+      <!DOCTYPE html>
       <html>
         <head>
           <title>${receiptTitle} - ${receiptNo}</title>
@@ -208,20 +198,51 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
           <style>
             @media print {
               @page { size: 80mm auto; margin: 0; }
-              body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-              #unified-thermal-receipt-card { width: 80mm !important; border: none !important; box-shadow: none !important; padding: 12px !important; font-family: monospace !important; color: #000 !important; }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                width: 80mm !important;
+              }
+              #unified-thermal-receipt-card {
+                width: 80mm !important;
+                max-width: 80mm !important;
+                border: none !important;
+                box-shadow: none !important;
+                padding: 8px 12px !important;
+                font-family: monospace, sans-serif !important;
+                color: #000000 !important;
+                background: #ffffff !important;
+              }
+              #unified-thermal-receipt-card * {
+                color: #000000 !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+              }
+              #unified-thermal-receipt-card img {
+                max-width: 48px !important;
+                max-height: 48px !important;
+                object-fit: contain !important;
+                filter: grayscale(100%) contrast(200%) !important;
+              }
             }
           </style>
         </head>
         <body>
-          <div id="unified-thermal-receipt-card" class="bg-white p-4 text-black font-mono space-y-4">
+          <div id="unified-thermal-receipt-card">
             ${content.innerHTML}
           </div>
           <script>
             window.onload = function() {
               setTimeout(function() {
                 window.print();
-                setTimeout(function() { window.frameElement.remove(); }, 500);
+                setTimeout(function() {
+                  if (window.frameElement) {
+                    window.frameElement.remove();
+                  }
+                }, 500);
               }, 500);
             };
           </script>
@@ -231,119 +252,236 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     doc.close();
   };
 
-  // --- JPG CANVAS DOWNLOAD HANDLER ---
-  const handleDownloadJpg = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
+  // --- JPG CANVAS DOWNLOAD HANDLER (INK-SAVING WHITE PAPER LAYOUT) ---
+  const handleDownloadJpg = async () => {
+    const loadImage = (src: string): Promise<HTMLImageElement | null> => {
+      return new Promise((resolve) => {
+        if (!src) return resolve(null);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    };
 
-    const baseHeight = 560;
-    const itemsExtraHeight = (data.items?.length || 0) * 22;
-    canvas.height = baseHeight + itemsExtraHeight;
+    const [logoImg, qrImg] = await Promise.all([
+      loadImage(gymLogo),
+      loadImage((receiptType === 'subscription' || receiptType === 'attendance') ? qrImageUrl : '')
+    ]);
+
+    const canvas = document.createElement('canvas');
+    const scale = 2; // High-DPI 2x scale
+    const width = 420;
+
+    let itemCount = 0;
+    if (data.items && data.items.length > 0) itemCount += data.items.length + 1;
+    let extraRows = 8;
+    if (data.paymentRef) extraRows++;
+    if (cardFee > 0) extraRows++;
+    if (gcashFee > 0) extraRows++;
+    if (vatEnabled) extraRows += 2;
+
+    const baseHeight = 440 + (extraRows * 22) + (itemCount * 20) + (qrImg ? 70 : 0);
+    const height = baseHeight;
+
+    canvas.width = width * scale;
+    canvas.height = height * scale;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    ctx.scale(scale, scale);
+
+    // Clean White Paper Background (Zero Printer Ink Waste)
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = '#0f172a';
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText(gymName, 200, 45);
-
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(gymAddress, 200, 65);
-    ctx.fillText(staffContact, 200, 80);
-
-    ctx.strokeStyle = '#e2e8f0';
+    // Outer Border
+    ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(30, 95); ctx.lineTo(370, 95); ctx.stroke();
+    ctx.strokeRect(10, 10, width - 20, height - 20);
 
+    // Top Red Accent Line
+    ctx.fillStyle = '#bf0202';
+    ctx.fillRect(10, 10, width - 20, 4);
+
+    let y = 32;
+
+    // Gym Logo
+    if (logoImg) {
+      ctx.drawImage(logoImg, width / 2 - 20, y, 40, 40);
+      y += 48;
+    } else {
+      y += 10;
+    }
+
+    // Gym Title
+    ctx.textAlign = 'center';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText(receiptTitle.toUpperCase(), 200, 115);
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(gymName.toUpperCase(), width / 2, y);
+    y += 16;
 
-    ctx.beginPath(); ctx.moveTo(30, 130); ctx.lineTo(370, 130); ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.font = '8px system-ui, sans-serif';
+    ctx.fillText(gymAddress.toUpperCase(), width / 2, y);
+    y += 14;
 
-    const renderRow = (label: string, value: string, rowY: number) => {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#64748b';
-      ctx.font = '10px sans-serif';
-      ctx.fillText(label, 30, rowY);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 10px sans-serif';
-      ctx.fillText(value, 370, rowY);
+    ctx.font = 'bold 8px system-ui, sans-serif';
+    ctx.fillText(staffContact.toUpperCase(), width / 2, y);
+    y += 18;
+
+    const drawDashedLine = (lineY: number) => {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(24, lineY);
+      ctx.lineTo(width - 24, lineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
     };
 
-    let itemY = 155;
-    renderRow('RECEIPT NO', receiptNo, itemY);
-    if (data.paymentRef) {
-      itemY += 20;
-      renderRow('PAYMENT REF', data.paymentRef, itemY);
-    }
-    itemY += 20;
-    renderRow(receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER', data.customerName || 'Walk-In Guest', itemY);
+    drawDashedLine(y);
+    y += 18;
 
-    if (receiptType === 'subscription' || receiptType === 'walkin' || receiptType === 'attendance') {
-      itemY += 20;
-      renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'ENTRY TYPE', data.planType || 'Daily Pass', itemY);
+    // Receipt Title
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(receiptTitle.toUpperCase(), width / 2, y);
+    y += 16;
+
+    // QR Code Box (Light Faint Fill)
+    if (qrImg) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(24, y, width - 48, 60);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(24, y, width - 48, 60);
+
+      ctx.drawImage(qrImg, 34, y + 6, 48, 48);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText('SCAN FOR REF', 92, y + 22);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(receiptNo, 92, y + 40);
+
+      y += 72;
     }
 
-    itemY += 20;
-    renderRow('PAYMENT METHOD', paymentMethod, itemY);
-    itemY += 20;
-    renderRow('DATE & TIME', txDateStr, itemY);
-    itemY += 20;
-    renderRow('PROCESSED BY', processedBy, itemY);
+    drawDashedLine(y);
+    y += 20;
+
+    // Detail Rows
+    const renderRow = (label: string, value: string, isHighlight = false, fontColor = '#0f172a') => {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '9px monospace';
+      ctx.fillText(label, 24, y);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = fontColor;
+      ctx.font = isHighlight ? 'bold 10px monospace' : '600 9px monospace';
+      ctx.fillText(value, width - 24, y);
+      y += 18;
+    };
+
+    renderRow('RECEIPT NO', receiptNo, true, '#0f172a');
+    if (data.paymentRef) renderRow('PAYMENT REF', data.paymentRef, true, '#0284c7');
+    renderRow(receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER', (data.customerName || 'Walk-In Guest').toUpperCase(), true, '#0f172a');
+
+    if (data.planType) {
+      renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY', data.planType.toUpperCase(), false, '#15803d');
+    }
+
+    if (basePrice > 0) {
+      renderRow(receiptType === 'subscription' ? 'MEMBERSHIP FEE' : 'BASE CHARGE', `₱${basePrice.toFixed(2)}`);
+    }
+
+    if (cardFee > 0) renderRow('CARD FEE', `+₱${cardFee.toFixed(2)}`, false, '#2563eb');
+    if (gcashFee > 0) renderRow('GCASH CONVENIENCE FEE', `+₱${gcashFee.toFixed(2)}`, false, '#15803d');
+
+    renderRow('PAYMENT METHOD', paymentMethod, false, '#0f172a');
+    if (data.gcashRefNo) renderRow('GCASH REF NO', data.gcashRefNo, true, '#0284c7');
+
+    renderRow('TRANSACTION DATE', txDateStr);
+    renderRow('PROCESSED BY', processedBy.toUpperCase());
 
     if (data.items && data.items.length > 0) {
-      itemY += 25;
-      ctx.beginPath(); ctx.moveTo(30, itemY - 10); ctx.lineTo(370, itemY - 10); ctx.stroke();
+      drawDashedLine(y);
+      y += 16;
       data.items.forEach(item => {
-        renderRow(`${item.quantity}x ${item.productName}`, `₱${(item.price * item.quantity).toFixed(2)}`, itemY);
-        itemY += 20;
+        renderRow(`${item.quantity}x ${item.productName}`, `₱${(item.price * item.quantity).toFixed(2)}`);
       });
     }
 
-    itemY += 15;
-    ctx.beginPath(); ctx.moveTo(30, itemY); ctx.lineTo(370, itemY); ctx.stroke();
+    drawDashedLine(y);
+    y += 20;
 
-    itemY += 15;
+    // Subtotal
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('SUBTOTAL', 24, y);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`₱${subtotal.toFixed(2)}`, width - 24, y);
+
+    y += 16;
+
+    // Total Due Box (Ink-saving Light Container)
     ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(30, itemY, 340, 36);
+    ctx.fillRect(24, y, width - 48, 36);
     ctx.strokeStyle = '#cbd5e1';
-    ctx.strokeRect(30, itemY, 340, 36);
+    ctx.strokeRect(24, y, width - 48, 36);
 
     ctx.textAlign = 'left';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('TOTAL DUE', 45, itemY + 22);
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('TOTAL DUE', 36, y + 22);
+
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#bf0202';
-    ctx.font = 'bold 13px sans-serif';
-    ctx.fillText(`₱${totalDue.toFixed(2)}`, 355, itemY + 22);
+    ctx.fillStyle = '#dc2626'; // Highlighted price accent
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(`₱${totalDue.toFixed(2)}`, width - 36, y + 22);
 
-    itemY += 55;
+    y += 50;
+
+    // Footer
+    drawDashedLine(y);
+    y += 16;
+
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 8px sans-serif';
-    ctx.fillText('THIS SERVES AS YOUR SALES INVOICE', 200, itemY);
-    ctx.font = '600 9px sans-serif';
-    ctx.fillText('Thank you for choosing Wolf Gym.', 200, itemY + 16);
+    ctx.fillStyle = '#64748b';
+    ctx.font = 'bold 8px system-ui, sans-serif';
+    ctx.fillText('THIS SERVES AS YOUR SALES INVOICE', width / 2, y);
+    y += 14;
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
-    const link = document.createElement('a');
-    link.download = `Official_Receipt_${receiptNo}.jpg`;
-    link.href = dataUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Official Receipt JPG downloaded!');
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '8px system-ui, sans-serif';
+    ctx.fillText('THANK YOU FOR CHOOSING WOLF GYM.', width / 2, y);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        saveAs(blob, `Official_Receipt_${receiptNo}.png`);
+        toast.success('Official Receipt image downloaded!');
+      } else {
+        toast.error('Failed to export receipt image.');
+      }
+    }, 'image/png');
   };
 
-  // Thermal Receipt Body Markup
+  useImperativeHandle(ref, () => ({
+    handlePrint,
+    handleDownloadJpg
+  }));
+
   const receiptBody = (
     <div
       id="unified-thermal-receipt-card"
@@ -546,7 +684,6 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     </div>
   );
 
-  // Render Inline Preview Mode (Used inside System -> RatesPayments)
   if (variant === 'inline') {
     if (isLoading || loadingConfig) {
       return (
@@ -560,7 +697,6 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
     return receiptBody;
   }
 
-  // Render Modal View Mode (Used across Members, Logbook, and POS Sales)
   return (
     <Modal
       isOpen={isOpen}
@@ -613,4 +749,6 @@ export const OfficialReceipt: React.FC<OfficialReceiptProps> = ({
       </div>
     </Modal>
   );
-};
+});
+
+OfficialReceipt.displayName = 'OfficialReceipt';

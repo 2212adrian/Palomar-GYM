@@ -1,4 +1,3 @@
-// src/components/layouts/Topbar.tsx
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -26,7 +25,7 @@ const SEGMENT_MAP: Record<string, string> = {
   logbook: 'LOGBOOK',
   members: 'MEMBERS',
   list: 'MEMBER LIST',
-  plans: 'MEMBERSHIP PLANS',
+  plans: 'PLANS',
   dashboard: 'DASHBOARD',
   goals: 'REVENUE GOALS',
   sales: 'SALES',
@@ -254,27 +253,16 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
         )}
 
         {/* Mobile slide transition button for Members */}
-        {isMembersPath && isAdmin && (
+        {isMembersPath && isAdmin && membersView === 'directory' && (
           <div className="xl:hidden flex items-center gap-1.5">
-            {membersView === 'directory' ? (
-              <button
-                type="button"
-                onClick={() => navigate('/logbook')}
-                className="flex items-center gap-1 px-2.5 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
-                title="Slide to Logbook"
-              >
-                ← Logbook
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate('/members/list')}
-                className="flex items-center gap-1 px-2.5 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
-                title="Slide to Member Directory"
-              >
-                ← List
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => navigate('/logbook')}
+              className="flex items-center gap-1 px-2.5 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
+              title="Slide to Logbook"
+            >
+              ← Logbook
+            </button>
           </div>
         )}
 

@@ -1,0 +1,1568 @@
+import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { 
+  X, Printer, Search, CheckSquare, Square, ZoomIn, ZoomOut, Maximize2, 
+  ChevronDown, ChevronUp, Calendar, RefreshCw, CreditCard, QrCode,
+  Download, Loader2, Lock, ShieldCheck, Sparkles, AlertTriangle
+} from 'lucide-react';
+import type { Member, Subscription, MemberCard } from '../../../types/members';
+import { prototypeStorage, STORAGE_KEYS } from '../memberService';
+import { toast } from 'react-toastify';
+import { PDFDocument } from 'pdf-lib';
+import { saveAs } from 'file-saver';
+import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
+
+export type CardFormatType = 'qr_digital' | 'manual_template';
+
+// Locked Grid Template Layout: 2 x 4 Grid (8 Cards per Letter Sheet)
+const CARD_TEMPLATE_8_PER_SHEET = {
+  id: '8_per_sheet',
+  name: '8 Cards / Letter Sheet (2 x 4 Grid)',
+  cardsPerPage: 8,
+  cols: 2,
+  rows: 4,
+  cardWidthMm: 85.6,
+  cardHeightMm: 53.98,
+  marginTopMm: 10,
+  marginLeftMm: 12,
+  gapHorizontalMm: 8,
+  gapVerticalMm: 8,
+};
+
+const LETTER_PAPER = { width: 215.9, height: 279.4, name: 'Letter (8.5" x 11")' };
+
+interface MemberCardPrintModalProps {
+  members: Member[];
+  initialSelectedIds?: string[];
+  onClose: () => void;
+}
+
+export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
+  members,
+  initialSelectedIds = [],
+  onClose,
+}) => {
+  // Subscriptions & Cards Storage Collection
+  const subscriptions = useMemo(() => {
+    return prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
+  }, []);
+
+  const cards = useMemo(() => {
+    return prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
+  }, []);
+
+  const getMemberCard = (memberId: string) => {
+    return cards.find(c => c.member_id === memberId && c.status === 'Active' && c.card_type !== 'None');
+  };
+
+  const getMemberSub = (memberId: string) => {
+    return subscriptions.find(s => s.member_id === memberId && s.status === 'Active');
+  };
+
+  // Check if active card exists in system
+  const isCardIssued = (memberId: string) => {
+    return Boolean(getMemberCard(memberId));
+  };
+
+  const [cardFormat, setCardFormat] = useState<CardFormatType>('qr_digital');
+  
+  // DEFAULT CHECKED: Generate Fresh QR Tokens is ON by default when clicking print
+  const [rerollQrTokens, setRerollQrTokens] = useState<boolean>(true);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+
+  // Helper: Is member eligible for selection based on rerollQrTokens setting
+  const isMemberEligible = (memberId: string) => {
+    const hasActiveCard = isCardIssued(memberId);
+    if (!hasActiveCard) return true; // Always eligible if no card issued yet
+    return rerollQrTokens; // Eligible if re-issuing / fresh QR token generation is enabled
+  };
+
+  // Default selection: Preserve members selected in the member list
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => {
+    if (initialSelectedIds.length > 0) {
+      return initialSelectedIds;
+    }
+    return members.filter(m => !isCardIssued(m.member_id)).map(m => m.id);
+  });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [zoom, setZoom] = useState<number>(100);
+  const [copiesPerMember,] = useState<number>(1);
+  const [manualCardCount, setManualCardCount] = useState<number>(8);
+  const [activeMobileTab, setActiveMobileTab] = useState<'configure' | 'preview'>('configure');
+
+  // Accordion state for validity/replacement
+  const [isExpiryConfigOpen, setIsExpiryConfigOpen] = useState(true);
+
+  // Locked Issue Date (Automatic to current date)
+  const issueDate = useMemo(() => new Date().toISOString().split('T')[0], []);
+    
+  // Expiration Configuration Override - DEFAULT +3 YEARS (1095 Days)
+  const [customExpireDate, setCustomExpireDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1095); // Default +3 years
+    return d.toISOString().split('T')[0];
+  });
+  const [overrideDates, setOverrideDates] = useState<boolean>(true);
+
+  // Validation Flag: Expiration date cannot be earlier than issue date
+  const isInvalidDate = customExpireDate < issueDate;
+
+  // Helper to check active quick-add preset
+  const getActivePresetDays = () => {
+    if (!overrideDates) return null;
+    const start = new Date(issueDate).getTime();
+    const end = new Date(customExpireDate).getTime();
+    const diffDays = Math.round((end - start) / (1000 * 3600 * 24));
+    
+    if (diffDays >= 28 && diffDays <= 31) return 30;
+    if (diffDays >= 360 && diffDays <= 366) return 365;
+    if (diffDays >= 1090 && diffDays <= 1100) return 1095;
+    return null;
+  };
+
+  const activePresetDays = getActivePresetDays();
+
+  // Handle Fresh QR / Reissue Checkbox Toggle
+  const handleRerollToggle = (checked: boolean) => {
+    setRerollQrTokens(checked);
+    if (!checked) {
+      // Automatically deselect members who already have active cards when reissuing is turned OFF
+      setSelectedIds(prev => prev.filter(id => {
+        const m = members.find(mem => mem.id === id);
+        return m ? !isCardIssued(m.member_id) : true;
+      }));
+      toast.info('Reissuing disabled: Active cardholders removed from selection.');
+    } else {
+      toast.success('Reissuing enabled: Active cardholders unlocked for replacement card print.');
+    }
+  };
+
+  const filteredMembers = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return members.filter(m =>
+      q === '' ||
+      m.full_name.toLowerCase().includes(q) ||
+      m.member_id.toLowerCase().includes(q) ||
+      m.phone.toLowerCase().includes(q)
+    );
+  }, [members, searchQuery]);
+
+  const selectedMembersList = useMemo(() => {
+    return members.filter(m => selectedIds.includes(m.id));
+  }, [members, selectedIds]);
+
+  const expandedCardsList = useMemo(() => {
+    const list: Member[] = [];
+    selectedMembersList.forEach(m => {
+      for (let i = 0; i < copiesPerMember; i++) {
+        list.push(m);
+      }
+    });
+    return list;
+  }, [selectedMembersList, copiesPerMember]);
+
+  // Effective Cards List depending on Card Format
+  const effectiveCardsList = useMemo(() => {
+    if (cardFormat === 'manual_template') {
+      return Array.from({ length: manualCardCount }).map((_, idx) => ({
+        id: `manual-card-${idx}`,
+        member_id: `TEMPLATE-${idx + 1}`,
+        full_name: 'MANUAL TEMPLATE CARD',
+        phone: '',
+        email: '',
+        status: 'Active' as const,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+    }
+    return expandedCardsList;
+  }, [cardFormat, manualCardCount, expandedCardsList]);
+
+  const template = CARD_TEMPLATE_8_PER_SHEET;
+  const totalPagesRequired = Math.ceil(effectiveCardsList.length / template.cardsPerPage) || 1;
+
+  const zoomFactor = zoom / 100;
+  const paperWidthMm = LETTER_PAPER.width;
+  const paperHeightMm = LETTER_PAPER.height;
+
+  const scaledWidthMm = paperWidthMm * zoomFactor;
+  const scaledHeightMm = (paperHeightMm * totalPagesRequired) * zoomFactor + (20 * totalPagesRequired * zoomFactor);
+
+  const applyPresetDays = (days: number) => {
+    setOverrideDates(true);
+    const d = new Date(issueDate);
+    d.setDate(d.getDate() + days);
+    const newExpDate = d.toISOString().split('T')[0];
+    if (newExpDate < issueDate) {
+      toast.error('Expiration date cannot be earlier than the issue date.');
+      setCustomExpireDate(issueDate);
+    } else {
+      setCustomExpireDate(newExpDate);
+    }
+  };
+
+  const handleToggleMember = (member: Member) => {
+    const eligible = isMemberEligible(member.member_id);
+    if (!eligible) {
+      toast.info(`${member.full_name} already has an active card. Turn ON "Generate Fresh QR Tokens" below to reissue.`);
+      return;
+    }
+    setSelectedIds(prev =>
+      prev.includes(member.id) ? prev.filter(id => id !== member.id) : [...prev, member.id]
+    );
+  };
+
+  const handleSelectAllEligible = () => {
+    const eligibleIds = members
+      .filter(m => isMemberEligible(m.member_id))
+      .map(m => m.id);
+    setSelectedIds(eligibleIds);
+  };
+
+  // Update card storage records when issuing
+  const persistCardIssuance = () => {
+    if (cardFormat !== 'qr_digital') return;
+
+    const allCards = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
+    let updatedCards = [...allCards];
+
+    selectedMembersList.forEach(m => {
+      const existingActiveCard = allCards.find(c => c.member_id === m.member_id && c.status === 'Active');
+
+      if (rerollQrTokens) {
+        updatedCards = updatedCards.map(c => {
+          if (c.member_id === m.member_id && c.status === 'Active') {
+            return { 
+              ...c, 
+              status: 'Inactive' as MemberCard['status'], 
+              replaced_at: new Date().toISOString(),
+              replacement_reason: 'Card Reissued / QR Rerolled',
+              updated_at: new Date().toISOString() 
+            };
+          }
+          return c;
+        });
+      }
+
+      const newCardToken = `CARD-${m.member_id}-${Date.now().toString(36).toUpperCase()}`;
+      const newCardRecord: MemberCard = {
+        id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        member_id: m.member_id,
+        card_type: 'QR',
+        card_number: newCardToken,
+        version: (existingActiveCard?.version || 0) + 1,
+        status: 'Active',
+        issued_at: new Date(issueDate).toISOString()
+      };
+      updatedCards.push(newCardRecord);
+    });
+
+    prototypeStorage.save(STORAGE_KEYS.CARDS, updatedCards);
+  };
+
+  // Print Action Handler (Opens Printer Window)
+  const handlePrint = () => {
+    if (isInvalidDate) {
+      toast.error('Expiration date cannot be earlier than the issue date.');
+      return;
+    }
+
+    if (cardFormat === 'qr_digital') {
+      if (selectedMembersList.length === 0) {
+        toast.error('Please select at least one member card to print.');
+        return;
+      }
+      const invalidMembers = selectedMembersList.filter(m => !isMemberEligible(m.member_id));
+      if (invalidMembers.length > 0) {
+        toast.error(`Cannot print: ${invalidMembers[0].full_name} has an active card. Enable Reissuing to print.`);
+        return;
+      }
+    }
+
+    if (cardFormat === 'manual_template' && manualCardCount < 1) {
+      toast.error('Please specify at least 1 template card copy.');
+      return;
+    }
+
+    persistCardIssuance();
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    let pagesHtml = '';
+
+    for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
+      const pageStartIndex = pageIdx * template.cardsPerPage;
+      const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+
+      let cardsGridHtml = '';
+      pageItems.forEach(m => {
+        if (cardFormat === 'manual_template') {
+          cardsGridHtml += `
+            <div class="card manual-card">
+              <img src="${cardTemplateImg}" alt="Manual Member Card Template" class="template-img" />
+            </div>
+          `;
+        } else {
+          const sub = getMemberSub(m.member_id);
+          const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
+          const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
+          
+          const isExp = new Date(finalExpDate) < new Date();
+          const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+          const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
+          cardsGridHtml += `
+            <div class="card">
+              <div class="header">
+                <div class="gym-title">WOLF PALOMAR GYM</div>
+                <div class="header-red-line"></div>
+                <div class="gym-subtitle">MUAYTHAI BOXING</div>
+                <div class="gym-address">6B Judge A. Roldan St., Navotas City, Metro Manila</div>
+                <div class="gym-contact">09098893819 / 09054380792</div>
+              </div>
+
+              <div class="main-content">
+                <div class="qr-wrapper">
+                  <img src="${qrImg}" alt="QR" style="opacity: ${isExp ? '0.25' : '1'};" />
+                  ${isExp ? '<div class="expired-overlay"><span>EXPIRED</span><span>BADGE</span></div>' : ''}
+                </div>
+
+                <div class="details">
+                  <div class="field-group">
+                    <span class="field-label">FULL NAME</span>
+                    <div class="field-box">${m.full_name.toUpperCase()}</div>
+                  </div>
+
+                  <div class="field-group">
+                    <span class="field-label">CONTACT NUMBER</span>
+                    <div class="field-box">${m.phone || 'N/A'}</div>
+                  </div>
+
+                  <div class="dates-row">
+                    <div class="field-group">
+                      <span class="field-label">ISSUE DATE</span>
+                      <div class="field-box">${new Date(issueDate).toLocaleDateString()}</div>
+                    </div>
+                    <div class="vertical-red-divider"></div>
+                    <div class="field-group">
+                      <span class="field-label">EXPIRATION</span>
+                      <div class="field-box" style="color: ${isExp ? '#dc2626' : '#000000'}">${new Date(finalExpDate).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="red-line"></div>
+                <div class="footer-text">
+                  NON-REFUNDABLE &nbsp;•&nbsp; NON-TRANSFERRABLE &nbsp;•&nbsp; BE RESPONSIBLE WITH EQUIPMENT
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      pagesHtml += `
+        <div class="page-sheet">
+          <div class="cards-grid" style="
+            padding-top: ${template.marginTopMm}mm;
+            padding-left: ${template.marginLeftMm}mm;
+            grid-template-columns: repeat(${template.cols}, ${template.cardWidthMm}mm);
+            gap: ${template.gapVerticalMm}mm ${template.gapHorizontalMm}mm;
+          ">
+            ${cardsGridHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Member Credential Cards Batch Print</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 0; background: #fff; }
+              @page { size: ${paperWidthMm}mm ${paperHeightMm}mm; margin: 0; }
+              .page-sheet { page-break-after: always; }
+            }
+            body {
+              font-family: Arial, sans-serif;
+              margin: 0;
+              background: #ffffff;
+              color: #ffffff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              -webkit-text-size-adjust: none;
+            }
+            .page-sheet {
+              width: ${paperWidthMm}mm;
+              height: ${paperHeightMm}mm;
+              background: #ffffff;
+              box-sizing: border-box;
+              overflow: hidden;
+              position: relative;
+            }
+            .cards-grid {
+              display: grid;
+              align-content: start;
+              align-items: start;
+            }
+            .card {
+              width: ${template.cardWidthMm}mm;
+              height: ${template.cardHeightMm}mm;
+              background-color: #000000;
+              border-radius: 3.5mm;
+              padding: 2mm 3mm;
+              box-sizing: border-box;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              border: 1px solid #1a1a1a;
+              position: relative;
+              overflow: hidden;
+              color: #ffffff;
+              font-family: Arial, sans-serif;
+              line-height: 1;
+            }
+            .card.manual-card {
+              padding: 0;
+              background: #000000;
+              border-radius: 3.5mm;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .template-img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              display: block;
+            }
+            .header { text-align: center; }
+            .gym-title { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 9.5pt; font-weight: 900; letter-spacing: 0.5px; color: #ffffff; text-transform: uppercase; line-height: 1; margin: 0; }
+            .header-red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm auto 0.5mm auto; width: 92%; }
+            .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #dc2626; text-transform: uppercase; line-height: 1; margin: 0; }
+            .gym-address, .gym-contact { font-family: Arial, sans-serif; font-size: 4pt; color: #ffffff; line-height: 1.1; font-weight: 600; margin: 0; }
+            .red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm 0; width: 100%; }
+
+            .main-content { display: flex; gap: 2.5mm; align-items: center; flex: 1; min-height: 0; margin: 0.5mm 0; }
+            .qr-wrapper {
+              background: #ffffff; padding: 1.2mm; border-radius: 2mm; display: flex; align-items: center; justify-content: center;
+              width: 22mm; height: 22mm; box-sizing: border-box; flex-shrink: 0; position: relative;
+            }
+            .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+            .expired-overlay {
+              position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+              background: rgba(220, 38, 38, 0.85); color: #ffffff; font-size: 5pt; font-weight: 900; text-transform: uppercase; text-align: center; border-radius: 2mm; line-height: 1.1;
+            }
+
+            .field-group { 
+              position: relative !important;
+              display: flex !important; 
+              flex-direction: column !important; 
+              align-items: flex-start !important;
+              width: 100% !important;
+              margin: 0 !important; 
+              padding: 0 !important; 
+              flex-shrink: 0 !important; 
+            }
+
+            .field-label { 
+              position: static !important;
+              top: auto !important;
+              left: auto !important;
+              right: auto !important;
+              bottom: auto !important;
+              transform: none !important;
+              display: block !important; 
+              font-size: 4.5pt !important; 
+              color: #ffffff !important; 
+              font-weight: 800 !important; 
+              letter-spacing: 0.3px !important; 
+              text-transform: uppercase !important; 
+              margin-bottom: 0.4mm !important; 
+              line-height: 1 !important; 
+              flex-shrink: 0 !important; 
+              opacity: 1 !important; 
+              visibility: visible !important; 
+            }
+
+            .field-box {
+              position: relative !important;
+              width: 100% !important;
+              background: #ffffff !important; 
+              color: #000000 !important; 
+              border-radius: 1mm !important; 
+              padding: 0.6mm 1.2mm !important;
+              font-family: Arial, sans-serif !important; 
+              font-size: 6pt !important; 
+              font-weight: 800 !important; 
+              white-space: nowrap !important; 
+              overflow: hidden !important; 
+              text-overflow: ellipsis !important; 
+              line-height: 1.1 !important; 
+              box-sizing: border-box !important;
+            }
+
+            .details {
+              position: relative !important;
+              flex: 1 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: space-between !important;
+              min-width: 0 !important;
+              height: 100% !important;
+              max-height: 23mm !important;
+              text-align: left !important;
+              box-sizing: border-box !important;
+            }
+            .dates-row { display: flex; gap: 1mm; align-items: flex-end; }
+            .dates-row .field-group { flex: 1; min-width: 0; }
+            .dates-row .field-box { font-size: 5pt; text-align: center; padding: 0.5mm 0.4mm; }
+            .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #dc2626; flex-shrink: 0; margin-bottom: 0.2mm; }
+
+            .footer-text {
+              font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
+            }
+          </style>
+        </head>
+        <body>
+          ${pagesHtml}
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // TRUE 300 DPI UNTAINTED PDF GENERATOR VIA DIRECT CANVAS 2D DRAWING
+  const handleDownloadPdf = async () => {
+    if (isInvalidDate) {
+      toast.error('Expiration date cannot be earlier than the issue date.');
+      return;
+    }
+
+    if (cardFormat === 'qr_digital') {
+      if (selectedMembersList.length === 0) {
+        toast.error('Please select at least one member card.');
+        return;
+      }
+      const invalidMembers = selectedMembersList.filter(m => !isMemberEligible(m.member_id));
+      if (invalidMembers.length > 0) {
+        toast.error(`Cannot download PDF: ${invalidMembers[0].full_name} has an active card. Enable Reissuing first.`);
+        return;
+      }
+    }
+
+    if (cardFormat === 'manual_template' && manualCardCount < 1) {
+      toast.error('Please specify at least 1 template card copy.');
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    toast.info('Generating high-resolution 300 DPI PDF file...');
+
+    try {
+      persistCardIssuance();
+
+      // Convert image URL to Base64 Data URL
+      const loadBase64Image = async (url: string): Promise<HTMLImageElement> => {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = dataUrl;
+        });
+      };
+
+      const cardTemplateImgObj = await loadBase64Image(cardTemplateImg);
+
+      const pdfDoc = await PDFDocument.create();
+
+      // 300 DPI Resolution Setup for Letter sheet (215.9mm x 279.4mm)
+      const scale = 300 / 25.4; // 11.811 px per mm
+      const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);  // 2550 px
+      const sheetHeightPx = Math.round(LETTER_PAPER.height * scale); // 3300 px
+
+      for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = sheetWidthPx;
+        pageCanvas.height = sheetHeightPx;
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) continue;
+
+        // White background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
+
+        const pageStartIndex = pageIdx * template.cardsPerPage;
+        const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+
+        for (let idx = 0; idx < pageItems.length; idx++) {
+          const m = pageItems[idx];
+          const col = idx % template.cols;
+          const row = Math.floor(idx / template.cols);
+
+          const cardX = (template.marginLeftMm + col * (template.cardWidthMm + template.gapHorizontalMm)) * scale;
+          const cardY = (template.marginTopMm + row * (template.cardHeightMm + template.gapVerticalMm)) * scale;
+          const cardW = template.cardWidthMm * scale;
+          const cardH = template.cardHeightMm * scale;
+
+          if (cardFormat === 'manual_template') {
+            ctx.save();
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+            else ctx.rect(cardX, cardY, cardW, cardH);
+            ctx.clip();
+            ctx.drawImage(cardTemplateImgObj, cardX, cardY, cardW, cardH);
+            ctx.restore();
+          } else {
+            const sub = getMemberSub(m.member_id);
+            const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
+            const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
+            const isExp = new Date(finalExpDate) < new Date();
+            const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+            const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+            const qrImgObj = await loadBase64Image(qrRawUrl);
+
+            ctx.save();
+
+            // 1. Black Card Background
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+            else ctx.rect(cardX, cardY, cardW, cardH);
+            ctx.fill();
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 1 * scale;
+            ctx.stroke();
+
+            // 2. Header Title
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `900 ${Math.round(3.6 * scale)}px Arial, sans-serif`;
+            ctx.fillText('WOLF PALOMAR GYM', cardX + cardW / 2, cardY + 5.5 * scale);
+
+            // Red Header Line
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(cardX + cardW * 0.04, cardY + 6.8 * scale, cardW * 0.92, 0.35 * scale);
+
+            // Subtitle
+            ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
+            ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
+
+            // Address & Contact
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `600 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
+            ctx.fillText('6B Judge A. Roldan St., Navotas City, Metro Manila', cardX + cardW / 2, cardY + 12.3 * scale);
+            ctx.fillText('09098893819 / 09054380792', cardX + cardW / 2, cardY + 14.1 * scale);
+
+            // 3. QR Code Box
+            const qrSize = 22 * scale;
+            const qrX = cardX + 3.5 * scale;
+            const qrY = cardY + 16.5 * scale;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
+            else ctx.rect(qrX, qrY, qrSize, qrSize);
+            ctx.fill();
+
+            if (isExp) ctx.globalAlpha = 0.25;
+            ctx.drawImage(qrImgObj, qrX + 1.5 * scale, qrY + 1.5 * scale, qrSize - 3 * scale, qrSize - 3 * scale);
+            ctx.globalAlpha = 1.0;
+
+            if (isExp) {
+              ctx.fillStyle = 'rgba(220, 38, 38, 0.85)';
+              ctx.beginPath();
+              if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
+              else ctx.rect(qrX, qrY, qrSize, qrSize);
+              ctx.fill();
+
+              ctx.fillStyle = '#ffffff';
+              ctx.font = `900 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+              ctx.fillText('EXPIRED', qrX + qrSize / 2, qrY + qrSize / 2 - 0.5 * scale);
+              ctx.fillText('BADGE', qrX + qrSize / 2, qrY + qrSize / 2 + 2 * scale);
+            }
+
+            // 4. Details Section
+            const detailsX = qrX + qrSize + 3 * scale;
+            const detailsY = cardY + 16.5 * scale;
+            const detailsW = cardX + cardW - detailsX - 3.5 * scale;
+
+            ctx.textAlign = 'left';
+
+            // FULL NAME
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
+            ctx.fillText('FULL NAME', detailsX, detailsY + 1.8 * scale);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale, 1 * scale);
+            else ctx.rect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale);
+            ctx.fill();
+
+            ctx.fillStyle = '#000000';
+            ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
+            ctx.fillText(m.full_name.toUpperCase().substring(0, 22), detailsX + 1.5 * scale, detailsY + 6 * scale);
+
+            // CONTACT NUMBER
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
+            ctx.fillText('CONTACT NUMBER', detailsX, detailsY + 9.8 * scale);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale, 1 * scale);
+            else ctx.rect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale);
+            ctx.fill();
+
+            ctx.fillStyle = '#000000';
+            ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
+            ctx.fillText(m.phone || 'N/A', detailsX + 1.5 * scale, detailsY + 14 * scale);
+
+            // DATES ROW
+            const boxHalfW = (detailsW - 1.2 * scale) / 2;
+
+            // Issue Date Label & Box
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `800 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
+            ctx.fillText('ISSUE DATE', detailsX, detailsY + 17.8 * scale);
+            ctx.fillText('EXPIRATION', detailsX + boxHalfW + 1.2 * scale, detailsY + 17.8 * scale);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
+            else ctx.rect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
+            ctx.fill();
+
+            ctx.fillStyle = '#000000';
+            ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(new Date(issueDate).toLocaleDateString(), detailsX + boxHalfW / 2, detailsY + 21.8 * scale);
+
+            // Red Vertical Divider
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(detailsX + boxHalfW + 0.45 * scale, detailsY + 17.5 * scale, 0.3 * scale, 6 * scale);
+
+            // Expiration Box
+            const expX = detailsX + boxHalfW + 1.2 * scale;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
+            else ctx.rect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
+            ctx.fill();
+
+            ctx.fillStyle = isExp ? '#dc2626' : '#000000';
+            ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+            ctx.fillText(new Date(finalExpDate).toLocaleDateString(), expX + boxHalfW / 2, detailsY + 21.8 * scale);
+
+            // 5. Footer Divider & Text
+            const footerY = cardY + cardH - 5 * scale;
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `800 ${Math.round(1.35 * scale)}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText('NON-REFUNDABLE  •  NON-TRANSFERRABLE  •  BE RESPONSIBLE WITH EQUIPMENT', cardX + cardW / 2, footerY + 3.2 * scale);
+
+            ctx.restore();
+          }
+        }
+
+        // Untainted 300 DPI Canvas PNG Export
+        const pngDataUrl = pageCanvas.toDataURL('image/png', 1.0);
+        const embeddedPng = await pdfDoc.embedPng(pngDataUrl);
+
+        const pdfPage = pdfDoc.addPage([612, 792]); // Letter Size
+        pdfPage.drawImage(embeddedPng, {
+          x: 0,
+          y: 0,
+          width: 612,
+          height: 792,
+        });
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      const fileName = `Wolf_Palomar_Gym_Member_Cards_${new Date().toISOString().split('T')[0]}.pdf`;
+      saveAs(pdfBlob, fileName);
+
+      toast.success('300 DPI PDF downloaded successfully!');
+    } catch (err) {
+      console.error('Failed to generate PDF file:', err);
+      toast.error('Failed to generate PDF document. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[16000] bg-[var(--bg-page)] flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
+      
+      {/* SCOPED STYLES FOR LIVE PREVIEW */}
+      <style>{`
+        .card-sheet-container .page-sheet {
+          width: ${paperWidthMm}mm;
+          height: ${paperHeightMm}mm;
+          background: #ffffff;
+          box-sizing: border-box;
+          overflow: hidden;
+          position: relative;
+        }
+        .card-sheet-container .cards-grid {
+          display: grid;
+          align-content: start;
+          align-items: start;
+        }
+        .card-sheet-container .card {
+          width: ${template.cardWidthMm}mm;
+          height: ${template.cardHeightMm}mm;
+          background-color: #000000;
+          border-radius: 3.5mm;
+          padding: 2mm 3mm;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          border: 1px solid #1a1a1a;
+          position: relative;
+          overflow: hidden;
+          color: #ffffff;
+          font-family: Arial, sans-serif;
+          text-align: left;
+          line-height: 1;
+          -webkit-text-size-adjust: none;
+        }
+        .card-sheet-container .card.manual-card {
+          padding: 0;
+          background: #000000;
+          border-radius: 3.5mm;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .card-sheet-container .template-img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          display: block;
+        }
+        .card-sheet-container .header { text-align: center; }
+        .card-sheet-container .gym-title { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 9.5pt; font-weight: 900; letter-spacing: 0.5px; color: #ffffff; text-transform: uppercase; line-height: 1; margin: 0; }
+        .card-sheet-container .header-red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm auto 0.5mm auto; width: 92%; }
+        .card-sheet-container .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #dc2626; text-transform: uppercase; line-height: 1; margin: 0; }
+        .card-sheet-container .gym-address, .card-sheet-container .gym-contact { font-family: Arial, sans-serif; font-size: 4pt; color: #ffffff; line-height: 1.1; font-weight: 600; margin: 0; }
+        .card-sheet-container .red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm 0; width: 100%; }
+
+        .card-sheet-container .main-content { display: flex; gap: 2.5mm; align-items: center; flex: 1; min-height: 0; margin: 0.5mm 0; }
+        .card-sheet-container .qr-wrapper {
+          background: #ffffff; padding: 1.2mm; border-radius: 2mm; display: flex; align-items: center; justify-content: center;
+          width: 22mm; height: 22mm; box-sizing: border-box; flex-shrink: 0; position: relative;
+        }
+        .card-sheet-container .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+        .card-sheet-container .expired-overlay {
+          position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+          background: rgba(220, 38, 38, 0.85); color: #ffffff; font-size: 5pt; font-weight: 900; text-transform: uppercase; text-align: center; border-radius: 2mm; line-height: 1.1;
+        }
+
+        .card-sheet-container .details { flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; height: 100%; max-height: 23mm; text-align: left; box-sizing: border-box; }
+        .card-sheet-container .field-group { text-align: left; display: flex; flex-direction: column; flex-shrink: 0; margin: 0; padding: 0; }
+        .card-sheet-container .field-label {
+          font-size: 4.5pt !important; color: #ffffff !important; font-weight: 800 !important; letter-spacing: 0.3px; text-transform: uppercase; margin-bottom: 0.3mm !important; line-height: 1 !important; display: block !important; flex-shrink: 0 !important; opacity: 1 !important; visibility: visible !important;
+        }
+        .card-sheet-container .field-box {
+          background: #ffffff; color: #000000; border-radius: 1mm; padding: 0.6mm 1.2mm;
+          font-family: Arial, sans-serif; font-size: 6pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; box-sizing: border-box;
+        }
+        .card-sheet-container .dates-row { display: flex; gap: 1mm; align-items: flex-end; }
+        .card-sheet-container .dates-row .field-group { flex: 1; min-width: 0; }
+        .card-sheet-container .dates-row .field-box { font-size: 5pt; text-align: center; padding: 0.5mm 0.4mm; }
+        .card-sheet-container .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #dc2626; flex-shrink: 0; margin-bottom: 0.2mm; }
+
+        .card-sheet-container .footer-text {
+          font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
+        }
+      `}</style>
+
+      {/* Top Header Bar */}
+      <div className="px-6 py-4 border-b border-(--border-color) bg-[var(--bg-card)] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-[var(--color-primary)]/10 rounded-xl text-[var(--color-primary)] border border-[var(--color-primary)]/20">
+            <Printer className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="text-left">
+            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT MEMBER CREDENTIAL CARDS</h2>
+            <p className="text-[10px] text-slate-400 font-bold block mt-0.5">
+              Select members, set validity dates, print physical sheets or download official PDF files.
+            </p>
+          </div>
+        </div>
+        <button 
+          onClick={onClose}
+          className="p-1.5 bg-slate-100/5 hover:bg-slate-100/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer border border-(--border-color)"
+          title="Close print portal"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Mobile Tab Switchers */}
+      <div className="flex md:hidden bg-slate-900/50 p-1 rounded-xl border border-white/5 mx-6 mt-4 shrink-0">
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab('configure')}
+          className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
+            activeMobileTab === 'configure' ? 'bg-[var(--color-primary)] text-white shadow-md' : 'text-slate-400'
+          }`}
+        >
+          Configure
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab('preview')}
+          className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
+            activeMobileTab === 'preview' ? 'bg-[var(--color-primary)] text-white shadow-md' : 'text-slate-400'
+          }`}
+        >
+          Layout Preview
+        </button>
+      </div>
+
+      {/* Main Grid Workspace */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
+        
+        {/* LEFT CONTROL SIDEBAR PANEL */}
+        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-[180px] md:pb-6 ${
+          activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
+        }`}>
+          <div className="flex flex-col gap-4 overflow-y-hidden flex-1">
+            
+            {/* Card Format Choice */}
+            <div className="p-3 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-2 text-left shrink-0">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                Card Type Format
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCardFormat('qr_digital')}
+                  className={`p-2.5 rounded-xl border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    cardFormat === 'qr_digital'
+                      ? 'bg-[var(--color-primary)] text-white border-transparent shadow-md'
+                      : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Digital QR</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCardFormat('manual_template')}
+                  className={`p-2.5 rounded-xl border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    cardFormat === 'manual_template'
+                      ? 'bg-amber-600 text-white border-transparent shadow-md'
+                      : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Manual Template</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Selection Drawer vs Manual Copies Count */}
+            {cardFormat === 'manual_template' ? (
+              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 text-left">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Manual Template Copies
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold text-amber-500">
+                    Blank Card Asset
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                  Manual templates use pre-printed physical design assets. Specify how many blank cards you need on your print sheet layout.
+                </p>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
+                    Number of Cards to Print
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={manualCardCount}
+                      onChange={(e) => setManualCardCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 p-2 bg-[var(--bg-page)] border border-(--border-color) rounded-xl text-xs font-mono font-bold text-(--color-text) outline-none focus:border-amber-500"
+                    />
+                    <div className="flex gap-1.5 flex-1 overflow-x-auto">
+                      {[1, 4, 8, 16].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setManualCardCount(num)}
+                          className={`px-2.5 py-1.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${
+                            manualCardCount === num
+                              ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                              : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                          }`}
+                        >
+                          {num} {num === 1 ? 'Card' : 'Cards'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[240px] flex-1">
+                <div className="flex items-center justify-between shrink-0">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Members</h4>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllEligible}
+                      className="text-[9px] font-bold uppercase text-[var(--color-primary)] hover:underline cursor-pointer"
+                      title="Select all eligible members"
+                    >
+                      All Eligible
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds([])}
+                      className="text-[9px] font-bold uppercase text-slate-500 dark:text-slate-400 hover:underline cursor-pointer"
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative shrink-0">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Filter members..."
+                    className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] transition-all font-medium"
+                  />
+                </div>
+
+                {/* MEMBER SELECTION LIST WITH DYNAMIC REROLL UNLOCK/LOCK */}
+                <div className="overflow-y-auto no-scrollbar space-y-1.5 pt-1 flex-1">
+                  {filteredMembers.map(m => {
+                    const hasActiveCard = isCardIssued(m.member_id);
+                    const eligible = isMemberEligible(m.member_id);
+                    const isSelected = selectedIds.includes(m.id);
+
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => handleToggleMember(m)}
+                        className={`p-2 rounded-xl flex items-center justify-between transition-all ${
+                          !eligible
+                            ? 'opacity-50 cursor-not-allowed bg-slate-200/50 dark:bg-zinc-900/20 border border-transparent'
+                            : isSelected 
+                              ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)] text-[var(--color-text)] cursor-pointer' 
+                              : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900/40 border border-transparent text-slate-700 dark:text-slate-300 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {!eligible ? (
+                            <Lock className="w-4 h-4 shrink-0 text-slate-400" />
+                          ) : isSelected ? (
+                            <CheckSquare className="w-4 h-4 shrink-0 text-[var(--color-primary)]" />
+                          ) : (
+                            <Square className="w-4 h-4 shrink-0 text-slate-500" />
+                          )}
+                          <div className="min-w-0 text-left">
+                            <span className="font-semibold block truncate text-xs">{m.full_name}</span>
+                            <span className="font-mono text-[9px] text-slate-400">{m.member_id}</span>
+                          </div>
+                        </div>
+
+                        {hasActiveCard ? (
+                          rerollQrTokens ? (
+                            <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20 flex items-center gap-1">
+                              <ShieldCheck className="w-2.5 h-2.5" /> Reissue Ready
+                            </span>
+                          ) : (
+                            <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-slate-500/10 text-slate-400 border-slate-500/20">
+                              Card Active (Locked)
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-amber-500/10 text-amber-500 border-amber-500/20">
+                            No Card
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Accordion: Card Validity & Replacement Configurator */}
+            {cardFormat === 'qr_digital' && (
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsExpiryConfigOpen(!isExpiryConfigOpen)}
+                  className="w-full flex items-center justify-between p-3.5 bg-(--bg-input) border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    <Calendar className="w-3.5 h-3.5 text-(--color-primary)" />
+                    <span>Card Validity & Replacement</span>
+                  </div>
+                  {isExpiryConfigOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                </button>
+
+                {isExpiryConfigOpen && (
+                  <div className="p-4 bg-(--bg-input) border border-(--border-color) rounded-2xl space-y-3 shrink-0 animate-slide-up text-left">
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
+                          Issue Date <span className="text-[8px] text-slate-500 font-normal">(Automatic)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={new Date(issueDate).toLocaleDateString()}
+                          readOnly
+                          disabled
+                          tabIndex={-1}
+                          className="w-full p-2 bg-(--bg-page)/50 border border-(--border-color) rounded-xl text-xs font-mono font-bold text-slate-500 cursor-not-allowed outline-none select-none pointer-events-none"
+                        />
+                      </div>
+                                    
+                      {/* 2. EXPIRATION DATE: Enforces min={issueDate} + Auto-clamps back to issueDate if an older date is typed */}
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Expiration Date</label>
+                        <input
+                          type="date"
+                          min={issueDate} // 👈 Blocks calendar selection of older dates
+                          value={customExpireDate}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setOverrideDates(true);
+                            if (val && val < issueDate) {
+                              toast.error('Expiration date cannot be earlier than Issue Date!');
+                              setCustomExpireDate(issueDate); // 👈 Hard clamp back to issue date!
+                            } else {
+                              setCustomExpireDate(val);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (!e.target.value || e.target.value < issueDate) {
+                              setCustomExpireDate(issueDate); // 👈 Fallback safety clamp
+                            }
+                          }}
+                          className={`w-full p-2 bg-(--bg-page) border rounded-xl text-xs font-mono font-bold outline-none transition-all ${
+                            isInvalidDate ? 'border-red-500 bg-red-500/10 text-red-500' : 'border-(--border-color) text-(--color-text)'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* INLINE VALIDATION WARNING BOX */}
+                    {isInvalidDate && (
+                      <div className="p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 flex items-center gap-2 text-[10px] font-bold">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                        <span>Expiration date cannot be earlier than Issue Date ({new Date(issueDate).toLocaleDateString()}). Printing is disabled.</span>
+                      </div>
+                    )}
+
+                    {/* QUICK PRESETS WITH ADAPTIVE THEME HIGHLIGHTS & DEFAULT +3 YEARS */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase mr-1">Quick Add:</span>
+                      
+                      <button
+                        type="button"
+                        onClick={() => applyPresetDays(30)}
+                        className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
+                          activePresetDays === 30
+                            ? 'bg-[var(--color-primary)] text-white shadow-md'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        +30D
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => applyPresetDays(365)}
+                        className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
+                          activePresetDays === 365
+                            ? 'bg-[var(--color-primary)] text-white shadow-md'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        +1 Year
+                      </button>
+
+                      {/* DEFAULT PRESET: +3 YEARS WITH THEME HIGHLIGHT */}
+                      <button
+                        type="button"
+                        onClick={() => applyPresetDays(1095)}
+                        className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer flex items-center gap-1 ${
+                          activePresetDays === 1095
+                            ? 'bg-[var(--color-primary)] text-white shadow-md font-extrabold border border-white/20'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Sparkles className="w-2.5 h-2.5" /> +3 Years (Default)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOverrideDates(false)}
+                        className={`px-2 py-1 rounded-lg text-[9px] font-heading font-bold uppercase cursor-pointer flex items-center gap-1 border ${
+                          !overrideDates 
+                            ? 'bg-[var(--color-primary)] text-white border-transparent' 
+                            : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20'
+                        }`}
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" /> Sync Sub
+                      </button>
+                    </div>
+
+                    {/* Reroll QR Toggle */}
+                    <div className="pt-2 border-t border-(--border-color)">
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={rerollQrTokens}
+                          onChange={(e) => handleRerollToggle(e.target.checked)}
+                          className="w-4 h-4 mt-0.5 rounded text-[var(--color-primary)] focus:ring-[var(--color-primary)] accent-[var(--color-primary)] cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0 text-left">
+                          <span className="text-[10px] font-bold text-(--color-text) block leading-tight">
+                            Generate Fresh QR Tokens (Allow Reissuing)
+                          </span>
+                          <span className="text-[8px] text-slate-400 block mt-0.5 leading-relaxed">
+                            When <strong className="text-[var(--color-primary)]">ON</strong>, members with existing cards can be selected to receive a replacement card. Old cards will be automatically deactivated.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+
+          {/* Action Row Panel: PRINT & DOWNLOAD PDF */}
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none space-y-2 mt-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={
+                  isGeneratingPdf || 
+                  isInvalidDate ||
+                  (cardFormat === 'qr_digital' ? selectedMembersList.length === 0 : manualCardCount < 1)
+                }
+                className={`py-3 px-3 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border-none ${
+                  isInvalidDate
+                    ? 'bg-slate-600 cursor-not-allowed opacity-40'
+                    : cardFormat === 'manual_template' 
+                      ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer' 
+                      : 'bg-[var(--color-primary)] hover:opacity-90 cursor-pointer'
+                }`}
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print ({effectiveCardsList.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={
+                  isGeneratingPdf || 
+                  isInvalidDate ||
+                  (cardFormat === 'qr_digital' ? selectedMembersList.length === 0 : manualCardCount < 1)
+                }
+                className={`py-3 px-3 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border border-slate-700 ${
+                  isInvalidDate
+                    ? 'bg-slate-800 cursor-not-allowed opacity-40'
+                    : 'bg-slate-800 hover:bg-slate-700 cursor-pointer'
+                }`}
+              >
+                {isGeneratingPdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Download PDF</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT PREVIEW PANEL */}
+        <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative ${
+          activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
+        }`}>
+          
+          {/* Zoom floating toolbar */}
+          <div className="absolute top-4 right-4 z-10 animate-fade-in">
+            <div className="bg-[var(--bg-input)] border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
+              <button 
+                onClick={() => setZoom(prev => Math.max(50, prev - 25))}
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                title="Zoom layout preview out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className="font-mono font-bold text-[10px] tracking-wider text-[var(--color-text)] w-12 text-center select-none">
+                {zoom}%
+              </span>
+              <button 
+                onClick={() => setZoom(prev => Math.min(150, prev + 25))}
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                title="Zoom layout preview in"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <div className="w-px h-4 bg-white/10" />
+              <button 
+                onClick={() => setZoom(100)}
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                title="Reset zoom actual scale"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Live Page Layout Sheet */}
+          <div className="flex-1 flex flex-col h-full bg-[var(--bg-card)] rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs card-sheet-container">
+            <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
+              <div className="text-left">
+                <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">Live Card Sheet Layout</h4>
+                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                  Format: {template.name} • Mode: {cardFormat === 'manual_template' ? 'Manual Template Asset' : 'Digital Dynamic QR'}
+                </span>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-xs font-mono font-bold text-[var(--color-primary)] block">
+                  {effectiveCardsList.length} Total Cards
+                </span>
+                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                  Requires {totalPagesRequired} {totalPagesRequired === 1 ? 'Page' : 'Pages'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 flex flex-col items-center justify-start gap-6 no-scrollbar">
+              <div 
+                style={{
+                  width: `${scaledWidthMm}mm`,
+                  height: `${scaledHeightMm}mm`,
+                }}
+                className="mx-auto relative shrink-0"
+              >
+                <div 
+                  style={{ 
+                    transform: `scale(${zoomFactor})`, 
+                    transformOrigin: 'top left',
+                    width: `${paperWidthMm}mm`,
+                    height: `${paperHeightMm * totalPagesRequired}mm` 
+                  }}
+                  className="absolute top-0 left-0"
+                >
+                  {Array.from({ length: totalPagesRequired }).map((_, pageIdx) => {
+                    const pageStartIndex = pageIdx * template.cardsPerPage;
+                    const pageCards = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+                    return (
+                      <div 
+                        key={`page-${pageIdx}`}
+                        className="page-sheet bg-white shadow-2xl relative border border-slate-300 overflow-hidden mx-auto shrink-0 mb-6 origin-top animate-fade-in"
+                        style={{
+                          width: `${paperWidthMm}mm`,
+                          height: `${paperHeightMm}mm`,
+                        }}
+                      >
+                        <div 
+                          className="cards-grid"
+                          style={{
+                            paddingTop: `${template.marginTopMm}mm`,
+                            paddingLeft: `${template.marginLeftMm}mm`,
+                            gridTemplateColumns: `repeat(${template.cols}, ${template.cardWidthMm}mm)`,
+                            gap: `${template.gapVerticalMm}mm ${template.gapHorizontalMm}mm`,
+                          }}
+                        >
+                          {pageCards.map((m, idx) => {
+                            if (cardFormat === 'manual_template') {
+                              return (
+                                <div
+                                  key={`preview-${pageIdx}-${idx}`}
+                                  className="card manual-card"
+                                  style={{
+                                    width: `${template.cardWidthMm}mm`,
+                                    height: `${template.cardHeightMm}mm`,
+                                  }}
+                                >
+                                  <img 
+                                    src={cardTemplateImg} 
+                                    alt="Manual Member Card Template" 
+                                    className="template-img"
+                                  />
+                                </div>
+                              );
+                            }
+
+                            const sub = getMemberSub(m.member_id);
+                            const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
+                            const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
+                            const isExp = new Date(finalExpDate) < new Date();
+                            const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+                            const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
+                            return (
+                              <div 
+                                key={`preview-${pageIdx}-${idx}-${m.id}`}
+                                className="card"
+                                style={{
+                                  width: `${template.cardWidthMm}mm`,
+                                  height: `${template.cardHeightMm}mm`,
+                                }}
+                              >
+                                {/* CARD TOP HEADER */}
+                                <div className="header">
+                                  <div className="gym-title">WOLF PALOMAR GYM</div>
+                                  <div className="header-red-line" />
+                                  <div className="gym-subtitle">MUAYTHAI BOXING</div>
+                                  <div className="gym-address">6B Judge A. Roldan St., Navotas City, Metro Manila</div>
+                                  <div className="gym-contact">09098893819 / 09054380792</div>
+                                </div>
+
+                                {/* CARD MIDDLE GRID */}
+                                <div className="main-content" style={{ display: 'flex', gap: '2.5mm', alignItems: 'center', flex: 1, minHeight: 0, margin: '0.5mm 0' }}>
+                                  
+                                  {/* QR Code Container */}
+                                  <div className="qr-wrapper" style={{ background: '#ffffff', padding: '1.2mm', borderRadius: '2mm', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22mm', height: '22mm', flexShrink: 0, position: 'relative' }}>
+                                    <img 
+                                      src={qrImg} 
+                                      alt="QR" 
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: isExp ? 0.25 : 1 }} 
+                                    />
+                                    {isExp && (
+                                      <div className="expired-overlay" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(220, 38, 38, 0.85)', color: '#ffffff', fontSize: '5pt', fontWeight: 900, textTransform: 'uppercase', textAlign: 'center', borderRadius: '2mm', lineHeight: 1.1 }}>
+                                        <span>EXPIRED</span>
+                                        <span>BADGE</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Dynamic Fields */}
+                                  <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}>
+                                    
+                                    {/* FULL NAME */}
+                                    <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>
+                                      <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
+                                        FULL NAME
+                                      </span>
+                                      <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.6mm 1.2mm', fontSize: '6pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                                        {m.full_name.toUpperCase()}
+                                      </div>
+                                    </div>
+
+                                    {/* CONTACT NUMBER */}
+                                    <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>
+                                      <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
+                                        CONTACT NUMBER
+                                      </span>
+                                      <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.6mm 1.2mm', fontSize: '6pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
+                                        {m.phone || 'N/A'}
+                                      </div>
+                                    </div>
+
+                                    {/* DATES ROW */}
+                                    <div className="dates-row" style={{ display: 'flex', gap: '1mm', alignItems: 'flex-end' }}>
+                                      <div className="field-group" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, position: 'static', margin: 0, padding: 0 }}>
+                                        <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
+                                          ISSUE DATE
+                                        </span>
+                                        <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.5mm 0.4mm', fontSize: '5pt', fontWeight: 800, textAlign: 'center', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                          {new Date(issueDate).toLocaleDateString()}
+                                        </div>
+                                      </div>
+
+                                      <div className="vertical-red-divider" style={{ width: '0.3mm', height: '6mm', backgroundColor: '#dc2626', flexShrink: 0, marginBottom: '0.2mm' }} />
+
+                                      <div className="field-group" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, position: 'static', margin: 0, padding: 0 }}>
+                                        <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
+                                          EXPIRATION
+                                        </span>
+                                        <div className="field-box" style={{ background: '#ffffff', color: isExp ? '#dc2626' : '#000000', borderRadius: '1mm', padding: '0.5mm 0.4mm', fontSize: '5pt', fontWeight: 800, textAlign: 'center', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                          {new Date(finalExpDate).toLocaleDateString()}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                  </div>
+
+                                </div>
+
+                                {/* FOOTER */}
+                                <div>
+                                  <div className="red-line" />
+                                  <div className="footer-text">
+                                    NON-REFUNDABLE &nbsp;•&nbsp; NON-TRANSFERRABLE &nbsp;•&nbsp; BE RESPONSIBLE WITH EQUIPMENT
+                                  </div>
+                                </div>
+
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>,
+    document.body
+  );
+};

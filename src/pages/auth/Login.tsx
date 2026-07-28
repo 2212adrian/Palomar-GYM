@@ -56,7 +56,6 @@ const recoverySchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 type RecoveryFormValues = z.infer<typeof recoverySchema>;
 
-// ─── Theme initializer (runs once, before first render) ──────────────────────
 function getInitialTheme(): 'dark' | 'light' {
   if (typeof window === 'undefined') return 'dark';
   const saved = localStorage.getItem('theme');
@@ -72,12 +71,10 @@ export const Login: React.FC = () => {
   const from = (location.state as any)?.from?.pathname || '/dashboard';
   const safeFrom = from === '/login' ? '/dashboard' : from;
 
-  // ─── Detect Sandboxed Preview Mode ────────────────────────────────────────
   const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
   const [gymConfig, setGymConfig] = useState<any>(null);
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
 
-  // Dynamic fallbacks matching gym_profile database schema default values
   const activeGymAddress = gymConfig?.gymAddress || '123 Sample Street, Barangay Central, Quezon City, Metro Manila';
   const activeContactName1 = gymConfig?.contactName1 || 'Staff Ryan';
   const activeContactNumber1 = gymConfig?.contactNumber1 || '09762607481';
@@ -85,7 +82,6 @@ export const Login: React.FC = () => {
   const activeContactNumber2 = gymConfig?.contactNumber2 || '09123456789';
   const activeEmailAddress = gymConfig?.emailAddress || 'contact@wolfpalomargym.com';
 
-  // ─── Core UI States ────────────────────────────────────────────────────────
   const [isAssetPreloaded, setIsAssetPreloaded] = useState<boolean>(false);
   const [isReady, setIsReady] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -94,15 +90,14 @@ export const Login: React.FC = () => {
     return false;
   });
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [curtainClosing, setCurtainClosing] = useState<boolean>(false);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
-  // Responsive state to prevent duplicate inputs from stealing react-hook-form refs
   const [isMobile, setIsMobile] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
-  // ─── Resolve Dynamic Media Assets ─────────────────────────────────────────
   const defaultLogo = useMemo(() => {
     return theme === 'dark' ? landscapeLogoDark : landscapeLogoLight;
   }, [theme]);
@@ -117,7 +112,6 @@ export const Login: React.FC = () => {
 
   const activeGymDescription = gymConfig?.gymDescription || 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
   
-  // Track window resize to toggle mobile layout
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleResize = () => setIsMobile(window.innerWidth < 640);
@@ -125,7 +119,6 @@ export const Login: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Retrieve active config
   useEffect(() => {
     const loadBranding = async () => {
       let activeConfig = null;
@@ -186,7 +179,6 @@ export const Login: React.FC = () => {
     loadBranding();
   }, [isPreview]);
 
-  // ─── Submitting & Visual Error States ──────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -195,29 +187,24 @@ export const Login: React.FC = () => {
   const [shakePassword, setShakePassword] = useState<boolean>(false);
   const [shakeRecovery, setShakeRecovery] = useState<boolean>(false);
 
-  // ─── Password Recovery States ──────────────────────────────────────────────
   const [recoveryEmail, setRecoveryEmail] = useState<string>('');
   const [isRecoverySubmitting, setIsRecoverySubmitting] = useState<boolean>(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
-  // ─── Modal States ──────────────────────────────────────────────────────────
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
-  // ─── Carousel & Typewriter States ──────────────────────────────────────────
   const [activeSlide, setActiveSlide] = useState<number>(0);
   const [typewriterText, setTypewriterText] = useState<string>('');
   const [phraseIndex, setPhraseIndex] = useState<number>(0);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // ─── Refs ──────────────────────────────────────────────────────────────────
   const carouselBgRef = useRef<HTMLDivElement>(null);
   const mouseCoordinates = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lerpedCoordinates = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const rafId = useRef<number | null>(null);
   const isHovering = useRef<boolean>(true);
 
-  // ─── Form Setup ────────────────────────────────────────────────────────────
   const {
     register: registerLogin,
     handleSubmit: handleLoginSubmit,
@@ -244,7 +231,6 @@ export const Login: React.FC = () => {
   const watchPassword = watchLogin('password');
   const watchRecoveryEmail = watchRecovery('email');
 
-  // Dynamic input label swapping based on content
   const dynamicLabel = useMemo(() => {
     if (!watchIdentifier || watchIdentifier.trim().length === 0) {
       return 'Username / Email Address';
@@ -252,14 +238,13 @@ export const Login: React.FC = () => {
     return watchIdentifier.includes('@') ? 'Email Address' : 'Username';
   }, [watchIdentifier]);
 
-  // Clear transition states
   useEffect(() => {
     sessionStorage.removeItem('outroActive');
     sessionStorage.removeItem('playDashboardIntro');
     setIsLoggingIn(false);
+    setCurtainClosing(false);
   }, []);
 
-  // Theme Sync
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
@@ -267,7 +252,6 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Session Guard
   useEffect(() => {
     if (isPreview) return;
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
@@ -280,7 +264,6 @@ export const Login: React.FC = () => {
     }
   }, [initialized, user, navigate, isLoggingIn, location.state, isPreview]);
 
-  // Handle OAuth Errors
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const query = new URLSearchParams(window.location.search);
@@ -297,7 +280,6 @@ export const Login: React.FC = () => {
     }
   }, []);
 
-  // Deduplicate Auth Store Errors
   useEffect(() => {
     if (storeError) {
       toast.error(storeError, { toastId: 'unauthorized-access-toast' });
@@ -306,7 +288,6 @@ export const Login: React.FC = () => {
     }
   }, [storeError, setError]);
 
-  // Intro Transition Activation
   useEffect(() => {
     const hasLoggedOut = 
       (location.state as any)?.loggedOut || 
@@ -334,7 +315,6 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [location.search, location.state, navigate, isPreview]);
 
-  // Carousel Cycle
   useEffect(() => {
     if (!isAssetPreloaded) return;
     const interval = setInterval(() => {
@@ -343,7 +323,6 @@ export const Login: React.FC = () => {
     return () => clearInterval(interval);
   }, [gymConfig, activeCarouselImages.length, isAssetPreloaded]);
 
-  // Typewriter Loop
   useEffect(() => {
     if (!isAssetPreloaded) return;
     const current = TYPEWRITER_PHRASES[phraseIndex];
@@ -372,7 +351,6 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [typewriterText, isDeleting, phraseIndex, isAssetPreloaded]);
 
-  // Parallax System
   useEffect(() => {
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
     if (isTouch) return;
@@ -448,7 +426,6 @@ export const Login: React.FC = () => {
     };
   }, []);
 
-  // Helpers
   const triggerShake = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(true);
     setTimeout(() => setter(false), 500);
@@ -469,7 +446,6 @@ export const Login: React.FC = () => {
     setRecoveryError(null);
   };
 
-  // Auth Submission Logic
   const handleGoogleLogin = async () => {
     if (isPreview) return;
     setIsGoogleSubmitting(true);
@@ -536,7 +512,6 @@ export const Login: React.FC = () => {
         loggedInUser?.id ?? undefined
       );
 
-      // Toast notification on successful login
       toast.success(`Welcome back, ${targetName}!`, {
         toastId: 'login-success-toast',
       });
@@ -544,7 +519,11 @@ export const Login: React.FC = () => {
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
       setIsLoggingIn(true);
-      setIsReady(false);
+
+      // Trigger closing curtain animation across screen
+      setTimeout(() => {
+        setCurtainClosing(true);
+      }, 20);
 
       await checkSession();
 
@@ -553,7 +532,7 @@ export const Login: React.FC = () => {
         const userProfile = (useAuthStore.getState() as any).profile;
         const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFrom;
         navigate(targetRoute, { replace: true });
-      }, 1800);
+      }, 1500);
     } catch (err: any) {
       toast.error(err.message || 'Invalid username, email, or password.');
       setLoginValue('password', '');
@@ -609,11 +588,8 @@ export const Login: React.FC = () => {
     resetRecovery();
   };
 
-  // ─── Inner Form JSX for Login ─────────────────────────────────────────────
   const renderLoginForm = () => (
     <div className="w-full font-body select-text">
-      
-      {/* Gym Logo */}
       <div className="flex justify-center pt-2 mb-3 relative z-20">
         <img 
           src={activeLogo} 
@@ -622,7 +598,6 @@ export const Login: React.FC = () => {
         />
       </div>
 
-      {/* Title Section */}
       <div className="text-center relative z-20 mb-4 sm:mb-2">
         <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-0.5 select-none">
           LOGIN
@@ -632,10 +607,7 @@ export const Login: React.FC = () => {
         </p>
       </div>
 
-      {/* Login Form */}
       <form onSubmit={handlePreLoginSubmit} className="space-y-3 font-body relative z-20 pointer-events-auto">
-        
-        {/* Username/Email Input */}
         <div className="relative z-30">
           <Input
             {...registerLogin('usernameOrEmail')}
@@ -651,7 +623,6 @@ export const Login: React.FC = () => {
           />
         </div>
 
-        {/* Password Input */}
         <div className="relative z-30">
           <Input
             {...registerLogin('password')}
@@ -677,7 +648,6 @@ export const Login: React.FC = () => {
           />
         </div>
 
-        {/* Terms Checkbox */}
         <div className="flex items-center gap-2 pt-1 pb-1">
           <input 
             type="checkbox" 
@@ -692,7 +662,6 @@ export const Login: React.FC = () => {
           </label>
         </div>
 
-        {/* Primary Login Button */}
         <button
           type="submit"
           disabled={isSubmitting}
@@ -708,14 +677,12 @@ export const Login: React.FC = () => {
           )}
         </button>
 
-        {/* Separator Divider */}
         <div className="flex items-center my-2 gap-3 select-none">
           <div className="flex-1 border-t border-slate-300/60 dark:border-white/10" />
           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase">or</span>
           <div className="flex-1 border-t border-slate-300/60 dark:border-white/10" />
         </div>
 
-        {/* Google OAuth Button */}
         <button
           type="button"
           onClick={handleGoogleLogin}
@@ -727,10 +694,7 @@ export const Login: React.FC = () => {
         </button>
       </form>
 
-      {/* Bottom Notice & Footer */}
       <div className="space-y-3 pt-3 relative z-20 font-body">
-        
-        {/* Access Protocol Notice Box */}
         <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left shadow-xs">
           <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
             <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-red-500 shrink-0" />
@@ -741,7 +705,6 @@ export const Login: React.FC = () => {
           </p>
         </div>
 
-        {/* Forgot Password Toggle */}
         <div className="text-center text-[12px] font-bold text-slate-500 dark:text-slate-400 select-none">
           <button 
             type="button"
@@ -752,7 +715,6 @@ export const Login: React.FC = () => {
           </button>
         </div>
 
-        {/* Footer Copyright Notice */}
         <div className="text-center text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium tracking-tight select-none">
           © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
         </div>
@@ -760,25 +722,21 @@ export const Login: React.FC = () => {
     </div>
   );
 
-  // ─── Inner Form JSX for Recovery ──────────────────────────────────────────
   const renderRecoveryForm = () => (
     <div className="w-full font-body select-text">
-      {/* Gym Logo */}
       <div className="flex justify-center pt-2 mb-3 relative z-20">
         <img 
           src={activeLogo} 
           alt="Wolf Palomar Logo" 
-          className="h-16 sm:h-20  object-contain drop-shadow-lg transition-all duration-300 transform hover:scale-105" 
+          className="h-16 sm:h-20 object-contain drop-shadow-lg transition-all duration-300 transform hover:scale-105" 
         />
       </div>
 
-      {/* Header & Indicator Section */}
       <div className="text-center relative z-20">
         <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-1 select-none">
           RECOVERY MODE
         </h1>
         
-        {/* Indicator underline bar and dot */}
         <div className="flex items-center justify-center gap-1.5 mb-4 select-none">
           <div className="w-10 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-600 rounded-full transition-colors duration-500" />
           <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
@@ -822,7 +780,6 @@ export const Login: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer Elements */}
       <div className="space-y-4 font-body mt-4">
         <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left transition-colors duration-500">
           <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
@@ -852,10 +809,45 @@ export const Login: React.FC = () => {
     </div>
   );
 
+  // ─── CRITICAL FIX: EXCLUDE `user` WHEN `isLoggingIn` IS TRUE ───────────────
+  if (!isPreview && (!initialized || (user && !isLoggingIn))) {
+    return (
+      <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
+        {/* Ambient Radial Glow Orb */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/10 dark:bg-red-600/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        
+        <div className="relative z-10 flex flex-col items-center max-w-sm px-6 text-center space-y-5 animate-fade-in">
+          {/* Branded Gym Logo */}
+          <img 
+            src={activeLogo} 
+            alt="Wolf Palomar Logo" 
+            className="h-16 sm:h-20 object-contain drop-shadow-xl animate-pulse" 
+          />
+
+          {/* Verification Spinner & Subtitle */}
+          <div className="flex flex-col items-center space-y-3 pt-2">
+            <div className="relative flex items-center justify-center">
+              <div className="w-9 h-9 rounded-full border-2 border-blue-600/20 dark:border-red-600/20 border-t-blue-600 dark:border-t-red-600 animate-spin" />
+              <ShieldAlert className="w-4 h-4 text-blue-600 dark:text-red-500 absolute" />
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-xs font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
+                {user ? 'Redirecting to System...' : 'Checking Credentials...'}
+              </h2>
+              <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500 tracking-wider uppercase">
+                Verifying active session
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-page)] font-sans text-[var(--color-text)] font-body">
+    <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-page,#0c0e12)] bg-slate-900 dark:bg-[#0c0e12] font-sans text-[var(--color-text)] font-body">
       
-      {/* Keyframe Animations & Liquid Ambient Styles */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
@@ -874,13 +866,13 @@ export const Login: React.FC = () => {
         .animate-liquid-2 { animation: liquidFloat2 20s ease-in-out infinite; }
       `}} />
 
-      {/* ── Ambient Mobile Liquid Background Orbs ── */}
+      {/* Ambient Mobile Liquid Background Orbs */}
       <div className="block sm:hidden absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
         <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-indigo-400/20 to-sky-300/30 dark:from-red-600/25 dark:via-rose-800/15 dark:to-indigo-950/30 blur-3xl" />
         <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-indigo-500/20 via-blue-300/20 to-purple-400/15 dark:from-rose-950/30 dark:via-red-900/20 dark:to-indigo-900/20 blur-3xl" />
       </div>
 
-      {/* ── Live Preview Mode Overlay Banner ── */}
+      {/* Live Preview Mode Overlay Banner */}
       {isPreview && (
         <div className="absolute top-0 inset-x-0 z-[200] bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2 select-none">
           <span>✨ Live Brand Preview Mode (Form Inputs &amp; Actions Disabled)</span>
@@ -893,7 +885,7 @@ export const Login: React.FC = () => {
         </div>
       )}
 
-      {/* ── Theme Toggle Switch ── */}
+      {/* Theme Toggle Switch */}
       <button
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         className={`absolute top-4 right-4 z-[200] flex items-center gap-2.5 bg-white/80 dark:bg-neutral-900/80 border border-slate-200/80 dark:border-white/10 rounded-full px-3.5 py-2 shadow-lg backdrop-blur-xl cursor-pointer hover:opacity-95 transition-all duration-700 ease-out select-none pointer-events-auto ${
@@ -931,7 +923,7 @@ export const Login: React.FC = () => {
       {/* ─── MAIN SPLIT CONTAINER ─── */}
       <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}>
 
-        {/* ── SIBLING 1: LEFT COLUMN / LOGIN ── */}
+        {/* SIBLING 1: LEFT COLUMN / LOGIN */}
         <div 
           className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ${
             isLoggingIn 
@@ -949,7 +941,6 @@ export const Login: React.FC = () => {
                 : 'translateX(0)' 
           }}
         >
-          {/* Background Hex Pattern */}
           <div 
             className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7"
             style={{ 
@@ -958,7 +949,6 @@ export const Login: React.FC = () => {
             }}
           />
 
-          {/* Dynamically Render Layout Based on Screen Size (Fixes Input Ref Lock) */}
           {!isMobile ? (
             <div className="w-[420px] max-w-full relative z-10">
               <Card 
@@ -977,7 +967,7 @@ export const Login: React.FC = () => {
           )}
         </div>
 
-        {/* ── SIBLING 2: RIGHT PANEL (Carousel & Gym Details) ── */}
+        {/* SIBLING 2: RIGHT PANEL (Carousel & Gym Details) */}
         <div 
           className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none ${
             isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -1027,7 +1017,6 @@ export const Login: React.FC = () => {
               <span className="text-blue-500 dark:text-red-600 animate-[blink_0.8s_infinite]">|</span>
             </h2>
             
-            {/* Carousel Info Card */}
             <Card expandable={true} variant="glass" className="max-w-lg h-auto">
               <p className="text-xs text-slate-200 leading-relaxed font-bold">
                 {activeGymDescription}
@@ -1062,7 +1051,7 @@ export const Login: React.FC = () => {
           <div className="auth-divider-line auth-line-right pointer-events-none" />
         </div>
 
-        {/* ── SIBLING 3: RECOVERY VIEW ── */}
+        {/* SIBLING 3: RECOVERY VIEW */}
         <div 
           className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
             isFlipped && !isLoggingIn 
@@ -1078,7 +1067,6 @@ export const Login: React.FC = () => {
               'transform 1.2s cubic-bezier(0.77,0,0.175,1), opacity 1.2s cubic-bezier(0.77,0,0.175,1), visibility 1.2s',
           }}
         >
-          {/* Hexagon pattern background */}
           <div 
             className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.18] dark:opacity-[0.1] dark:invert transition-opacity duration-300 sm:-top-14 sm:left-4 sm:w-[110%] sm:h-[110%] sm:-rotate-7"
             style={{ 
@@ -1087,7 +1075,6 @@ export const Login: React.FC = () => {
             }}
           />
 
-          {/* Dynamically Render Layout Based on Screen Size (Fixes Input Ref Lock) */}
           {!isMobile ? (
             <div className="w-[420px] max-w-full relative z-10">
               <Card
@@ -1107,7 +1094,21 @@ export const Login: React.FC = () => {
 
       </div>
 
-      {/* ── MODALS ── */}
+      {/* LOGIN SUCCESS OUTRO CURTAIN */}
+      {isLoggingIn && (
+        <div
+          className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1400ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+            curtainClosing ? 'translate-x-0' : '-translate-x-[250%]'
+          }`}
+        >
+          <div className="relative w-full h-full bg-[var(--bg-page,#0c0e12)] bg-slate-900 dark:bg-[#0c0e12]">
+            <div className="absolute top-0 right-full h-full w-16 sm:w-32 bg-gradient-to-r from-transparent to-blue-600 dark:to-red-600 opacity-80 blur-xl sm:blur-2xl pointer-events-none" />
+            <div className="absolute top-0 right-0 h-full w-[2px] sm:w-[3px] bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)]" />
+          </div>
+        </div>
+      )}
+
+      {/* MODALS */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold font-body text-center">
           If you leave recovery, you must re-verify credentials. Discard this operation?

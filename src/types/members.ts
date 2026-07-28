@@ -1,7 +1,7 @@
 // src/types/members.ts
 
 export type MemberStatus = 'Active' | 'Suspended';
-export type SubscriptionStatus = 'Active' | 'Expired' | 'Inactive';
+export type SubscriptionStatus = 'Active' | 'Expired' | 'Inactive' | 'Voided';
 export type CardStatus = 'Active' | 'Inactive';
 export type RegistrationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Expired';
 export type PaymentStatus = 'Pending' | 'Paid' | 'Cancelled' | 'Refunded';
@@ -39,6 +39,12 @@ export interface Subscription {
   receipt_number: string;
   created_at: string;
   updated_at: string;
+
+  // Void tracking metadata
+  voided_at?: string;
+  voided_by?: string;
+  void_reason?: string;
+  void_notes?: string;
 }
 
 export interface MemberCard {

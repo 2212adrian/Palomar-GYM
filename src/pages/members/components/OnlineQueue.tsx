@@ -83,7 +83,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     setUndoState({
       isOpen: true,
       targetReg: reg,
-      message: `Rejected pre-registration ticket for ${reg.full_name} (${reg.id}).`,
+      message: `Rejected ticket for ${reg.full_name} (${reg.id}).`,
     });
   };
 
@@ -343,27 +343,27 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
 
         return (
           <div className="flex items-center gap-3 py-1 text-left">
-            <div className="w-8 h-8 rounded-lg bg-zinc-800 text-slate-350 flex items-center justify-center font-heading text-xs font-bold shadow-inner">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-heading text-xs font-bold border border-slate-200 dark:border-white/5">
               {item.full_name[0]}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-xs block text-slate-900 dark:text-white">{item.full_name}</span>
                 {isRestricted ? (
-                  <span className="text-[8px] font-mono bg-red-500/10 text-red-500 border border-red-500/20 px-1.5 py-0.2 rounded font-bold">
+                  <span className="text-[8px] font-mono bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-1.5 py-0.2 rounded font-bold">
                     RESTRICTED (&lt;12 YRS)
                   </span>
                 ) : isMinor ? (
-                  <span className="text-[8px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded font-bold">
+                  <span className="text-[8px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded font-bold">
                     MINOR ({age} YRS)
                   </span>
                 ) : (
-                  <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2 rounded font-bold">
+                  <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2 rounded font-bold">
                     ADULT ({age} YRS)
                   </span>
                 )}
               </div>
-              <span className="text-[10px] text-slate-400 font-mono block mt-0.5 leading-none">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block mt-0.5 leading-none">
                 {item.id} • {item.gender}
               </span>
             </div>
@@ -377,7 +377,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       render: (item) => (
         <div className="text-left leading-tight">
           <span className="font-mono text-xs font-bold block text-slate-800 dark:text-slate-200">{item.phone}</span>
-          <span className="text-[10px] text-slate-400 block truncate max-w-44 mt-0.5">{item.email || 'No Email'}</span>
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate max-w-44 mt-0.5">{item.email || 'No Email'}</span>
         </div>
       )
     },
@@ -386,7 +386,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       header: 'Preferred Plan',
       sortable: true,
       render: (item) => (
-        <span className="font-sans font-bold text-xs text-emerald-500 block">
+        <span className="font-sans font-bold text-xs text-emerald-600 dark:text-emerald-400 block">
           {item.preferred_plan}
         </span>
       )
@@ -397,13 +397,13 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       render: (item) => {
         if (item.parent_consent_required) {
           return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <ShieldCheck className="w-3 h-3 text-amber-400" /> Parent E-Consent
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+              <ShieldCheck className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Parent E-Consent
             </span>
           );
         }
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-zinc-800 text-slate-400 border border-white/5">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5">
             Self-Certified
           </span>
         );
@@ -414,7 +414,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       header: 'Submitted',
       sortable: true,
       render: (item) => (
-        <span className="font-mono text-[10px] text-slate-400">
+        <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
           {new Date(item.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </span>
       )
@@ -427,7 +427,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
         <div className="flex items-center justify-end gap-1.5 select-none">
           <button 
             onClick={() => setSelectedReg(item)} 
-            className="p-1.5 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-white rounded-lg cursor-pointer transition-colors border border-(--border-color)" 
+            className="p-1.5 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg cursor-pointer transition-colors border border-slate-200 dark:border-white/5" 
             title="Preview full ticket metadata"
           >
             <Eye className="w-4 h-4" />
@@ -435,7 +435,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
           
           <button 
             onClick={() => handleInitiateReject(item)} 
-            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg border border-red-500/20 cursor-pointer transition-colors" 
+            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-lg border border-red-500/20 cursor-pointer transition-colors" 
             title="Reject submission"
           >
             <XSquare className="w-4 h-4" />
@@ -459,21 +459,21 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 select-none">
         <div>
           <h3 className="font-heading text-xs tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase font-bold">Online Pre-Registrations Queue</h3>
-          <span className="text-[10px] font-mono text-slate-400 mt-0.5 block">Active Lobby Poster Signature: <span className="font-bold text-slate-300">{activePosterToken}</span></span>
+          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5 block">Active Lobby Poster Signature: <span className="font-bold text-slate-700 dark:text-slate-300">{activePosterToken}</span></span>
         </div>
         
         <div className="flex items-center gap-2">
           <button 
             onClick={handleOpenRegistrationPortal} 
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
             title="Open Anonymous Self-Service Pre-Registration Page in new tab"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Test Registration Form
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Open Pre-Registration Form
           </button>
 
           <button 
             onClick={handlePrintPoster} 
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
             title="Print Physical QR registration Poster with Dynamic Token Expiration"
           >
             <Printer className="w-3.5 h-3.5 text-blue-500" /> Print QR Poster
@@ -481,7 +481,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
           
           <button 
             onClick={fetchQueue} 
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Sync Queue
           </button>
@@ -509,33 +509,31 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
       )}
 
       {/* Undo Toast Notification for Rejection */}
-      <div className="fixed bottom-6 right-6 z-150 pointer-events-none">
-        <UndoToast
-          isOpen={undoState.isOpen}
-          message={undoState.message}
-          duration={5}
-          onConfirm={handleConfirmReject}
-          onUndo={handleUndoReject}
-          onClose={handleUndoReject}
-        />
-      </div>
+      <UndoToast
+        isOpen={undoState.isOpen}
+        message={undoState.message}
+        duration={5}
+        onConfirm={handleConfirmReject}
+        onUndo={handleUndoReject}
+        onClose={handleUndoReject}
+      />
 
       {/* DETAILED PREVIEW MODAL */}
       {selectedReg && createPortal(
-        <div className="fixed inset-0 z-130 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+        <div className="fixed inset-0 z-130 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/75 backdrop-blur-md">
           <div className="bg-(--bg-card) border border-(--border-color) p-6 rounded-3xl w-full max-w-xl shadow-2xl space-y-4 text-left max-h-[85vh] overflow-y-auto font-body">
             
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-(--border-color) pb-3 select-none">
               <div className="space-y-0.5">
-                <span className="text-[9px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full font-bold">
+                <span className="text-[9px] font-mono text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full font-bold">
                   {selectedReg.id}
                 </span>
                 <h4 className="font-heading text-sm tracking-wider uppercase font-bold text-slate-900 dark:text-white">
                   Submission Registry Ticket
                 </h4>
               </div>
-              <button onClick={() => setSelectedReg(null)} className="p-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setSelectedReg(null)} className="p-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -574,7 +572,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
                 </div>
                 <div>
                   <span className="text-slate-400 uppercase text-[9px] block">Preferred Plan</span>
-                  <span className="text-emerald-500 font-bold">{selectedReg.preferred_plan}</span>
+                  <span className="text-emerald-600 dark:text-emerald-500 font-bold">{selectedReg.preferred_plan}</span>
                 </div>
                 <div className="col-span-2 sm:col-span-3">
                   <span className="text-slate-400 uppercase text-[9px] block">Home Address</span>
@@ -609,38 +607,38 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="font-heading text-[10px] tracking-widest uppercase font-bold text-amber-500">
+                    <span className="font-heading text-[10px] tracking-widest uppercase font-bold text-amber-600 dark:text-amber-500">
                       Parent / Legal Guardian Legal Verification
                     </span>
                   </div>
-                  <span className="text-[9px] font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
+                  <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
                     ✓ E-Consent Verified
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-zinc-900/60 dark:bg-zinc-900/90 rounded-2xl border border-(--border-color) text-xs font-semibold">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-100 dark:bg-zinc-900/90 rounded-2xl border border-(--border-color) text-xs font-semibold">
                   <div>
-                    <span className="text-slate-400 uppercase text-[9px] block">Parent Name</span>
-                    <span className="text-amber-400 font-bold">{selectedReg.parent_name || 'N/A'}</span>
+                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Name</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-bold">{selectedReg.parent_name || 'N/A'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 uppercase text-[9px] block">Relationship</span>
-                    <span className="text-slate-200">{selectedReg.parent_relationship || 'N/A'}</span>
+                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Relationship</span>
+                    <span className="text-slate-800 dark:text-slate-200">{selectedReg.parent_relationship || 'N/A'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 uppercase text-[9px] block">Parent Phone</span>
-                    <span className="font-mono text-amber-400">{selectedReg.parent_phone || 'N/A'}</span>
+                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Phone</span>
+                    <span className="font-mono text-amber-600 dark:text-amber-400">{selectedReg.parent_phone || 'N/A'}</span>
                   </div>
                   {selectedReg.parent_email && (
                     <div className="col-span-2">
-                      <span className="text-slate-400 uppercase text-[9px] block">Parent Email</span>
-                      <span className="text-slate-200 truncate block">{selectedReg.parent_email}</span>
+                      <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Email</span>
+                      <span className="text-slate-800 dark:text-slate-200 truncate block">{selectedReg.parent_email}</span>
                     </div>
                   )}
                   {selectedReg.consent_date && (
                     <div>
-                      <span className="text-slate-400 uppercase text-[9px] block">Consent Timestamp</span>
-                      <span className="text-slate-300 font-mono text-[10px]">
+                      <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Consent Timestamp</span>
+                      <span className="text-slate-600 dark:text-slate-300 font-mono text-[10px]">
                         {new Date(selectedReg.consent_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
@@ -650,30 +648,30 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
                 {/* E-Signatures Display */}
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <div>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                      <FileSignature className="w-3 h-3 text-blue-400" /> Applicant Signature
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                      <FileSignature className="w-3 h-3 text-blue-500 dark:text-blue-400" /> Applicant Signature
                     </span>
                     {selectedReg.applicant_signature ? (
                       <div className="p-1 bg-white rounded-xl border border-slate-300 h-16 flex items-center justify-center">
                         <img src={selectedReg.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
                       </div>
                     ) : (
-                      <div className="p-2 bg-zinc-900/50 rounded-xl border border-zinc-800 text-[10px] text-slate-500 italic text-center">
+                      <div className="p-2 bg-slate-100 dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800 text-[10px] text-slate-500 italic text-center">
                         No signature attached
                       </div>
                     )}
                   </div>
 
                   <div>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                      <FileSignature className="w-3 h-3 text-amber-400" /> Parent/Guardian Signature
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                      <FileSignature className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Parent/Guardian Signature
                     </span>
                     {selectedReg.parent_signature ? (
                       <div className="p-1 bg-white rounded-xl border border-slate-300 h-16 flex items-center justify-center">
                         <img src={selectedReg.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
                       </div>
                     ) : (
-                      <div className="p-2 bg-zinc-900/50 rounded-xl border border-zinc-800 text-[10px] text-slate-500 italic text-center">
+                      <div className="p-2 bg-slate-100 dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800 text-[10px] text-slate-500 italic text-center">
                         No signature attached
                       </div>
                     )}
@@ -684,7 +682,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
             )}
 
             {/* Submission Footer Metadata */}
-            <div className="pt-2 border-t border-(--border-color) text-[10px] text-slate-400 flex justify-between items-center font-mono">
+            <div className="pt-2 border-t border-(--border-color) text-[10px] text-slate-500 dark:text-slate-400 flex justify-between items-center font-mono">
               <span>Submitted: {new Date(selectedReg.submitted_at).toLocaleString('en-US')}</span>
               <span className="italic">{selectedReg.notes || 'No extra notes'}</span>
             </div>

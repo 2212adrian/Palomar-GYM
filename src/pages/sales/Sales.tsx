@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
+// src/pages/sales/Sales.tsx
+import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   format, 
@@ -17,9 +18,12 @@ import {
   RotateCcw, 
   ShoppingBag, 
   FileSpreadsheet,
-  Printer 
+  Printer,
+  CircleDollarSign,
+  Package,
+  Search
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
 
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -46,6 +50,63 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 
 // Unified UI TimelineCard
 import { TimelineCard } from '../../components/ui/TimelineCard';
+
+// ─── ANIMATED TICKER HELPERS ───
+const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
+  const nodeRef = useRef<HTMLSpanElement>(null);
+  const prevValueRef = useRef(value);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+
+    const controls = animate(prevValueRef.current, value, {
+      duration: 1.1,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate(latest) {
+        node.textContent = `₱${latest.toFixed(2)}`;
+      },
+      onComplete() {
+        prevValueRef.current = value;
+      }
+    });
+
+    return () => controls.stop();
+  }, [value]);
+
+  return <span ref={nodeRef}>₱{value.toFixed(2)}</span>;
+};
+
+const AnimatedNumber: React.FC<{ value: number }> = ({ value }) => {
+  const nodeRef = useRef<HTMLSpanElement>(null);
+  const prevValueRef = useRef(value);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+
+    const controls = animate(prevValueRef.current, value, {
+      duration: 0.8,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate(latest) {
+        node.textContent = Math.round(latest).toString();
+      },
+      onComplete() {
+        prevValueRef.current = value;
+      }
+    });
+
+    return () => controls.stop();
+  }, [value]);
+
+  return <span ref={nodeRef}>{value}</span>;
+};
+
+const PAYMENT_FILTERS = [
+  { label: 'All', value: 'All' },
+  { label: 'Cash', value: 'Cash' },
+  { label: 'GCash', value: 'GCash' }
+];
 
 const isTransactionDeletable = (tx: any) => {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -123,6 +184,7 @@ export const Sales: React.FC = () => {
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
   const [ledgerSearch, setLedgerSearch] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash'>('All');
   
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -290,15 +352,24 @@ export const Sales: React.FC = () => {
 
   const filteredDayTransactions = useMemo(() => {
     return dayTransactions.filter((t: any) => {
-      const q = ledgerSearch.toLowerCase();
-      return (
+      const q = ledgerSearch.toLowerCase().trim();
+      const matchesSearch = q === '' ||
         t.product_name?.toLowerCase().includes(q) ||
         t.receipt_no?.toLowerCase().includes(q) ||
         t.id?.toLowerCase().includes(q) ||
-        t.payment_method?.toLowerCase().includes(q)
-      );
+        t.payment_method?.toLowerCase().includes(q) ||
+        t.reference_number?.toLowerCase().includes(q);
+
+      let matchesFilter = true;
+      if (paymentFilter === 'Cash') {
+        matchesFilter = (t.payment_method || '').toLowerCase().includes('cash') && !(t.payment_method || '').toLowerCase().includes('gcash');
+      } else if (paymentFilter === 'GCash') {
+        matchesFilter = (t.payment_method || '').toLowerCase().includes('gcash');
+      }
+
+      return matchesSearch && matchesFilter;
     });
-  }, [dayTransactions, ledgerSearch]);
+  }, [dayTransactions, ledgerSearch, paymentFilter]);
 
   const totalItems = filteredDayTransactions.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
@@ -315,8 +386,40 @@ export const Sales: React.FC = () => {
     return dayTransactions.reduce((acc, t) => acc + (Number(t.total_amount) || 0), 0);
   }, [dayTransactions]);
 
+  // Revenue dynamic scaling & color effect state
+  const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
+  const prevRevenueRef = useRef<number>(dailyRevenue);
+
+  useEffect(() => {
+    if (dailyRevenue > prevRevenueRef.current) {
+      setRevenueTrend('increasing');
+      const timer = setTimeout(() => {
+        setRevenueTrend('neutral');
+      }, 1500);
+      prevRevenueRef.current = dailyRevenue;
+      return () => clearTimeout(timer);
+    } else if (dailyRevenue < prevRevenueRef.current) {
+      setRevenueTrend('decreasing');
+      const timer = setTimeout(() => {
+        setRevenueTrend('neutral');
+      }, 1500);
+      prevRevenueRef.current = dailyRevenue;
+      return () => clearTimeout(timer);
+    }
+    prevRevenueRef.current = dailyRevenue;
+  }, [dailyRevenue]);
+
   const dailyCount = useMemo(() => {
     return dayTransactions.length;
+  }, [dayTransactions]);
+
+  const itemsSoldToday = useMemo(() => {
+    return dayTransactions.reduce((acc, tx) => {
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        return acc + tx.items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
+      }
+      return acc + (Number(tx.quantity) || 1);
+    }, 0);
   }, [dayTransactions]);
 
   const handleSaleSuccess = async (newTx: any) => {
@@ -449,16 +552,6 @@ export const Sales: React.FC = () => {
     if ((activeView as string) === 'register') {
       setActions(
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
-          
-          <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
-            <div className="text-left">
-              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
-              <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
-                ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-          </div>
-
           {role === 'admin' && (
             <>
               <Button
@@ -497,16 +590,6 @@ export const Sales: React.FC = () => {
       } else {
         setActions(
           <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
-            
-            <div className="hidden lg:flex items-center gap-3 px-5 py-2 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-2xl select-none leading-none shadow-sm shrink-0 animate-fade-in">
-              <div className="text-left">
-                <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 block uppercase">TODAY'S SALES</span>
-                <span className="text-lg font-heading text-(--color-primary) block mt-1.5 tracking-wider">
-                  ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
             <Button
               onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
               variant="secondary"
@@ -612,6 +695,79 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
+          {/* ─── TODAY'S SALES SUMMARY ─── */}
+          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-4 sm:px-6 py-4 shadow-sm animate-fade-in">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 items-center">
+              
+              {/* Transactions Metric (Left) */}
+              <div className="flex flex-col sm:flex-row items-center justify-start gap-2 sm:gap-3 min-w-0">
+                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                  <ShoppingBag className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-blue-500" />
+                </div>
+                <div className="min-w-0 text-center sm:text-left">
+                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                    Transactions
+                  </span>
+                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
+                    <AnimatedNumber value={dailyCount} />
+                  </span>
+                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                    Completed Today
+                  </span>
+                </div>
+              </div>
+
+              {/* Today's Revenue Metric (Center Highlighted with FX) */}
+              <div className="flex flex-col items-center justify-center text-center min-w-0 py-1 border-x border-(--border-color)/40 px-2 sm:px-4">
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                  Revenue
+                </span>
+                <motion.div
+                  animate={{
+                    scale: revenueTrend === 'increasing' ? 1.2 : revenueTrend === 'decreasing' ? 0.85 : 1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="my-1 flex items-center justify-center gap-1 sm:gap-1.5"
+                >
+                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 transition-colors duration-300 ${
+                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+                  }`} />
+                  <span className={`font-heading text-xl sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-500 truncate ${
+                    revenueTrend === 'increasing'
+                      ? 'text-emerald-500'
+                      : revenueTrend === 'decreasing'
+                      ? 'text-rose-500'
+                      : 'text-(--color-text)'
+                  }`}>
+                    <AnimatedCurrency value={dailyRevenue} />
+                  </span>
+                </motion.div>
+                <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                  Total Earnings
+                </span>
+              </div>
+
+              {/* Items Sold Metric (Right) */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 sm:gap-3 min-w-0">
+                <div className="min-w-0 text-center sm:text-right order-2 sm:order-1">
+                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                    Items Sold
+                  </span>
+                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
+                    <AnimatedNumber value={itemsSoldToday} />
+                  </span>
+                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                    Units Dispatched
+                  </span>
+                </div>
+                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-1 sm:order-2">
+                  <Package className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-emerald-500" />
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           <TimelineBar
             currentWeekStart={currentWeekStart}
             onWeekStartChange={setCurrentWeekStart}
@@ -619,6 +775,9 @@ export const Sales: React.FC = () => {
             onDayIndexChange={setSelectedDayIndex}
             searchQuery={ledgerSearch}
             onSearchQueryChange={setLedgerSearch}
+            activeFilter={paymentFilter}
+            onFilterChange={setPaymentFilter}
+            filterOptions={PAYMENT_FILTERS}
             role={role}
             searchPlaceholder="Search Transactions (Name, Receipt, Ref, Method)"
           />
@@ -660,20 +819,38 @@ export const Sales: React.FC = () => {
                 });
 
                 if (totalItems === 0) {
+                  const hasFilter = ledgerSearch.trim() !== '' || paymentFilter !== 'All';
+
                   return (
                     <motion.div
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center"
+                      className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
-                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-450 dark:text-zinc-600 mb-4 animate-pulse">
-                        <ShoppingBag className="w-8 h-8" />
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-455 dark:text-zinc-650 mb-4 animate-pulse">
+                        {hasFilter ? <Search className="w-8 h-8" /> : <ShoppingBag className="w-8 h-8" />}
                       </div>
-                      <h3 className="font-heading text-sm text-(--color-text) tracking-wider">NO TRANSACTIONS LOGGED</h3>
+                      <h3 className="font-heading text-sm text-(--color-text) tracking-wider uppercase">
+                        {hasFilter ? 'No sales match query' : 'NO TRANSACTIONS LOGGED'}
+                      </h3>
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
-                        No purchases or entries have been recorded for this specific date slot.
+                        {hasFilter
+                          ? 'Try modifying your search keywords or clear search filter.'
+                          : 'No purchases or entries have been recorded for this specific date slot.'}
                       </p>
+                      {hasFilter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLedgerSearch('');
+                            setPaymentFilter('All');
+                          }}
+                          className="mt-4 px-4 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                        >
+                          Clear Filters
+                        </button>
+                      )}
                     </motion.div>
                   );
                 }
@@ -924,13 +1101,13 @@ export const Sales: React.FC = () => {
           <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
             <div className="space-y-0.5 text-left select-none">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                TODAY'S SALES MADE
+                TODAY SUMMARY
               </span>
               <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                ₱{dailyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <AnimatedCurrency value={dailyRevenue} />
               </span>
               <span className="text-[9px] font-sans text-slate-500 block leading-none font-semibold">
-                {dailyCount} Transactions Completed
+                {dailyCount} Sales Recorded
               </span>
             </div>
 

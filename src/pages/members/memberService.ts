@@ -8,11 +8,13 @@ import type {
   OnlineRegistration, 
   ActivityLog, 
   MembershipSettings, 
-  PaymentMethod
+  PaymentMethod,
+  AttendanceRecord
 } from '../../types/members';
 
 export const STORAGE_KEYS = {
   MEMBERS: 'palomar_members',
+  DELETED_MEMBERS: 'palomar_gym_members_deleted',
   SUBSCRIPTIONS: 'palomar_subscriptions',
   CARDS: 'palomar_cards',
   RECEIPTS: 'palomar_receipts',
@@ -46,27 +48,55 @@ export const DEFAULT_SETTINGS: MembershipSettings = {
 
 export const prototypeStorage = {
   getCollection: <T>(key: string): T[] => {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    return JSON.parse(raw);
+    try {
+      let raw = localStorage.getItem(key);
+      if (!raw) {
+        if (key === STORAGE_KEYS.MEMBERS) {
+          raw = localStorage.getItem('palomar_gym_members');
+        } else if (key === STORAGE_KEYS.DELETED_MEMBERS) {
+          raw = localStorage.getItem('palomar_members_deleted');
+        }
+      }
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      console.error(`Error reading ${key} from storage:`, e);
+      return [];
+    }
   },
   getItem: <T>(key: string, defaultValue: T): T => {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify(defaultValue));
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        localStorage.setItem(key, JSON.stringify(defaultValue));
+        return defaultValue;
+      }
+      return JSON.parse(raw);
+    } catch (e) {
       return defaultValue;
     }
-    return JSON.parse(raw);
   },
   save: <T>(key: string, data: T): void => {
-    localStorage.setItem(key, JSON.stringify(data));
+    try {
+      const json = JSON.stringify(data);
+      localStorage.setItem(key, json);
+      // Fail-safe dual sync across all key conventions
+      if (key === STORAGE_KEYS.MEMBERS) {
+        localStorage.setItem('palomar_gym_members', json);
+      } else if (key === STORAGE_KEYS.DELETED_MEMBERS) {
+        localStorage.setItem('palomar_members_deleted', json);
+      }
+    } catch (e) {
+      console.error(`Error saving ${key} to storage:`, e);
+    }
   }
 };
 
-const generateUID = (prefix: string, list: { id: string }[]): string => {
+const generateUID = (prefix: string, list: any[]): string => {
   const numericIds = list
     .map(item => {
-      const match = item.id.match(/\d+/);
+      // Read member_id or receipt_number if present, otherwise id
+      const targetStr = item.member_id || item.receipt_number || item.id || '';
+      const match = targetStr.match(/\d+/);
       return match ? parseInt(match[0], 10) : 0;
     })
     .filter(val => !isNaN(val));
@@ -98,7 +128,15 @@ const writeAudit = (
 };
 
 export const memberService = {
-  getAll: (): Member[] => prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS),
+  getAll: (): Member[] => {
+    const list = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
+    return list.filter((m: any) => !m.deleted_at);
+  },
+
+  getById: (id: string): Member | undefined => {
+    const list = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
+    return list.find((m: Member) => m.id === id || m.member_id === id);
+  },
   
   create: (data: Omit<Member, 'id' | 'member_id' | 'created_at' | 'updated_at'>, user: string): Member => {
     const list = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
@@ -107,6 +145,7 @@ export const memberService = {
       ...data,
       id: `member-${Math.random().toString(36).substring(2, 9)}`,
       member_id: m_id,
+      status: data.status || 'Active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -117,7 +156,7 @@ export const memberService = {
 
   update: (id: string, updates: Partial<Member>, user: string): Member => {
     const list = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
-    const index = list.findIndex((m: Member) => m.id === id);
+    const index = list.findIndex((m: Member) => m.id === id || m.member_id === id);
     if (index === -1) throw new Error('Member profile not found.');
 
     const old = list[index];
@@ -131,7 +170,7 @@ export const memberService = {
   archive: (id: string, reason: string, user: string) => {
     const list = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
     const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-    const index = list.findIndex((m: Member) => m.id === id);
+    const index = list.findIndex((m: Member) => m.id === id || m.member_id === id);
     if (index === -1) throw new Error('Profile invalid.');
 
     const target = list[index];
@@ -140,24 +179,47 @@ export const memberService = {
       throw new Error(`Archiving rejected: ${target.full_name} has an active ${activeSub.plan_name} contract.`);
     }
 
+    const archivedMember = {
+      ...target,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user,
+      delete_reason: reason
+    };
+
     list.splice(index, 1);
     prototypeStorage.save(STORAGE_KEYS.MEMBERS, list);
 
-    const deletedKey = 'palomar_gym_members_deleted';
-    const deletedRaw = localStorage.getItem(deletedKey);
-    const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-    
-    deletedList.push({
-      id: target.id,
-      member_id: target.member_id,
-      full_name: target.full_name,
-      avatar_url: target.avatar_url || null,
-      membership_plan: 'Monthly Membership',
-      deleted_at: new Date().toISOString()
-    });
-    localStorage.setItem(deletedKey, JSON.stringify(deletedList));
+    const deletedList = prototypeStorage.getCollection<any>(STORAGE_KEYS.DELETED_MEMBERS);
+    prototypeStorage.save(STORAGE_KEYS.DELETED_MEMBERS, [archivedMember, ...deletedList]);
 
     writeAudit('MEMBER_ARCHIVED', 'Members', user, target.member_id, reason, `Moved ${target.full_name} to Recycle Bin.`);
+  },
+
+  restore: (id: string, user: string): Member => {
+    const deletedList = prototypeStorage.getCollection<any>(STORAGE_KEYS.DELETED_MEMBERS);
+    const index = deletedList.findIndex((m: any) => m.id === id || m.member_id === id);
+    if (index === -1) throw new Error('Item not found in Recycle Bin.');
+
+    const target = deletedList[index];
+    const restoredMember: Member = {
+      ...target,
+      status: target.status || 'Active',
+      updated_at: new Date().toISOString()
+    };
+
+    delete (restoredMember as any).deleted_at;
+    delete (restoredMember as any).deleted_by;
+    delete (restoredMember as any).delete_reason;
+
+    deletedList.splice(index, 1);
+    prototypeStorage.save(STORAGE_KEYS.DELETED_MEMBERS, deletedList);
+
+    const currentMembers = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
+    const updatedMembers = [restoredMember, ...currentMembers];
+    prototypeStorage.save(STORAGE_KEYS.MEMBERS, updatedMembers);
+
+    writeAudit('MEMBER_RESTORED', 'Members', user, restoredMember.member_id, undefined, `Restored profile for ${restoredMember.full_name}`);
+    return restoredMember;
   }
 };
 
@@ -168,7 +230,8 @@ export const subscriptionService = {
     memberId: string, 
     planName: 'Monthly Membership' | 'Yearly Membership', 
     paymentMethod: PaymentMethod,
-    user: string
+    user: string,
+    amountPaidOverride?: number
   ): Subscription => {
     const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
     const members = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
@@ -182,6 +245,7 @@ export const subscriptionService = {
     if (hasActive) throw new Error('Member currently possesses an active subscription.');
 
     const price = planName === 'Monthly Membership' ? settings.monthly_plan_price : settings.yearly_plan_price;
+    const totalAmount = amountPaidOverride ?? price;
     const durationDays = planName === 'Monthly Membership' ? 30 : 365;
 
     const start = new Date();
@@ -193,7 +257,7 @@ export const subscriptionService = {
       id: generateUID('SUB', subs),
       member_id: m.member_id,
       plan_name: planName,
-      price,
+      price: totalAmount,
       start_date: start.toISOString(),
       end_date: end.toISOString(),
       status: 'Active',
@@ -209,13 +273,14 @@ export const subscriptionService = {
     m.status = 'Active';
     prototypeStorage.save(STORAGE_KEYS.MEMBERS, members);
 
+    // Save to receipts
     const receipts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS);
     receipts.push({
       id: receiptNo,
       member_id: m.member_id,
       customer_name: m.full_name,
       customer_type: 'New Membership',
-      amount: price,
+      amount: totalAmount,
       payment_method: paymentMethod,
       payment_status: 'Paid',
       item_description: `Subscribed under ${planName}`,
@@ -223,8 +288,107 @@ export const subscriptionService = {
     });
     prototypeStorage.save(STORAGE_KEYS.RECEIPTS, receipts);
 
+    // Save to Attendance collection
+    const attendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    const nowIso = new Date().toISOString();
+    const newAttendance: AttendanceRecord = {
+      id: `att-sub-${Date.now()}`,
+      member_id: m.member_id,
+      customer_name: m.full_name,
+      customer_type: 'New Membership',
+      check_in_time: nowIso,
+      plan_name: planName,
+      entry_fee: totalAmount,
+      payment_method: paymentMethod,
+      receipt_number: receiptNo,
+      staff_name: user
+    };
+    prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendance]);
+
+    // Dual-sync directly to palomar_gym_logbook LocalStorage for immediate Logbook Page reflection
+    try {
+      const savedLogsRaw = localStorage.getItem('palomar_gym_logbook');
+      const savedLogs = savedLogsRaw ? JSON.parse(savedLogsRaw) : [];
+      const newLogRecord = {
+        id: newAttendance.id,
+        timestamp: nowIso,
+        memberId: m.member_id,
+        customerName: m.full_name,
+        customerType: 'New Membership',
+        categoryOrPlan: planName,
+        paymentMethod: paymentMethod,
+        amountPaid: totalAmount,
+        paymentStatus: 'Paid',
+        status: 'Active',
+        isSubscription: true,
+        deletable: false
+      };
+      localStorage.setItem('palomar_gym_logbook', JSON.stringify([newLogRecord, ...savedLogs]));
+    } catch (e) {
+      console.error('Error syncing subscription to logbook:', e);
+    }
+
     writeAudit('SUBSCRIPTION_CREATED', 'Subscriptions', user, m.member_id, undefined, `Issued ${planName} Contract.`);
     return newSub;
+  },
+
+ // Void Subscription (Complete Purge across Subscriptions, Receipts, Attendance, and Logbook)
+  void: (
+    subscriptionId: string,
+    reason: string,
+    notes: string,
+    user: string
+  ): void => {
+    const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
+    const target = subs.find((s: Subscription) => s.id === subscriptionId);
+    if (!target) throw new Error('Subscription record not found.');
+
+    // 1. Remove completely from SUBSCRIPTIONS store
+    const filteredSubs = subs.filter((s: Subscription) => s.id !== subscriptionId);
+    prototypeStorage.save(STORAGE_KEYS.SUBSCRIPTIONS, filteredSubs);
+
+    // 2. Remove completely from RECEIPTS store
+    if (target.receipt_number) {
+      const receipts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS);
+      const filteredReceipts = receipts.filter((r: Receipt) => r.id !== target.receipt_number);
+      prototypeStorage.save(STORAGE_KEYS.RECEIPTS, filteredReceipts);
+    }
+
+    // 3. Remove completely from ATTENDANCE store
+    const attendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    const filteredAttendance = attendance.filter((att: AttendanceRecord) => 
+      att.receipt_number !== target.receipt_number && att.id !== subscriptionId
+    );
+    prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
+
+    // 4. Remove completely from Logbook storage & adjust revenue
+    try {
+      const savedLogsRaw = localStorage.getItem('palomar_gym_logbook');
+      if (savedLogsRaw) {
+        const savedLogs = JSON.parse(savedLogsRaw);
+        const filteredLogs = savedLogs.filter((log: any) => 
+          log.id !== subscriptionId && 
+          log.receipt_no !== target.receipt_number &&
+          !(log.memberId === target.member_id && log.isSubscription)
+        );
+        localStorage.setItem('palomar_gym_logbook', JSON.stringify(filteredLogs));
+      }
+    } catch (e) {
+      console.error('Error purging voided subscription from logbook:', e);
+    }
+
+    // 5. Notify Logbook to refresh instantly
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
+
+    // 6. Record Audit Log for security tracking
+    writeAudit(
+      'SUBSCRIPTION_VOIDED',
+      'Subscriptions',
+      user,
+      target.member_id,
+      reason,
+      `Voided & purged contract ${target.plan_name} (${target.id}) and receipt ${target.receipt_number}. Notes: ${notes || 'None'}.`
+    );
   }
 };
 

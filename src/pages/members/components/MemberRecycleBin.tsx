@@ -1,4 +1,3 @@
-// src/pages/members/components/MemberRecycleBin.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
@@ -9,14 +8,20 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { AnimatePresence, motion } from 'framer-motion';
 import { logAudit } from '../../../lib/supabase/audit';
+import { prototypeStorage, STORAGE_KEYS } from '../memberService';
 
 interface DeletedMember {
   id: string;
   member_id: string;
   full_name: string;
-  avatar_url: string | null;
-  membership_plan: string;
-  deleted_at: string;
+  avatar_url?: string | null;
+  membership_plan?: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  deleted_at?: string | null;
+  deleted_by?: string;
+  [key: string]: any;
 }
 
 interface MemberRecycleBinProps {
@@ -42,9 +47,14 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   const fetchDeletedMembers = async () => {
     setLoading(true);
     try {
-      const savedDeleted = localStorage.getItem('palomar_gym_members_deleted');
-      const data = savedDeleted ? JSON.parse(savedDeleted) : [];
-      setDeletedItems(data);
+      const deletedKey = (STORAGE_KEYS as any)?.DELETED_MEMBERS || 'palomar_gym_members_deleted';
+      let data = prototypeStorage.getCollection<DeletedMember>(deletedKey);
+      
+      if (!data || data.length === 0) {
+        const savedDeleted = localStorage.getItem('palomar_gym_members_deleted');
+        data = savedDeleted ? JSON.parse(savedDeleted) : [];
+      }
+      setDeletedItems(data || []);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load transaction data from Recycle Bin.');
@@ -66,7 +76,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     setCurrentPage(1);
   }, [searchQuery]);
 
-  const getDaysRemaining = (deletedAt: string) => {
+  const getDaysRemaining = (deletedAt?: string | null) => {
     if (!deletedAt) return null;
     const deletedTimestamp = new Date(deletedAt).getTime();
     const purgeDate = new Date(deletedTimestamp + 30 * 24 * 60 * 60 * 1000);
@@ -124,7 +134,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
       const times = groupTxs
         .map((t) => t.deleted_at)
         .filter(Boolean)
-        .map((t) => new Date(t).getTime());
+        .map((t) => new Date(t!).getTime());
 
       if (times.length > 0) {
         const maxTime = Math.max(...times);
@@ -160,23 +170,57 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     setLoading(true);
 
     try {
-      const selectedProductIds = selectedList.map((t: any) => t.id);
+      const selectedIdsToRestore = selectedList.map((t: any) => t.id);
       
-      const savedDeleted = localStorage.getItem('palomar_gym_members_deleted');
-      const deletedList: DeletedMember[] = savedDeleted ? JSON.parse(savedDeleted) : [];
+      const deletedKey = (STORAGE_KEYS as any)?.DELETED_MEMBERS || 'palomar_gym_members_deleted';
+      const membersKey = STORAGE_KEYS?.MEMBERS || 'palomar_gym_members';
 
-      const savedActive = localStorage.getItem('palomar_gym_members');
-      const activeList = savedActive ? JSON.parse(savedActive) : [];
+      let deletedList: DeletedMember[] = prototypeStorage.getCollection<DeletedMember>(deletedKey);
+      if (!deletedList || deletedList.length === 0) {
+        const saved = localStorage.getItem('palomar_gym_members_deleted');
+        deletedList = saved ? JSON.parse(saved) : [];
+      }
 
-      const itemsToRestore = deletedList.filter(t => selectedProductIds.includes(t.id)).map(t => ({
-        ...t,
-        deleted_at: null
-      }));
+      let activeList: any[] = prototypeStorage.getCollection<any>(membersKey);
+      if (!activeList || activeList.length === 0) {
+        const saved = localStorage.getItem('palomar_gym_members') || localStorage.getItem('palomar_members');
+        activeList = saved ? JSON.parse(saved) : [];
+      }
 
-      const remainingDeleted = deletedList.filter(t => !selectedProductIds.includes(t.id));
+      const itemsToRestore = deletedList
+        .filter(t => selectedIdsToRestore.includes(t.id))
+        .map(t => {
+          const restoredItem: Record<string, any> = {
+            ...t,
+            status: t.status || 'Active',
+            created_at: t.created_at || new Date().toISOString(),
+            full_name: t.full_name || 'Restored Member',
+            member_id: t.member_id || t.id,
+            phone: t.phone || '',
+            email: t.email || '',
+            gender: t.gender || 'Male',
+            birthday: t.birthday || '',
+            address: t.address || '',
+            emergency_contact_name: t.emergency_contact_name || '',
+            relationship: t.relationship || '',
+            emergency_contact_phone: t.emergency_contact_phone || '',
+          };
+          delete restoredItem.deleted_at;
+          delete restoredItem.deleted_by;
+          return restoredItem;
+        });
 
+      const remainingDeleted = deletedList.filter(t => !selectedIdsToRestore.includes(t.id));
+      const updatedActiveList = [...itemsToRestore, ...activeList];
+
+      // Save through prototypeStorage engine using .save()
+      prototypeStorage.save(deletedKey, remainingDeleted);
+      prototypeStorage.save(membersKey, updatedActiveList);
+
+      // Mirror directly to localStorage keys for fail-safe sync
       localStorage.setItem('palomar_gym_members_deleted', JSON.stringify(remainingDeleted));
-      localStorage.setItem('palomar_gym_members', JSON.stringify([...itemsToRestore, ...activeList]));
+      localStorage.setItem('palomar_gym_members', JSON.stringify(updatedActiveList));
+      localStorage.setItem('palomar_members', JSON.stringify(updatedActiveList));
 
       const restoredDetails = selectedList.map(t => `${t.full_name} (${t.member_id})`).join(', ');
       await logAudit(
@@ -186,7 +230,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
 
       setSelectedIds([]);
       onRestoreSuccess();
-      toast.success(`Successfully restored ${selectedList.length} members back to your directory.`);
+      toast.success(`Successfully restored ${selectedList.length} member(s) back to your directory.`);
       fetchDeletedMembers();
     } catch (err) {
       console.error('Error executing database restoration:', err);
@@ -236,7 +280,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <div className="relative bg-slate-550 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
           <h3 className="font-heading tracking-widest uppercase">Member Recycle Bin</h3>
@@ -288,7 +332,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                 className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50 border-none bg-transparent font-bold text-slate-500"
               >
                 {paginatedItems.length > 0 && paginatedItems.every((t: any) => selectedIds.includes(t.id)) ? (
-                  <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
+                  <CheckSquare className="w-4 h-4 text-(--color-primary-light) shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 shrink-0" />
                 )}
@@ -338,11 +382,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                           className="flex items-center gap-2 cursor-pointer hover:opacity-80 text-left disabled:opacity-50 font-bold border-none bg-transparent"
                         >
                           {groupSelected ? (
-                            <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
+                            <CheckSquare className="w-4 h-4 text-(--color-primary-light) shrink-0" />
                           ) : (
                             <Square className="w-4 h-4 text-slate-400 dark:text-zinc-600 shrink-0" />
                           )}
-                          <span className="text-[9px] font-heading tracking-widest text-[var(--color-primary-light)] uppercase">
+                          <span className="text-[9px] font-heading tracking-widest text-(--color-primary-light) uppercase">
                             {groupMeta[item.groupId]?.label}
                           </span>
                         </button>
@@ -379,13 +423,13 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
-                              {item.full_name[0]}
+                              {(item.full_name || 'M')[0]}
                             </div>
                           )}
                           <div className="min-w-0">
                             <span className="font-bold block text-[11px] text-(--color-text) truncate">{item.full_name}</span>
                             <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
-                              {item.member_id} • {item.membership_plan}
+                              {item.member_id} • {item.membership_plan || 'Standard Plan'}
                             </span>
                           </div>
                         </div>

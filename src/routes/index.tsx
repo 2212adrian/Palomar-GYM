@@ -11,7 +11,7 @@ import { SystemLayout } from '../components/layouts/SystemLayout';
 import Settings from '../pages/system/Settings';
 import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
-import { StaffPlansConsole } from '../pages/members/components/StaffPlansConsole';
+import { StaffPlansConsole } from '../pages/members/components/SubscriptionPlan';
 
 // Import Anonymous Pre-Registration Page
 import { OnlineRegistrationPage } from '../pages/members/components/OnlineRegistrationPage';

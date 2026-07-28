@@ -3,14 +3,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  X, ShieldAlert, Award, Calendar, UserCheck, UserX, Trash2, Lock, Pencil, Save,
-  ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye
+  X, ShieldAlert, Calendar, UserCheck, UserX, Trash2, Lock, Pencil, Save,
+  ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard 
 } from 'lucide-react';
-import { memberService, cardService, prototypeStorage, STORAGE_KEYS } from '../memberService';
+import { IntakeWizardModal } from './SubscriptionPlan';
+import { memberService, subscriptionService, cardService, prototypeStorage, STORAGE_KEYS } from '../memberService';
 import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord } from '../../../types/members';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { OfficialReceipt, type ReceiptData } from '../../../components/ui/OfficialReceipt';
+import { DigitalQRCardModal } from './DigitalQRCardModal';
+import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
+import { supabase } from '../../../lib/supabase/client';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -23,18 +28,42 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   onClose,
   onMutationSuccess
 }) => {
+  const { user, profile } = useAuthStore() as any;
+
+  // Role resolution
+  const role = useMemo<'admin' | 'staff'>(() => {
+    if (isSuperAdmin(user?.email)) return 'admin';
+    return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
+  }, [user, profile]);
+
+  const isAdmin = role === 'admin';
+
+  // Local state to keep UI updated dynamically without needing to reopen panel
+  const [localMember, setLocalMember] = useState<Member>(member);
+
   const [activeTab, setActiveTab] = useState<'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'>('Overview');
   const [notes, setNotes] = useState(member.notes || '');
 
   // Custom Modal States
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDigitalQrModalOpen, setIsDigitalQrModalOpen] = useState(false);
   const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
 
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+
+  // Void Subscription Modal & Verification State
+  const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('Wrong membership selected');
+  const [voidNotes, setVoidNotes] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [isVerifyingVoid, setIsVerifyingVoid] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   // Inline Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
-  const [editFullName, setEditFullName] = useState(member.full_name);
-  const [editPhone, setEditPhone] = useState(member.phone);
+  const [editFullName, setEditFullName] = useState(member.full_name || '');
+  const [editPhone, setEditPhone] = useState(member.phone || '');
   const [editEmail, setEditEmail] = useState(member.email || '');
   const [editGender, setEditGender] = useState(member.gender || 'Male');
   const [editBirthday, setEditBirthday] = useState(member.birthday || '');
@@ -44,8 +73,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [editEmergencyPhone, setEditEmergencyPhone] = useState(member.emergency_contact_phone || '');
 
   useEffect(() => {
-    setEditFullName(member.full_name);
-    setEditPhone(member.phone);
+    setLocalMember(member);
+    setEditFullName(member.full_name || '');
+    setEditPhone(member.phone || '');
     setEditEmail(member.email || '');
     setEditGender(member.gender || 'Male');
     setEditBirthday(member.birthday || '');
@@ -53,14 +83,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     setEditEmergencyName(member.emergency_contact_name || '');
     setEditRelationship(member.relationship || '');
     setEditEmergencyPhone(member.emergency_contact_phone || '');
+    setNotes(member.notes || '');
     setIsEditing(false);
   }, [member]);
 
+  // Auto-refresh profile collections when subscriptions/receipts change
+  useEffect(() => {
+    const handleSync = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    window.addEventListener('palomar_logbook_updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('palomar_logbook_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
   const stats = useMemo(() => {
-    const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS).filter((s: Subscription) => s.member_id === member.member_id);
-    const rcpts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS).filter((r: Receipt) => r.member_id === member.member_id);
-    const atts = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE).filter((a: AttendanceRecord) => a.member_id === member.member_id);
-    const crds = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS).filter((c: MemberCard) => c.member_id === member.member_id);
+    const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS).filter((s: Subscription) => s.member_id === localMember.member_id);
+    const rcpts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS).filter((r: Receipt) => r.member_id === localMember.member_id);
+    const atts = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE).filter((a: AttendanceRecord) => a.member_id === localMember.member_id);
+    const crds = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS).filter((c: MemberCard) => c.member_id === localMember.member_id);
 
     return {
       totalContracts: subs.length,
@@ -69,7 +113,50 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       cardReplacements: crds.filter((c: MemberCard) => !!c.replaced_at).length,
       activeContract: subs.find((s: Subscription) => s.status === 'Active')
     };
-  }, [member]);
+  }, [localMember, refreshKey]);
+
+  const attendanceLogs = useMemo(() => {
+    const list = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    return list
+      .filter((a: AttendanceRecord) => a.member_id === localMember.member_id)
+      .sort((a, b) => new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime());
+  }, [localMember, refreshKey]);
+
+  // Evaluate Void Subscription eligibility (Admin role, 24-hour window & unconsumed check-in)
+  // Inside MemberProfileView.tsx:
+
+const voidEligibility = useMemo(() => {
+    const activeSub = stats.activeContract;
+    if (!activeSub) {
+      return { eligible: false, reason: 'No active subscription contract found.' };
+    }
+
+    const createdTime = new Date(activeSub.created_at || activeSub.start_date).getTime();
+    const nowTime = new Date().getTime();
+    const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
+
+    if (hoursDiff > 24) {
+      return {
+        eligible: false,
+        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve membership and financial records.'
+      };
+    }
+
+    const hasFacilityVisitsAfterSub = attendanceLogs.some((att) => {
+      if (att.customer_type === 'New Membership') return false;
+      const checkInTime = new Date(att.check_in_time).getTime();
+      return checkInTime > createdTime;
+    });
+
+    if (hasFacilityVisitsAfterSub) {
+      return {
+        eligible: false,
+        reason: 'This subscription has already been used for facility visits and can no longer be voided.'
+      };
+    }
+
+    return { eligible: true, reason: '' };
+  }, [stats.activeContract, attendanceLogs]);
 
   // Lock rule: Edit and Delete are locked when an active subscription contract exists
   const hasActiveSubscription = !!stats.activeContract;
@@ -80,11 +167,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   }, [hasActiveSubscription]);
 
-  // Calculated Age & Policy Status
   const calculatedAge = useMemo(() => {
-    const bday = isEditing ? editBirthday : member.birthday;
+    const bday = isEditing ? editBirthday : localMember.birthday;
     if (!bday) return 0;
     const birthDate = new Date(bday);
+    if (isNaN(birthDate.getTime())) return 0;
     const today = new Date();
     let calculated = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
@@ -92,19 +179,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       calculated--;
     }
     return calculated >= 0 ? calculated : 0;
-  }, [member.birthday, editBirthday, isEditing]);
+  }, [localMember.birthday, editBirthday, isEditing]);
 
   const isMinor = useMemo(() => calculatedAge >= 12 && calculatedAge < 18, [calculatedAge]);
 
   const handleUpdateNotes = () => {
     try {
-      memberService.update(member.id, { notes: notes.trim() }, 'Admin Staff');
+      const trimmedNotes = notes.trim();
+      memberService.update(localMember.id, { notes: trimmedNotes }, 'Admin Staff');
+      setLocalMember(prev => ({ ...prev, notes: trimmedNotes }));
       toast.success('Internal notes saved.');
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message);
     }
   };
+  
 
   const handleSaveProfileChanges = () => {
     if (hasActiveSubscription) {
@@ -112,13 +202,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       return;
     }
 
-    if (!editFullName.trim() || !editPhone.trim() || !editBirthday.trim()) {
-      toast.warning('Full Name, Phone, and Birthday are required.');
+    if (!editFullName.trim() || !editPhone.trim()) {
+      toast.warning('Full Name and Contact Phone are required.');
       return;
     }
 
     try {
-      memberService.update(member.id, {
+      const updatedFields = {
         full_name: editFullName.trim(),
         phone: editPhone.trim(),
         email: editEmail.trim(),
@@ -128,8 +218,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         emergency_contact_name: editEmergencyName.trim(),
         relationship: editRelationship.trim(),
         emergency_contact_phone: editEmergencyPhone.trim(),
-      }, 'Admin Staff');
+      };
 
+      memberService.update(localMember.id, updatedFields, 'Admin Staff');
+      setLocalMember(prev => ({ ...prev, ...updatedFields }));
       toast.success('Member profile details updated successfully.');
       setIsEditing(false);
       onMutationSuccess();
@@ -139,11 +231,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   };
 
   const handleStatusToggleConfirm = () => {
-    const nextStatus = member.status === 'Active' ? 'Suspended' : 'Active';
+    const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
 
     try {
-      memberService.update(member.id, { status: nextStatus }, 'Admin Staff');
-      toast.success(`Member profile set to ${nextStatus}.`);
+      memberService.update(localMember.id, { status: nextStatus }, 'Admin Staff');
+      setLocalMember(prev => ({ ...prev, status: nextStatus }));
+      toast.success(`Member status set to ${nextStatus}.`);
       onMutationSuccess();
       setIsStatusModalOpen(false);
     } catch (err: any) {
@@ -158,8 +251,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
 
     try {
-      memberService.archive(member.id, 'Profile archived by staff', 'Admin Staff');
-      toast.success(`Profile for ${member.full_name} moved to Recycle Bin.`);
+      memberService.archive(localMember.id, 'Profile archived by staff', 'Admin Staff');
+      toast.success(`Profile for ${localMember.full_name} moved to Recycle Bin.`);
       setIsDeleteModalOpen(false);
       onMutationSuccess();
       onClose();
@@ -168,11 +261,58 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
+  // Void Subscription Execution with Admin Password Verification
+  const handleConfirmVoidSubscription = async () => {
+    if (!stats.activeContract || !isAdmin) return;
+    if (!voidReason) {
+      toast.warning('Please select a reason for voiding.');
+      return;
+    }
+    if (!adminPassword.trim()) {
+      toast.warning('Admin password is required to verify this action.');
+      return;
+    }
+
+    setIsVerifyingVoid(true);
+    try {
+      // Re-authenticate admin credentials if signed in via Supabase
+      if (user?.email) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: adminPassword.trim()
+        });
+        if (error) {
+          toast.error('Admin password verification failed. Please check your password.');
+          setIsVerifyingVoid(false);
+          return;
+        }
+      }
+
+      subscriptionService.void(
+        stats.activeContract.id,
+        voidReason,
+        voidNotes.trim(),
+        user?.email || profile?.full_name || 'Administrator'
+      );
+
+      toast.success('Subscription successfully voided.');
+      setIsVoidModalOpen(false);
+      setAdminPassword('');
+      setVoidNotes('');
+      setRefreshKey(prev => prev + 1); // Refresh profile view immediately
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to void subscription.');
+    } finally {
+      setIsVerifyingVoid(false);
+    }
+  };
+
   const handleOpenReceipt = (receipt: Receipt) => {
     const data: ReceiptData = {
       receiptType: receipt.customer_type === 'Walk-In' ? 'walkin' : 'subscription',
       receiptNo: receipt.id,
-      customerName: receipt.customer_name || member.full_name,
+      customerName: receipt.customer_name || localMember.full_name,
       customerType: receipt.customer_type,
       planType: receipt.item_description,
       basePrice: receipt.amount,
@@ -185,53 +325,57 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const currentCard = useMemo(() => {
     const list = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
-    return list.find((c: MemberCard) => c.member_id === member.member_id && c.status === 'Active');
-  }, [member]);
+    return list.find((c: MemberCard) => c.member_id === localMember.member_id && c.status === 'Active');
+  }, [localMember, refreshKey]);
+
+  
 
   const subHistory = useMemo(() => {
     const list = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-    return list.filter((s: Subscription) => s.member_id === member.member_id);
-  }, [member]);
+    return list.filter((s: Subscription) => s.member_id === localMember.member_id);
+  }, [localMember, refreshKey]);
 
   const invoices = useMemo(() => {
     const list = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS);
-    return list.filter((r: Receipt) => r.member_id === member.member_id);
-  }, [member]);
+    return list.filter((r: Receipt) => r.member_id === localMember.member_id);
+  }, [localMember, refreshKey]);
 
-  const attendanceLogs = useMemo(() => {
-    const list = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-    return list
-      .filter((a: AttendanceRecord) => a.member_id === member.member_id)
-      .sort((a, b) => new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime());
-  }, [member]);
+  const extMember = localMember as any;
 
-  const extMember = member as any;
+  const registrationDateText = useMemo(() => {
+    if (!localMember.created_at) return 'N/A';
+    const dateObj = new Date(localMember.created_at);
+    if (isNaN(dateObj.getTime())) return 'N/A';
+    return dateObj.toLocaleDateString();
+  }, [localMember.created_at]);
 
   return createPortal(
     <div className="fixed inset-0 z-110 flex items-center justify-end bg-black/60 backdrop-blur-xs font-body text-xs text-(--color-text)">
-      <div className="w-full max-w-2xl h-full bg-(--bg-card) border-l border-(--border-color) shadow-2xl flex flex-col justify-between overflow-hidden">
+      <div className="w-full sm:max-w-2xl h-full bg-(--bg-card) border-l border-(--border-color) shadow-2xl flex flex-col justify-between overflow-hidden">
         
         {/* HEADER */}
-        <div className="p-6 border-b border-(--border-color) space-y-4 select-none relative bg-(--bg-page)">
+        <div className="p-4 sm:p-6 border-b border-(--border-color) space-y-4 select-none relative bg-(--bg-page)">
           <button 
             onClick={onClose} 
-            className="absolute right-4 top-4 p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs"
+            className="absolute right-4 top-4 p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs z-10"
           >
             <X className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-4 text-left pt-2">
-            <div className="w-16 h-16 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-2xl font-extrabold shadow-md shrink-0">
-              {member.full_name[0]}
+          <div className="flex items-center gap-3 sm:gap-4 text-left pt-2 pr-8">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-xl sm:text-2xl font-extrabold shadow-md shrink-0">
+              {(localMember.full_name || 'M')[0]}
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-(--color-text) leading-none">{member.full_name}</h3>
+            <div className="space-y-1 overflow-hidden">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-(--color-text) leading-none truncate">{localMember.full_name}</h3>
                 <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
-                  member.status === 'Active' 
+                  localMember.status === 'Active' 
                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                    : localMember.status === 'Suspended'
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
                     : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                }`}>{member.status}</span>
+                }`}>{localMember.status || 'Active'}</span>
 
                 {isMinor && (
                   <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
@@ -239,31 +383,31 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   </span>
                 )}
               </div>
-              <p className="font-mono text-[10px] text-slate-500 dark:text-slate-400 leading-none">
-                {member.member_id} • Registered {new Date(member.created_at).toLocaleDateString()}
+              <p className="font-mono text-[10px] text-slate-500 dark:text-slate-400 leading-none truncate">
+                {localMember.member_id} • Registered {registrationDateText}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 pt-2">
-            <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pt-2">
+            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
               <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">TOTAL SPENT</span>
               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block mt-1.5 leading-none">
                 ₱{stats.totalSpent.toLocaleString()}
               </span>
             </div>
-            <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
+            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
               <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">CHECK-INS</span>
               <span className="text-xs font-bold text-(--color-text) block mt-1.5 leading-none">{stats.totalVisits} visits</span>
             </div>
-            <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
+            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
               <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">ACTIVE PLAN</span>
               <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate block mt-1.5 leading-none">
                 {stats.activeContract ? stats.activeContract.plan_name : 'No Active Plan'}
               </span>
             </div>
-            <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
-              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">CARD REPLACEMENTS</span>
+            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
+              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">CARDS REISSUED</span>
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1.5 leading-none">
                 {stats.cardReplacements} cards
               </span>
@@ -271,13 +415,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           </div>
         </div>
 
-        {/* TABS BAR */}
-        <div className="flex border-b border-(--border-color) bg-(--bg-card) px-4 select-none">
+        {/* TABS BAR - RESPONSIVE SCROLLABLE */}
+        <div className="flex border-b border-(--border-color) bg-(--bg-card) px-2 sm:px-4 select-none overflow-x-auto whitespace-nowrap scrollbar-none">
           {['Overview', 'Contracts & Billing', 'Cards', 'Attendance', 'Notes'].map(tab => (
             <button 
               key={tab} 
               onClick={() => setActiveTab(tab as any)}
-              className={`py-3 px-3.5 font-heading text-[10px] tracking-wider uppercase font-black cursor-pointer border-b-2 transition-all ${
+              className={`py-3 px-3 sm:px-3.5 font-heading text-[10px] tracking-wider uppercase font-black cursor-pointer border-b-2 transition-all shrink-0 ${
                 activeTab === tab 
                   ? 'border-b-[#123c73] dark:border-b-[#bf0202] text-[#123c73] dark:text-white' 
                   : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
@@ -289,29 +433,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
 
         {/* TAB CONTENTS */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
               
-              {stats.activeContract ? (
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex justify-between items-center shadow-xs">
-                  <div className="space-y-0.5">
-                    <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block">Active Membership Contract</span>
-                    <h5 className="font-heading text-(--color-text) text-sm font-bold">{stats.activeContract.plan_name}</h5>
-                    <p className="font-mono text-[9px] text-slate-500 dark:text-slate-400">
-                      Valid from {new Date(stats.activeContract.start_date).toLocaleDateString()} to {new Date(stats.activeContract.end_date).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <Award className="w-8 h-8 text-emerald-500 shrink-0" />
-                </div>
-              ) : (
-                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex justify-between items-center text-[10px] font-bold uppercase tracking-wider select-none">
-                  <span>No Active Subscription (Profile Only)</span>
-                  <span className="px-2 py-0.5 bg-amber-500/20 rounded text-[9px] font-mono">Inactive Plan</span>
-                </div>
-              )}
+              {!stats.activeContract && (
+  <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex justify-between items-center select-none shadow-xs">
+    <div>
+      <span className="font-heading font-bold text-amber-500 text-xs block">No Active Subscription (Profile Only)</span>
+      <span className="text-[9px] text-slate-400 font-medium block">Member has no active membership contract.</span>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => setIsWizardOpen(true)}
+      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center gap-1.5 shrink-0 transition-colors"
+    >
+      <CreditCard className="w-3.5 h-3.5" />
+      <span>Subscribe Plan</span>
+    </button>
+  </div>
+)}
 
               {/* READ / INLINE EDIT GRID */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -333,27 +477,27 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="space-y-2 text-xs font-semibold">
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Full Name</span>
-                        <span className="text-(--color-text) font-bold">{member.full_name}</span>
+                        <span className="text-(--color-text) font-bold">{localMember.full_name || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Gender / Age</span>
-                        <span className="text-(--color-text)">{member.gender} • {calculatedAge ? `${calculatedAge} yrs old (${isMinor ? 'Minor' : 'Adult'})` : 'N/A'}</span>
+                        <span className="text-(--color-text)">{localMember.gender || 'N/A'} • {calculatedAge ? `${calculatedAge} yrs old (${isMinor ? 'Minor' : 'Adult'})` : 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Birthdate</span>
-                        <span className="text-(--color-text) font-mono">{member.birthday || 'N/A'}</span>
+                        <span className="text-(--color-text) font-mono">{localMember.birthday || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Contact Phone</span>
-                        <span className="text-(--color-text) font-mono">{member.phone}</span>
+                        <span className="text-(--color-text) font-mono">{localMember.phone || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Email Address</span>
-                        <span className="text-(--color-text) truncate block">{member.email || 'N/A'}</span>
+                        <span className="text-(--color-text) truncate block">{localMember.email || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Home Address</span>
-                        <span className="text-(--color-text) leading-snug block">{member.address || 'N/A'}</span>
+                        <span className="text-(--color-text) leading-snug block">{localMember.address || 'N/A'}</span>
                       </div>
                     </div>
                   ) : (
@@ -381,7 +525,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           </select>
                         </div>
                         <div>
-                          <label className="text-slate-400 text-[9px] uppercase font-bold block">Birthday *</label>
+                          <label className="text-slate-400 text-[9px] uppercase font-bold block">Birthday</label>
                           <input
                             type="date"
                             value={editBirthday}
@@ -393,11 +537,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div>
                         <label className="text-slate-400 text-[9px] uppercase font-bold block">Contact Phone *</label>
                         <input
-                          type="text"
-                          value={editPhone}
-                          onChange={e => setEditPhone(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
-                        />
+    type="text"
+    value={editPhone}
+    onChange={e => setEditPhone(e.target.value.replace(/\D/g, ''))}
+    maxLength={11}
+    className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
+    placeholder="09171234567"
+  />
                       </div>
                       <div>
                         <label className="text-slate-400 text-[9px] uppercase font-bold block">Email Address</label>
@@ -431,15 +577,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="space-y-2 text-xs font-semibold">
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Contact Person</span>
-                        <span className="text-(--color-text) font-bold">{member.emergency_contact_name || 'N/A'}</span>
+                        <span className="text-(--color-text) font-bold">{localMember.emergency_contact_name || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Relationship</span>
-                        <span className="text-(--color-text)">{member.relationship || 'N/A'}</span>
+                        <span className="text-(--color-text)">{localMember.relationship || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[9px] uppercase font-bold block">Emergency Phone</span>
-                        <span className="text-(--color-text) font-mono">{member.emergency_contact_phone || 'N/A'}</span>
+                        <span className="text-(--color-text) font-mono">{localMember.emergency_contact_phone || 'N/A'}</span>
                       </div>
                     </div>
                   ) : (
@@ -454,23 +600,54 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Relationship</label>
-                        <input
-                          type="text"
-                          value={editRelationship}
-                          onChange={e => setEditRelationship(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs"
-                          placeholder="e.g. Parent, Spouse"
-                        />
+                        <div>
+  <label className="text-slate-400 text-[9px] uppercase font-bold block">Relationship</label>
+  <select
+     value={editRelationship}
+    onChange={e => setEditRelationship(e.target.value)}
+  className="w-full p-2.5 border border-(--border-color) bg-slate-100 dark:bg-zinc-900 rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
+>
+  <option value="">Select Relationship *</option>
+  
+  <optgroup label="Immediate Family">
+    <option value="Mother">Mother</option>
+    <option value="Father">Father</option>
+    <option value="Spouse / Partner">Spouse / Partner</option>
+    <option value="Husband">Husband</option>
+    <option value="Wife">Wife</option>
+    <option value="Brother">Brother</option>
+    <option value="Sister">Sister</option>
+    <option value="Son">Son</option>
+    <option value="Daughter">Daughter</option>
+  </optgroup>
+
+  <optgroup label="Extended Family">
+    <option value="Grandmother">Grandmother</option>
+    <option value="Grandfather">Grandfather</option>
+    <option value="Aunt">Aunt</option>
+    <option value="Uncle">Uncle</option>
+    <option value="Cousin">Cousin</option>
+    <option value="Relative">Other Relative</option>
+  </optgroup>
+
+  <optgroup label="Guardian & Other">
+    <option value="Legal Guardian">Legal Guardian</option>
+    <option value="Friend / Colleague">Friend / Colleague</option>
+    <option value="Other">Other</option>
+  </optgroup>
+</select>
+</div>
                       </div>
                       <div>
                         <label className="text-slate-400 text-[9px] uppercase font-bold block">Emergency Phone</label>
                         <input
-                          type="text"
-                          value={editEmergencyPhone}
-                          onChange={e => setEditEmergencyPhone(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
-                        />
+    type="text"
+    value={editEmergencyPhone}
+    onChange={e => setEditEmergencyPhone(e.target.value.replace(/\D/g, ''))}
+    maxLength={11}
+    className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
+    placeholder="09181234567"
+  />
                       </div>
                     </div>
                   )}
@@ -480,7 +657,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
               {/* SAVE EDITS BANNER */}
               {isEditing && (
-                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex justify-between items-center">
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
                   <span className="text-xs font-semibold text-blue-500">Editing member profile details.</span>
                   <div className="flex gap-2">
                     <button
@@ -602,16 +779,63 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
                           {sub.id} • {new Date(sub.start_date).toLocaleDateString()} to {new Date(sub.end_date).toLocaleDateString()}
                         </span>
+                        {sub.status === 'Voided' && sub.void_reason && (
+                          <span className="text-[8px] font-mono text-rose-400 block mt-1">
+                            Void Reason: {sub.void_reason} ({sub.voided_by || 'Admin'})
+                          </span>
+                        )}
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-[8px] font-mono font-bold uppercase border ${
                         sub.status === 'Active' 
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                          : sub.status === 'Voided'
+                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
                           : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 border-slate-300 dark:border-zinc-700'
                       }`}>{sub.status}</span>
                     </div>
                   ))
                 )}
               </div>
+
+              {/* DANGER ZONE: VOID SUBSCRIPTION (ADMINISTRATOR ONLY) */}
+              {isAdmin && stats.activeContract && (
+                <div className="pt-4 border-t border-(--border-color) space-y-3 select-none">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-heading font-black tracking-widest text-rose-500 uppercase">
+                      DANGER ZONE
+                    </span>
+                    <div className="h-px flex-1 bg-rose-500/20" />
+                  </div>
+
+                  {!voidEligibility.eligible ? (
+                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-left space-y-1">
+                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase">
+                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Void Subscription Unavailable</span>
+                      </div>
+                      <p className="text-[9.5px] text-slate-400 font-sans leading-relaxed">
+                        🔒 {voidEligibility.reason}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3.5 bg-rose-500/5 border border-rose-500/20 rounded-xl">
+                      <div className="text-left space-y-0.5">
+                        <span className="font-bold text-xs text-rose-400 block">Void Active Subscription</span>
+                        <span className="text-[9px] text-slate-400 block">
+                          Cancel current agreement while preserving complete audit and financial history.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsVoidModalOpen(true)}
+                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0"
+                      >
+                        Void Subscription
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2 pt-2 border-t border-(--border-color)">
                 <span className="text-[9px] font-heading font-black tracking-widest text-slate-400 uppercase block flex items-center gap-1">
@@ -653,32 +877,66 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
           )}
 
-          {/* TAB 3: CARDS */}
+          {/* TAB 3: CARDS (CONNECTED TO DIGITAL QR CARD PREVIEW) */}
           {activeTab === 'Cards' && (
             <div className="space-y-4 text-left animate-fade-in">
               {currentCard ? (
-                <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div className="space-y-2">
-                    <span className="text-[8px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest block">ACTIVE SECURITY BADGE</span>
-                    <h5 className="text-sm font-bold text-(--color-text) font-mono">{currentCard.card_number}</h5>
-                    <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 space-y-0.5">
-                      <div>Hardware Type: {currentCard.card_type}</div>
-                      <div>Engine Version: {currentCard.version}.0</div>
-                      <div>Activated: {new Date(currentCard.issued_at).toLocaleDateString()}</div>
+                <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
+                    <div className="space-y-0.5">
+                      <span className="text-[8px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">ACTIVE SECURITY CREDENTIAL</span>
+                      <h5 className="text-sm font-bold text-(--color-text) font-mono">{currentCard.card_number}</h5>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Hardware Type: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0 • Issued: {new Date(currentCard.issued_at).toLocaleDateString()}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDigitalQrModalOpen(true)}
+                      className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-[9px] font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors border-none shrink-0"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Print Digital Badge</span>
+                    </button>
+                  </div>
+
+                  {/* ATHLETIC DIGITAL QR CARD PREVIEW */}
+                  <div className="p-3 bg-black rounded-2xl border border-zinc-800 text-white text-left space-y-2.5 max-w-sm mx-auto shadow-xl select-none">
+                    <div className="text-center space-y-0.5">
+                      <div className="font-heading font-black text-xs uppercase text-white leading-none">WOLF PALOMAR GYM</div>
+                      <div className="font-heading font-extrabold text-[9px] uppercase text-red-600 leading-none">MUAYTHAI BOXING</div>
+                    </div>
+                    
+                    <div className="h-px bg-red-600 w-full" />
+                    
+                    <div className="grid grid-cols-12 gap-2 items-center">
+                      <div className="col-span-5 bg-white p-1.5 rounded-lg flex items-center justify-center">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(localMember.member_id)}`} 
+                          alt="Card QR Code" 
+                          className="w-16 h-16 block"
+                        />
+                      </div>
+                      <div className="col-span-7 space-y-1 text-left">
+                        <div className="text-[10px] font-bold text-white uppercase truncate">{localMember.full_name}</div>
+                        <div className="text-[9px] font-mono text-zinc-400">{localMember.phone || 'N/A'}</div>
+                        <div className="text-[8px] font-mono text-red-500 font-bold uppercase">{stats.activeContract?.plan_name || 'NO ACTIVE PLAN'}</div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-red-600 w-full" />
+
+                    <div className="flex justify-between items-center text-[6.5px] font-bold text-zinc-400">
+                      <span>NON-REFUNDABLE</span>
+                      <span>NON-TRANSFERRABLE</span>
                     </div>
                   </div>
 
-                  <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-inner shrink-0">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(currentCard.card_number)}`} 
-                      alt="Card QR Code" 
-                      className="w-20 h-20 block"
-                    />
-                  </div>
                 </div>
               ) : (
                 <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
-                  No active physical card assigned to this client.
+                  No active physical security card assigned to this client.
                 </div>
               )}
 
@@ -687,7 +945,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   const reason = prompt('Specify replacement card reason:');
                   if (!reason) return;
                   try {
-                    cardService.replace(member.member_id, reason, 'Admin Staff');
+                    cardService.replace(localMember.member_id, reason, 'Admin Staff');
                     toast.success('Access card re-issued.');
                     onMutationSuccess();
                   } catch (err: any) {
@@ -757,12 +1015,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
         </div>
 
-        {/* FOOTER ACTIONS */}
-        <div className="p-4 border-t border-(--border-color) bg-(--bg-page) flex flex-wrap justify-between items-center gap-3 select-none w-full">
+        {/* FOOTER ACTIONS - RESPONSIVE LAYOUT */}
+        <div className="p-4 border-t border-(--border-color) bg-(--bg-page) flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 select-none w-full">
           
           <div className="flex items-center gap-2">
-            {/* EDIT DETAILS BUTTON (LOCKED WHEN SUBSCRIPTION IS ACTIVE) */}
-            <div className="relative group">
+            {/* EDIT DETAILS BUTTON */}
+            <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
                 disabled={hasActiveSubscription}
@@ -770,7 +1028,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   setActiveTab('Overview');
                   setIsEditing(!isEditing);
                 }}
-                className={`px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
+                className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
                   hasActiveSubscription
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : isEditing
@@ -789,13 +1047,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               )}
             </div>
 
-            {/* DELETE BUTTON (LOCKED WHEN SUBSCRIPTION IS ACTIVE) */}
-            <div className="relative group">
+            {/* DELETE BUTTON */}
+            <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
                 disabled={hasActiveSubscription}
                 onClick={() => setIsDeleteModalOpen(true)}
-                className={`px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
+                className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
                   hasActiveSubscription
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
@@ -813,29 +1071,30 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase font-mono hidden sm:inline">
-              Status: <strong className={member.status === 'Active' ? 'text-emerald-500' : 'text-slate-500'}>{member.status}</strong>
+          {/* STATUS ACTION TOGGLE */}
+          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
+            <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">
+              Status: <strong className={localMember.status === 'Active' ? 'text-emerald-500' : 'text-amber-500'}>{localMember.status || 'Active'}</strong>
             </span>
 
             <button 
               type="button"
               onClick={() => setIsStatusModalOpen(true)} 
-              className={`px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-1.5 text-[9px] font-heading font-bold border-none transition-all ${
-                member.status === 'Active'
-                  ? 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300'
+              className={`px-4 py-2.5 rounded-xl cursor-pointer flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold border-none transition-all shadow-xs ${
+                localMember.status === 'Active'
+                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                   : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md'
               }`}
             >
-              {member.status === 'Active' ? (
+              {localMember.status === 'Active' ? (
                 <>
-                  <UserX className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Deactivate Profile</span>
+                  <UserX className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Suspend Member</span>
                 </>
               ) : (
                 <>
                   <UserCheck className="w-3.5 h-3.5" />
-                  <span>Activate Profile</span>
+                  <span>Activate Member</span>
                 </>
               )}
             </button>
@@ -844,6 +1103,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
 
       </div>
+
+      {/* ─── DIGITAL QR BADGE MODAL ─── */}
+      {isDigitalQrModalOpen && (
+        <DigitalQRCardModal
+          member={localMember}
+          subscription={stats.activeContract}
+          card={currentCard}
+          onClose={() => setIsDigitalQrModalOpen(false)}
+        />
+      )}
 
       {/* ─── OFFICIAL RECEIPT MODAL ─── */}
       {selectedReceiptData && (
@@ -860,12 +1129,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       <Modal
         isOpen={isStatusModalOpen}
         onClose={() => setIsStatusModalOpen(false)}
-        title={member.status === 'Active' ? 'DEACTIVATE MEMBER' : 'ACTIVATE MEMBER'}
+        title={localMember.status === 'Active' ? 'SUSPEND MEMBER' : 'ACTIVATE MEMBER'}
       >
         <div className="space-y-4 text-left">
           <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-            Are you sure you want to {member.status === 'Active' ? 'deactivate' : 'activate'} profile for{' '}
-            <strong className="text-slate-900 dark:text-white font-bold">{member.full_name}</strong>?
+            Are you sure you want to {localMember.status === 'Active' ? 'suspend' : 'activate'} membership profile for{' '}
+            <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
           </p>
 
           <div className="flex gap-3 justify-end pt-2">
@@ -880,10 +1149,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               type="button"
               onClick={handleStatusToggleConfirm}
               className={`px-5 py-2.5 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
-                member.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                localMember.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
               }`}
             >
-              Confirm {member.status === 'Active' ? 'Deactivation' : 'Activation'}
+              Confirm {localMember.status === 'Active' ? 'Suspension' : 'Activation'}
             </button>
           </div>
         </div>
@@ -898,7 +1167,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         <div className="space-y-4 text-left">
           <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
             Are you sure you want to delete profile for{' '}
-            <strong className="text-slate-900 dark:text-white font-bold">{member.full_name}</strong>?
+            <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
           </p>
           <p className="text-[10px] text-slate-400 font-mono">
             This record will be moved to the Member Recycle Bin.
@@ -923,6 +1192,109 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
       </Modal>
 
+      {/* ─── VOID SUBSCRIPTION CONFIRMATION MODAL (ADMIN ONLY) ─── */}
+      <Modal
+        isOpen={isVoidModalOpen}
+        onClose={() => setIsVoidModalOpen(false)}
+        title="VOID SUBSCRIPTION"
+      >
+        <div className="space-y-4 text-left font-body">
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-[10px] space-y-1">
+            <p className="font-bold flex items-center gap-1.5">
+              <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>This will cancel the current subscription while keeping it in the system for audit history.</span>
+            </p>
+            <p className="text-rose-400/80 font-mono text-[9px]">
+              This action cannot be undone.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+              Reason for Voiding *
+            </label>
+            <select
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+              className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
+            >
+              <option value="Wrong membership selected">Wrong membership selected</option>
+              <option value="Wrong member">Wrong member</option>
+              <option value="Duplicate registration">Duplicate registration</option>
+              <option value="Incorrect payment">Incorrect payment</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+              Additional Notes (Optional)
+            </label>
+            <textarea
+              value={voidNotes}
+              onChange={(e) => setVoidNotes(e.target.value)}
+              rows={2}
+              placeholder="Enter internal explanation for audit trail..."
+              className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+              Admin Password Verification *
+            </label>
+            <div className="relative">
+              <input
+                type={showAdminPassword ? 'text' : 'password'}
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Re-enter your account password"
+                className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminPassword(!showAdminPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+            <button
+              type="button"
+              onClick={() => setIsVoidModalOpen(false)}
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!voidReason || !adminPassword.trim() || isVerifyingVoid}
+              onClick={handleConfirmVoidSubscription}
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
+            >
+              {isVerifyingVoid ? 'Verifying...' : 'Void Subscription'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── INTAKE SUBSCRIPTION WIZARD MODAL ─── */}
+{isWizardOpen && (
+  <IntakeWizardModal
+    isOpen={isWizardOpen}
+    initialIntakeMode="Manual"
+    prefillMember={localMember}
+    onClose={() => setIsWizardOpen(false)}
+    onComplete={() => {
+      setIsWizardOpen(false);
+      setRefreshKey(prev => prev + 1);
+      onMutationSuccess();
+    }}
+  />
+)}
     </div>,
     document.body
   );

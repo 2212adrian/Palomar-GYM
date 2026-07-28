@@ -1,3 +1,4 @@
+// src/pages/logbook/LogbookPage.tsx
 import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { 
   format, 
@@ -12,9 +13,13 @@ import {
   ClipboardList, 
   FileSpreadsheet,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Users,
+  UserPlus,
+  CircleDollarSign,
+  Search
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -42,14 +47,76 @@ import { MembersList } from '../members/MembersList';
 import { prototypeStorage, STORAGE_KEYS } from '../members/memberService';
 import type { AttendanceRecord } from '../../types/members';
 
+// ─── ANIMATED TICKER HELPERS ───
+const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
+  const nodeRef = useRef<HTMLSpanElement>(null);
+  const prevValueRef = useRef(value);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+
+    const controls = animate(prevValueRef.current, value, {
+      duration: 1.1,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate(latest) {
+        node.textContent = `₱${latest.toFixed(2)}`;
+      },
+      onComplete() {
+        prevValueRef.current = value;
+      }
+    });
+
+    return () => controls.stop();
+  }, [value]);
+
+  return <span ref={nodeRef}>₱{value.toFixed(2)}</span>;
+};
+
+const AnimatedNumber: React.FC<{ value: number }> = ({ value }) => {
+  const nodeRef = useRef<HTMLSpanElement>(null);
+  const prevValueRef = useRef(value);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+
+    const controls = animate(prevValueRef.current, value, {
+      duration: 0.8,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate(latest) {
+        node.textContent = Math.round(latest).toString();
+      },
+      onComplete() {
+        prevValueRef.current = value;
+      }
+    });
+
+    return () => controls.stop();
+  }, [value]);
+
+  return <span ref={nodeRef}>{value}</span>;
+};
+
 const ATTENDANCE_FILTERS = [
   { label: 'All', value: 'All' },
   { label: 'Walk-In', value: 'Walk-In' },
   { label: 'Member', value: 'Member' },
-  { label: 'New', value: 'New' }
+  { label: 'Subs', value: 'Subs' }
 ];
 
 const isLogDeletable = (log: LogRecord) => {
+  if (
+    log.isSubscription ||
+    (log as any).deletable === false ||
+    log.customerType === 'New Membership' ||
+    log.categoryOrPlan.includes('Membership') ||
+    log.categoryOrPlan.includes('Monthly') ||
+    log.categoryOrPlan.includes('Yearly')
+  ) {
+    return false;
+  }
+
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const logDate = log.timestamp ? format(parseISO(log.timestamp), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   return logDate === todayStr;
@@ -78,7 +145,6 @@ export const LogbookPage: React.FC = () => {
       }
     }
 
-    // Hydrate from STORAGE_KEYS.ATTENDANCE if present
     try {
       const dbAttendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
       if (dbAttendance.length > 0) {
@@ -106,12 +172,32 @@ export const LogbookPage: React.FC = () => {
     localStorage.setItem('palomar_gym_logbook', JSON.stringify(logs));
   }, [logs]);
 
+  useEffect(() => {
+    const handleLogbookUpdate = () => {
+      const saved = localStorage.getItem('palomar_gym_logbook');
+      if (saved) {
+        try {
+          setLogs(JSON.parse(saved));
+        } catch (e) {
+          console.error('Error re-syncing logbook:', e);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleLogbookUpdate);
+    window.addEventListener('palomar_logbook_updated', handleLogbookUpdate);
+    return () => {
+      window.removeEventListener('storage', handleLogbookUpdate);
+      window.removeEventListener('palomar_logbook_updated', handleLogbookUpdate);
+    };
+  }, []);
+
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
     startOfWeek(new Date(), { weekStartsOn: 0 })
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
   const [ledgerSearch, setLedgerSearch] = useState('');
-  const [customerFilter, setCustomerFilter] = useState<'All' | 'Walk-In' | 'Member' | 'New'>('All');
+  const [customerFilter, setCustomerFilter] = useState<'All' | 'Walk-In' | 'Member' | 'Subs'>('All');
   
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -123,18 +209,15 @@ export const LogbookPage: React.FC = () => {
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [loading] = useState(false);
 
-  // Dynamic mobile sliding backdrop state
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
 
   const itemsPerPage = useResponsiveItemsPerPage();
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Derive which main sliding view is active based on path
   const activePage = useMemo<'logbook' | 'members'>(() => {
     return location.pathname.startsWith('/members') ? 'members' : 'logbook';
   }, [location.pathname]);
 
-  // Synchronize active slide state immediately during render phases
   const activePageRef = useRef(activePage);
   activePageRef.current = activePage;
 
@@ -163,15 +246,18 @@ export const LogbookPage: React.FC = () => {
         matchesType = l.customerType === 'Walk-In';
       } else if (customerFilter === 'Member') {
         matchesType = l.customerType === 'Existing Member';
-      } else if (customerFilter === 'New') {
-        matchesType = l.customerType === 'New Membership';
+      } else if (customerFilter === 'Subs') {
+        matchesType =
+          l.customerType === 'New Membership' ||
+          !!l.isSubscription ||
+          (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
+          (l.categoryOrPlan || '').toLowerCase().includes('subscription');
       }
 
       return matchesSearch && matchesType;
     });
   }, [dayLogs, ledgerSearch, customerFilter]);
 
-  // Pagination bounds
   const totalItems = filteredLogs.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -183,9 +269,39 @@ export const LogbookPage: React.FC = () => {
 
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
-  // Aggregate Metrics
   const totalCollectedToday = useMemo(() => {
-    return dayLogs.reduce((acc, log) => acc + (log.amountPaid || 0), 0);
+    return dayLogs.reduce((acc, log) => {
+      if (log.paymentStatus === 'Paid') {
+        return acc + (log.amountPaid || 0);
+      }
+      return acc;
+    }, 0);
+  }, [dayLogs]);
+
+  const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
+  const prevRevenueRef = useRef<number>(totalCollectedToday);
+
+  useEffect(() => {
+    if (totalCollectedToday > prevRevenueRef.current) {
+      setRevenueTrend('increasing');
+      const timer = setTimeout(() => {
+        setRevenueTrend('neutral');
+      }, 1500);
+      prevRevenueRef.current = totalCollectedToday;
+      return () => clearTimeout(timer);
+    } else if (totalCollectedToday < prevRevenueRef.current) {
+      setRevenueTrend('decreasing');
+      const timer = setTimeout(() => {
+        setRevenueTrend('neutral');
+      }, 1500);
+      prevRevenueRef.current = totalCollectedToday;
+      return () => clearTimeout(timer);
+    }
+    prevRevenueRef.current = totalCollectedToday;
+  }, [totalCollectedToday]);
+
+  const newMembersCount = useMemo(() => {
+    return dayLogs.filter((l: LogRecord) => l.customerType === 'New Membership').length;
   }, [dayLogs]);
 
   const handleCheckInSuccess = (newLog: LogRecord) => {
@@ -215,12 +331,19 @@ export const LogbookPage: React.FC = () => {
 
   const handleDeleteLog = (log: LogRecord) => {
     if (!isLogDeletable(log)) {
-      toast.error('Only logs recorded today can be deleted.');
+      if (
+        log.isSubscription || 
+        log.customerType === 'New Membership' || 
+        log.categoryOrPlan.includes('Membership')
+      ) {
+        toast.error('Subscription contract records cannot be deleted.');
+      } else {
+        toast.error('Only standard check-in logs recorded today can be deleted.');
+      }
       return;
     }
     setPendingDelete(log);
     
-    // Save soft deletions array for Recycle Bin
     const savedDeleted = localStorage.getItem('palomar_gym_logbook_deleted');
     const deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
     localStorage.setItem('palomar_gym_logbook_deleted', JSON.stringify([{ ...log, deleted_at: new Date().toISOString() }, ...deletedList]));
@@ -237,7 +360,6 @@ export const LogbookPage: React.FC = () => {
   const undoDelete = () => {
     if (!pendingDelete) return;
     
-    // Pull back from Recycle Bin
     const savedDeleted = localStorage.getItem('palomar_gym_logbook_deleted');
     if (savedDeleted) {
       const deletedList = JSON.parse(savedDeleted).filter((item: any) => item.id !== pendingDelete.id);
@@ -298,7 +420,7 @@ export const LogbookPage: React.FC = () => {
   }, [role, setActions, activePage]);
 
   const handleDragEnd = (_event: any, info: any, log: LogRecord) => {
-    const swipeThreshold = 80;
+    const swipeThreshold = 70;
     if (info.offset.x > swipeThreshold) {
       setSelectedReceiptLog(log);
       setIsReceiptModalOpen(true);
@@ -307,7 +429,6 @@ export const LogbookPage: React.FC = () => {
     }
   };
 
-  // Dynamic View Target Evaluation for Desktop Side arrows
   const showLeftArrow = useMemo(() => {
     return location.pathname === '/members/list' || location.pathname === '/members/plans';
   }, [location.pathname]);
@@ -426,6 +547,79 @@ export const LogbookPage: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
+          {/* ─── TODAY'S SUMMARY DASHBOARD CARD ─── */}
+          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-4 sm:px-6 py-4 shadow-sm animate-fade-in">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 items-center">
+              
+              {/* Check-ins Metric (Left) */}
+              <div className="flex flex-col sm:flex-row items-center justify-start gap-2 sm:gap-3 min-w-0">
+                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                  <Users className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-blue-500" />
+                </div>
+                <div className="min-w-0 text-center sm:text-left">
+                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                    Check-ins
+                  </span>
+                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
+                    <AnimatedNumber value={dayLogs.length} />
+                  </span>
+                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                    Total Today
+                  </span>
+                </div>
+              </div>
+
+              {/* Today's Revenue Metric (Center) */}
+              <div className="flex flex-col items-center justify-center text-center min-w-0 py-1 border-x border-(--border-color)/40 px-2 sm:px-4">
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                  Revenue
+                </span>
+                <motion.div
+                  animate={{
+                    scale: revenueTrend === 'increasing' ? 1.2 : revenueTrend === 'decreasing' ? 0.85 : 1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="my-1 flex items-center justify-center gap-1 sm:gap-1.5"
+                >
+                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 transition-colors duration-300 ${
+                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+                  }`} />
+                  <span className={`font-heading text-xl sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-500 truncate ${
+                    revenueTrend === 'increasing'
+                      ? 'text-emerald-500'
+                      : revenueTrend === 'decreasing'
+                      ? 'text-rose-500'
+                      : 'text-(--color-text)'
+                  }`}>
+                    <AnimatedCurrency value={totalCollectedToday} />
+                  </span>
+                </motion.div>
+                <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                  Total Collected
+                </span>
+              </div>
+
+              {/* New Members Metric (Right) */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 sm:gap-3 min-w-0">
+                <div className="min-w-0 text-center sm:text-right order-2 sm:order-1">
+                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
+                    New Members
+                  </span>
+                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
+                    <AnimatedNumber value={newMembersCount} />
+                  </span>
+                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
+                    New Registrations
+                  </span>
+                </div>
+                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-1 sm:order-2">
+                  <UserPlus className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-emerald-500" />
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           <TimelineBar
             currentWeekStart={currentWeekStart}
             onWeekStartChange={setCurrentWeekStart}
@@ -464,6 +658,8 @@ export const LogbookPage: React.FC = () => {
                 });
 
                 if (totalItems === 0) {
+                  const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All';
+
                   return (
                     <motion.div
                       initial={{ opacity: 0 }}
@@ -472,12 +668,28 @@ export const LogbookPage: React.FC = () => {
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
                       <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-455 dark:text-zinc-650 mb-4 animate-pulse">
-                        <ClipboardList className="w-8 h-8" />
+                        {hasFilter ? <Search className="w-8 h-8" /> : <ClipboardList className="w-8 h-8" />}
                       </div>
-                      <h3 className="font-heading text-sm text-(--color-text) tracking-wider">NO CHECK-INS RECORDED</h3>
+                      <h3 className="font-heading text-sm text-(--color-text) tracking-wider uppercase">
+                        {hasFilter ? 'No check-ins match query' : 'NO CHECK-INS RECORDED'}
+                      </h3>
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
-                        Attendance records and subscription log sheets are empty for this date.
+                        {hasFilter
+                          ? 'Try modifying your search keywords or reset category filters.'
+                          : 'Attendance records and subscription log sheets are empty for this date.'}
                       </p>
+                      {hasFilter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLedgerSearch('');
+                            setCustomerFilter('All');
+                          }}
+                          className="mt-4 px-4 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                        >
+                          Clear Filters
+                        </button>
+                      )}
                     </motion.div>
                   );
                 }
@@ -602,8 +814,11 @@ export const LogbookPage: React.FC = () => {
             receiptNo: (selectedReceiptLog as any).receipt_no || selectedReceiptLog.id,
             customerName: selectedReceiptLog.customerName || 'Walk-In Guest',
             planType: selectedReceiptLog.categoryOrPlan || 'Daily Pass',
-            basePrice: selectedReceiptLog.amountPaid,
+            basePrice: (selectedReceiptLog as any).basePrice ?? selectedReceiptLog.amountPaid,
+            gcashFee: (selectedReceiptLog as any).gcashFee ?? 0,
+            cardFee: (selectedReceiptLog as any).cardFee ?? 0,
             paymentMethod: selectedReceiptLog.paymentMethod,
+            gcashRefNo: (selectedReceiptLog as any).gcashRefNo,
             transactionDate: selectedReceiptLog.timestamp,
             processedBy: 'WOLF PALOMAR STAFF'
           }}
@@ -710,13 +925,13 @@ export const LogbookPage: React.FC = () => {
           <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
             <div className="space-y-0.5 text-left select-none">
               <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                TODAY'S LOGBOOK MADE
+                TODAY SUMMARY
               </span>
               <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                ₱{totalCollectedToday.toFixed(2)}
+                <AnimatedCurrency value={totalCollectedToday} />
               </span>
               <span className="text-[9px] font-sans text-slate-500 block leading-none font-semibold">
-                Filing Attendance History
+                {dayLogs.length} Check-ins Today
               </span>
             </div>
 
@@ -739,39 +954,52 @@ export const LogbookPage: React.FC = () => {
 const INITIAL_LOGS: LogRecord[] = [
   {
     id: 'log-1',
-    timestamp: '2026-07-17T08:34:00Z',
-    memberId: 'MEM-000001',
-    customerName: 'John Dela Cruz',
-    customerType: 'Existing Member',
-    categoryOrPlan: 'Monthly Plan',
-    paymentMethod: 'Free',
-    amountPaid: 0,
-    paymentStatus: 'Free',
+    timestamp: '2026-07-28T09:11:00Z',
+    memberId: null,
+    customerName: 'MATTHEW',
+    customerType: 'Walk-In',
+    categoryOrPlan: 'Walk-In Student',
+    paymentMethod: 'Cash',
+    amountPaid: 60,
+    paymentStatus: 'Paid',
     status: 'Active'
   },
   {
     id: 'log-2',
-    timestamp: '2026-07-17T15:15:00Z',
+    timestamp: '2026-07-28T09:02:00Z',
     memberId: null,
-    customerName: 'Juan Miguel',
+    customerName: 'LOVER',
     customerType: 'Walk-In',
-    categoryOrPlan: 'Regular Pass',
-    paymentMethod: 'GCash',
+    categoryOrPlan: 'Walk-In Regular',
+    paymentMethod: 'Cash',
     amountPaid: 90, 
     paymentStatus: 'Paid',
     status: 'Active'
   },
   {
     id: 'log-3',
-    timestamp: '2026-07-17T19:45:00Z',
-    memberId: 'MEM-000002',
-    customerName: 'Jane Santos',
+    timestamp: '2026-07-28T09:02:00Z',
+    memberId: 'MEM-000003',
+    customerName: 'MARIA CLARA SANTOS',
     customerType: 'Existing Member',
-    categoryOrPlan: 'Monthly Plan',
+    categoryOrPlan: 'Monthly Member Entry',
     paymentMethod: 'Free',
     amountPaid: 0,
-    paymentStatus: 'Free',
-    status: 'Expires Soon'
+    paymentStatus: 'Paid',
+    status: 'Active'
+  },
+  {
+    id: 'log-4',
+    timestamp: '2026-07-28T08:38:00Z',
+    memberId: 'MEM-000196',
+    customerName: 'MUG BOOK, GREEN APPLE',
+    customerType: 'New Membership',
+    categoryOrPlan: 'Monthly Membership',
+    paymentMethod: 'Cash',
+    amountPaid: 1000,
+    paymentStatus: 'Paid',
+    status: 'Active',
+    isSubscription: true
   }
 ];
 

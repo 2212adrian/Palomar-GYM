@@ -28,8 +28,8 @@ export const DatabaseBackup: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
-  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
-
+const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
+  
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [backupNotes, setBackupNotes] = useState<string>('');

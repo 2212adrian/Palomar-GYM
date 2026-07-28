@@ -1,9 +1,8 @@
 @import "tailwindcss";
 
-  /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
-  @variant dark (&:where(.dark, .dark *));
+/* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
 
-  
 /* ==========================================================
    SCROLLBAR SYSTEM THEME TUNING (ADAPTIVE LIGHT/DARK)
    ========================================================== */
@@ -39,7 +38,6 @@ html {
   scrollbar-color: #295c9a transparent;
 }
 
-
 /* --- DARK MODE: RED SCROLLBARS (Explicit Class) --- */
 .dark ::-webkit-scrollbar-track {
   background: transparent;
@@ -59,7 +57,6 @@ html {
   scrollbar-color: #9c0202 transparent;
 }
 
-
 /* --- DARK MODE: RED SCROLLBARS (System Preference Fallback) --- */
 @media (prefers-color-scheme: dark) {
   :root:not(.light) ::-webkit-scrollbar-track {
@@ -78,648 +75,587 @@ html {
   }
 }
 
-  /* ==========================================================
-    PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN & DASHBOARD CUSTOM CSS
-    ========================================================== */
+/* ==========================================================
+   PALOMAR GYM MANAGEMENT SYSTEM 2.0 - LOGIN & DASHBOARD CUSTOM CSS
+   ========================================================== */
 
-  /* Font Family Declarations */
-  @font-face {
-    font-family: 'Freshman';
-    src: url('./assets/aBlackLives.ttf') format('truetype');
-    font-weight: 800;
-    font-style: normal;
-  }
+/* Font Family Declarations */
+@font-face {
+  font-family: 'Freshman';
+  src: url('./assets/aBlackLives.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+}
 
-  .font-heading {
-    font-family: 'Freshman', Impact, sans-serif !important;
-  }
+.font-heading {
+  font-family: 'Freshman', Impact, sans-serif !important;
+}
 
-  .font-body {
-    font-family: 'Inter', sans-serif !important;
-  }
+.font-body {
+  font-family: 'Inter', sans-serif !important;
+}
 
-  :root {
-    /* LIGHT MODE: Premium Ice Slate & Athletic Navy (from Logo Shield) */
-    --bg-page: #f0f4f8;                  /* Elegant light slate blue canvas */
-    --bg-card: #ffffff;                  /* Lighter white card for proper depth hierarchy */
-    --bg-input: #e2e8f0;                 /* Structured inner inputs */
-    --border-color: rgba(12, 60, 115, 0.08);
-    --color-glow: #123c73;               /* Shield Navy Blue */
-    --color-text: #0b1a30;               /* Readable dark navy text */
-    --color-primary: #123c73;
-    --color-primary-hover: #0c2950;
-    --color-primary-light: #295c9a;
-  }
+:root {
+  /* LIGHT MODE: Premium Ice Slate & Athletic Navy (from Logo Shield) */
+  --bg-page: #f0f4f8;                  /* Elegant light slate blue canvas */
+  --bg-card: #ffffff;                  /* Lighter white card for proper depth hierarchy */
+  --bg-input: #e2e8f0;                 /* Structured inner inputs */
+  --border-color: rgba(12, 60, 115, 0.08);
+  --color-glow: #123c73;               /* Shield Navy Blue */
+  --color-text: #0b1a30;               /* Readable dark navy text */
+  --color-primary: #123c73;
+  --color-primary-hover: #0c2950;
+  --color-primary-light: #295c9a;
+}
 
-  /* Automatically apply dark mode if system prefers it and no manual override is set */
-  @media (prefers-color-scheme: dark) {
-    :root:not(.light) {
-      /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
-      --bg-page: #0c0e12;                /* Deepest base - a rich midnight obsidian blue-black */
-      --bg-card: #161920;                /* Elevated panel/card/sidebar - polished and comfortable */
-      --bg-input: #1e232d;               /* Even lighter for readable form inputs/fields */
-      --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
-      --color-text: #f3f4f6;
-      --color-primary: #bf0202;          /* Active Wolf Red */
-      --color-primary-hover: #9c0202;
-      --color-primary-light: #e03434;
-    }
-  }
-
-  /* Explicit Dark Mode selection */
-  .dark {
-    --color-glow: #bf0202;
+/* Automatically apply dark mode if system prefers it and no manual override is set */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
     /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
-    --bg-page: #0c0e12;                  /* Deepest base - a rich midnight obsidian blue-black */
-    --bg-card: #161920;                  /* Elevated panel/card/sidebar - polished and comfortable */
-    --bg-input: #1e232d;                 /* Even lighter for readable form inputs/fields */
+    --bg-page: #0c0e12;                /* Deepest base - a rich midnight obsidian blue-black */
+    --bg-card: #161920;                /* Elevated panel/card/sidebar - polished and comfortable */
+    --bg-input: #1e232d;               /* Even lighter for readable form inputs/fields */
     --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
     --color-text: #f3f4f6;
-    --color-primary: #bf0202;            /* Active Wolf Red */
+    --color-primary: #bf0202;          /* Active Wolf Red */
     --color-primary-hover: #9c0202;
     --color-primary-light: #e03434;
   }
+}
 
-  @media (prefers-color-scheme: dark) {
-    :root:not(.light) {
-      --color-glow: #bf0202;
-    }
+/* Explicit Dark Mode selection */
+.dark {
+  --color-glow: #bf0202;
+  /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
+  --bg-page: #0c0e12;                  /* Deepest base - a rich midnight obsidian blue-black */
+  --bg-card: #161920;                  /* Elevated panel/card/sidebar - polished and comfortable */
+  --bg-input: #1e232d;                 /* Even lighter for readable form inputs/fields */
+  --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
+  --color-text: #f3f4f6;
+  --color-primary: #bf0202;            /* Active Wolf Red */
+  --color-primary-hover: #9c0202;
+  --color-primary-light: #e03434;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-glow: #bf0202;
   }
+}
 
-  /* Apply default font fallback to body elements */
-  body {
-    font-family: 'Inter', sans-serif;
-    background-color: var(--bg-page);
-    color: var(--color-text);
-  }
+/* Apply default font fallback to body elements */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-page);
+  color: var(--color-text);
+}
 
-  /* --- CINEMATIC TRANSITIONS FOR THEME SWAPPING --- */
-  body,
-  .auth-split-container,
-  .auth-left,
-  .admin-split-container,
-  .admin-left,
-  .admin-right,
-  .field-input,
-  .protocol-notice-box,
-  .brand,
-  .system-subtitle,
-  .checkbox-ui,
-  span,
-  p,
-  label,
-  button {
-    transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-                border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-                color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-                box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+/* --- CINEMATIC TRANSITIONS FOR THEME SWAPPING --- */
+body,
+.auth-split-container,
+.auth-left,
+.admin-split-container,
+.admin-left,
+.admin-right,
+.field-input,
+.protocol-notice-box,
+.brand,
+.system-subtitle,
+.checkbox-ui,
+span,
+p,
+label,
+button {
+  transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+              border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+              color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-  /* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
-  .auth-split-container {
-    display: flex;
-    width: 100%;
-    height: 100vh;
-    background-color: var(--bg-page);
-    overflow: hidden;
-  }
+/* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
+.auth-split-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  background-color: var(--bg-page);
+  overflow: hidden;
+}
 
-  .auth-left {
-    position: relative;
-    background-color: var(--bg-page);
-    display: flex;
-    justify-content: center !important;
-    align-items: center !important;
-    padding-right: 0 !important;
-    overflow: hidden;
-    flex: 1 0 100%;
-    border: none !important;
-    outline: none !important;
-    /* Animates BOTH width adjustments (flex) and the camera slide (transform) */
-    transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
-  }
+.auth-left {
+  position: relative;
+  background-color: var(--bg-page);
+  display: flex;
+  justify-content: center !important;
+  align-items: center !important;
+  padding-right: 0 !important;
+  overflow: hidden;
+  flex: 1 0 100%;
+  border: none !important;
+  outline: none !important;
+  transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+}
 
+/* ==========================================================
+   DYNAMIC NEON GLOWING DIVIDER SYSTEM (TWO STATIC LINES)
+   ========================================================== */
+.auth-divider-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 30;
+  pointer-events: none;
+  background-color: var(--color-glow);
+  filter: drop-shadow(0 0 4px var(--color-glow)) 
+          drop-shadow(0 0 12px var(--color-glow));
+  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
- /* ==========================================================
-     DYNAMIC NEON GLOWING DIVIDER SYSTEM (TWO STATIC LINES)
-     ========================================================== */
-  .auth-divider-line {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 30;
-    pointer-events: none;
-    background-color: var(--color-glow);
-    
-    /* Neon glow effect */
-    filter: drop-shadow(0 0 4px var(--color-glow)) 
-            drop-shadow(0 0 12px var(--color-glow));
-            
-    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
-                background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.auth-line-left {
+  clip-path: polygon(10% 0%, 10.3% 0%, 0.3% 100%, 0% 100%);
+  opacity: 0.95;
+}
 
-  /* LEFT LINE: Static geometry for the left slant edge */
-  .auth-line-left {
-    clip-path: polygon(10% 0%, 10.3% 0%, 0.3% 100%, 0% 100%);
-    opacity: 0.95;
-  }
+.carousel-flipped .auth-line-left {
+  opacity: 0;
+}
 
-  /* Fade out the left line when the panel flips to recovery mode */
-  .carousel-flipped .auth-line-left {
-    opacity: 0;
-  }
+.auth-line-right {
+  clip-path: polygon(89.7% 0%, 90% 0%, 100% 100%, 99.7% 100%);
+  opacity: 0;
+}
 
-  /* RIGHT LINE: Static geometry for the right slant edge */
-  .auth-line-right {
-    clip-path: polygon(89.7% 0%, 90% 0%, 100% 100%, 99.7% 100%);
-    opacity: 0;
-  }
+.carousel-flipped .auth-line-right {
+  opacity: 0.95;
+}
 
-  /* Fade in the right line when the panel flips to recovery mode */
-  .carousel-flipped .auth-line-right {
-    opacity: 0.95;
-  }
+.auth-right {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 0%;
+  opacity: 0;
+  border: none !important;
+  outline: none !important;
+  clip-path: polygon(10% 0%, 100% 0%, 100% 100%, 0% 100%);
+  margin-left: -5vw;
+  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), 
+              transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), 
+              opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1),
+              clip-path 1.2s cubic-bezier(0.77, 0, 0.175, 1),
+              margin 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+}
 
-  /* Keep your updated .auth-right styles from earlier */
-  .auth-right {
-    position: relative;
-    overflow: hidden;
-    flex: 0 0 0%;
-    opacity: 0;
-    border: none !important;
-    outline: none !important;
-    clip-path: polygon(10% 0%, 100% 0%, 100% 100%, 0% 100%);
-    margin-left: -5vw;
-    transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), 
-                transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), 
-                opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1),
-                clip-path 1.2s cubic-bezier(0.77, 0, 0.175, 1),
-                margin 1.2s cubic-bezier(0.77, 0, 0.175, 1);
-  }
+.auth-right.carousel-flipped {
+  clip-path: polygon(0% 0%, 90% 0%, 100% 100%, 0% 100%);
+  margin-left: 0;
+  margin-right: -5vw;
+}
 
+@media (max-width: 1023px) {
+  .auth-right,
   .auth-right.carousel-flipped {
-    clip-path: polygon(0% 0%, 90% 0%, 100% 100%, 0% 100%);
-    margin-left: 0;
-    margin-right: -5vw;
+    clip-path: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .auth-split-container.is-ready .auth-left {
+    flex: 1 1 0%;
   }
 
-  @media (max-width: 1023px) {
-    .auth-right,
-    .auth-right.carousel-flipped {
-      clip-path: none !important;
-      margin-left: 0 !important;
-      margin-right: 0 !important;
-    }
+  .auth-split-container.is-ready .auth-right {
+    flex: 1.2 1 5%;
+    opacity: 1;
+  }
+}
+
+/* --- 2. DE-COUPLED ADMIN PANEL CONSOLE LAYOUT --- */
+.admin-split-container {
+  display: flex;
+  width: 100%;
+  height: calc(100vh - 4rem);
+  overflow: hidden;
+  background-color: var(--bg-page);
+}
+
+.admin-left {
+  position: relative;
+  background-color: var(--bg-page);
+  display: flex;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.admin-right {
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 0%;
+}
+
+@media (min-width: 1024px) {
+  .admin-split-container.is-ready-admin .admin-left {
+    flex: 0 0 auto;
   }
 
-  @media (min-width: 1024px) {
-    .auth-split-container.is-ready .auth-left {
-      flex: 1 1 0%;
-    }
-
-    .auth-split-container.is-ready .auth-right {
-      flex: 1.2 1 5%;
-      opacity: 1;
-    }
+  .admin-split-container.is-ready-admin .admin-right {
+    flex: 1 1 0%;
+    opacity: 1;
   }
+}
 
-  /* --- 2. DE-COUPLED ADMIN PANEL CONSOLE LAYOUT --- */
-  .admin-split-container {
+/* --- ADAPTIVE READABILITY OPTIMIZATIONS --- */
+.carousel-content h2 {
+  text-shadow: 
+    0 4px 18px rgba(0, 0, 0, 0.95), 
+    0 2px 4px rgba(0, 0, 0, 0.95),
+    0 1px 1px rgba(0, 0, 0, 1);
+}
+
+/* --- CAROUSEL OVERLAY --- */
+.carousel-overlay {
+  background: linear-gradient(
+    to right,
+    var(--bg-page) 0%,
+    var(--bg-page) 16%, 
+    transparent 45%,
+    transparent 65%,
+    var(--bg-page) 100
+  );
+}
+
+/* --- FLIP CONTAINER CONTROLS --- */
+.flip-card {
+  perspective: 1000px;
+}
+
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.flip-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.flip-card-front,
+.flip-card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.flip-card-back {
+  transform: rotateY(180deg);
+}
+
+/* --- TEXT FLOATING FIELDS --- */
+.field-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.field-input {
+  width: 100%;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px 14px 8px !important; 
+  color: var(--color-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.field-input:focus {
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
+}
+
+.field-label {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #8a9099;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  pointer-events: none;
+  transform-origin: top left;
+  transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.field-input:focus ~ .field-label,
+.field-input:not(:placeholder-shown) ~ .field-label {
+  top: 6px;
+  transform: translateY(0) scale(0.78);
+}
+
+.field-visibility-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a9b5ca;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.field-visibility-toggle:hover {
+  color: var(--color-text);
+}
+
+/* --- AGREEMENT SYSTEM CHECKBOX --- */
+.checkbox-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.styled-checkbox {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.checkbox-ui {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-color);
+  background-color: var(--bg-input);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.checkbox-ui::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 5px;
+  width: 5px;
+  height: 9px;
+  border-right: #ffffff 2px solid;
+  border-bottom: #ffffff 2px solid;
+  transform: rotate(45deg) scale(0);
+  opacity: 0;
+}
+
+.styled-checkbox:checked + .checkbox-label .checkbox-ui {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35);
+}
+
+.styled-checkbox:checked + .checkbox-label .checkbox-ui::after {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+}
+
+/* --- GOOGLE OAUTH STYLING --- */
+.google-login-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: linear-gradient(
+    180deg,
+    rgba(250, 250, 252, 0.96),
+    rgba(234, 238, 246, 0.93)
+  );
+  color: #1f2937;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.85px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.google-login-btn:hover {
+  background: linear-gradient(180deg, #ffffff, #eef3fa);
+}
+
+/* --- SHAKE ERROR ON FAILURE --- */
+@keyframes field-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+}
+
+.shake-error {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35) !important;
+  animation: field-shake 0.35s ease;
+}
+
+/* --- TYPEWRITER CURSOR BLINKING --- */
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* --- WELCOME GATEWAY OVERLAY PROGRESS --- */
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* --- MOBILE RESPONSIVE LAYOUTS --- */
+@media (max-width: 1023px) {
+  .auth-left {
+    flex: 1 1 100% !important;
+    padding-right: 0 !important;
+    padding-top: 40px !important;
+    padding-bottom: 40px !important;
+    min-height: 100vh;
+    overflow-y: auto !important;
     display: flex;
-    width: 100%;
-    height: calc(100vh - 4rem); /* Force height to match viewport below the Topbar */
-    overflow: hidden;
-    background-color: var(--bg-page);
+    align-items: center;
+    justify-content: center;
   }
-
-  .admin-left {
-    position: relative;
-    background-color: var(--bg-page);
-    display: flex;
-    overflow: hidden;
-    flex: 0 0 auto; /* Statically sized on desktop, no shifting or warping */
-  }
-
-  .admin-right {
-    position: relative;
-    overflow: hidden;
-    flex: 1 1 0%; /* Occupies the remaining horizontal screen space */
-  }
-
-  @media (min-width: 1024px) {
-    .admin-split-container.is-ready-admin .admin-left {
-      flex: 0 0 auto; /* sized dynamically by Tailwind's w-72 or w-20 */
-    }
-
-    .admin-split-container.is-ready-admin .admin-right {
-      flex: 1 1 0%;
-      opacity: 1;
-    }
-  }
-
-  /* --- ADAPTIVE READABILITY OPTIMIZATIONS --- */
-  .carousel-content h2 {
-    text-shadow: 
-      0 4px 18px rgba(0, 0, 0, 0.95), 
-      0 2px 4px rgba(0, 0, 0, 0.95),
-      0 1px 1px rgba(0, 0, 0, 1);
-  }
-
-  /* --- CAROUSEL OVERLAY --- */
-  .carousel-overlay {
-    background: linear-gradient(
-      to right,
-      var(--bg-page) 0%,
-      var(--bg-page) 16%, 
-      transparent 45%,
-      transparent 65%,
-      var(--bg-page) 100
-    );
-  }
-
-  /* --- FLIP CONTAINER CONTROLS --- */
+  
   .flip-card {
-    perspective: 1000px;
-  }
-
-  .flip-card-inner {
-    position: relative;
     width: 100%;
-    height: 100%;
-    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    transform-style: preserve-3d;
+    max-width: 400px;
+    height: auto !important;
+    max-height: none !important;
   }
-
-  .flip-card-inner.flipped {
-    transform: rotateY(180deg);
+  
+  .flip-card-inner {
+    transform-style: flat;
+    height: auto;
   }
 
   .flip-card-front,
   .flip-card-back {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-  }
-
-  .flip-card-back {
-    transform: rotateY(180deg);
-  }
-
-  /* --- TEXT FLOATING FIELDS --- */
-  .field-wrap {
-    position: relative;
-    width: 100%;
-  }
-
-  .field-input {
-    width: 100%;
-    background-color: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 24px 14px 8px !important; 
-    color: var(--color-text);
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.25s ease, box-shadow 0.25s ease;
-  }
-
-  .field-input:focus {
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
-  }
-
-  .field-label {
-    position: absolute;
-    top: 50%;
-    left: 14px;
-    transform: translateY(-50%);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: #8a9099;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    pointer-events: none;
-    transform-origin: top left;
-    transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-                transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-                font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-                color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
-  }
-
-  .field-input:focus ~ .field-label,
-  .field-input:not(:placeholder-shown) ~ .field-label {
-    top: 6px;
-    transform: translateY(0) scale(0.78);
-  }
-
-  .field-visibility-toggle {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #a9b5ca;
-    background: transparent;
-    border: none;
-    cursor: pointer;
+    position: relative !important;
+    height: auto !important;
+    backface-visibility: visible !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 20px 16px !important;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
   }
 
-  .field-visibility-toggle:hover {
-    color: var(--color-text);
+  .flip-card-inner:not(.flipped) .flip-card-back {
+    display: none !important;
   }
 
-  /* --- AGREEMENT SYSTEM CHECKBOX --- */
-  .checkbox-group {
-    position: relative;
-    display: flex;
-    align-items: center;
+  .flip-card-inner.flipped .flip-card-front {
+    display: none !important;
   }
+}
 
-  .styled-checkbox {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .checkbox-label {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: 10px;
-    cursor: pointer;
-  }
-
-  .checkbox-ui {
-    width: 18px;
-    height: 18px;
-    border-radius: 6px;
-    border: 1.5px solid var(--border-color);
-    background-color: var(--bg-input);
-    flex-shrink: 0;
-    position: relative;
-  }
-
-  .checkbox-ui::after {
-    content: '';
-    position: absolute;
-    top: 1px;
-    left: 5px;
-    width: 5px;
-    height: 9px;
-    border-right: #ffffff 2px solid;
-    border-bottom: #ffffff 2px solid;
-    transform: rotate(45deg) scale(0);
-    opacity: 0;
-  }
-
-  .styled-checkbox:checked + .checkbox-label .checkbox-ui {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35);
-  }
-
-  .styled-checkbox:checked + .checkbox-label .checkbox-ui::after {
+@keyframes dashboardReveal {
+  0% {
     opacity: 1;
-    transform: rotate(45deg) scale(1);
+    transform: scale(1);
+    filter: blur(0px);
   }
-
-  /* --- GOOGLE OAUTH STYLING --- */
-  .google-login-btn {
-    width: 100%;
-    margin-top: 8px;
-    padding: 12px 14px;
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
-    background: linear-gradient(
-      180deg,
-      rgba(250, 250, 252, 0.96),
-      rgba(234, 238, 246, 0.93)
-    );
-    color: #1f2937;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 0.85px;
-    text-transform: uppercase;
-    cursor: pointer;
+  60% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(4px);
   }
-
-  .google-login-btn:hover {
-    background: linear-gradient(180deg, #ffffff, #eef3fa);
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+    filter: blur(12px);
+    visibility: hidden;
   }
+}
 
-  /* --- SHAKE ERROR ON FAILURE --- */
-  @keyframes field-shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-6px); }
-    40% { transform: translateX(6px); }
-    60% { transform: translateX(-4px); }
-  }
-
-  .shake-error {
-    border-color: var(--color-primary) !important;
-    box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35) !important;
-    animation: field-shake 0.35s ease;
-  }
-
-  /* --- TYPEWRITER CURSOR BLINKING --- */
-  @keyframes blink {
-    50% { opacity: 0; }
-  }
-
-  /* --- WELCOME GATEWAY OVERLAY PROGRESS --- */
-  @keyframes loading {
-    0% { transform: translateX(-100%); }
-    50% { transform: translateX(100%); }
-    100% { transform: translateX(-100%); }
-  }
-
-  /* --- MOBILE RESPONSIVE LAYOUTS --- */
-  @media (max-width: 1023px) {
-    .auth-left {
-      flex: 1 1 100% !important;
-      padding-right: 0 !important;
-      padding-top: 40px !important;
-      padding-bottom: 40px !important;
-      min-height: 100vh;
-      overflow-y: auto !important;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .flip-card {
-      width: 100%;
-      max-width: 400px;
-      height: auto !important;
-      max-height: none !important;
-    }
-    
-    .flip-card-inner {
-      transform-style: flat;
-      height: auto;
-    }
-
-    .flip-card-front,
-    .flip-card-back {
-      position: relative !important;
-      height: auto !important;
-      backface-visibility: visible !important;
-      background: transparent !important;
-      border: none !important;
-      box-shadow: none !important;
-      padding: 20px 16px !important;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .flip-card-inner:not(.flipped) .flip-card-back {
-      display: none !important;
-    }
-
-    .flip-card-inner.flipped .flip-card-front {
-      display: none !important;
-    }
-  }
-
-  @keyframes dashboardReveal {
-    0% {
-      opacity: 1;
-      transform: scale(1);
-      filter: blur(0px);
-    }
-    60% {
-      opacity: 1;
-      transform: scale(1);
-      filter: blur(4px);
-    }
-    100% {
-      opacity: 0;
-      transform: scale(1.08);
-      filter: blur(12px);
-      visibility: hidden;
-    }
-  }
-
-  .dashboard-intro-overlay {
-    animation: dashboardReveal 1.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
-  }
+.dashboard-intro-overlay {
+  animation: dashboardReveal 1.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
 
 /* Hide bottom mobile navbar globally when print portal is active */
 body.print-portal-open nav {
   display: none !important;
 }
 
-
 /* ==========================================================
-   REACT TOASTIFY ADAPTIVE THEME OVERRIDES
+   REACT TOASTIFY ADAPTIVE THEME OVERRIDES (LIGHT & DARK)
    ========================================================== */
 .Toastify__toast-container {
-  z-index: 100000 !important; /* Forces layout depth position above modern UI dialog overlays */
+  z-index: 100000 !important;
 }
 
-/* Base Toastified Design Structure */
-.Toastify__toast {
+/* Universal Toast Theme (Uses CSS Variables for Automatic Light/Dark Mode) */
+.Toastify__toast,
+.Toastify__toast-theme--light,
+.Toastify__toast-theme--dark,
+.Toastify__toast-theme--colored {
   font-family: 'Inter', sans-serif !important;
   border-radius: 16px !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
   padding: 14px 18px !important;
+  background-color: var(--bg-card) !important; /* White in Light Mode, #161920 in Dark Mode */
+  color: var(--color-text) !important;          /* Dark Navy in Light Mode, Slate White in Dark Mode */
+  border: 1px solid var(--border-color) !important;
   box-shadow: 0 12px 36px -8px rgba(11, 26, 48, 0.08),
               0 4px 12px -2px rgba(11, 26, 48, 0.04) !important;
-  border: 1px solid var(--border-color) !important;
   transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
               border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
               color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Light Mode Premium Slate Theme Toast */
-.Toastify__toast-theme--light {
-  background-color: #ffffff !important; /* Matches --bg-card light mode */
-  color: #0b1a30 !important;            /* Matches --color-text light mode */
-  border-color: rgba(18, 60, 115, 0.1) !important;
+/* Close Button Colors */
+.Toastify__close-button,
+.Toastify__close-button--light,
+.Toastify__close-button--dark {
+  color: var(--color-text) !important;
+  opacity: 0.5 !important;
 }
 
-.Toastify__close-button--light {
-  color: #0b1a30 !important;
-  opacity: 0.4;
+.Toastify__close-button:hover {
+  opacity: 1 !important;
 }
 
-.Toastify__close-button--light:hover {
-  opacity: 1;
-}
-
-/* Light Mode default Progress Bar (Logo Navy Blue Gradient) */
-.Toastify__progress-bar--light {
-  background: linear-gradient(to right, #295c9a, #123c73) !important;
+/* Default Progress Bar */
+.Toastify__progress-bar,
+.Toastify__progress-bar--light,
+.Toastify__progress-bar--dark {
+  background: var(--color-primary) !important;
   height: 3px !important;
 }
 
-/* Dark Mode Crimson Theme Toast (Explicit selector overrides) */
-.dark .Toastify__toast-theme--light,
-.dark .Toastify__toast-theme--dark {
-  background-color: #161920 !important; /* Matches --bg-card dark mode */
-  color: #f3f4f6 !important;            /* Matches --color-text dark mode */
-  border-color: rgba(255, 255, 255, 0.05) !important;
-}
-
-.dark .Toastify__close-button--light,
-.dark .Toastify__close-button--dark {
-  color: #f3f4f6 !important;
-  opacity: 0.4;
-}
-
-.dark .Toastify__close-button--light:hover,
-.dark .Toastify__close-button--dark:hover {
-  opacity: 1;
-}
-
-/* Dark Mode Crimson progress bar */
-.dark .Toastify__progress-bar--light,
-.dark .Toastify__progress-bar--dark {
-  background: linear-gradient(to right, #e03434, #bf0202) !important;
-  height: 3px !important;
-}
-
-/* System Dark Theme Preference Support */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) .Toastify__toast-theme--light,
-  :root:not(.light) .Toastify__toast-theme--dark {
-    background-color: #161920 !important;
-    color: #f3f4f6 !important;
-    border-color: rgba(255, 255, 255, 0.05) !important;
-  }
-
-  :root:not(.light) .Toastify__close-button--light,
-  :root:not(.light) .Toastify__close-button--dark {
-    color: #f3f4f6 !important;
-    opacity: 0.4;
-  }
-
-  :root:not(.light) .Toastify__close-button--light:hover,
-  :root:not(.light) .Toastify__close-button--dark:hover {
-    opacity: 1;
-  }
-
-  :root:not(.light) .Toastify__progress-bar--light,
-  :root:not(.light) .Toastify__progress-bar--dark {
-    background: linear-gradient(to right, #e03434, #bf0202) !important;
-    height: 3px !important;
-  }
-}
-
-/* Standard notification state indicators */
+/* Status Specific Indicator Overrides */
 .Toastify__progress-bar--success {
   background: #10b981 !important;
 }
@@ -736,7 +672,6 @@ body.print-portal-open nav {
   background: #f59e0b !important;
 }
 
-
 /* ==========================================================
    SELECT ELEMENT & NESTED OPTION BEAUTIFICATION SYSTEM
    ========================================================== */
@@ -746,36 +681,33 @@ select {
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 11px;
-  padding-right: 36px !important; /* Guarantees select labels do not clip on dropdown down arrow icon */
+  padding-right: 36px !important;
   transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
               color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Customize generic options for readable drop-down layers */
 select option {
-  background-color: #ffffff; /* Explicit light card backdrop */
-  color: #0b1a30;            /* Premium readable navy blue text */
+  background-color: #ffffff;
+  color: #0b1a30;
   padding: 12px !important;
   font-family: 'Inter', sans-serif !important;
   font-weight: 500;
 }
 
-/* Custom interactive state focus ring styles (Light Mode) */
 select:focus {
   border-color: var(--color-primary-light) !important;
   box-shadow: 0 0 0 3px rgba(41, 92, 154, 0.15) !important;
 }
 
-/* Dark Mode selector option override (Explicit class toggling) */
 .dark select {
   background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9b5ca' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
 }
 
 .dark select option {
-  background-color: #161920 !important; /* Deep dark card backdrop */
-  color: #f3f4f6 !important;            /* Pure light contrast text */
+  background-color: #161920 !important;
+  color: #f3f4f6 !important;
 }
 
 .dark select:focus {
@@ -783,7 +715,6 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(191, 2, 2, 0.2) !important;
 }
 
-/* System Preference Dark Mode Fallbacks */
 @media (prefers-color-scheme: dark) {
   :root:not(.light) select {
     background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9b5ca' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");

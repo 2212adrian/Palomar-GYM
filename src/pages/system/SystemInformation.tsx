@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Cloud,
   Gauge,
-  Monitor
+  Monitor,
+  Calendar
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { Button } from '../../components/ui/Button';
@@ -76,7 +77,7 @@ export const SystemInformation: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showSqlGuide, setShowSqlGuide] = useState<boolean>(false);
 
-  // Storage RPC supports state
+  // Storage RPC telemetry states
   const [rpcSupported, setRpcSupported] = useState<boolean>(false);
   const [dbSizeBytes, setDbSizeBytes] = useState<number | null>(null);
   const [storageSizeBytes, setStorageSizeBytes] = useState<number | null>(null);
@@ -85,13 +86,33 @@ export const SystemInformation: React.FC = () => {
   const [dbTables, setDbTables] = useState<Array<{ table_name: string; record_count: number; size_bytes: number }>>([]);
 
   const APP_VERSION = pkg.version;
-  
+
+  // Compute Build Metadata
   const buildNumber = useMemo(() => {
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const dd = String(today.getDate()).padStart(2, '0');
     return `${yyyy}.${mm}.${dd}`;
+  }, []);
+
+  // Compute Monthly Billing Cycle Parameters (Monthly Reset Tracking)
+  const billingCycleInfo = useMemo(() => {
+    const now = new Date();
+    const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const dayOfMonth = now.getDate();
+    const daysRemaining = totalDaysInMonth - dayOfMonth;
+    const monthProgress = dayOfMonth / totalDaysInMonth; // 0.0 to 1.0
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const currentMonthLabel = `${monthNames[now.getMonth()]} 1 - ${totalDaysInMonth}`;
+
+    return {
+      monthProgress,
+      dayOfMonth,
+      daysRemaining,
+      currentMonthLabel
+    };
   }, []);
 
   const detectedEnvironment = useMemo(() => {
@@ -145,98 +166,76 @@ export const SystemInformation: React.FC = () => {
   }, []);
 
   const displayedMetrics = useMemo<StorageMetric[]>(() => {
-    if (rpcSupported && dbSizeBytes !== null && storageSizeBytes !== null) {
-      const dbAllocatedCap = 500 * 1024 * 1024;
-      const dbPct = Math.min(100, parseFloat(((dbSizeBytes / dbAllocatedCap) * 100).toFixed(2)));
+    const dbSize = dbSizeBytes ?? 0;
+    const storageSize = storageSizeBytes ?? 0;
 
-      const bucketAllocatedCap = 1024 * 1024 * 1024;
-      const bucketPct = Math.min(100, parseFloat(((storageSizeBytes / bucketAllocatedCap) * 100).toFixed(2)));
+    // Database Capacity (Standard Supabase Free Tier: 500 MB)
+    const dbAllocatedCap = 500 * 1024 * 1024;
+    const dbPct = Math.min(100, parseFloat(((dbSize / dbAllocatedCap) * 100).toFixed(2)));
 
-      const salesCount = dbTables.find(t => t.table_name === 'sales')?.record_count || 0;
-      const profilesCount = dbTables.find(t => t.table_name === 'profiles')?.record_count || 0;
-      const logsCount = dbTables.find(t => t.table_name === 'audit_logs')?.record_count || 0;
+    // File Storage Capacity (Standard Supabase Free Tier: 1 GB)
+    const bucketAllocatedCap = 1024 * 1024 * 1024;
+    const bucketPct = Math.min(100, parseFloat(((storageSize / bucketAllocatedCap) * 100).toFixed(2)));
 
-      const baseEgressBytes = 120 * 1024 * 1024;
-      const calculatedEgressBytes = 
-        baseEgressBytes + 
-        (profilesCount * 150 * 1024) + 
-        (salesCount * 100 * 1024) + 
-        (logsCount * 25 * 1024);
-      const egressAllocatedCap = 5 * 1024 * 1024 * 1024;
-      const egressPct = Math.min(100, parseFloat(((calculatedEgressBytes / egressAllocatedCap) * 100).toFixed(2)));
+    // Monthly Egress Calculation (Resets every 1st of the month)
+    // Baseline monthly system traffic (e.g. 2 MB - 15 MB) scaled by current billing cycle month progress
+    const salesCount = dbTables.find(t => t.table_name === 'sales')?.record_count || 0;
+    const profilesCount = dbTables.find(t => t.table_name === 'profiles')?.record_count || 0;
+    const logsCount = dbTables.find(t => t.table_name === 'audit_logs')?.record_count || 0;
 
-      return [
-        {
-          title: "DATABASE SIZE",
-          value: formatBytes(dbSizeBytes),
-          limitText: "500 MB",
-          subtext: `${dbPct}% of allocated Postgres capacity used`,
-          progress: Math.max(1, dbPct),
-          icon: <Database className="w-5.5 h-5.5" />,
-          colorClass: "bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border-emerald-500/20",
-          barColorClass: "bg-emerald-500"
-        },
-        {
-          title: "FILE STORAGE",
-          value: formatBytes(storageSizeBytes),
-          limitText: "1 GB",
-          subtext: `${bucketPct}% of total storage space used`,
-          progress: Math.max(1, bucketPct),
-          icon: <Cloud className="w-5.5 h-5.5" />,
-          colorClass: "bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/20",
-          barColorClass: "bg-blue-500"
-        },
-        {
-          title: "ESTIMATED EGRESS",
-          value: formatBytes(calculatedEgressBytes),
-          limitText: "5 GB",
-          subtext: `${egressPct}% of network bandwidth cycle used`,
-          progress: Math.max(1, egressPct),
-          estimatedBadge: true,
-          icon: <Gauge className="w-5.5 h-5.5" />,
-          colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-          barColorClass: "bg-amber-500"
-        }
-      ];
-    }
+    // Monthly egress starts low on Day 1 (~1MB) and grows proportionally over the month
+    const monthlyBaseTransfer = (2.5 * 1024 * 1024) * billingCycleInfo.monthProgress;
+    const monthlyActivityTransfer = 
+      (profilesCount * 12 * 1024) + 
+      (salesCount * 8 * 1024) + 
+      (logsCount * 3 * 1024);
+
+    const calculatedEgressBytes = Math.round((monthlyBaseTransfer + monthlyActivityTransfer) * (0.8 + (billingCycleInfo.monthProgress * 0.4)));
+    
+    // Egress Limit (Standard Supabase Free Tier: 5 GB per billing cycle)
+    const egressAllocatedCap = 5 * 1024 * 1024 * 1024;
+    const egressPct = Math.min(100, parseFloat(((calculatedEgressBytes / egressAllocatedCap) * 100).toFixed(2)));
 
     return [
       {
-        title: "ACTIVE REGISTRIES",
-        value: "8 System Directories",
-        subtext: "Complete relational records monitored",
-        progress: 100,
+        title: "DATABASE SIZE",
+        value: formatBytes(dbSize),
+        limitText: "500 MB",
+        subtext: `${dbPct}% of allocated Postgres capacity used`,
+        progress: Math.max(1, dbPct),
         icon: <Database className="w-5.5 h-5.5" />,
-        colorClass: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
-        barColorClass: "bg-indigo-500"
+        colorClass: "bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border-emerald-500/20",
+        barColorClass: "bg-emerald-500"
       },
       {
         title: "FILE STORAGE",
-        value: "0 Bytes",
+        value: formatBytes(storageSize),
         limitText: "1 GB",
-        subtext: "0% of standard bucket used",
-        progress: 1,
+        subtext: `${bucketPct}% of total storage space used`,
+        progress: Math.max(1, bucketPct),
         icon: <Cloud className="w-5.5 h-5.5" />,
-        colorClass: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+        colorClass: "bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/20",
         barColorClass: "bg-blue-500"
       },
       {
-        title: "ESTIMATED EGRESS",
-        value: "120 MB",
+        title: "ESTIMATED MONTHLY EGRESS",
+        value: formatBytes(calculatedEgressBytes),
         limitText: "5 GB",
-        subtext: "Baseline transaction load estimate",
-        progress: 2.4,
+        subtext: `${egressPct}% of bandwidth used • Resets in ${billingCycleInfo.daysRemaining} days`,
+        progress: Math.max(1, egressPct),
+        estimatedBadge: true,
         icon: <Gauge className="w-5.5 h-5.5" />,
         colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
         barColorClass: "bg-amber-500"
       }
     ];
-  }, [rpcSupported, dbSizeBytes, storageSizeBytes, dbTables]);
+  }, [rpcSupported, dbSizeBytes, storageSizeBytes, dbTables, billingCycleInfo]);
 
   const appDetails: AppInfo[] = [
     { label: "System Version", value: `v${APP_VERSION}` },
     { label: "Build Number", value: buildNumber },
-    { label: "Environment", value: detectedEnvironment }
+    { label: "Environment", value: detectedEnvironment },
+    { label: "Billing Cycle", value: billingCycleInfo.currentMonthLabel }
   ];
 
   const recordBreakdownData = useMemo<RecordBreakdownItem[]>(() => {
@@ -283,7 +282,7 @@ export const SystemInformation: React.FC = () => {
         loading ? (
           <div className="h-5 w-10 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse" />
         ) : (
-          <span className="font-mono text-xs text-slate-900 dark:text-white font-bold bg-slate-55 dark:bg-[#1f232d] px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-white/5">
+          <span className="font-mono text-xs text-slate-900 dark:text-white font-bold bg-slate-100 dark:bg-[#1f232d] px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-white/5">
             {item.recordCount}
           </span>
         )
@@ -347,7 +346,7 @@ export const SystemInformation: React.FC = () => {
   return (
     <div className="space-y-8 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
       
-      {/* Page Title, Subtitle & Sync Indicator */}
+      {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
@@ -390,7 +389,7 @@ export const SystemInformation: React.FC = () => {
                 LINK EXACT STORAGE TELEMETRY FROM SUPABASE
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                By default, security rules block standard web clients from viewing internal system sizes directly. To link database and file catalog telemetry, copy and run the following statements inside your <strong>Supabase SQL Editor</strong>:
+                By default, security rules block web clients from inspecting database disk size directly. To link catalog telemetry, copy and execute these SQL helper functions inside your <strong>Supabase SQL Editor</strong>:
               </p>
             </div>
           </div>
@@ -493,10 +492,10 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
         ))}
       </div>
 
-      {/* SECTION 2: Application Spec Details */}
+      {/* SECTION 2: Application Spec Details & Billing Cycle Banner */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Card: Build Metadata (Static Contents fully rendered instantly) */}
+        {/* Left Card: Build Metadata */}
         <div className="lg:col-span-5 p-6 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl space-y-4 shadow-xs flex flex-col justify-between">
           <div className="flex items-center gap-3 pb-2 border-b border-slate-100 dark:border-white/5">
             <Cpu className="w-5.5 h-5.5 text-blue-500" />
@@ -512,8 +511,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
               </div>
             ))}
           </div>
-          <div className="pt-2 text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-            This terminal uses secure encrypted communication channels directly linked to the database catalog.
+          <div className="flex items-center gap-2 pt-2 text-[11px] text-slate-400 dark:text-slate-500 font-medium border-t border-slate-100 dark:border-white/5">
+            <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>Billing cycle resets automatically on the 1st of every month.</span>
           </div>
         </div>
 
@@ -560,20 +560,20 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
 
       </div>
 
-      {/* SECTION 3: Storage Breakdown Table (Table rows render instantly; record values pulse) */}
+      {/* SECTION 3: Storage Breakdown Table */}
       <div className="p-1 rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#161920] overflow-x-auto w-full">
         <Table<RecordBreakdownItem>
           data={recordBreakdownData}
           columns={columns}
           itemsPerPage={8}
-          loading={false} // Loading handled inline inside cells to prevent massive layout shifts
+          loading={false}
         />
       </div>
 
       {/* SECTION 4: Legal & Policy Documents */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        {/* Terms of Service Trigger */}
+        {/* Terms of Service */}
         <div 
           onClick={() => setActiveModal('terms')}
           className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl flex items-center justify-between gap-4 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all duration-300 group shadow-xs"
@@ -592,7 +592,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
         </div>
 
-        {/* Privacy Policy Trigger */}
+        {/* Privacy Policy */}
         <div 
           onClick={() => setActiveModal('privacy')}
           className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl flex items-center justify-between gap-4 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all duration-300 group shadow-xs"
@@ -611,7 +611,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
         </div>
 
-        {/* Open Source Licenses Trigger */}
+        {/* Open Source Licenses */}
         <div 
           onClick={() => setActiveModal('licenses')}
           className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl flex items-center justify-between gap-4 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all duration-300 group shadow-xs"
@@ -632,7 +632,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
 
       </div>
 
-      {/* SECTION 5: About Brand Info Container */}
+      {/* SECTION 5: Branding Footer Banner */}
       <div className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-neutral-900/30 border border-slate-200 dark:border-white/5 rounded-3xl text-xs leading-normal max-w-full text-left">
         <Info className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
         <div className="space-y-1.5 flex-1 min-w-0">
@@ -651,15 +651,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
           </div>
           
           <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 opacity-90 leading-relaxed">
-            This proprietary management dashboard serves as a central registry core. Tablet and mobile touch interfaces are powered by specialized mobile wrapper layers. PC desktop installations will support native wrapper compilation in future software checkpoints.
+            This proprietary management dashboard serves as a central registry core. Tablet and mobile touch interfaces are powered by specialized mobile wrapper layers.
           </p>
-
-          <div className="flex items-center gap-1.5 pt-1">
-            <span className="px-2 py-0.5 bg-amber-500/10 text-[8px] text-amber-500 border border-amber-500/20 rounded font-black tracking-widest uppercase">
-              Coming Soon
-            </span>
-            <span className="text-[10px] text-slate-400 font-bold">Native Desktop App Build</span>
-          </div>
         </div>
       </div>
 
@@ -673,22 +666,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
         <div className="space-y-4 text-xs font-semibold text-slate-600 dark:text-slate-400 overflow-y-auto max-h-[60vh] pr-2 leading-relaxed">
           <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">1. ACCEPTANCE OF TERMS</p>
           <p>
-            By accessing or using the Wolf Palomar Gym Management Terminal, you agree to comply with and be bound by these standard system Terms of Service. If you do not agree to these terms, please do not utilize this terminal.
+            By accessing or using the Wolf Palomar Gym Management Terminal, you agree to comply with and be bound by these standard system Terms of Service.
           </p>
-          
           <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">2. AUTHORIZED USE ONLY</p>
           <p>
-            This terminal and database is strictly reserved for authorized administrators, staff coaches, and trainers of Wolf Palomar Gym. Unauthorized attempts to gain root access or manipulate membership plans will result in immediate profile suspension and potential legal escalation.
-          </p>
-
-          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">3. DATA ACCURACY & LIABILITIES</p>
-          <p>
-            Coaches and administrators are required to input accurate pricing, membership logs, and transactional records. The developers do not hold liability for manual errors made during sales configuration, tax exports, or database restorations.
-          </p>
-
-          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">4. INTELLECTUAL PROPERTY</p>
-          <p>
-            The layout, system branding, unique barcode generator, and integrated database backup processes are proprietary system assets. Reverse engineering of compiled binaries is prohibited.
+            This terminal and database is strictly reserved for authorized administrators, staff coaches, and trainers of Wolf Palomar Gym.
           </p>
         </div>
         <div className="flex justify-end pt-3">
@@ -706,19 +688,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
         className="max-w-xl text-left p-6 sm:p-8"
       >
         <div className="space-y-4 text-xs font-semibold text-slate-600 dark:text-slate-400 overflow-y-auto max-h-[60vh] pr-2 leading-relaxed">
-          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">1. DATA ENCRYPTION & DATA RETENTION</p>
+          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">1. DATA ENCRYPTION & RETENTION</p>
           <p>
-            All personal information—including member names, contact numbers, logbook check-in histories, and system credentials—is stored securely on databases behind Row Level Security (RLS) policies. Sensitive passwords are encrypted database-side using standard crypt algorithms.
-          </p>
-
-          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">2. STAFF TRACKING (AUDIT LOGS)</p>
-          <p>
-            For security and transaction tracing, all major updates—such as price configurations, sales registrations, and backup rollbacks—are strictly logged under the staff member's identifier in our Audit Logs database. This data is preserved for 90 days.
-          </p>
-
-          <p className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">3. OFFLINE STORAGE & PEER COOKIES</p>
-          <p>
-            Your current theme preferences and temporary session tokens are stored locally on your device via standard browser LocalStorage and securely managed tokens. No third-party ad trackers are integrated.
+            All personal information—including member names, contact numbers, logbook check-in histories, and system credentials—is stored securely behind Row Level Security (RLS) policies.
           </p>
         </div>
         <div className="flex justify-end pt-3">
@@ -741,11 +713,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
             - Standard Router DOM<br />
             - Animated UI Components<br />
             - Icon Vector Engines<br />
-            - Reactive Form Handling<br />
-            - Client State Containers
-          </p>
-          <p>
-            Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.
+            - Reactive Form Handling
           </p>
         </div>
         <div className="flex justify-end pt-3">
