@@ -4,9 +4,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { 
-  X, ShieldAlert, Calendar, UserCheck, UserX, Trash2, Lock, Pencil, Save,
+  X, ShieldAlert, UserCheck, UserX, Trash2, Lock, Pencil, Save,
   ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
-  User, Phone, Mail, MapPin, HeartHandshake, Clock
+  User
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import { memberService, subscriptionService, cardService, prototypeStorage, STORAGE_KEYS } from '../memberService';

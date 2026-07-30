@@ -4,9 +4,9 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Award, Smartphone, CheckCircle, X, Eye, Check, Lock, ShieldCheck, 
+  Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
-  Download, Printer, ChevronDown, ChevronUp, Info, Edit3
+  Download, Printer, ChevronDown, ChevronUp, Info
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -31,7 +31,7 @@ interface SignaturePadProps {
   readOnly?: boolean;
 }
 
-const SignaturePad: React.FC<SignaturePadProps> = ({ 
+export const SignaturePad: React.FC<SignaturePadProps> = ({ 
   label, 
   value, 
   onChange, 
@@ -246,7 +246,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 }) => {
   // Directly default to Step 2 when prefillData (Queue Approval) is provided
   const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : (prefillData ? 2 : 1));
-  const [showSignatures, setShowSignatures] = useState<boolean>(false);
+  const [, setShowSignatures] = useState<boolean>(false);
   const [showClientDetails, setShowClientDetails] = useState<boolean>(true);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
   const [showSignaturesInAudit, setShowSignaturesInAudit] = useState<boolean>(false);

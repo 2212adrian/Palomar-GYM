@@ -8,7 +8,7 @@ import {
   CheckCircle2, Clock, Download, Copy, RefreshCw, Sparkles, 
   User, Phone, Mail, Calendar, MapPin, HeartHandshake, ShieldCheck, 
   CreditCard, Check, Sun, Moon, FileSignature, Eraser, Info, Users,
-  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, List
+  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 

@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } 
 import { useLocation } from 'react-router-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Check
+  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
