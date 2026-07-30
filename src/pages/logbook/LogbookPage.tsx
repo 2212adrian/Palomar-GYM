@@ -17,7 +17,8 @@ import {
   Users,
   UserPlus,
   CircleDollarSign,
-  Search
+  Search,
+  Printer
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -218,9 +219,6 @@ export const LogbookPage: React.FC = () => {
     return location.pathname.startsWith('/members') ? 'members' : 'logbook';
   }, [location.pathname]);
 
-  const activePageRef = useRef(activePage);
-  activePageRef.current = activePage;
-
   const selectedDate = useMemo(() => {
     return addDays(currentWeekStart, selectedDayIndex);
   }, [currentWeekStart, selectedDayIndex]);
@@ -376,10 +374,11 @@ export const LogbookPage: React.FC = () => {
     toast.success('Check-in record restored.');
   };
 
+  // Centralized Header Actions Synchronizer
   useEffect(() => {
     if (activePage === 'logbook') {
       setActions(
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
           {role === 'admin' && (
             <>
               <Button
@@ -409,6 +408,40 @@ export const LogbookPage: React.FC = () => {
           >
             <Plus className="w-4 h-4" />
             <span>NEW CHECK-IN</span>
+          </Button>
+        </div>
+      );
+    } else if (activePage === 'members') {
+      setActions(
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
+          <Button
+            onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-print'))}
+            variant="secondary"
+            className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+            title="Open full member credential card print workspace"
+          >
+            <Printer className="w-4 h-4 text-red-500" />
+            <span>PRINT MEMBER CARDS</span>
+          </Button>
+
+          {role === 'admin' && (
+            <Button
+              onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-recycle'))}
+              variant="secondary"
+              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+            >
+              <RotateCcw className="w-4 h-4 text-amber-500" />
+              <span>RECYCLE BIN</span>
+            </Button>
+          )}
+
+          <Button
+            onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-wizard'))}
+            variant="primary"
+            className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
+          >
+            <Plus className="w-4 h-4" />
+            <span>ENROLL MEMBER</span>
           </Button>
         </div>
       );
@@ -480,7 +513,7 @@ export const LogbookPage: React.FC = () => {
       {/* ─── DESKTOP SIDE ARROWS ─── */}
       {isAdmin && (
         <div className="hidden xl:block">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="popLayout">
             {showLeftArrow && leftArrowTarget && (
               <motion.button
                 key={`left-arrow-${location.pathname}`}
@@ -531,11 +564,13 @@ export const LogbookPage: React.FC = () => {
       )}
 
       {/* ─── SLIDING TIMELINE CANVAS GRID SCROLLER ─── */}
-      <div className="relative w-full h-full min-h-[80vh] overflow-x-clip grid grid-cols-1 items-start">
+      <div className="relative w-full h-auto overflow-x-clip grid grid-cols-1 items-start">
         
         {/* VIEW 1: LEFT SLIDE (LOGBOOK COUNTER) */}
         <div 
-          className="w-full h-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-36"
+          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-12 ${
+            activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -774,22 +809,22 @@ export const LogbookPage: React.FC = () => {
           )}
         </div>
 
-        {/* VIEW 2: RIGHT SLIDE */}
-        {role === 'admin' && (
-          <div 
-            className="w-full h-full pb-36 max-w-full animate-fade-in"
-            style={{
-              gridColumn: 1,
-              gridRow: 1,
-              transform: activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
-              opacity: activePage === 'members' ? 1 : 0,
-              pointerEvents: activePage === 'members' ? 'auto' : 'none',
-              transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
-            }}
-          >
-            <MembersList hideHeaderActions={activePage !== 'members'} />
-          </div>
-        )}
+       {/* VIEW 2: RIGHT SLIDE */}
+        <div 
+          className={`w-full pb-12 max-w-full animate-fade-in ${
+            activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
+          style={{
+            gridColumn: 1,
+            gridRow: 1,
+            transform: activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
+            opacity: activePage === 'members' ? 1 : 0,
+            pointerEvents: activePage === 'members' ? 'auto' : 'none',
+            transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+          }}
+        >
+          <MembersList hideHeaderActions={activePage !== 'members'} />
+        </div>
 
       </div>
 
@@ -860,7 +895,7 @@ export const LogbookPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* MOBILE STICKY BOTTOM BAR */}
+      {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
       {activePage === 'logbook' && (
         <>
           <AnimatePresence>
@@ -922,29 +957,30 @@ export const LogbookPage: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
-            <div className="space-y-0.5 text-left select-none">
-              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                TODAY SUMMARY
-              </span>
-              <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                <AnimatedCurrency value={totalCollectedToday} />
-              </span>
-              <span className="text-[9px] font-sans text-slate-500 block leading-none font-semibold">
-                {dayLogs.length} Check-ins Today
-              </span>
-            </div>
+          {/* Floating Mobile Bottom Logbook Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
+<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+      <CircleDollarSign className="w-4 h-4" />
+      <span><AnimatedCurrency value={totalCollectedToday} /></span>
+    </div>
+    <span className="text-slate-300 dark:text-zinc-700">•</span>
+    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+      <Users className="w-4 h-4 text-blue-500" />
+      <span>{dayLogs.length} Check-ins</span>
+    </div>
+  </div>
 
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-12 h-12 text-white rounded-full cursor-pointer bg-[#10b981] hover:bg-emerald-600 border border-white/10 shadow-lg"
-              title="Attendance Actions"
-            >
-              <Plus className="w-5.5 h-5.5" />
-            </motion.button>
-          </div>
+  <motion.button
+    type="button"
+    whileTap={{ scale: 0.9 }}
+    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+    title="Attendance Actions"
+  >
+    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+  </motion.button>
+</div>
         </>
       )}
     </div>

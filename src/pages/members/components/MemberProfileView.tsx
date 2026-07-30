@@ -2,9 +2,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import { 
   X, ShieldAlert, Calendar, UserCheck, UserX, Trash2, Lock, Pencil, Save,
-  ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard 
+  ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
+  User, Phone, Mail, MapPin, HeartHandshake, Clock
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import { memberService, subscriptionService, cardService, prototypeStorage, STORAGE_KEYS } from '../memberService';
@@ -60,6 +62,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [isVerifyingVoid, setIsVerifyingVoid] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
   // Inline Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
   const [editFullName, setEditFullName] = useState(member.full_name || '');
@@ -71,6 +74,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [editEmergencyName, setEditEmergencyName] = useState(member.emergency_contact_name || '');
   const [editRelationship, setEditRelationship] = useState(member.relationship || '');
   const [editEmergencyPhone, setEditEmergencyPhone] = useState(member.emergency_contact_phone || '');
+  const [showSignatures, setShowSignatures] = useState(false);
 
   useEffect(() => {
     setLocalMember(member);
@@ -122,10 +126,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       .sort((a, b) => new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime());
   }, [localMember, refreshKey]);
 
-  // Evaluate Void Subscription eligibility (Admin role, 24-hour window & unconsumed check-in)
-  // Inside MemberProfileView.tsx:
+  // Reissue Confirmation Modal State
+  const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
 
-const voidEligibility = useMemo(() => {
+  // Confirmed Reissue Execution Handler
+  const handleConfirmReissueToken = () => {
+    try {
+      if (currentCard) {
+        cardService.replace(localMember.member_id, 'Card Reissued / Replacement', 'Admin Staff');
+        toast.success('Access card re-issued with fresh security token.');
+      } else {
+        cardService.issue(localMember.member_id, 'QR', 'Admin Staff');
+        toast.success('New digital QR credential token issued.');
+      }
+      setIsReissueModalOpen(false);
+      setRefreshKey(prev => prev + 1);
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reissue card token.');
+    }
+  };
+
+  const voidEligibility = useMemo(() => {
     const activeSub = stats.activeContract;
     if (!activeSub) {
       return { eligible: false, reason: 'No active subscription contract found.' };
@@ -194,7 +216,6 @@ const voidEligibility = useMemo(() => {
       toast.error(err.message);
     }
   };
-  
 
   const handleSaveProfileChanges = () => {
     if (hasActiveSubscription) {
@@ -275,7 +296,6 @@ const voidEligibility = useMemo(() => {
 
     setIsVerifyingVoid(true);
     try {
-      // Re-authenticate admin credentials if signed in via Supabase
       if (user?.email) {
         const { error } = await supabase.auth.signInWithPassword({
           email: user.email,
@@ -299,7 +319,7 @@ const voidEligibility = useMemo(() => {
       setIsVoidModalOpen(false);
       setAdminPassword('');
       setVoidNotes('');
-      setRefreshKey(prev => prev + 1); // Refresh profile view immediately
+      setRefreshKey(prev => prev + 1);
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message || 'Failed to void subscription.');
@@ -309,14 +329,42 @@ const voidEligibility = useMemo(() => {
   };
 
   const handleOpenReceipt = (receipt: Receipt) => {
+    const payMethod = receipt.payment_method || 'Cash';
+    const isGCash = typeof payMethod === 'string' && payMethod.toLowerCase().includes('gcash');
+
+    const gcashFee = (receipt as any).gcash_fee 
+      ?? (receipt as any).gcashFee 
+      ?? (isGCash ? 10 : 0);
+
+    const rawAmount = receipt.amount || 0;
+    
+    const cardFee = (receipt as any).card_fee 
+      ?? (receipt as any).cardFee 
+      ?? (rawAmount - ((receipt as any).base_price ?? (isGCash ? rawAmount - gcashFee : rawAmount)) > 0 
+          ? rawAmount - ((receipt as any).base_price ?? rawAmount) - gcashFee 
+          : 0);
+
+    const computedBasePrice = (receipt as any).base_price 
+      ?? (receipt as any).basePrice 
+      ?? (rawAmount - gcashFee - cardFee > 0 ? rawAmount - gcashFee - cardFee : rawAmount);
+
+    const gcashRefNo = (receipt as any).gcash_ref_no 
+      ?? (receipt as any).gcashRefNo 
+      ?? (receipt as any).reference_number 
+      ?? (receipt as any).referenceNumber 
+      ?? '';
+
     const data: ReceiptData = {
       receiptType: receipt.customer_type === 'Walk-In' ? 'walkin' : 'subscription',
       receiptNo: receipt.id,
       customerName: receipt.customer_name || localMember.full_name,
       customerType: receipt.customer_type,
       planType: receipt.item_description,
-      basePrice: receipt.amount,
-      paymentMethod: receipt.payment_method.toLowerCase(),
+      basePrice: computedBasePrice,
+      gcashFee: gcashFee,
+      cardFee: cardFee,
+      paymentMethod: payMethod,
+      gcashRefNo: gcashRefNo,
       transactionDate: receipt.created_at,
       processedBy: 'Admin Staff',
     };
@@ -327,8 +375,6 @@ const voidEligibility = useMemo(() => {
     const list = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
     return list.find((c: MemberCard) => c.member_id === localMember.member_id && c.status === 'Active');
   }, [localMember, refreshKey]);
-
-  
 
   const subHistory = useMemo(() => {
     const list = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
@@ -350,26 +396,50 @@ const voidEligibility = useMemo(() => {
   }, [localMember.created_at]);
 
   return createPortal(
-    <div className="fixed inset-0 z-110 flex items-center justify-end bg-black/60 backdrop-blur-xs font-body text-xs text-(--color-text)">
-      <div className="w-full sm:max-w-2xl h-full bg-(--bg-card) border-l border-(--border-color) shadow-2xl flex flex-col justify-between overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
+      onClick={onClose}
+    >
+      <motion.div 
+        initial={{ y: '100%', x: 0 }}
+        animate={{ y: 0, x: 0 }}
+        exit={{ y: '100%', x: 0 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+        className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-(--bg-card) border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
+        onClick={(e) => e.stopPropagation()}
+      >
         
-        {/* HEADER */}
-        <div className="p-4 sm:p-6 border-b border-(--border-color) space-y-4 select-none relative bg-(--bg-page)">
-          <button 
-            onClick={onClose} 
-            className="absolute right-4 top-4 p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs z-10"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        {/* COMPACT HEADER (NO BACK BUTTON) */}
+        <div className="p-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest">
+              MEMBER PROFILE
+            </span>
 
-          <div className="flex items-center gap-3 sm:gap-4 text-left pt-2 pr-8">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-xl sm:text-2xl font-extrabold shadow-md shrink-0">
+            <button 
+              type="button"
+              onClick={onClose} 
+              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs"
+              title="Close panel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 text-left">
+            <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-lg sm:text-2xl font-black shadow-md shrink-0">
               {(localMember.full_name || 'M')[0]}
             </div>
-            <div className="space-y-1 overflow-hidden">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm sm:text-base font-bold text-(--color-text) leading-none truncate">{localMember.full_name}</h3>
-                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h3 className="text-base sm:text-lg font-bold text-(--color-text) leading-tight truncate">
+                  {localMember.full_name}
+                </h3>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-heading font-black uppercase tracking-wider border ${
                   localMember.status === 'Active' 
                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
                     : localMember.status === 'Suspended'
@@ -378,53 +448,57 @@ const voidEligibility = useMemo(() => {
                 }`}>{localMember.status || 'Active'}</span>
 
                 {isMinor && (
-                  <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                    MINOR ({calculatedAge} YRS)
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    Minor ({calculatedAge} yrs)
                   </span>
                 )}
               </div>
-              <p className="font-mono text-[10px] text-slate-500 dark:text-slate-400 leading-none truncate">
+              <p className="font-mono text-xs text-slate-400 truncate">
                 {localMember.member_id} • Registered {registrationDateText}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pt-2">
-            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
-              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">TOTAL SPENT</span>
-              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block mt-1.5 leading-none">
+          {/* SWIPEABLE HORIZONTAL STATS CAROUSEL ON MOBILE */}
+          <div className="flex sm:grid sm:grid-cols-4 gap-2.5 overflow-x-auto scrollbar-none pt-1">
+            <div className="min-w-[130px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">Total Spent</span>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block mt-1">
                 ₱{stats.totalSpent.toLocaleString()}
               </span>
             </div>
-            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
-              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">CHECK-INS</span>
-              <span className="text-xs font-bold text-(--color-text) block mt-1.5 leading-none">{stats.totalVisits} visits</span>
+
+            <div className="min-w-[110px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">Check-ins</span>
+              <span className="text-xs font-bold text-(--color-text) block mt-1">{stats.totalVisits} visits</span>
             </div>
-            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
-              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">ACTIVE PLAN</span>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate block mt-1.5 leading-none">
-                {stats.activeContract ? stats.activeContract.plan_name : 'No Active Plan'}
+
+            <div className="min-w-[140px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
+              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate block mt-1">
+                {stats.activeContract ? stats.activeContract.plan_name : 'Profile Only'}
               </span>
             </div>
-            <div className="p-2.5 sm:p-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-center shadow-xs">
-              <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">CARDS REISSUED</span>
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1.5 leading-none">
+
+            <div className="min-w-[110px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">Reissued</span>
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1">
                 {stats.cardReplacements} cards
               </span>
             </div>
           </div>
         </div>
 
-        {/* TABS BAR - RESPONSIVE SCROLLABLE */}
-        <div className="flex border-b border-(--border-color) bg-(--bg-card) px-2 sm:px-4 select-none overflow-x-auto whitespace-nowrap scrollbar-none">
+        {/* STICKY HORIZONTAL TABS BAR */}
+        <div className="sticky top-0 z-20 border-b border-(--border-color) bg-(--bg-card) px-3 sm:px-4 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none py-2 select-none shrink-0">
           {['Overview', 'Contracts & Billing', 'Cards', 'Attendance', 'Notes'].map(tab => (
             <button 
               key={tab} 
               onClick={() => setActiveTab(tab as any)}
-              className={`py-3 px-3 sm:px-3.5 font-heading text-[10px] tracking-wider uppercase font-black cursor-pointer border-b-2 transition-all shrink-0 ${
+              className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
                 activeTab === tab 
-                  ? 'border-b-[#123c73] dark:border-b-[#bf0202] text-[#123c73] dark:text-white' 
-                  : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                  : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >
               {tab}
@@ -432,92 +506,99 @@ const voidEligibility = useMemo(() => {
           ))}
         </div>
 
-        {/* TAB CONTENTS */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {/* TAB CONTENTS CONTAINER WITH GENERATED SAFE-AREA BOTTOM PADDING */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 pb-28 sm:pb-8">
           
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
               
+              {/* SUBSCRIBE BANNER FOR PROFILE ONLY MEMBERS */}
               {!stats.activeContract && (
-  <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex justify-between items-center select-none shadow-xs">
-    <div>
-      <span className="font-heading font-bold text-amber-500 text-xs block">No Active Subscription (Profile Only)</span>
-      <span className="text-[9px] text-slate-400 font-medium block">Member has no active membership contract.</span>
-    </div>
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs">
+                  <div className="space-y-0.5">
+                    <span className="font-heading font-bold text-amber-500 text-xs block">
+                      No Active Subscription (Profile Only)
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium block">
+                      Enroll this member to grant gym facility check-in access.
+                    </span>
+                  </div>
 
-    <button
-      type="button"
-      onClick={() => setIsWizardOpen(true)}
-      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center gap-1.5 shrink-0 transition-colors"
-    >
-      <CreditCard className="w-3.5 h-3.5" />
-      <span>Subscribe Plan</span>
-    </button>
-  </div>
-)}
+                  <button
+                    type="button"
+                    onClick={() => setIsWizardOpen(true)}
+                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Subscribe Plan</span>
+                  </button>
+                </div>
+              )}
 
-              {/* READ / INLINE EDIT GRID */}
+              {/* PERSONAL BIO & EMERGENCY CONTACT CARDS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
                 {/* Personal Bio Card */}
-                <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
-                  <div className="flex justify-between items-center">
-                    <h4 className="font-heading text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 font-bold">
-                      <Calendar className="w-3.5 h-3.5 text-blue-500" /> Personal Bio Details
+                <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
+                  <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
+                    <h4 className="font-heading text-xs text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2 font-bold">
+                      <User className="w-4 h-4 text-blue-500" /> Personal Information
                     </h4>
                     {isEditing && (
-                      <span className="text-[8px] font-mono font-bold bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded uppercase">
-                        Editing Active
+                      <span className="text-[10px] font-mono font-bold bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full uppercase">
+                        Editing
                       </span>
                     )}
                   </div>
 
                   {!isEditing ? (
-                    <div className="space-y-2 text-xs font-semibold">
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Full Name</span>
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Full Name</span>
                         <span className="text-(--color-text) font-bold">{localMember.full_name || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Gender / Age</span>
-                        <span className="text-(--color-text)">{localMember.gender || 'N/A'} • {calculatedAge ? `${calculatedAge} yrs old (${isMinor ? 'Minor' : 'Adult'})` : 'N/A'}</span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Gender / Age</span>
+                        <span className="text-(--color-text) font-medium">
+                          {localMember.gender || 'N/A'} • {calculatedAge ? `${calculatedAge} yrs (${isMinor ? 'Minor' : 'Adult'})` : 'N/A'}
+                        </span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Birthdate</span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Birthdate</span>
                         <span className="text-(--color-text) font-mono">{localMember.birthday || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Contact Phone</span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Contact Phone</span>
                         <span className="text-(--color-text) font-mono">{localMember.phone || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Email Address</span>
-                        <span className="text-(--color-text) truncate block">{localMember.email || 'N/A'}</span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Email</span>
+                        <span className="text-(--color-text) truncate max-w-[180px]">{localMember.email || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Home Address</span>
-                        <span className="text-(--color-text) leading-snug block">{localMember.address || 'N/A'}</span>
+                      <div className="pt-1">
+                        <span className="text-slate-400 block mb-0.5">Home Address</span>
+                        <span className="text-(--color-text) font-medium leading-snug block">{localMember.address || 'N/A'}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-2 text-xs font-semibold">
+                    <div className="space-y-3 text-xs">
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Full Name *</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Full Name *</label>
                         <input
                           type="text"
                           value={editFullName}
                           onChange={e => setEditFullName(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-bold text-xs"
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-slate-400 text-[9px] uppercase font-bold block">Gender</label>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">Gender</label>
                           <select
                             value={editGender}
                             onChange={e => setEditGender(e.target.value)}
-                            className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs"
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                           >
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
@@ -525,129 +606,127 @@ const voidEligibility = useMemo(() => {
                           </select>
                         </div>
                         <div>
-                          <label className="text-slate-400 text-[9px] uppercase font-bold block">Birthday</label>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">Birthday</label>
                           <input
                             type="date"
                             value={editBirthday}
                             onChange={e => setEditBirthday(e.target.value)}
-                            className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs font-mono"
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           />
                         </div>
                       </div>
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Contact Phone *</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Contact Phone *</label>
                         <input
-    type="text"
-    value={editPhone}
-    onChange={e => setEditPhone(e.target.value.replace(/\D/g, ''))}
-    maxLength={11}
-    className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
-    placeholder="09171234567"
-  />
+                          type="text"
+                          value={editPhone}
+                          onChange={e => setEditPhone(e.target.value.replace(/\D/g, ''))}
+                          maxLength={11}
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
+                          placeholder="09171234567"
+                        />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Email Address</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Email Address</label>
                         <input
                           type="email"
                           value={editEmail}
                           onChange={e => setEditEmail(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs"
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Home Address</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Home Address</label>
                         <input
                           type="text"
                           value={editAddress}
                           onChange={e => setEditAddress(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs"
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Emergency Contact */}
-                <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
-                  <h4 className="font-heading text-[10px] text-rose-500 uppercase tracking-wider flex items-center gap-1.5 font-bold">
-                    <ShieldAlert className="w-3.5 h-3.5" /> Emergency Contact
+                {/* Emergency Contact Card */}
+                <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
+                  <h4 className="font-heading text-xs text-rose-500 uppercase tracking-wider flex items-center gap-2 font-bold border-b border-(--border-color) pb-2.5">
+                    <ShieldAlert className="w-4 h-4 text-rose-500" /> Emergency Contact
                   </h4>
 
                   {!isEditing ? (
-                    <div className="space-y-2 text-xs font-semibold">
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Contact Person</span>
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Contact Person</span>
                         <span className="text-(--color-text) font-bold">{localMember.emergency_contact_name || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Relationship</span>
-                        <span className="text-(--color-text)">{localMember.relationship || 'N/A'}</span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Relationship</span>
+                        <span className="text-(--color-text) font-medium">{localMember.relationship || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 text-[9px] uppercase font-bold block">Emergency Phone</span>
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-slate-400">Emergency Phone</span>
                         <span className="text-(--color-text) font-mono">{localMember.emergency_contact_phone || 'N/A'}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-2 text-xs font-semibold">
+                    <div className="space-y-3 text-xs">
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Contact Name</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Contact Name</label>
                         <input
                           type="text"
                           value={editEmergencyName}
                           onChange={e => setEditEmergencyName(e.target.value)}
-                          className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none text-xs font-bold"
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
                         />
                       </div>
                       <div>
-                        <div>
-  <label className="text-slate-400 text-[9px] uppercase font-bold block">Relationship</label>
-  <select
-     value={editRelationship}
-    onChange={e => setEditRelationship(e.target.value)}
-  className="w-full p-2.5 border border-(--border-color) bg-slate-100 dark:bg-zinc-900 rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
->
-  <option value="">Select Relationship *</option>
-  
-  <optgroup label="Immediate Family">
-    <option value="Mother">Mother</option>
-    <option value="Father">Father</option>
-    <option value="Spouse / Partner">Spouse / Partner</option>
-    <option value="Husband">Husband</option>
-    <option value="Wife">Wife</option>
-    <option value="Brother">Brother</option>
-    <option value="Sister">Sister</option>
-    <option value="Son">Son</option>
-    <option value="Daughter">Daughter</option>
-  </optgroup>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Relationship</label>
+                        <select
+                          value={editRelationship}
+                          onChange={e => setEditRelationship(e.target.value)}
+                          className="w-full p-2.5 border border-(--border-color) bg-(--bg-card) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
+                        >
+                          <option value="">Select Relationship *</option>
+                          
+                          <optgroup label="Immediate Family">
+                            <option value="Mother">Mother</option>
+                            <option value="Father">Father</option>
+                            <option value="Spouse / Partner">Spouse / Partner</option>
+                            <option value="Husband">Husband</option>
+                            <option value="Wife">Wife</option>
+                            <option value="Brother">Brother</option>
+                            <option value="Sister">Sister</option>
+                            <option value="Son">Son</option>
+                            <option value="Daughter">Daughter</option>
+                          </optgroup>
 
-  <optgroup label="Extended Family">
-    <option value="Grandmother">Grandmother</option>
-    <option value="Grandfather">Grandfather</option>
-    <option value="Aunt">Aunt</option>
-    <option value="Uncle">Uncle</option>
-    <option value="Cousin">Cousin</option>
-    <option value="Relative">Other Relative</option>
-  </optgroup>
+                          <optgroup label="Extended Family">
+                            <option value="Grandmother">Grandmother</option>
+                            <option value="Grandfather">Grandfather</option>
+                            <option value="Aunt">Aunt</option>
+                            <option value="Uncle">Uncle</option>
+                            <option value="Cousin">Cousin</option>
+                            <option value="Relative">Other Relative</option>
+                          </optgroup>
 
-  <optgroup label="Guardian & Other">
-    <option value="Legal Guardian">Legal Guardian</option>
-    <option value="Friend / Colleague">Friend / Colleague</option>
-    <option value="Other">Other</option>
-  </optgroup>
-</select>
-</div>
+                          <optgroup label="Guardian & Other">
+                            <option value="Legal Guardian">Legal Guardian</option>
+                            <option value="Friend / Colleague">Friend / Colleague</option>
+                            <option value="Other">Other</option>
+                          </optgroup>
+                        </select>
                       </div>
                       <div>
-                        <label className="text-slate-400 text-[9px] uppercase font-bold block">Emergency Phone</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">Emergency Phone</label>
                         <input
-    type="text"
-    value={editEmergencyPhone}
-    onChange={e => setEditEmergencyPhone(e.target.value.replace(/\D/g, ''))}
-    maxLength={11}
-    className="w-full p-2 bg-(--bg-card) border border-(--border-color) rounded-lg outline-none font-mono text-xs"
-    placeholder="09181234567"
-  />
+                          type="text"
+                          value={editEmergencyPhone}
+                          onChange={e => setEditEmergencyPhone(e.target.value.replace(/\D/g, ''))}
+                          maxLength={11}
+                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
+                          placeholder="09181234567"
+                        />
                       </div>
                     </div>
                   )}
@@ -657,22 +736,22 @@ const voidEligibility = useMemo(() => {
 
               {/* SAVE EDITS BANNER */}
               {isEditing && (
-                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
+                <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
                   <span className="text-xs font-semibold text-blue-500">Editing member profile details.</span>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => setIsEditing(false)}
-                      className="px-3 py-1.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-heading font-bold uppercase cursor-pointer border-none"
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase cursor-pointer border-none"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={handleSaveProfileChanges}
-                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-heading font-bold uppercase cursor-pointer border-none shadow-md flex items-center gap-1"
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer border-none shadow-md flex items-center justify-center gap-1.5"
                     >
-                      <Save className="w-3 h-3" /> Save Changes
+                      <Save className="w-3.5 h-3.5" /> Save Changes
                     </button>
                   </div>
                 </div>
@@ -680,77 +759,85 @@ const voidEligibility = useMemo(() => {
 
               {/* PARENT / GUARDIAN VERIFICATION PANEL */}
               {(isMinor || extMember.parent_name) && (
-                <div className="p-4 bg-(--bg-page) border border-amber-500/30 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
-                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-amber-500" /> Parent / Legal Guardian Verification
+                <div className="p-4 bg-(--bg-page) border border-amber-500/30 rounded-2xl space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-(--border-color) pb-2.5">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-amber-500" /> Parent / Guardian Consent
                     </span>
-                    <span className="text-[8px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
+                    <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-bold">
                       ✓ E-Consent Verified
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-semibold">
-                    <div>
-                      <span className="text-[9px] text-slate-400 uppercase font-bold block">Parent Name</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                      <span className="text-slate-400">Parent Name</span>
                       <span className="text-amber-600 dark:text-amber-300 font-bold">{extMember.parent_name || 'N/A'}</span>
                     </div>
-                    <div>
-                      <span className="text-[9px] text-slate-400 uppercase font-bold block">Relationship</span>
-                      <span className="text-(--color-text)">{extMember.parent_relationship || 'Father/Mother/Guardian'}</span>
+                    <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                      <span className="text-slate-400">Relationship</span>
+                      <span className="text-(--color-text) font-medium">{extMember.parent_relationship || 'Guardian'}</span>
                     </div>
-                    <div>
-                      <span className="text-[9px] text-slate-400 uppercase font-bold block">Parent Contact Phone</span>
+                    <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                      <span className="text-slate-400">Parent Phone</span>
                       <span className="text-amber-600 dark:text-amber-300 font-mono font-bold">{extMember.parent_phone || 'N/A'}</span>
                     </div>
                     {extMember.parent_email && (
-                      <div className="col-span-2">
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Parent Email</span>
-                        <span className="text-(--color-text) truncate block">{extMember.parent_email}</span>
-                      </div>
-                    )}
-                    {extMember.consent_date && (
-                      <div>
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Consent Timestamp</span>
-                        <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px]">
-                          {new Date(extMember.consent_date).toLocaleDateString()}
-                        </span>
+                      <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
+                        <span className="text-slate-400">Parent Email</span>
+                        <span className="text-(--color-text) truncate max-w-[160px]">{extMember.parent_email}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* DIGITAL SIGNATURE PREVIEWS */}
+                  {/* TOGGLE SIGNATURES SHOW/HIDE BUTTON */}
                   {(extMember.applicant_signature || extMember.parent_signature) && (
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-(--border-color)">
-                      <div>
-                        <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                          <FileSignature className="w-3 h-3 text-blue-500" /> Applicant Signature
-                        </span>
-                        {extMember.applicant_signature ? (
-                          <div className="p-1 bg-white rounded-lg border border-slate-300 h-16 flex items-center justify-center">
-                            <img src={extMember.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-                          </div>
-                        ) : (
-                          <div className="p-2 bg-(--bg-card) rounded-lg border border-(--border-color) text-[10px] text-slate-400 italic text-center">
-                            No e-signature attached
-                          </div>
-                        )}
+                    <div className="pt-2 border-t border-(--border-color) space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400 font-bold">Digital Signatures</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSignatures(!showSignatures)}
+                          className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{showSignatures ? 'Hide Signatures' : 'View Signatures'}</span>
+                        </button>
                       </div>
 
-                      <div>
-                        <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                          <FileSignature className="w-3 h-3 text-amber-500" /> Parent/Guardian Signature
-                        </span>
-                        {extMember.parent_signature ? (
-                          <div className="p-1 bg-white rounded-lg border border-slate-300 h-16 flex items-center justify-center">
-                            <img src={extMember.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                      {showSignatures && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fade-in">
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                              <FileSignature className="w-3.5 h-3.5 text-blue-500" /> Applicant Signature
+                            </span>
+                            {extMember.applicant_signature ? (
+                              <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
+                                <img src={extMember.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+                              </div>
+                            ) : (
+                              <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
+                                No e-signature attached
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="p-2 bg-(--bg-card) rounded-lg border border-(--border-color) text-[10px] text-slate-400 italic text-center">
-                            No e-signature attached
+
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                              <FileSignature className="w-3.5 h-3.5 text-amber-500" /> Parent Signature
+                            </span>
+                            {extMember.parent_signature ? (
+                              <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
+                                <img src={extMember.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                              </div>
+                            ) : (
+                              <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
+                                No e-signature attached
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -763,8 +850,8 @@ const voidEligibility = useMemo(() => {
           {/* TAB 2: COMBINED CONTRACTS & BILLING */}
           {activeTab === 'Contracts & Billing' && (
             <div className="space-y-4 text-left animate-fade-in">
-              <div className="space-y-2">
-                <span className="text-[9px] font-heading font-black tracking-widest text-slate-400 uppercase block">
+              <div className="space-y-3">
+                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block">
                   SUBSCRIPTION CONTRACTS
                 </span>
                 {subHistory.length === 0 ? (
@@ -773,25 +860,28 @@ const voidEligibility = useMemo(() => {
                   </div>
                 ) : (
                   subHistory.map((sub: Subscription) => (
-                    <div key={sub.id} className="p-3.5 bg-(--bg-page) rounded-xl border border-(--border-color) flex justify-between items-center text-left">
-                      <div>
-                        <h5 className="font-bold text-(--color-text) font-semibold">{sub.plan_name}</h5>
-                        <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
-                          {sub.id} • {new Date(sub.start_date).toLocaleDateString()} to {new Date(sub.end_date).toLocaleDateString()}
-                        </span>
-                        {sub.status === 'Voided' && sub.void_reason && (
-                          <span className="text-[8px] font-mono text-rose-400 block mt-1">
-                            Void Reason: {sub.void_reason} ({sub.voided_by || 'Admin'})
-                          </span>
-                        )}
+                    <div key={sub.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <h5 className="font-bold text-sm text-(--color-text)">{sub.plan_name}</h5>
+                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                          sub.status === 'Active' 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                            : sub.status === 'Voided'
+                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 border-slate-300 dark:border-zinc-700'
+                        }`}>{sub.status}</span>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[8px] font-mono font-bold uppercase border ${
-                        sub.status === 'Active' 
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
-                          : sub.status === 'Voided'
-                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                          : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 border-slate-300 dark:border-zinc-700'
-                      }`}>{sub.status}</span>
+
+                      <div className="text-xs text-slate-400 font-mono space-y-0.5">
+                        <p>ID: {sub.id}</p>
+                        <p>Validity: {new Date(sub.start_date).toLocaleDateString()} to {new Date(sub.end_date).toLocaleDateString()}</p>
+                      </div>
+
+                      {sub.status === 'Voided' && sub.void_reason && (
+                        <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20 text-[10px] text-rose-400 font-mono">
+                          Void Reason: {sub.void_reason} ({sub.voided_by || 'Admin'})
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -801,45 +891,46 @@ const voidEligibility = useMemo(() => {
               {isAdmin && stats.activeContract && (
                 <div className="pt-4 border-t border-(--border-color) space-y-3 select-none">
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-heading font-black tracking-widest text-rose-500 uppercase">
+                    <span className="text-xs font-heading font-bold tracking-wider text-rose-500 uppercase">
                       DANGER ZONE
                     </span>
                     <div className="h-px flex-1 bg-rose-500/20" />
                   </div>
 
                   {!voidEligibility.eligible ? (
-                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-left space-y-1">
-                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase">
-                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <div className="p-3.5 bg-zinc-900/80 border border-zinc-800 rounded-2xl text-left space-y-1">
+                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs uppercase">
+                        <Lock className="w-4 h-4 text-slate-400" />
                         <span>Void Subscription Unavailable</span>
                       </div>
-                      <p className="text-[9.5px] text-slate-400 font-sans leading-relaxed">
+                      <p className="text-xs text-slate-400 leading-relaxed">
                         🔒 {voidEligibility.reason}
                       </p>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between p-3.5 bg-rose-500/5 border border-rose-500/20 rounded-xl">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl gap-3">
                       <div className="text-left space-y-0.5">
                         <span className="font-bold text-xs text-rose-400 block">Void Active Subscription</span>
-                        <span className="text-[9px] text-slate-400 block">
-                          Cancel current agreement while preserving complete audit and financial history.
+                        <span className="text-xs text-slate-400 block">
+                          Cancel agreement while preserving financial audit records.
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setIsVoidModalOpen(true)}
-                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0"
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
                       >
-                        Void Subscription
+                        <span>Void Subscription</span>
                       </button>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="space-y-2 pt-2 border-t border-(--border-color)">
-                <span className="text-[9px] font-heading font-black tracking-widest text-slate-400 uppercase block flex items-center gap-1">
-                  <ReceiptIcon className="w-3.5 h-3.5 text-emerald-500" /> INVOICES & PAYMENTS LOG
+              {/* INVOICES LIST */}
+              <div className="space-y-3 pt-3 border-t border-(--border-color)">
+                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block flex items-center gap-1.5">
+                  <ReceiptIcon className="w-4 h-4 text-emerald-500" /> Invoices & Receipts
                 </span>
                 {invoices.length === 0 ? (
                   <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
@@ -847,26 +938,26 @@ const voidEligibility = useMemo(() => {
                   </div>
                 ) : (
                   invoices.map((r: Receipt) => (
-                    <div key={r.id} className="p-3.5 bg-(--bg-page) rounded-xl border border-(--border-color) flex justify-between items-center text-left">
-                      <div>
-                        <h5 className="font-bold text-(--color-text) font-semibold">{r.item_description}</h5>
-                        <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
+                    <div key={r.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                      <div className="space-y-1">
+                        <h5 className="font-bold text-sm text-(--color-text)">{r.item_description}</h5>
+                        <p className="font-mono text-xs text-slate-400">
                           {r.id} • {r.payment_method} • {new Date(r.created_at).toLocaleDateString()}
-                        </span>
+                        </p>
                       </div>
                       
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs">
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
+                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
                           ₱{r.amount.toLocaleString()}.00
                         </span>
 
                         <button
                           type="button"
                           onClick={() => handleOpenReceipt(r)}
-                          className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1"
+                          className="min-h-[38px] px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
                           title="View Official Receipt"
                         >
-                          <Eye className="w-3 h-3" />
+                          <Eye className="w-3.5 h-3.5" />
                           <span>Receipt</span>
                         </button>
                       </div>
@@ -877,91 +968,149 @@ const voidEligibility = useMemo(() => {
             </div>
           )}
 
-          {/* TAB 3: CARDS (CONNECTED TO DIGITAL QR CARD PREVIEW) */}
-          {activeTab === 'Cards' && (
-            <div className="space-y-4 text-left animate-fade-in">
-              {currentCard ? (
-                <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
-                    <div className="space-y-0.5">
-                      <span className="text-[8px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">ACTIVE SECURITY CREDENTIAL</span>
-                      <h5 className="text-sm font-bold text-(--color-text) font-mono">{currentCard.card_number}</h5>
-                      <p className="text-[10px] text-slate-400 font-mono">
-                        Hardware Type: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0 • Issued: {new Date(currentCard.issued_at).toLocaleDateString()}
-                      </p>
-                    </div>
+          {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
+          {activeTab === 'Cards' && (() => {
+            const expDateStr = stats.activeContract?.end_date 
+              ? new Date(stats.activeContract.end_date).toLocaleDateString() 
+              : 'NO ACTIVE PLAN';
+            const isExp = stats.activeContract?.end_date 
+              ? new Date(stats.activeContract.end_date) < new Date() 
+              : false;
+            const issueDateStr = currentCard?.issued_at 
+              ? new Date(currentCard.issued_at).toLocaleDateString() 
+              : new Date().toLocaleDateString();
 
-                    <button
-                      type="button"
-                      onClick={() => setIsDigitalQrModalOpen(true)}
-                      className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-[9px] font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors border-none shrink-0"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Print Digital Badge</span>
-                    </button>
-                  </div>
+            const qrPayload = `${localMember.member_id}:${stats.activeContract?.end_date || 'NO_PLAN'}:${currentCard ? new Date(currentCard.issued_at).getTime() : Date.now()}`;
+            const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
-                  {/* ATHLETIC DIGITAL QR CARD PREVIEW */}
-                  <div className="p-3 bg-black rounded-2xl border border-zinc-800 text-white text-left space-y-2.5 max-w-sm mx-auto shadow-xl select-none">
-                    <div className="text-center space-y-0.5">
-                      <div className="font-heading font-black text-xs uppercase text-white leading-none">WOLF PALOMAR GYM</div>
-                      <div className="font-heading font-extrabold text-[9px] uppercase text-red-600 leading-none">MUAYTHAI BOXING</div>
-                    </div>
-                    
-                    <div className="h-px bg-red-600 w-full" />
-                    
-                    <div className="grid grid-cols-12 gap-2 items-center">
-                      <div className="col-span-5 bg-white p-1.5 rounded-lg flex items-center justify-center">
-                        <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(localMember.member_id)}`} 
-                          alt="Card QR Code" 
-                          className="w-16 h-16 block"
-                        />
+            return (
+              <div className="space-y-4 text-left animate-fade-in">
+                {currentCard ? (
+                  <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">ACTIVE CREDENTIAL BADGE</span>
+                        <h5 className="text-sm font-bold text-(--color-text) font-mono">{currentCard.card_number}</h5>
+                        <p className="text-xs text-slate-400 font-mono">
+                          Hardware Type: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0
+                        </p>
                       </div>
-                      <div className="col-span-7 space-y-1 text-left">
-                        <div className="text-[10px] font-bold text-white uppercase truncate">{localMember.full_name}</div>
-                        <div className="text-[9px] font-mono text-zinc-400">{localMember.phone || 'N/A'}</div>
-                        <div className="text-[8px] font-mono text-red-500 font-bold uppercase">{stats.activeContract?.plan_name || 'NO ACTIVE PLAN'}</div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsDigitalQrModalOpen(true)}
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>Print Digital Badge</span>
+                      </button>
+                    </div>
+
+                    {/* RESPONSIVE GYM CREDENTIAL CARD DISPLAY */}
+                    <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
+                      
+                      {/* BRANDING HEADER */}
+                      <div className="text-center space-y-0.5">
+                        <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
+                          WOLF PALOMAR GYM
+                        </h4>
+                        <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
+                        <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
+                          MUAYTHAI BOXING
+                        </div>
+                        <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
+                          6B Judge A. Roldan St., Navotas City, Metro Manila
+                        </p>
                       </div>
+
+                      {/* CARD BODY: QR CODE + MEMBER DETAILS */}
+                      <div className="flex items-center gap-3 pt-1">
+                        
+                        {/* QR CODE BOX */}
+                        <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
+                          <img 
+                            src={qrImg} 
+                            alt="Member QR" 
+                            className="w-full h-full object-contain"
+                            style={{ opacity: isExp ? 0.2 : 1 }}
+                          />
+                          {isExp && (
+                            <div className="absolute inset-0 bg-red-600/90 rounded-xl flex flex-col items-center justify-center text-white text-[9px] font-black uppercase text-center leading-tight">
+                              <span>EXPIRED</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* MEMBER DETAILS */}
+                        <div className="flex-1 space-y-1.5 min-w-0">
+                          <div>
+                            <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                              FULL NAME
+                            </span>
+                            <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate uppercase">
+                              {localMember.full_name}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                              CONTACT
+                            </span>
+                            <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate font-mono">
+                              {localMember.phone || 'N/A'}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                            <div>
+                              <span className="text-[8px] font-black text-zinc-400 uppercase block">ISSUED</span>
+                              <div className="bg-white text-black font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate">
+                                {issueDateStr}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-[8px] font-black text-zinc-400 uppercase block">EXPIRATION</span>
+                              <div className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
+                                isExp ? 'text-red-600' : 'text-black'
+                              }`}>
+                                {expDateStr}
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+
+                      </div>
+
                     </div>
 
-                    <div className="h-px bg-red-600 w-full" />
-
-                    <div className="flex justify-between items-center text-[6.5px] font-bold text-zinc-400">
-                      <span>NON-REFUNDABLE</span>
-                      <span>NON-TRANSFERRABLE</span>
-                    </div>
                   </div>
+                ) : (
+                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
+                    No active physical security card assigned to this client.
+                  </div>
+                )}
 
+                {/* REISSUE CARD TOKEN BUTTON */}
+                <div className="pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsReissueModalOpen(true)} 
+                    className="w-full min-h-[44px] px-4 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Reissue Card Security Token</span>
+                  </button>
                 </div>
-              ) : (
-                <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
-                  No active physical security card assigned to this client.
-                </div>
-              )}
-
-              <div className="flex gap-2 select-none">
-                <button onClick={() => {
-                  const reason = prompt('Specify replacement card reason:');
-                  if (!reason) return;
-                  try {
-                    cardService.replace(localMember.member_id, reason, 'Admin Staff');
-                    toast.success('Access card re-issued.');
-                    onMutationSuccess();
-                  } catch (err: any) {
-                    toast.error(err.message);
-                  }
-                }} className="flex-1 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading tracking-wider uppercase border-none cursor-pointer">
-                  Reissue Card Token
-                </button>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 4: ATTENDANCE */}
           {activeTab === 'Attendance' && (
             <div className="space-y-3 text-left animate-fade-in">
-              <span className="text-[9px] font-heading font-black tracking-widest text-slate-400 uppercase block">
+              <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block">
                 FACILITY CHECK-IN LOGS
               </span>
 
@@ -971,24 +1120,23 @@ const voidEligibility = useMemo(() => {
                 </div>
               ) : (
                 attendanceLogs.map((att: AttendanceRecord) => (
-                  <div key={att.id} className="p-3.5 bg-(--bg-page) rounded-xl border border-(--border-color) flex justify-between items-center">
-                    <div className="space-y-0.5">
+                  <div key={att.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-(--color-text)">{att.plan_name || 'Standard Pass'}</span>
-                        <span className="text-[9px] font-mono text-slate-400">({att.payment_method})</span>
+                        <span className="font-bold text-sm text-(--color-text)">{att.plan_name || 'Standard Pass'}</span>
+                        <span className="text-xs font-mono text-slate-400">({att.payment_method})</span>
                       </div>
-                      <span className="font-mono text-[9px] text-slate-500 dark:text-slate-400 block">
-                        Checked in at: {new Date(att.check_in_time).toLocaleString()} • Staff: {att.staff_name}
+                      <span className="font-mono text-xs text-slate-400 block">
+                        Checked in: {new Date(att.check_in_time).toLocaleString()} • Staff: {att.staff_name}
                       </span>
                     </div>
 
-                    <div className="text-right">
+                    <div className="text-left sm:text-right">
                       <span className={`font-mono text-xs font-black ${
                         att.entry_fee > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
                       }`}>
                         {att.entry_fee > 0 ? `₱${att.entry_fee.toFixed(2)}` : 'FREE (₱0)'}
                       </span>
-                      <span className="text-[8px] font-mono text-slate-400 block uppercase">Paid Check-In</span>
                     </div>
                   </div>
                 ))
@@ -999,26 +1147,68 @@ const voidEligibility = useMemo(() => {
           {/* TAB 5: NOTES */}
           {activeTab === 'Notes' && (
             <div className="space-y-3 text-left animate-fade-in">
-              <label className="text-[10px] uppercase text-slate-400 font-bold block">Internal Medical & Staff Remarks</label>
+              <label className="text-xs font-bold text-slate-400 uppercase block">
+                Internal Medical & Staff Remarks
+              </label>
               <textarea 
                 value={notes} 
                 onChange={e => setNotes(e.target.value)} 
-                rows={5} 
-                className="w-full p-3 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-(--color-primary) text-xs font-semibold leading-relaxed" 
-                placeholder="Enter internal details (visible only to receptionists)..."
+                rows={6} 
+                className="w-full p-3.5 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed" 
+                placeholder="Enter internal notes visible to reception staff..."
               />
-              <button onClick={handleUpdateNotes} className="px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-[9px] tracking-wider uppercase border-none cursor-pointer">
-                Save Notes
+              <button 
+                onClick={handleUpdateNotes} 
+                className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md"
+              >
+                <span>Save Notes</span>
               </button>
             </div>
           )}
 
         </div>
 
-        {/* FOOTER ACTIONS - RESPONSIVE LAYOUT */}
-        <div className="p-4 border-t border-(--border-color) bg-(--bg-page) flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 select-none w-full">
+        {/* FOOTER ACTIONS - ELEVATED CLEAR OF SYSTEM NAVBAR */}
+        <div className="p-3.5 sm:p-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl pb-20 sm:pb-4">
           
-          <div className="flex items-center gap-2">
+          {/* STATUS & SUSPEND/ACTIVATE ACTION BUTTON */}
+          <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 font-mono">Status:</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
+                localMember.status === 'Active' 
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+              }`}>
+                {localMember.status || 'Active'}
+              </span>
+            </div>
+
+            <button 
+              type="button"
+              onClick={() => setIsStatusModalOpen(true)} 
+              className={`min-h-[44px] px-4 py-2.5 rounded-xl cursor-pointer flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md active:scale-95 ${
+                localMember.status === 'Active'
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                  : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+              }`}
+            >
+              {localMember.status === 'Active' ? (
+                <>
+                  <UserX className="w-4 h-4" />
+                  <span>Suspend Member</span>
+                </>
+              ) : (
+                <>
+                  <UserCheck className="w-4 h-4" />
+                  <span>Activate Member</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* EDIT & DELETE BUTTONS ROW */}
+          <div className="flex items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
             {/* EDIT DETAILS BUTTON */}
             <div className="relative group flex-1 sm:flex-initial">
               <button
@@ -1028,7 +1218,7 @@ const voidEligibility = useMemo(() => {
                   setActiveTab('Overview');
                   setIsEditing(!isEditing);
                 }}
-                className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
+                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
                   hasActiveSubscription
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : isEditing
@@ -1036,12 +1226,12 @@ const voidEligibility = useMemo(() => {
                     : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
                 }`}
               >
-                {hasActiveSubscription ? <Lock className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                {hasActiveSubscription ? <Lock className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                 <span>{isEditing ? 'Cancel Edit' : 'Edit Details'}</span>
               </button>
 
               {hasActiveSubscription && (
-                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-48 p-2 bg-zinc-900 text-white text-[9px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
+                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
                   🔒 Profile details are locked while an active subscription contract exists.
                 </div>
               )}
@@ -1053,56 +1243,27 @@ const voidEligibility = useMemo(() => {
                 type="button"
                 disabled={hasActiveSubscription}
                 onClick={() => setIsDeleteModalOpen(true)}
-                className={`w-full sm:w-auto px-3.5 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold transition-all border-none ${
+                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
                   hasActiveSubscription
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
                 }`}
               >
-                {hasActiveSubscription ? <Lock className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {hasActiveSubscription ? <Lock className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
                 <span>Delete Member</span>
               </button>
 
               {hasActiveSubscription && (
-                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-48 p-2 bg-zinc-900 text-white text-[9px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
+                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
                   🔒 Member cannot be deleted while an active subscription contract exists.
                 </div>
               )}
             </div>
           </div>
 
-          {/* STATUS ACTION TOGGLE */}
-          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
-            <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">
-              Status: <strong className={localMember.status === 'Active' ? 'text-emerald-500' : 'text-amber-500'}>{localMember.status || 'Active'}</strong>
-            </span>
-
-            <button 
-              type="button"
-              onClick={() => setIsStatusModalOpen(true)} 
-              className={`px-4 py-2.5 rounded-xl cursor-pointer flex items-center justify-center gap-1.5 text-[9px] font-heading font-bold border-none transition-all shadow-xs ${
-                localMember.status === 'Active'
-                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                  : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md'
-              }`}
-            >
-              {localMember.status === 'Active' ? (
-                <>
-                  <UserX className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Suspend Member</span>
-                </>
-              ) : (
-                <>
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span>Activate Member</span>
-                </>
-              )}
-            </button>
-          </div>
-
         </div>
 
-      </div>
+      </motion.div>
 
       {/* ─── DIGITAL QR BADGE MODAL ─── */}
       {isDigitalQrModalOpen && (
@@ -1131,7 +1292,7 @@ const voidEligibility = useMemo(() => {
         onClose={() => setIsStatusModalOpen(false)}
         title={localMember.status === 'Active' ? 'SUSPEND MEMBER' : 'ACTIVATE MEMBER'}
       >
-        <div className="space-y-4 text-left">
+        <div className="space-y-4 text-left font-body">
           <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
             Are you sure you want to {localMember.status === 'Active' ? 'suspend' : 'activate'} membership profile for{' '}
             <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
@@ -1141,14 +1302,14 @@ const voidEligibility = useMemo(() => {
             <button
               type="button"
               onClick={() => setIsStatusModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleStatusToggleConfirm}
-              className={`px-5 py-2.5 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
+              className={`px-5 py-2.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
                 localMember.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
               }`}
             >
@@ -1164,12 +1325,12 @@ const voidEligibility = useMemo(() => {
         onClose={() => setIsDeleteModalOpen(false)}
         title="DELETE MEMBER PROFILE"
       >
-        <div className="space-y-4 text-left">
+        <div className="space-y-4 text-left font-body">
           <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
             Are you sure you want to delete profile for{' '}
             <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
           </p>
-          <p className="text-[10px] text-slate-400 font-mono">
+          <p className="text-xs text-slate-400 font-mono">
             This record will be moved to the Member Recycle Bin.
           </p>
 
@@ -1177,16 +1338,57 @@ const voidEligibility = useMemo(() => {
             <button
               type="button"
               onClick={() => setIsDeleteModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleDeleteMemberConfirm}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md"
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md"
             >
               Confirm Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── REISSUE CARD TOKEN CONFIRMATION MODAL ─── */}
+      <Modal
+        isOpen={isReissueModalOpen}
+        onClose={() => setIsReissueModalOpen(false)}
+        title="REISSUE SECURITY CARD TOKEN"
+      >
+        <div className="space-y-4 text-left font-body">
+          <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-xs space-y-1">
+            <p className="font-bold flex items-center gap-1.5">
+              <AlertOctagon className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>Warning: Active Card Deactivation</span>
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Generating a fresh token will immediately <strong>deactivate {localMember.full_name}'s current card ({currentCard?.card_number || 'N/A'})</strong>.
+            </p>
+          </div>
+
+          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+            Are you sure you want to proceed with issuing a replacement card token for <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+          </p>
+
+          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+            <button
+              type="button"
+              onClick={() => setIsReissueModalOpen(false)}
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmReissueToken}
+              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Confirm Reissue Token</span>
             </button>
           </div>
         </div>
@@ -1199,18 +1401,18 @@ const voidEligibility = useMemo(() => {
         title="VOID SUBSCRIPTION"
       >
         <div className="space-y-4 text-left font-body">
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-[10px] space-y-1">
+          <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs space-y-1">
             <p className="font-bold flex items-center gap-1.5">
               <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>This will cancel the current subscription while keeping it in the system for audit history.</span>
+              <span>This will cancel the current subscription while keeping it in audit history.</span>
             </p>
-            <p className="text-rose-400/80 font-mono text-[9px]">
+            <p className="text-rose-400/80 font-mono text-[10px]">
               This action cannot be undone.
             </p>
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+            <label className="text-xs font-bold text-slate-400 block">
               Reason for Voiding *
             </label>
             <select
@@ -1227,7 +1429,7 @@ const voidEligibility = useMemo(() => {
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+            <label className="text-xs font-bold text-slate-400 block">
               Additional Notes (Optional)
             </label>
             <textarea
@@ -1240,7 +1442,7 @@ const voidEligibility = useMemo(() => {
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-slate-400 block">
+            <label className="text-xs font-bold text-slate-400 block">
               Admin Password Verification *
             </label>
             <div className="relative">
@@ -1256,7 +1458,7 @@ const voidEligibility = useMemo(() => {
                 onClick={() => setShowAdminPassword(!showAdminPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
               >
-                <Eye className="w-3.5 h-3.5" />
+                <Eye className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1265,7 +1467,7 @@ const voidEligibility = useMemo(() => {
             <button
               type="button"
               onClick={() => setIsVoidModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
             >
               Cancel
             </button>
@@ -1273,7 +1475,7 @@ const voidEligibility = useMemo(() => {
               type="button"
               disabled={!voidReason || !adminPassword.trim() || isVerifyingVoid}
               onClick={handleConfirmVoidSubscription}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
             >
               {isVerifyingVoid ? 'Verifying...' : 'Void Subscription'}
             </button>
@@ -1282,20 +1484,20 @@ const voidEligibility = useMemo(() => {
       </Modal>
 
       {/* ─── INTAKE SUBSCRIPTION WIZARD MODAL ─── */}
-{isWizardOpen && (
-  <IntakeWizardModal
-    isOpen={isWizardOpen}
-    initialIntakeMode="Manual"
-    prefillMember={localMember}
-    onClose={() => setIsWizardOpen(false)}
-    onComplete={() => {
-      setIsWizardOpen(false);
-      setRefreshKey(prev => prev + 1);
-      onMutationSuccess();
-    }}
-  />
-)}
-    </div>,
+      {isWizardOpen && (
+        <IntakeWizardModal
+          isOpen={isWizardOpen}
+          initialIntakeMode="Manual"
+          prefillMember={localMember}
+          onClose={() => setIsWizardOpen(false)}
+          onComplete={() => {
+            setIsWizardOpen(false);
+            setRefreshKey(prev => prev + 1);
+            onMutationSuccess();
+          }}
+        />
+      )}
+    </motion.div>,
     document.body
   );
 };

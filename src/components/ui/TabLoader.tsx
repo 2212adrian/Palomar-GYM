@@ -23,6 +23,24 @@ const STATUS_PHRASES = [
 export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
   const { isOnline } = useContext(TabLoadingContext);
   const [statusText, setStatusText] = useState(STATUS_PHRASES[0]);
+  
+  // Track mounting state to completely remove SVGs from GPU rasterization when hidden
+  const [shouldRender, setShouldRender] = useState(isVisible);
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    if (isVisible) {
+      setShouldRender(true);
+    } else {
+      // Delay unmounting by 500ms so opacity fade-out finishes smoothly
+      timeoutId = setTimeout(() => {
+        setShouldRender(false);
+      }, 500);
+    }
+
+    return () => clearTimeout(timeoutId);
+  }, [isVisible]);
 
   useEffect(() => {
     if (!isOnline) {
@@ -39,6 +57,9 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
       return () => clearInterval(interval);
     }
   }, [isVisible, isOnline]);
+
+  // Completely unmount component tree when not visible (0% GPU usage)
+  if (!shouldRender) return null;
 
   const getHexPoints = (cx: number, cy: number, r: number) => {
     const points = [];
@@ -81,7 +102,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
 
   return (
     <div
-      className={`fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-slate-50/95 dark:bg-[#070a13]/95 backdrop-blur-md transition-all duration-500 ease-in-out pointer-events-none ${
+      className={`fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-slate-50/95 dark:bg-[#070a13]/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
         isVisible ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 scale-95 pointer-events-none'
       }`}
     >
@@ -128,6 +149,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
         .hex-polygon {
           transform-origin: center;
           animation: hexWave 2.2s infinite ease-in-out;
+          animation-play-state: ${isVisible ? 'running' : 'paused'};
           transition: fill 0.3s ease;
         }
 

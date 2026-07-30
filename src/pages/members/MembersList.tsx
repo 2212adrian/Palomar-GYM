@@ -4,8 +4,9 @@ import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } 
 import { useLocation } from 'react-router-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer
+  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Check
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -71,13 +72,22 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const [wizardPrefillMember, setWizardPrefillMember] = useState<Member | undefined>(undefined);
   const [wizardPrefill, setWizardPrefill] = useState<OnlineRegistration | undefined>(undefined);
 
+  // Mobile Action Sheet State
+  const [mobileActionSheetMember, setMobileActionSheetMember] = useState<Member | null>(null);
+
   // Card modal state
   const [qrModalMember, setQrModalMember] = useState<Member | null>(null);
   const [manualModalMember, setManualModalMember] = useState<Member | null>(null);
   const [showBatchCardModal, setShowBatchCardModal] = useState<boolean>(false);
 
-  // Action Menu state
+  // Action Menu state (Desktop)
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  // Mobile Bottom Bar / FAB State
+  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
+
+  // Mobile Pagination State
+  const [mobilePage, setMobilePage] = useState(1);
 
   const itemsPerPage = useResponsiveItemsPerPage();
 
@@ -107,6 +117,39 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     }
   }, [isPlansPath]);
 
+  // Launch Print Modal pre-selecting all "No Card Issued" members if no checkboxes selected
+  const handleOpenPrintModal = useCallback(() => {
+    if (selectedMemberIds.length === 0) {
+      const unissuedIds = members.filter(m => {
+        const c = cards.find((card: MemberCard) => card.member_id === m.member_id && card.status === 'Active');
+        return !c || c.card_type === 'None';
+      }).map(m => m.id);
+      setSelectedMemberIds(unissuedIds);
+    }
+    setShowBatchCardModal(true);
+  }, [selectedMemberIds, members, cards]);
+
+  // Custom Event Listeners for Header Actions Sync
+  useEffect(() => {
+    const handlePrintEvent = () => handleOpenPrintModal();
+    const handleRecycleEvent = () => setIsRecycleOpen(true);
+    const handleWizardEvent = () => {
+      setWizardPrefillMember(undefined);
+      setWizardPrefill(undefined);
+      setIsWizardOpen(true);
+    };
+
+    window.addEventListener('trigger-member-print', handlePrintEvent);
+    window.addEventListener('trigger-member-recycle', handleRecycleEvent);
+    window.addEventListener('trigger-member-wizard', handleWizardEvent);
+
+    return () => {
+      window.removeEventListener('trigger-member-print', handlePrintEvent);
+      window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
+      window.removeEventListener('trigger-member-wizard', handleWizardEvent);
+    };
+  }, [handleOpenPrintModal]);
+
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -123,6 +166,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Reset mobile page on query change
+  useEffect(() => {
+    setMobilePage(1);
+  }, [searchQuery, activeChip]);
+
   // Helper getters
   const getActiveSubscription = useCallback((memberId: string): Subscription | undefined => {
     return subscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
@@ -132,14 +180,53 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active');
   }, [cards]);
 
-  // Launch Print Modal pre-selecting all "No Card Issued" members if no checkboxes selected
-  const handleOpenPrintModal = () => {
-    if (selectedMemberIds.length === 0) {
-      const unissuedIds = members.filter(m => !getActiveCard(m.member_id)).map(m => m.id);
-      setSelectedMemberIds(unissuedIds);
+  // Subscription Info Helper for formatting badges consistently
+  const getSubscriptionDetails = useCallback((memberId: string) => {
+    const sub = getActiveSubscription(memberId);
+    if (!sub) {
+      return {
+        hasSub: false,
+        planName: 'Profile Only',
+        statusLabel: 'No active contract',
+        badgeStyle: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
+        dotColor: 'bg-slate-400'
+      };
     }
-    setShowBatchCardModal(true);
-  };
+    
+    const end = new Date(sub.end_date);
+    const now = new Date();
+    const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    let badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+    let statusLabel = `${diffDays} Days left`;
+    let dotColor = 'bg-emerald-500';
+
+    if (diffDays <= 0) {
+      badgeStyle = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+      statusLabel = 'Expires Today';
+      dotColor = 'bg-rose-500';
+    } else if (diffDays <= 3) {
+      badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+      statusLabel = `${diffDays} Days Left (Renew)`;
+      dotColor = 'bg-amber-500';
+    } else if (diffDays <= 7) {
+      badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+      statusLabel = '7 Days Left';
+      dotColor = 'bg-amber-500';
+    } else if (diffDays > 30) {
+      const months = Math.floor(diffDays / 30);
+      const remDays = diffDays % 30;
+      statusLabel = remDays === 0 ? `${months} Mon left` : `${months}m ${remDays}d left`;
+    }
+
+    return {
+      hasSub: true,
+      planName: sub.plan_name,
+      statusLabel,
+      badgeStyle,
+      dotColor
+    };
+  }, [getActiveSubscription]);
 
   // Metric Calculations
   const stats = useMemo(() => {
@@ -246,6 +333,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     });
   }, [members, searchQuery, activeChip, subscriptions, getActiveSubscription, getActiveCard]);
 
+  // Mobile Paginated Slice
+  const totalMobilePages = Math.ceil(filteredMembers.length / itemsPerPage) || 1;
+  const paginatedMobileMembers = useMemo(() => {
+    const start = (mobilePage - 1) * itemsPerPage;
+    return filteredMembers.slice(start, start + itemsPerPage);
+  }, [filteredMembers, mobilePage, itemsPerPage]);
+
   const handleToggleSuspend = (memberItem: Member) => {
     const nextStatus = memberItem.status === 'Active' ? 'Suspended' : 'Active';
     try {
@@ -259,7 +353,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   const isSelectionActive = selectedMemberIds.length > 0;
 
-  // Row selection handler identical to Products.tsx
   const handleRowClick = (member: Member) => {
     setSelectedMemberIds(prev =>
       prev.includes(member.id)
@@ -268,7 +361,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     );
   };
 
-  // Row style function identical to Products.tsx
   const getRowStyle = (member: Member) => {
     const isSelected = selectedMemberIds.includes(member.id);
     const isSuspended = member.status === 'Suspended';
@@ -350,45 +442,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         return sub ? sub.plan_name : 'AAA_NO_SUB';
       },
       render: (item) => {
-        const sub = getActiveSubscription(item.member_id);
-        if (!sub) {
-          return (
-            <div className="text-left leading-tight">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-semibold bg-slate-500/10 text-slate-500 border border-slate-500/20">
-                Profile Only
-              </span>
-              <span className="text-[9px] text-slate-400 block mt-1 font-mono">No active contract</span>
-            </div>
-          );
-        }
-        
-        const end = new Date(sub.end_date);
-        const now = new Date();
-        const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        
-        let badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-        let statusLabel = `${diffDays} Days left`;
-
-        if (diffDays <= 0) {
-          badgeStyle = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
-          statusLabel = 'Expires Today';
-        } else if (diffDays <= 3) {
-          badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-          statusLabel = `${diffDays} Days Left (Renew Soon)`;
-        } else if (diffDays <= 7) {
-          badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-          statusLabel = '7 Days Left';
-        } else if (diffDays > 30) {
-          const months = Math.floor(diffDays / 30);
-          const remDays = diffDays % 30;
-          statusLabel = remDays === 0 ? `${months} Mon left` : `${months}m ${remDays}d left`;
-        }
-
+        const subInfo = getSubscriptionDetails(item.member_id);
         return (
           <div className="text-left leading-tight space-y-1">
-            <span className="font-sans font-bold text-xs block text-(--color-text)">{sub.plan_name}</span>
-            <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${badgeStyle}`}>
-              {statusLabel}
+            <span className="font-sans font-bold text-xs block text-(--color-text)">{subInfo.planName}</span>
+            <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
+              {subInfo.statusLabel}
             </span>
           </div>
         );
@@ -602,7 +661,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         setActions(null);
       }
     };
-  }, [activeTab, setActions, hideHeaderActions, isPlansPath, members]);
+  }, [activeTab, setActions, hideHeaderActions, isPlansPath, members, handleOpenPrintModal]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenActionMenuId(null);
@@ -634,26 +693,25 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
-                  className={`flex-1 py-3 px-2 font-heading text-[10px] tracking-wider uppercase font-black cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
+                  className={`flex-1 py-3 px-2 font-heading text-[10px] md:text-xs tracking-wider uppercase font-black cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
                     activeTab === item.id 
                       ? 'border-b-2 border-[#123c73] dark:border-[#bf0202] text-slate-900 dark:text-white' 
                       : 'border-b-2 border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="hidden md:inline">{item.label}</span>
+                  <span>{item.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-6 space-y-6">
+          <div className="mt-4 md:mt-6 space-y-4 md:space-y-6">
             {activeTab === 'Directory' && (
-              <div className="space-y-6 pb-24">
+              <div className="space-y-4 md:space-y-6 pb-40 md:pb-24">
                 
-                {/* UPGRADED OVERVIEW METRIC CARDS (4 CARDS) */}
-                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
-                  
+                {/* 1. DESKTOP STATS GRID (UNCHANGED) */}
+                <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
                   <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
                       <Users className="w-6 h-6" />
@@ -705,11 +763,61 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       <span className="text-[9px] font-mono text-rose-600/70 dark:text-rose-400/70 block truncate">Locked Profiles</span>
                     </div>
                   </div>
+                </div>
 
+                {/* 2. MOBILE COMPACT 2X2 STATS GRID (< MD) */}
+                <div className="grid grid-cols-2 gap-2.5 md:hidden select-none">
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                    <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
+                      <Users className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-heading font-black text-(--color-text) block leading-tight">
+                        {stats.total}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">MEMBERS</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                    <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shrink-0">
+                      <Award className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-heading font-black text-emerald-600 dark:text-emerald-400 block leading-tight">
+                        {stats.activeSubscriptions}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">ACTIVE</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                    <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
+                      <Clock className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-heading font-black text-amber-600 dark:text-amber-400 block leading-tight">
+                        {stats.expiringSoon}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">EXPIRING</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                    <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shrink-0">
+                      <UserX className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-heading font-black text-rose-600 dark:text-rose-400 block leading-tight">
+                        {stats.suspendedMembers}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">LOCKED</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
-                <div className="space-y-3 bg-(--bg-card) p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
+                <div className="space-y-3 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
                   
                   <div className="relative w-full">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -718,7 +826,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       type="text"
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
-                      placeholder="Search profiles by Name, Member ID, Contact Phone, or Email..."
+                      placeholder="Search profiles by Name, ID, Phone, or Email..."
                       className="w-full pl-10 pr-10 py-2.5 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-medium text-xs text-(--color-text) focus:border-blue-500 transition-all"
                     />
 
@@ -741,9 +849,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
                     {[
                       { id: 'all', label: 'All', count: chipCounts.all },
-                      { id: 'with_sub', label: 'Ongoing Sub', count: chipCounts.with_sub },
-                      { id: 'expiring', label: 'Expiring Soon', count: chipCounts.expiring },
-                      { id: 'expired', label: 'Expired Plan', count: chipCounts.expired },
+                      { id: 'with_sub', label: 'Subscription', count: chipCounts.with_sub },
+                      { id: 'expiring', label: 'Expiring', count: chipCounts.expiring },
+                      { id: 'expired', label: 'Expired', count: chipCounts.expired },
                       { id: 'has_card', label: 'Has Card', count: chipCounts.has_card },
                       { id: 'no_card', label: 'No Card', count: chipCounts.no_card },
                       { id: 'suspended', label: 'Suspended', count: chipCounts.suspended },
@@ -772,8 +880,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
                 </div>
 
-                {/* TABLE CONTAINER WITH EMPTY STATES & SKELETON */}
-                <div className="p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
+                {/* DESKTOP TABLE VIEW (HIDDEN ON MOBILE) */}
+                <div className="hidden md:block p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
                   {loading ? (
                     <div className="p-6 space-y-3">
                       <Skeleton height={20} count={6} baseColor="var(--border-color)" />
@@ -814,6 +922,243 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   )}
                 </div>
 
+                {/* MOBILE CARD LIST VIEW (< MD) */}
+                <div className="block md:hidden space-y-3">
+                  {loading ? (
+                    <div className="p-4 space-y-3">
+                      <Skeleton height={110} count={4} borderRadius={16} baseColor="var(--border-color)" />
+                    </div>
+                  ) : filteredMembers.length === 0 ? (
+                    <div className="p-8 text-center space-y-3 bg-(--bg-card) border border-(--border-color) rounded-2xl">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-400 mx-auto flex items-center justify-center">
+                        <Search className="w-5 h-5" />
+                      </div>
+                      <h4 className="font-heading font-bold text-xs text-(--color-text)">No members match query</h4>
+                      <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                        Modify search or filter chips to find profiles.
+                      </p>
+                      {(searchQuery || activeChip !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery('');
+                            setActiveChip('all');
+                          }}
+                          className="px-3.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider border border-blue-500/20"
+                        >
+                          Clear Filters
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Select All Row on Mobile when Multi-Select Active */}
+                      {isSelectionActive && (
+                        <div className="flex items-center justify-between px-3 py-2 bg-slate-500/10 border border-(--border-color) rounded-xl select-none">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-(--color-text)">
+                            <input
+                              type="checkbox"
+                              checked={filteredMembers.every(m => selectedMemberIds.includes(m.id))}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedMemberIds(filteredMembers.map(m => m.id));
+                                } else {
+                                  setSelectedMemberIds([]);
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 accent-[#123c73]"
+                            />
+                            <span>Select All Loaded ({filteredMembers.length})</span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMemberIds([])}
+                            className="text-[10px] font-bold text-rose-500 uppercase tracking-wider"
+                          >
+                            Deselect All
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Mobile Cards Map */}
+                      {paginatedMobileMembers.map((member) => {
+                        const subInfo = getSubscriptionDetails(member.member_id);
+                        const cardObj = getActiveCard(member.member_id);
+                        const isSelected = selectedMemberIds.includes(member.id);
+                        const isSuspended = member.status === 'Suspended';
+                        const isQr = cardObj && cardObj.card_type === 'QR';
+                        const hasActiveSub = subInfo.hasSub;
+
+                        return (
+                          <div
+                            key={member.id}
+                            onClick={() => handleRowClick(member)}
+                            className={`p-4 rounded-2xl border transition-all select-none space-y-3 relative ${
+                              isSelected
+                                ? 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500 shadow-md'
+                                : isSuspended
+                                ? 'bg-slate-200/50 dark:bg-zinc-900/40 border-(--border-color) opacity-70'
+                                : 'bg-(--bg-card) border-(--border-color) shadow-xs active:scale-[0.99]'
+                            }`}
+                          >
+                            {/* Card Header: Checkbox + Avatar + Details + Status */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleRowClick(member);
+                                  }}
+                                  className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 accent-[#123c73] shrink-0 cursor-pointer"
+                                />
+
+                                <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shadow-xs shrink-0">
+                                  {(member.full_name || 'M')[0]}
+                                </div>
+
+                                <div className="min-w-0">
+                                  <h3 className="font-heading font-bold text-sm text-(--color-text) truncate leading-tight">
+                                    {member.full_name}
+                                  </h3>
+                                  <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate">
+                                    {member.member_id}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Status Pill */}
+                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-heading font-black uppercase tracking-wider border shrink-0 flex items-center gap-1 ${
+                                isSuspended
+                                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isSuspended ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                {member.status}
+                              </span>
+                            </div>
+
+                            {/* Plan & Security Details Grid */}
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-(--border-color)">
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">PLAN</span>
+                                <span className="font-bold text-xs text-(--color-text) block truncate">{subInfo.planName}</span>
+                                <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
+                                  {subInfo.statusLabel}
+                                </span>
+                              </div>
+
+                              <div className="space-y-1 text-right">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">BADGE STATUS</span>
+                                <div>
+                                  {!cardObj || cardObj.card_type === 'None' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-semibold bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                                      No Card Issued
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isQr) {
+                                          setQrModalMember(member);
+                                        } else {
+                                          setManualModalMember(member);
+                                        }
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[8px] font-bold border ${
+                                        isQr
+                                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                      }`}
+                                    >
+                                      {isQr ? <QrCode className="w-3 h-3 text-blue-500" /> : <CreditCard className="w-3 h-3 text-amber-500" />}
+                                      <span>{isQr ? 'QR Badge' : 'Manual Badge'}</span>
+                                    </button>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono block mt-1">
+                                  {member.phone || 'No phone'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Card Action Buttons Bar */}
+                            <div className="flex items-center gap-2 pt-2 border-t border-(--border-color)">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedProfileMember(member);
+                                }}
+                                className="flex-1 min-h-[44px] px-3 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-blue-500/20 transition-colors"
+                              >
+                                <Eye className="w-4 h-4" />
+                                <span>Profile</span>
+                              </button>
+
+                              {!hasActiveSub && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setWizardPrefillMember(member);
+                                    setIsWizardOpen(true);
+                                  }}
+                                  className="flex-1 min-h-[44px] px-3 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-emerald-500/20 transition-colors"
+                                >
+                                  <CreditCard className="w-4 h-4" />
+                                  <span>Subscribe</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMobileActionSheetMember(member);
+                                }}
+                                className="min-h-[44px] min-w-[44px] px-3 py-2 bg-(--bg-page) text-slate-400 border border-(--border-color) rounded-xl flex items-center justify-center hover:text-(--color-text)"
+                                title="More Actions"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                          </div>
+                        );
+                      })}
+
+                      {/* Mobile Pagination Navigation */}
+                      {totalMobilePages > 1 && (
+                        <div className="flex items-center justify-between pt-3 pb-2 select-none">
+                          <span className="text-xs text-slate-400 font-mono">
+                            Page {mobilePage} of {totalMobilePages}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              disabled={mobilePage === 1}
+                              onClick={() => setMobilePage(p => Math.max(1, p - 1))}
+                              className="px-3.5 py-2 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold disabled:opacity-40"
+                            >
+                              Prev
+                            </button>
+                            <button
+                              disabled={mobilePage === totalMobilePages}
+                              onClick={() => setMobilePage(p => Math.min(totalMobilePages, p + 1))}
+                              className="px-3.5 py-2 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold disabled:opacity-40"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
               </div>
             )}
 
@@ -830,39 +1175,280 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         </>
       )}
 
-      {/* FLOATING BULK ACTIONS BAR FOR MULTI-SELECTION */}
-{isSelectionActive && (
-  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center gap-4 animate-slide-up select-none">
-    <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
-      <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
-        {selectedMemberIds.length}
-      </span>
-      <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
-        Selected
-      </span>
+      {/* 1. DESKTOP FLOATING MULTI-SELECT BAR (UNCHANGED) */}
+      {isSelectionActive && (
+        <div className="hidden md:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
+          <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
+            <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
+              {selectedMemberIds.length}
+            </span>
+            <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
+              Selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBatchCardModal(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Member Cards</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedMemberIds([])}
+              className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. MOBILE MULTI-SELECT BOTTOM ACTION SHEET (< MD) */}
+      <AnimatePresence>
+        {isSelectionActive && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="md:hidden fixed bottom-20 left-3 right-3 z-50 bg-(--bg-card) text-(--color-text) p-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-3 select-none"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+                {selectedMemberIds.length}
+              </span>
+              <div>
+                <span className="font-heading text-xs font-bold uppercase tracking-wider block text-(--color-text) leading-none">
+                  Members Selected
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMemberIds([])}
+                  className="text-[10px] text-slate-400 hover:text-rose-500 font-bold underline cursor-pointer mt-0.5"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowBatchCardModal(true)}
+              className="px-4 py-2.5 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-md active:scale-95 transition-transform"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Print Cards</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. MOBILE COMPACT BOTTOM DIRECTORY BAR & EXPANDABLE FAB (< MD) */}
+      {activeTab === 'Directory' && (
+        <>
+          {/* Backdrop for FAB Menu */}
+          <AnimatePresence>
+            {isMobileActionsOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileActionsOpen(false)}
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Expanded FAB Menu Items */}
+          <div className="md:hidden fixed bottom-36 right-4 z-40 flex flex-col items-end gap-2.5 select-none">
+            <AnimatePresence>
+              {isMobileActionsOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
+                  className="flex flex-col items-end gap-2 mb-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      setIsRecycleOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-3 bg-(--bg-card) text-(--color-text) border border-(--border-color) text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-500" />
+                    <span>Recycle Bin</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      handleOpenPrintModal();
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-3 bg-(--bg-card) text-(--color-text) border border-(--border-color) text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
+                  >
+                    <Printer className="w-4 h-4 text-red-500" />
+                    <span>Print Cards</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      setWizardPrefillMember(undefined);
+                      setWizardPrefill(undefined);
+                      setIsWizardOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-3 bg-[#123c73] dark:bg-[#bf0202] text-white text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-400" />
+                    <span>Enroll Member</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Floating Mobile Bottom Directory Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
+<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+    <div className="flex items-center gap-1.5">
+      <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
+      <span>{stats.total} Members</span>
     </div>
-
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setShowBatchCardModal(true)}
-        className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700  text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
-      >
-        <Printer className="w-3.5 h-3.5" />
-        <span>Print Member Cards</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setSelectedMemberIds([])}
-        className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
-        title="Clear selection"
-      >
-        <X className="w-4 h-4" />
-      </button>
+    <span className="text-slate-300 dark:text-zinc-700">•</span>
+    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+      <UserCheck className="w-4 h-4" />
+      <span>{stats.activeSubscriptions} Active</span>
     </div>
   </div>
-)}
+
+  <motion.button
+    type="button"
+    whileTap={{ scale: 0.9 }}
+    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+    title="Quick Actions"
+  >
+    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+  </motion.button>
+</div>
+        </>
+      )}
+
+      {/* 4. MOBILE SLIDE-UP ACTION SHEET FOR INDIVIDUAL MEMBER (< MD) */}
+      <AnimatePresence>
+        {mobileActionSheetMember && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileActionSheetMember(null)}
+              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-50"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 shadow-2xl space-y-4 pb-20"
+            >
+              {/* Sheet Drag Pill */}
+              <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto" />
+
+              {/* Member Header */}
+              <div className="flex items-center gap-3 border-b border-(--border-color) pb-4">
+                <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
+                  {(mobileActionSheetMember.full_name || 'M')[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-heading font-bold text-base text-(--color-text) truncate">
+                    {mobileActionSheetMember.full_name}
+                  </h3>
+                  <span className="text-xs font-mono text-slate-400 block">
+                    {mobileActionSheetMember.member_id} • {mobileActionSheetMember.phone}
+                  </span>
+                </div>
+              </div>
+
+              {/* Menu Options List */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = mobileActionSheetMember;
+                    setMobileActionSheetMember(null);
+                    setSelectedProfileMember(target);
+                  }}
+                  className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
+                >
+                  <Eye className="w-4 h-4 text-blue-500" />
+                  <span>View Member Profile Workspace</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = mobileActionSheetMember;
+                    setMobileActionSheetMember(null);
+                    setQrModalMember(target);
+                  }}
+                  className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
+                >
+                  <QrCode className="w-4 h-4 text-blue-500" />
+                  <span>Digital QR Security Badge</span>
+                </button>
+
+                {!getActiveSubscription(mobileActionSheetMember.member_id) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      setWizardPrefillMember(target);
+                      setIsWizardOpen(true);
+                    }}
+                    className="w-full p-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Enroll In Subscription Contract</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = mobileActionSheetMember;
+                    setMobileActionSheetMember(null);
+                    handleToggleSuspend(target);
+                  }}
+                  className="w-full p-3.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                >
+                  {mobileActionSheetMember.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                  <span>{mobileActionSheetMember.status === 'Active' ? 'Suspend Member Access' : 'Reactivate Member Access'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMobileActionSheetMember(null)}
+                  className="w-full p-3.5 bg-slate-500/10 text-slate-400 rounded-2xl text-xs font-heading font-bold uppercase tracking-wider text-center mt-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* MODALS */}
       {isWizardOpen && (
@@ -888,13 +1474,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         />
       )}
 
-      {selectedProfileMember && (
-        <MemberProfileView 
-          member={selectedProfileMember}
-          onClose={() => setSelectedProfileMember(null)}
-          onMutationSuccess={fetchMembers}
-        />
-      )}
+      <AnimatePresence>
+        {selectedProfileMember && (
+          <MemberProfileView 
+            member={selectedProfileMember}
+            onClose={() => setSelectedProfileMember(null)}
+            onMutationSuccess={fetchMembers}
+          />
+        )}
+      </AnimatePresence>
 
       {/* SINGLE CARD MODALS */}
       {qrModalMember && (

@@ -248,7 +248,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             className="xl:hidden flex items-center gap-1.5 px-3 py-1.5 border border-[#123c73]/30 dark:border-red-500/40 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[9px] font-heading tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 animate-slide-up font-bold"
             title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
           >
-            {salesView === 'register' ? 'Products' : '← Sales'}
+            {salesView === 'register' ? 'Products →' : '← Sales'}
           </button>
         )}
 

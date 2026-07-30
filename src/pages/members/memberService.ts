@@ -1,5 +1,3 @@
-// src/pages/members/memberService.ts
-
 import type { 
   Member, 
   Subscription, 
@@ -79,7 +77,6 @@ export const prototypeStorage = {
     try {
       const json = JSON.stringify(data);
       localStorage.setItem(key, json);
-      // Fail-safe dual sync across all key conventions
       if (key === STORAGE_KEYS.MEMBERS) {
         localStorage.setItem('palomar_gym_members', json);
       } else if (key === STORAGE_KEYS.DELETED_MEMBERS) {
@@ -94,7 +91,6 @@ export const prototypeStorage = {
 const generateUID = (prefix: string, list: any[]): string => {
   const numericIds = list
     .map(item => {
-      // Read member_id or receipt_number if present, otherwise id
       const targetStr = item.member_id || item.receipt_number || item.id || '';
       const match = targetStr.match(/\d+/);
       return match ? parseInt(match[0], 10) : 0;
@@ -231,7 +227,13 @@ export const subscriptionService = {
     planName: 'Monthly Membership' | 'Yearly Membership', 
     paymentMethod: PaymentMethod,
     user: string,
-    amountPaidOverride?: number
+    amountPaidOverride?: number,
+    extraDetails?: {
+      basePrice?: number;
+      gcashFee?: number;
+      cardFee?: number;
+      gcashRefNo?: string;
+    }
   ): Subscription => {
     const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
     const members = prototypeStorage.getCollection<Member>(STORAGE_KEYS.MEMBERS);
@@ -245,7 +247,12 @@ export const subscriptionService = {
     if (hasActive) throw new Error('Member currently possesses an active subscription.');
 
     const price = planName === 'Monthly Membership' ? settings.monthly_plan_price : settings.yearly_plan_price;
-    const totalAmount = amountPaidOverride ?? price;
+    const basePrice = extraDetails?.basePrice ?? price;
+    const gcashFee = extraDetails?.gcashFee ?? (paymentMethod === 'GCash' ? (settings.gcash_fee || 10) : 0);
+    const cardFee = extraDetails?.cardFee ?? 0;
+    const gcashRefNo = extraDetails?.gcashRefNo || '';
+
+    const totalAmount = amountPaidOverride ?? (basePrice + gcashFee + cardFee);
     const durationDays = planName === 'Monthly Membership' ? 30 : 365;
 
     const start = new Date();
@@ -258,6 +265,10 @@ export const subscriptionService = {
       member_id: m.member_id,
       plan_name: planName,
       price: totalAmount,
+      base_price: basePrice,
+      gcash_fee: gcashFee,
+      card_fee: cardFee,
+      gcash_ref_no: gcashRefNo,
       start_date: start.toISOString(),
       end_date: end.toISOString(),
       status: 'Active',
@@ -281,6 +292,10 @@ export const subscriptionService = {
       customer_name: m.full_name,
       customer_type: 'New Membership',
       amount: totalAmount,
+      base_price: basePrice,
+      gcash_fee: gcashFee,
+      card_fee: cardFee,
+      gcash_ref_no: gcashRefNo,
       payment_method: paymentMethod,
       payment_status: 'Paid',
       item_description: `Subscribed under ${planName}`,
@@ -299,13 +314,17 @@ export const subscriptionService = {
       check_in_time: nowIso,
       plan_name: planName,
       entry_fee: totalAmount,
+      base_price: basePrice,
+      gcash_fee: gcashFee,
+      card_fee: cardFee,
+      gcash_ref_no: gcashRefNo,
       payment_method: paymentMethod,
       receipt_number: receiptNo,
       staff_name: user
     };
     prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendance]);
 
-    // Dual-sync directly to palomar_gym_logbook LocalStorage for immediate Logbook Page reflection
+    // Dual-sync directly to palomar_gym_logbook LocalStorage
     try {
       const savedLogsRaw = localStorage.getItem('palomar_gym_logbook');
       const savedLogs = savedLogsRaw ? JSON.parse(savedLogsRaw) : [];
@@ -318,6 +337,11 @@ export const subscriptionService = {
         categoryOrPlan: planName,
         paymentMethod: paymentMethod,
         amountPaid: totalAmount,
+        basePrice: basePrice,
+        gcashFee: gcashFee,
+        cardFee: cardFee,
+        gcashRefNo: gcashRefNo,
+        receipt_no: receiptNo,
         paymentStatus: 'Paid',
         status: 'Active',
         isSubscription: true,
@@ -332,7 +356,6 @@ export const subscriptionService = {
     return newSub;
   },
 
- // Void Subscription (Complete Purge across Subscriptions, Receipts, Attendance, and Logbook)
   void: (
     subscriptionId: string,
     reason: string,
@@ -343,25 +366,21 @@ export const subscriptionService = {
     const target = subs.find((s: Subscription) => s.id === subscriptionId);
     if (!target) throw new Error('Subscription record not found.');
 
-    // 1. Remove completely from SUBSCRIPTIONS store
     const filteredSubs = subs.filter((s: Subscription) => s.id !== subscriptionId);
     prototypeStorage.save(STORAGE_KEYS.SUBSCRIPTIONS, filteredSubs);
 
-    // 2. Remove completely from RECEIPTS store
     if (target.receipt_number) {
       const receipts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS);
       const filteredReceipts = receipts.filter((r: Receipt) => r.id !== target.receipt_number);
       prototypeStorage.save(STORAGE_KEYS.RECEIPTS, filteredReceipts);
     }
 
-    // 3. Remove completely from ATTENDANCE store
     const attendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
     const filteredAttendance = attendance.filter((att: AttendanceRecord) => 
       att.receipt_number !== target.receipt_number && att.id !== subscriptionId
     );
     prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
 
-    // 4. Remove completely from Logbook storage & adjust revenue
     try {
       const savedLogsRaw = localStorage.getItem('palomar_gym_logbook');
       if (savedLogsRaw) {
@@ -377,10 +396,8 @@ export const subscriptionService = {
       console.error('Error purging voided subscription from logbook:', e);
     }
 
-    // 5. Notify Logbook to refresh instantly
     window.dispatchEvent(new Event('palomar_logbook_updated'));
 
-    // 6. Record Audit Log for security tracking
     writeAudit(
       'SUBSCRIPTION_VOIDED',
       'Subscriptions',

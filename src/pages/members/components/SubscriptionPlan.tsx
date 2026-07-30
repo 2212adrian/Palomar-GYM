@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, ShieldCheck, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
-  Download, Printer, ChevronDown, ChevronUp, Info
+  Download, Printer, ChevronDown, ChevronUp, Info, Edit3
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -28,14 +28,24 @@ interface SignaturePadProps {
   value: string | null;
   onChange: (dataUrl: string | null) => void;
   error?: string;
+  readOnly?: boolean;
 }
 
-const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, error }) => {
+const SignaturePad: React.FC<SignaturePadProps> = ({ 
+  label, 
+  value, 
+  onChange, 
+  error, 
+  readOnly = false 
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(!!value);
 
+  // Load existing signature image onto canvas if interactive mode
   useEffect(() => {
+    if (readOnly) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -49,11 +59,20 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (!value) {
+    if (value) {
+      const img = new Image();
+      img.src = value;
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.offsetWidth, canvas.offsetHeight);
+        setHasDrawn(true);
+      };
+    } else {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      setHasDrawn(false);
     }
-  }, []);
+  }, [value, readOnly]);
 
   const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -62,18 +81,13 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
 
     if ('touches' in e) {
       const touch = e.touches[0];
-      return {
-        x: touch.clientX - rect.left,
-        y: touch.clientY - rect.top,
-      };
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
     }
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (readOnly) return;
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -86,7 +100,7 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawing || readOnly) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -99,7 +113,7 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
   };
 
   const stopDrawing = () => {
-    if (!isDrawing) return;
+    if (!isDrawing || readOnly) return;
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (canvas && hasDrawn) {
@@ -108,6 +122,7 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
   };
 
   const clearCanvas = () => {
+    if (readOnly) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -119,6 +134,45 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     onChange(null);
   };
 
+  // READ-ONLY DISPLAY with On-Demand Image Loading (0 Egress by Default)
+  if (readOnly) {
+    const [showImage, setShowImage] = useState(false);
+
+    return (
+      <div className="space-y-1 select-none text-left">
+        <div className="flex justify-between items-center">
+          <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+            <span>{label}</span>
+          </label>
+          <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+            <Lock className="w-2.5 h-2.5" /> Pre-Registered (Locked)
+          </span>
+        </div>
+
+        <div className="relative rounded-xl overflow-hidden border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 h-20 flex items-center justify-center">
+          {value ? (
+            showImage ? (
+              <img src={value} alt={label} className="max-h-full max-w-full object-contain pointer-events-none" />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowImage(true)}
+                className="px-3 py-1.5 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-zinc-700 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5 text-blue-500" />
+                <span>Show Signature</span>
+              </button>
+            )
+          ) : (
+            <span className="text-[10px] text-slate-400 font-mono italic">No signature on file</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // INTERACTIVE DRAWING CANVAS (Used for Manual Entry)
   return (
     <div className="space-y-1 select-none text-left">
       <div className="flex justify-between items-center">
@@ -175,6 +229,7 @@ export interface IntakeWizardModalProps {
   onComplete?: () => void;
   initialPlan?: 'Monthly Membership' | 'Yearly Membership' | 'No Subscription' | null;
   initialIntakeMode?: 'Import' | 'Manual' | null;
+  initialStep?: number;
   prefillData?: OnlineRegistration;
   prefillMember?: Member;
 }
@@ -185,17 +240,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   onComplete,
   initialPlan,
   initialIntakeMode,
+  initialStep,
   prefillData,
   prefillMember
 }) => {
-  const [step, setStep] = useState<number>(1);
+  // Directly default to Step 2 when prefillData (Queue Approval) is provided
+  const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : (prefillData ? 2 : 1));
+  const [showSignatures, setShowSignatures] = useState<boolean>(false);
   const [showClientDetails, setShowClientDetails] = useState<boolean>(true);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
+  const [showSignaturesInAudit, setShowSignaturesInAudit] = useState<boolean>(false);
   const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(initialIntakeMode || 'Manual');
   const [selectedPlan, setSelectedPlan] = useState<'Monthly Membership' | 'Yearly Membership' | 'No Subscription'>(
     initialPlan || 'Monthly Membership'
   );
-
+  
   const settings = useMemo(() => settingsService.load(), []);
   const cardFee = settings.card_printing_fee || 50;
   const gcashFee = settings.gcash_fee || 10;
@@ -378,6 +437,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setEmergencyName(m.emergency_contact_name || m.full_name);
     setRelationship(m.relationship || 'Guardian / Family');
     setEmergencyPhone(m.emergency_contact_phone || m.phone || '');
+    setParentName(m.parent_name || '');
+    setParentRelationship(m.parent_relationship || 'Father');
+    setParentPhone(m.parent_phone || '');
+    setParentEmail(m.parent_email || '');
+    setApplicantSig(m.applicant_signature || null);
+    setParentSig(m.parent_signature || null);
+    setConsentDate(m.consent_date || null);
     setWaiverAgreed(true);
     setErrors({});
   };
@@ -575,9 +641,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setStep(1);
+      // Direct to Step 2 if prefilled from Queue Approval
+      const startingStep = initialStep !== undefined ? initialStep : (prefillData ? 2 : 1);
+      setStep(startingStep);
       setShowClientDetails(true);
       setShowStatusDetails(false);
+      setShowSignatures(false);
+      setShowSignaturesInAudit(false);
       setErrors({});
       setMemberSearchQuery('');
       lastScannedIdRef.current = '';
@@ -623,7 +693,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         setManualIdInput('');
       }
     }
-  }, [isOpen, prefillMember, prefillData, initialPlan, initialIntakeMode]);
+  }, [isOpen, prefillMember, prefillData, initialPlan, initialIntakeMode, initialStep]);
 
   const handleModalClose = () => {
     forceStopCamera();
@@ -825,30 +895,31 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
 
+      const memberFields = {
+        full_name: combinedName,
+        email: email.trim(),
+        phone: phone.trim(),
+        gender,
+        birthday,
+        address: address.trim(),
+        emergency_contact_name: emergencyName.trim(),
+        relationship: relationship.trim(),
+        emergency_contact_phone: emergencyPhone.trim(),
+        parent_name: isMinor ? parentName.trim() : null,
+        parent_relationship: isMinor ? parentRelationship.trim() : null,
+        parent_phone: isMinor ? parentPhone.trim() : null,
+        parent_email: isMinor ? parentEmail.trim() : null,
+        applicant_signature: isMinor ? applicantSig : null,
+        parent_signature: isMinor ? parentSig : null,
+        consent_date: isMinor ? (consentDate || new Date().toISOString()) : null,
+      };
+
       if (activeMemberToUse) {
         targetMember = activeMemberToUse;
-        memberService.update(targetMember.id, {
-          full_name: combinedName,
-          email: email.trim(),
-          phone: phone.trim(),
-          gender,
-          birthday,
-          address: address.trim(),
-          emergency_contact_name: emergencyName.trim(),
-          relationship: relationship.trim(),
-          emergency_contact_phone: emergencyPhone.trim()
-        }, 'Admin Staff');
+        memberService.update(targetMember.id, memberFields, 'Admin Staff');
       } else {
         targetMember = memberService.create({
-          full_name: combinedName,
-          email: email.trim(),
-          phone: phone.trim(),
-          gender,
-          birthday,
-          address: address.trim(),
-          emergency_contact_name: emergencyName.trim(),
-          relationship: relationship.trim(),
-          emergency_contact_phone: emergencyPhone.trim(),
+          ...memberFields,
           status: 'Active'
         }, 'Admin Staff');
       }
@@ -862,7 +933,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           selectedPlan,
           mappedPayment,
           'Admin Staff',
-          totalPrice
+          totalPrice,
+          {
+            basePrice: planBasePrice,
+            gcashFee: appliedGcashFee,
+            cardFee: appliedCardFee,
+            gcashRefNo: gcashReference.trim()
+          }
         );
       }
 
@@ -1444,13 +1521,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               </div>
 
-              {/* Address */}
+             {/* Address */}
               <div className="md:col-span-2 space-y-1">
                 <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block flex items-center justify-between">
-                  <span>Home Address *</span>
-                  {isMissing(address) && (
-                    <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Address</span>
-                  )}
+                  <span>Home Address <span className="text-slate-400 font-normal">(optional)</span></span>
                 </label>
                 <input 
                   type="text" 
@@ -1461,15 +1535,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     if (errors.address) setErrors(prev => ({ ...prev, address: '' }));
                   }} 
                   className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(address) || errors.address 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 placeholder:text-red-400/60' 
-                      : isAddressLocked
+                    isAddressLocked
                       ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
                       : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
                   }`} 
-                  placeholder="Barangay, City, Province" 
+                  placeholder="Barangay, City, Province (optional)" 
                 />
-                {errors.address && <span className="text-[9px] text-red-500 font-bold block">{errors.address}</span>}
               </div>
 
               {/* Emergency Contact */}
@@ -1549,9 +1620,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   value={emergencyPhone} 
                   disabled={isEmergencyPhoneLocked}
                   onChange={e => {
-                    setEmergencyPhone(e.target.value);
-                    if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
-                  }} 
+  setEmergencyPhone(e.target.value.replace(/\D/g, ''));
+  if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
+}}
                   className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
                     isMissing(emergencyPhone) || errors.emergencyPhone 
                       ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
@@ -1564,87 +1635,55 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
               </div>
 
-              {/* MINOR CONSENT & SIGNATURE SECTION */}
-              {isMinor && (
-                <div className="md:col-span-2 space-y-3 pt-2 border-t border-amber-300 dark:border-amber-500/30">
-                  <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/20 text-amber-800 dark:text-amber-500 rounded-xl text-[10px] font-bold flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-500" />
-                    <span>Minor Applicant ({calculatedAge} Yrs): Parent/Guardian consent and dual digital signatures are required.</span>
-                  </div>
+         {/* Digital Signatures (Completely Standalone - Outside of any Card Container) */}
+{Boolean(applicantSig || parentSig) && (
+  <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
+    <div className="flex items-center justify-between">
+      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+        <span>Digital Signatures</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
+        className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
+      >
+        <Eye className="w-3.5 h-3.5 text-blue-500" />
+        <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
+      </button>
+    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1 sm:col-span-2">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Parent / Guardian Name *</label>
-                      <input 
-                        type="text" 
-                        value={parentName} 
-                        onChange={e => {
-                          setParentName(e.target.value);
-                          if (errors.parentName) setErrors(prev => ({ ...prev, parentName: '' }));
-                        }} 
-                        className={`w-full p-2.5 border rounded-xl text-xs outline-none transition-colors ${
-                          errors.parentName ? 'border-red-500 bg-red-500/10 text-red-600 dark:text-red-400' : 'border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`} 
-                        placeholder="Parent or Guardian's Full Name" 
-                      />
-                      {errors.parentName && <span className="text-[9px] text-red-500 font-bold block">{errors.parentName}</span>}
-                    </div>
+    {showSignaturesInAudit && (
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+            Applicant Signature
+          </span>
+          {applicantSig ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Parent Phone *</label>
-                      <input 
-                        type="text" 
-                        value={parentPhone} 
-                        onChange={e => {
-                          setParentPhone(e.target.value);
-                          if (errors.parentPhone) setErrors(prev => ({ ...prev, parentPhone: '' }));
-                        }} 
-                        className={`w-full p-2.5 border rounded-xl text-xs outline-none transition-colors ${
-                          errors.parentPhone ? 'border-red-500 bg-red-500/10 text-red-600 dark:text-red-400' : 'border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`} 
-                        placeholder="0917XXXXXXX" 
-                      />
-                      {errors.parentPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.parentPhone}</span>}
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Parent Relationship *</label>
-                      <select 
-                        value={parentRelationship} 
-                        onChange={e => setParentRelationship(e.target.value)} 
-                        className="w-full p-2.5 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-xl text-xs text-slate-900 dark:text-white outline-none cursor-pointer"
-                      >
-                        <option value="Father">Father</option>
-                        <option value="Mother">Mother</option>
-                        <option value="Legal Guardian">Legal Guardian</option>
-                      </select>
-                    </div>
-
-                    {/* Digital Signature Pads */}
-                    <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                      <SignaturePad
-                        label="Applicant Digital Signature *"
-                        value={applicantSig}
-                        onChange={sig => {
-                          setApplicantSig(sig);
-                          if (errors.applicantSig) setErrors(prev => ({ ...prev, applicantSig: '' }));
-                        }}
-                        error={errors.applicantSig}
-                      />
-
-                      <SignaturePad
-                        label="Parent / Guardian Digital Signature *"
-                        value={parentSig}
-                        onChange={sig => {
-                          setParentSig(sig);
-                          if (errors.parentSig) setErrors(prev => ({ ...prev, parentSig: '' }));
-                        }}
-                        error={errors.parentSig}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+            Parent / Guardian Signature
+          </span>
+          {parentSig ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
               {/* Master Waiver Checkbox */}
               <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
@@ -1714,6 +1753,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </div>
                 </div>
 
+                
+
                 {/* COMPREHENSIVE CLIENT AUDIT DRAWER */}
                 {showClientDetails && (
                   <div className="p-4 bg-white dark:bg-zinc-950/90 border border-slate-200 dark:border-blue-500/20 rounded-2xl space-y-4 animate-fade-in text-[11px] text-slate-700 dark:text-slate-300 font-medium shadow-xs">
@@ -1744,48 +1785,55 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
 
-                    {isMinor && (
-                      <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
-                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                            Parent / Legal Guardian Legal Verification
-                          </span>
-                          <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/20 font-bold">
-                            ✓ E-Consent Verified
-                          </span>
-                        </div>
+                  {/* Digital Signatures (Completely Standalone - Outside of any Card Container) */}
+{Boolean(applicantSig || parentSig) && (
+  <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
+    <div className="flex items-center justify-between">
+      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+        <span>Digital Signatures</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
+        className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
+      >
+        <Eye className="w-3.5 h-3.5 text-blue-500" />
+        <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
+      </button>
+    </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-50 dark:bg-zinc-900/90 rounded-xl border border-slate-200 dark:border-zinc-800">
-                          <div>
-                            <span className="text-[9px] text-slate-500 uppercase font-bold block">Parent / Guardian Name</span>
-                            <span className="text-amber-800 dark:text-amber-300 font-bold">{parentName || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 uppercase font-bold block">Relationship</span>
-                            <span className="text-slate-800 dark:text-slate-200">{parentRelationship || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 uppercase font-bold block">Parent Contact Phone</span>
-                            <span className="text-amber-800 dark:text-amber-300 font-mono font-bold">{parentPhone || 'N/A'}</span>
-                          </div>
-                          {parentEmail && (
-                            <div className="col-span-2">
-                              <span className="text-[9px] text-slate-500 uppercase font-bold block">Parent Email</span>
-                              <span className="text-slate-800 dark:text-slate-200 truncate block">{parentEmail}</span>
-                            </div>
-                          )}
-                          {consentDate && (
-                            <div>
-                              <span className="text-[9px] text-slate-500 uppercase font-bold block">Consent Timestamp</span>
-                              <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px]">
-                                {new Date(consentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+    {showSignaturesInAudit && (
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+            Applicant Signature
+          </span>
+          {applicantSig ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
+
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+            Parent / Guardian Signature
+          </span>
+          {parentSig ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)}
                   </div>
                 )}
               </div>
@@ -2011,12 +2059,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {step < 3 ? (
             <>
               <button 
-                disabled={step === 1} 
-                onClick={handleBack} 
-                className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent"
-              >
-                Back
-              </button>
+  disabled={step === 1} 
+  onClick={handleBack} 
+  className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
+>
+  {step === 2 ? (
+    <>
+      <ChevronLeft className="w-4 h-4 text-blue-500" />
+      <span>Edit Information</span>
+    </>
+  ) : (
+    'Back'
+  )}
+</button>
               
               {step === 2 ? (
                 <button 

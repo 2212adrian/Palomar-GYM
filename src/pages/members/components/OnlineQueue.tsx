@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Clock, CheckSquare, XSquare, Eye, RefreshCw, X, Printer, ExternalLink, 
-  ShieldCheck, FileSignature, User, HeartHandshake 
+  ShieldCheck, FileSignature, User, HeartHandshake, UserCheck, CheckCircle
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -37,6 +37,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
   const [queue, setQueue] = useState<OnlineRegistration[]>([]);
   const [selectedReg, setSelectedReg] = useState<OnlineRegistration | null>(null);
   const [activePosterToken, setActivePosterToken] = useState<string>('');
+  const [showModalSignatures, setShowModalSignatures] = useState<boolean>(false);
 
   // Pending soft-hidden IDs during UndoToast countdown
   const [pendingRejectIds, setPendingRejectIds] = useState<string[]>([]);
@@ -57,6 +58,12 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
   const fetchQueue = () => {
     setQueue(registrationService.getQueue());
   };
+
+  useEffect(() => {
+    if (!selectedReg) {
+      setShowModalSignatures(false);
+    }
+  }, [selectedReg]);
 
   useEffect(() => {
     fetchQueue();
@@ -442,11 +449,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
           </button>
 
           <button 
-            onClick={() => onApproveLaunchWizard(item)} 
-            className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none cursor-pointer transition-all shadow-xs"
-          >
-            <CheckSquare className="w-3.5 h-3.5" /> Approve
-          </button>
+  onClick={() => {
+    // Pass prefilled data and launch directly into Step 2 (Membership & Checkout)
+    onApproveLaunchWizard(item);
+  }} 
+  className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none cursor-pointer transition-all shadow-xs"
+>
+  <CheckSquare className="w-3.5 h-3.5" /> Approve
+</button>
         </div>
       )
     }
@@ -601,85 +611,119 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
               </div>
             </div>
 
-            {/* Minor & Parent Consent Section */}
-            {selectedReg.parent_consent_required && (
-              <div className="space-y-3 pt-2 border-t border-(--border-color)">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="font-heading text-[10px] tracking-widest uppercase font-bold text-amber-600 dark:text-amber-500">
-                      Parent / Legal Guardian Legal Verification
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
-                    ✓ E-Consent Verified
-                  </span>
-                </div>
+           {(selectedReg.parent_consent_required || selectedReg.applicant_signature || selectedReg.parent_signature) && (
+  <div className="pt-2 border-t border-(--border-color)">
+    <div className="w-full p-4 rounded-2xl bg-slate-100/60 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-white/10 space-y-3.5 shadow-xs select-none">
+      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/60 dark:border-white/10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="min-w-0">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white leading-tight truncate">
+              Parent / Legal Guardian Verification
+            </h5>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal leading-none mt-0.5">
+              E-Consent digitally verified and linked
+            </p>
+          </div>
+        </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-100 dark:bg-zinc-900/90 rounded-2xl border border-(--border-color) text-xs font-semibold">
-                  <div>
-                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Name</span>
-                    <span className="text-amber-600 dark:text-amber-400 font-bold">{selectedReg.parent_name || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Relationship</span>
-                    <span className="text-slate-800 dark:text-slate-200">{selectedReg.parent_relationship || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Phone</span>
-                    <span className="font-mono text-amber-600 dark:text-amber-400">{selectedReg.parent_phone || 'N/A'}</span>
-                  </div>
-                  {selectedReg.parent_email && (
-                    <div className="col-span-2">
-                      <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Parent Email</span>
-                      <span className="text-slate-800 dark:text-slate-200 truncate block">{selectedReg.parent_email}</span>
-                    </div>
-                  )}
-                  {selectedReg.consent_date && (
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] block">Consent Timestamp</span>
-                      <span className="text-slate-600 dark:text-slate-300 font-mono text-[10px]">
-                        {new Date(selectedReg.consent_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                    </div>
-                  )}
-                </div>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+          <CheckCircle className="w-3 h-3 text-emerald-500" />
+          Verified
+        </span>
+      </div>
 
-                {/* E-Signatures Display */}
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                      <FileSignature className="w-3 h-3 text-blue-500 dark:text-blue-400" /> Applicant Signature
-                    </span>
-                    {selectedReg.applicant_signature ? (
-                      <div className="p-1 bg-white rounded-xl border border-slate-300 h-16 flex items-center justify-center">
-                        <img src={selectedReg.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-                      </div>
-                    ) : (
-                      <div className="p-2 bg-slate-100 dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800 text-[10px] text-slate-500 italic text-center">
-                        No signature attached
-                      </div>
-                    )}
-                  </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+            Parent / Guardian
+          </span>
+          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+            {selectedReg.parent_name || 'N/A'}
+          </span>
+        </div>
 
-                  <div>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                      <FileSignature className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Parent/Guardian Signature
-                    </span>
-                    {selectedReg.parent_signature ? (
-                      <div className="p-1 bg-white rounded-xl border border-slate-300 h-16 flex items-center justify-center">
-                        <img src={selectedReg.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-                      </div>
-                    ) : (
-                      <div className="p-2 bg-slate-100 dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800 text-[10px] text-slate-500 italic text-center">
-                        No signature attached
-                      </div>
-                    )}
-                  </div>
-                </div>
+        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+            Relationship
+          </span>
+          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+            {selectedReg.parent_relationship || 'N/A'}
+          </span>
+        </div>
 
-              </div>
-            )}
+        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+            Contact Phone
+          </span>
+          <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+            {selectedReg.parent_phone || 'N/A'}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 pt-0.5">
+        <span className="flex items-center gap-1.5">
+          <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Verified on {selectedReg.consent_date ? new Date(selectedReg.consent_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+        </span>
+        {selectedReg.parent_email && <span className="truncate max-w-[180px] text-[9px] text-slate-400">{selectedReg.parent_email}</span>}
+      </div>
+
+     {/* Render Digital Signatures ONLY if at least one signature exists */}
+{Boolean(selectedReg.applicant_signature || selectedReg.parent_signature) && (
+  <div className="pt-3 border-t border-(--border-color) space-y-2 select-none">
+    <div className="flex items-center justify-between">
+      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+        <span>Digital Signatures</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => setShowModalSignatures(!showModalSignatures)}
+        className="px-2.5 py-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-200 dark:border-white/5"
+      >
+        <Eye className="w-3.5 h-3.5 text-blue-500" />
+        <span>{showModalSignatures ? 'Hide Signatures' : 'Show Signatures'}</span>
+      </button>
+    </div>
+
+    {showModalSignatures && (
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+            <FileSignature className="w-3 h-3 text-blue-500" /> Applicant Signature
+          </span>
+          {selectedReg.applicant_signature ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={selectedReg.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
+
+        <div>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+            <FileSignature className="w-3 h-3 text-emerald-500" /> Parent / Guardian Signature
+          </span>
+          {selectedReg.parent_signature ? (
+            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+              <img src={selectedReg.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)}
+    </div>
+  </div>
+)}
 
             {/* Submission Footer Metadata */}
             <div className="pt-2 border-t border-(--border-color) text-[10px] text-slate-500 dark:text-slate-400 flex justify-between items-center font-mono">

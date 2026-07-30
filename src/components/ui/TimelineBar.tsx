@@ -177,10 +177,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             onClick={() => dateInputRef.current?.showPicker()} 
             className="text-center flex-1 cursor-pointer hover:opacity-85 transition-opacity relative"
           >
-            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-[#bf0202] uppercase select-none block">
+            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-[#bf0202] uppercase select-none block font-bold">
               SELECTED WEEK DATE
             </span>
-            <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5 select-none">
+            <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5 select-none font-extrabold">
               {role === 'admin' ? (
                 `${format(currentWeekStart, 'MMMM d')} — ${format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'MMMM d, yyyy')}`
               ) : (
@@ -275,23 +275,24 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         )}
       </div>
 
-      {/* ─── SEARCH & FILTER TOOLBAR (UNBOXED / CLEAN) ─── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-0 mb-4 bg-transparent border-0 shadow-none">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 w-4 h-4 text-slate-455" />
+      {/* ─── SINGLE ROW SEARCH & FILTER TOOLBAR ─── */}
+      <div className="flex items-center gap-1.5 sm:gap-2 w-full mb-4">
+        {/* Search Input Box */}
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full pl-9 pr-10 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
+            className="w-full pl-9 pr-8 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
           />
 
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchQueryChange('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
               title="Clear search query"
             >
               <X className="w-3.5 h-3.5" />
@@ -299,15 +300,16 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
           )}
         </div>
 
+        {/* Filter Pills (ALL, CASH, GCASH) on the same row */}
         {filterOptions.length > 0 && onFilterChange && (
-          <div className="flex gap-1 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar">
             {filterOptions.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => onFilterChange(opt.value)}
-                className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-2 rounded-xl text-[9px] sm:text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
                   activeFilter === opt.value
-                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs font-bold'
+                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs font-extrabold'
                     : 'bg-(--bg-card) border border-(--border-color) text-slate-500 dark:text-slate-400 hover:opacity-85'
                 }`}
               >

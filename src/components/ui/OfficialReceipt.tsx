@@ -12,43 +12,39 @@ export interface ReceiptItem {
   price: number;
 }
 
+export interface GymProfileConfig {
+  gym_name?: string;
+  gym_address?: string;
+  contact_number_1?: string;
+  contact_number_2?: string;
+  gym_logo?: string;
+}
+
+export interface RatesConfig {
+  vat_enabled?: boolean;
+  vat_percentage?: number;
+}
+
 export interface ReceiptData {
   receiptType?: 'subscription' | 'walkin' | 'sales' | 'attendance';
   receiptNo?: string;
   paymentRef?: string;
-  
   customerName?: string;
   customerType?: string;
-  
   planType?: string;
   basePrice?: number;
-  
   items?: ReceiptItem[];
-  
   cardFee?: number;
   gcashFee?: number;
-  
   paymentMethod?: string;
   amountReceived?: number;
   changeDue?: number;
   gcashRefNo?: string;
-  
   transactionDate?: string;
   processedBy?: string;
-  
   qrValue?: string;
-  
-  gymProfile?: {
-    gym_name?: string;
-    gym_address?: string;
-    contact_number_1?: string;
-    contact_number_2?: string;
-    gym_logo?: string;
-  };
-  ratesConfig?: {
-    vat_enabled?: boolean;
-    vat_percentage?: number;
-  };
+  gymProfile?: GymProfileConfig;
+  ratesConfig?: RatesConfig;
 }
 
 export interface OfficialReceiptRef {
@@ -66,6 +62,18 @@ interface OfficialReceiptProps {
   isLoading?: boolean;
 }
 
+const DEFAULT_GYM_NAME = "WOLF PALOMAR GYM";
+const DEFAULT_GYM_ADDRESS = "6B JUDGE A. ROLDAN ST., NAVOTAS CITY, METRO MANILA";
+const DEFAULT_CONTACTS = "STAFF CONTACT: 09762607481 / 09123456789";
+const DEFAULT_LOGO = "/favicon.svg";
+
+const RECEIPT_TITLES: Record<NonNullable<ReceiptData['receiptType']>, string> = {
+  subscription: 'Subscription Official Receipt',
+  walkin: 'Walk-In Official Receipt',
+  sales: 'Product Official Receipt',
+  attendance: 'Attendance Check-In Slip'
+};
+
 export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptProps>(({
   data,
   variant = 'modal',
@@ -75,8 +83,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   showDownloadButton = true,
   isLoading = false
 }, ref) => {
-  const [gymProfile, setGymProfile] = useState<any>(data.gymProfile || null);
-  const [ratesConfig, setRatesConfig] = useState<any>(data.ratesConfig || null);
+  const [gymProfile, setGymProfile] = useState<GymProfileConfig | null>(data.gymProfile || null);
+  const [ratesConfig, setRatesConfig] = useState<RatesConfig | null>(data.ratesConfig || null);
   const [loadingConfig, setLoadingConfig] = useState(!data.gymProfile || !data.ratesConfig);
 
   useEffect(() => {
@@ -101,8 +109,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         ]);
 
         if (isMounted) {
-          if (!profileRes.error) setGymProfile(profileRes.data);
-          if (!ratesRes.error) setRatesConfig(ratesRes.data);
+          if (!profileRes.error && profileRes.data) setGymProfile(profileRes.data);
+          if (!ratesRes.error && ratesRes.data) setRatesConfig(ratesRes.data);
         }
       } catch (err) {
         console.warn('Failed to load dynamic receipt settings:', err);
@@ -115,29 +123,23 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     return () => { isMounted = false; };
   }, [isOpen, variant, data.gymProfile, data.ratesConfig]);
 
-  const gymName = gymProfile?.gym_name || "WOLF PALOMAR GYM";
-  const gymAddress = gymProfile?.gym_address || "6B JUDGE A. ROLDAN ST., NAVOTAS CITY, METRO MANILA";
+  const gymName = gymProfile?.gym_name || DEFAULT_GYM_NAME;
+  const gymAddress = gymProfile?.gym_address || DEFAULT_GYM_ADDRESS;
   const staffContact = gymProfile?.contact_number_1
     ? `STAFF CONTACT: ${gymProfile.contact_number_1}${gymProfile.contact_number_2 ? ` / ${gymProfile.contact_number_2}` : ''}`
-    : "STAFF CONTACT: 09762607481 / 09123456789";
-  const gymLogo = gymProfile?.gym_logo || "/favicon.svg";
+    : DEFAULT_CONTACTS;
+  const gymLogo = gymProfile?.gym_logo || DEFAULT_LOGO;
 
   const vatEnabled = ratesConfig?.vat_enabled ?? true;
   const vatPercentage = Number(ratesConfig?.vat_percentage ?? 12);
 
   const receiptType = data.receiptType || (data.items && data.items.length > 0 ? 'sales' : 'subscription');
-  const titleMap = {
-    subscription: 'Subscription Official Receipt',
-    walkin: 'Walk-In Official Receipt',
-    sales: 'Product Official Receipt',
-    attendance: 'Attendance Check-In Slip'
-  };
-  const receiptTitle = titleMap[receiptType] || 'Official Receipt';
+  const receiptTitle = RECEIPT_TITLES[receiptType] || 'Official Receipt';
 
   const basePrice = data.basePrice || 0;
   const cardFee = data.cardFee || 0;
   const gcashFee = data.gcashFee || 0;
-  
+
   const itemsSubtotal = useMemo(() => {
     if (data.items && data.items.length > 0) {
       return data.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -173,12 +175,14 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     if (!content) return;
 
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
+    Object.assign(iframe.style, {
+      position: 'fixed',
+      right: '0',
+      bottom: '0',
+      width: '0',
+      height: '0',
+      border: '0'
+    });
     document.body.appendChild(iframe);
 
     const doc = iframe.contentWindow?.document;
@@ -197,35 +201,70 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
           ${stylesHtml}
           <style>
             @media print {
-              @page { size: 80mm auto; margin: 0; }
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
               html, body {
-                margin: 0 !important;
+                width: 80mm !important;
+                max-width: 80mm !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
                 background: #ffffff !important;
                 color: #000000 !important;
-                width: 80mm !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
               #unified-thermal-receipt-card {
-                width: 80mm !important;
-                max-width: 80mm !important;
+                width: 78mm !important;
+                max-width: 78mm !important;
+                margin: 0 auto !important;
+                padding: 4mm 2mm !important;
                 border: none !important;
+                border-radius: 0 !important;
                 box-shadow: none !important;
-                padding: 8px 12px !important;
-                font-family: monospace, sans-serif !important;
-                color: #000000 !important;
                 background: #ffffff !important;
+                color: #000000 !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 10px !important;
+                line-height: 1.2 !important;
+                box-sizing: border-box !important;
               }
               #unified-thermal-receipt-card * {
                 color: #000000 !important;
                 background: transparent !important;
+                border-color: #000000 !important;
                 box-shadow: none !important;
                 text-shadow: none !important;
               }
-              #unified-thermal-receipt-card img {
-                max-width: 48px !important;
-                max-height: 48px !important;
+              .receipt-logo {
+                max-width: 14mm !important;
+                max-height: 14mm !important;
                 object-fit: contain !important;
-                filter: grayscale(100%) contrast(200%) !important;
+                margin: 0 auto 1.5mm auto !important;
+                display: block !important;
+              }
+              .receipt-qr-img {
+                width: 12mm !important;
+                height: 12mm !important;
+                object-fit: contain !important;
+                display: block !important;
+              }
+              .receipt-qr-container {
+                display: flex !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                gap: 3mm !important;
+                border: 1px solid #000 !important;
+                padding: 2mm !important;
+                margin: 2mm 0 !important;
+              }
+              .manual-signature-line {
+                border-bottom: 1px solid #000 !important;
+                height: 6mm !important;
+              }
+              .absolute, .bg-gradient-to-r {
+                display: none !important;
               }
             }
           </style>
@@ -252,7 +291,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     doc.close();
   };
 
-  // --- JPG CANVAS DOWNLOAD HANDLER (INK-SAVING WHITE PAPER LAYOUT) ---
+  // --- JPG CANVAS DOWNLOAD HANDLER ---
   const handleDownloadJpg = async () => {
     const loadImage = (src: string): Promise<HTMLImageElement | null> => {
       return new Promise((resolve) => {
@@ -265,24 +304,25 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       });
     };
 
+    const showQr = receiptType === 'subscription' || receiptType === 'attendance';
     const [logoImg, qrImg] = await Promise.all([
       loadImage(gymLogo),
-      loadImage((receiptType === 'subscription' || receiptType === 'attendance') ? qrImageUrl : '')
+      loadImage(showQr ? qrImageUrl : '')
     ]);
 
     const canvas = document.createElement('canvas');
-    const scale = 2; // High-DPI 2x scale
-    const width = 420;
+    const scale = 2;
+    const width = 400;
 
     let itemCount = 0;
     if (data.items && data.items.length > 0) itemCount += data.items.length + 1;
-    let extraRows = 8;
+    let extraRows = 12;
     if (data.paymentRef) extraRows++;
     if (cardFee > 0) extraRows++;
     if (gcashFee > 0) extraRows++;
     if (vatEnabled) extraRows += 2;
 
-    const baseHeight = 440 + (extraRows * 22) + (itemCount * 20) + (qrImg ? 70 : 0);
+    const baseHeight = 480 + (extraRows * 20) + (itemCount * 18) + (qrImg ? 65 : 0);
     const height = baseHeight;
 
     canvas.width = width * scale;
@@ -293,22 +333,21 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
     ctx.scale(scale, scale);
 
-    // Clean White Paper Background (Zero Printer Ink Waste)
+    // Canvas Background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
-    // Outer Border
+    // Card Border
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
     ctx.strokeRect(10, 10, width - 20, height - 20);
 
-    // Top Red Accent Line
+    // Top Accent Bar
     ctx.fillStyle = '#bf0202';
     ctx.fillRect(10, 10, width - 20, 4);
 
-    let y = 32;
+    let y = 30;
 
-    // Gym Logo
     if (logoImg) {
       ctx.drawImage(logoImg, width / 2 - 20, y, 40, 40);
       y += 48;
@@ -316,78 +355,76 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       y += 10;
     }
 
-    // Gym Title
+    // Header Info
     ctx.textAlign = 'center';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.fillText(gymName.toUpperCase(), width / 2, y);
-    y += 16;
+    y += 15;
 
     ctx.fillStyle = '#64748b';
     ctx.font = '8px system-ui, sans-serif';
     ctx.fillText(gymAddress.toUpperCase(), width / 2, y);
-    y += 14;
+    y += 13;
 
     ctx.font = 'bold 8px system-ui, sans-serif';
     ctx.fillText(staffContact.toUpperCase(), width / 2, y);
-    y += 18;
+    y += 16;
 
     const drawDashedLine = (lineY: number) => {
       ctx.strokeStyle = '#cbd5e1';
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.moveTo(24, lineY);
-      ctx.lineTo(width - 24, lineY);
+      ctx.moveTo(20, lineY);
+      ctx.lineTo(width - 20, lineY);
       ctx.stroke();
       ctx.setLineDash([]);
     };
 
     drawDashedLine(y);
-    y += 18;
+    y += 16;
 
-    // Receipt Title
     ctx.textAlign = 'center';
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 10px monospace';
     ctx.fillText(receiptTitle.toUpperCase(), width / 2, y);
-    y += 16;
+    y += 15;
 
-    // QR Code Box (Light Faint Fill)
+    // QR Block
     if (qrImg) {
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(24, y, width - 48, 60);
+      ctx.fillRect(20, y, width - 40, 56);
       ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(24, y, width - 48, 60);
+      ctx.strokeRect(20, y, width - 40, 56);
 
-      ctx.drawImage(qrImg, 34, y + 6, 48, 48);
+      ctx.drawImage(qrImg, 30, y + 6, 44, 44);
 
       ctx.textAlign = 'left';
       ctx.fillStyle = '#64748b';
       ctx.font = 'bold 8px monospace';
-      ctx.fillText('SCAN FOR REF', 92, y + 22);
+      ctx.fillText('SCAN FOR CHECK-IN', 84, y + 20);
 
       ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText(receiptNo, 92, y + 40);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(receiptNo, 84, y + 36);
 
-      y += 72;
+      y += 66;
     }
 
     drawDashedLine(y);
-    y += 20;
+    y += 18;
 
-    // Detail Rows
     const renderRow = (label: string, value: string, isHighlight = false, fontColor = '#0f172a') => {
       ctx.textAlign = 'left';
       ctx.fillStyle = '#64748b';
-      ctx.font = '9px monospace';
-      ctx.fillText(label, 24, y);
+      ctx.font = '8.5px monospace';
+      ctx.fillText(label, 20, y);
 
       ctx.textAlign = 'right';
       ctx.fillStyle = fontColor;
-      ctx.font = isHighlight ? 'bold 10px monospace' : '600 9px monospace';
-      ctx.fillText(value, width - 24, y);
-      y += 18;
+      ctx.font = isHighlight ? 'bold 9.5px monospace' : '600 8.5px monospace';
+      ctx.fillText(value, width - 20, y);
+      y += 16;
     };
 
     renderRow('RECEIPT NO', receiptNo, true, '#0f172a');
@@ -413,55 +450,82 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
     if (data.items && data.items.length > 0) {
       drawDashedLine(y);
-      y += 16;
+      y += 14;
       data.items.forEach(item => {
         renderRow(`${item.quantity}x ${item.productName}`, `₱${(item.price * item.quantity).toFixed(2)}`);
       });
     }
 
     drawDashedLine(y);
-    y += 20;
+    y += 18;
 
     // Subtotal
     ctx.textAlign = 'left';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText('SUBTOTAL', 24, y);
+    ctx.font = 'bold 9.5px monospace';
+    ctx.fillText('SUBTOTAL', 20, y);
 
     ctx.textAlign = 'right';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(`₱${subtotal.toFixed(2)}`, width - 24, y);
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(`₱${subtotal.toFixed(2)}`, width - 20, y);
 
-    y += 16;
+    y += 14;
 
-    // Total Due Box (Ink-saving Light Container)
+    // Total Due Box
     ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(24, y, width - 48, 36);
+    ctx.fillRect(20, y, width - 40, 32);
     ctx.strokeStyle = '#cbd5e1';
-    ctx.strokeRect(24, y, width - 48, 36);
+    ctx.strokeRect(20, y, width - 40, 32);
 
     ctx.textAlign = 'left';
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('TOTAL DUE', 36, y + 22);
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('TOTAL DUE', 30, y + 20);
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#dc2626'; // Highlighted price accent
-    ctx.font = 'bold 14px monospace';
-    ctx.fillText(`₱${totalDue.toFixed(2)}`, width - 36, y + 22);
+    ctx.fillStyle = '#dc2626';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(`₱${totalDue.toFixed(2)}`, width - 30, y + 20);
 
-    y += 50;
+    y += 44;
+
+    drawDashedLine(y);
+    y += 14;
+
+    // --- RECIPIENT ACKNOWLEDGEMENT SECTION (MANUAL WRITING) ---
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#475569';
+    ctx.font = 'bold 8px system-ui, sans-serif';
+    ctx.fillText('RECIPIENT ACKNOWLEDGEMENT', width / 2, y);
+    y += 26;
+
+    // Underlines
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(210, y);
+    ctx.moveTo(230, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+
+    y += 12;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '7px system-ui, sans-serif';
+    ctx.fillText('SIGNATURE OVER PRINTED NAME', 117, y);
+    ctx.fillText('DATE SIGNED', (230 + width - 25) / 2, y);
+
+    y += 20;
+    drawDashedLine(y);
+    y += 14;
 
     // Footer
-    drawDashedLine(y);
-    y += 16;
-
     ctx.textAlign = 'center';
     ctx.fillStyle = '#64748b';
     ctx.font = 'bold 8px system-ui, sans-serif';
     ctx.fillText('THIS SERVES AS YOUR SALES INVOICE', width / 2, y);
-    y += 14;
+    y += 12;
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '8px system-ui, sans-serif';
@@ -485,70 +549,70 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const receiptBody = (
     <div
       id="unified-thermal-receipt-card"
-      className="border border-(--border-color) rounded-2xl bg-(--bg-page) p-5 shadow-md space-y-4 font-mono text-[10px] text-(--color-text) relative overflow-hidden leading-normal"
+      className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-page)] p-4 sm:p-4.5 shadow-md space-y-2.5 font-mono text-[9px] text-[var(--color-text)] relative overflow-hidden leading-tight max-w-sm mx-auto"
     >
-      <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-(--color-primary) to-(--color-primary-light) opacity-80" />
+      <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-light)] opacity-80" />
 
-      {/* Store Branding */}
-      <div className="text-center space-y-1">
+      {/* Store Branding Header */}
+      <div className="text-center pt-1 pb-0.5 space-y-1">
         <img
           src={gymLogo}
           alt="Gym Logo"
-          className="mx-auto w-10 h-10 object-contain mb-1.5"
+          className="receipt-logo mx-auto w-10 h-10 object-contain block mb-1"
         />
-        <h4 className="font-heading text-xs tracking-wider text-(--color-text) uppercase leading-none">
+        <h4 className="font-heading text-[11px] tracking-wider text-[var(--color-text)] uppercase leading-snug font-bold block">
           {gymName}
         </h4>
-        <p className="text-[8px] text-slate-500 uppercase tracking-tight leading-normal max-w-52 mx-auto">
+        <p className="text-[7.5px] text-slate-500 uppercase tracking-tight leading-tight max-w-48 mx-auto">
           {gymAddress}
         </p>
-        <p className="text-[8px] text-slate-500 uppercase tracking-wider font-semibold">
+        <p className="text-[7.5px] text-slate-500 uppercase tracking-wider font-semibold">
           {staffContact}
         </p>
       </div>
 
-      <div className="border-b border-dashed border-(--border-color) my-2" />
+      <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
 
-      <div className="text-center font-bold tracking-wider text-(--color-text) uppercase text-[9px]">
+      <div className="text-center font-bold tracking-wider text-[var(--color-text)] uppercase text-[8.5px]">
         {receiptTitle}
       </div>
 
       {/* QR Code Block */}
       {(receiptType === 'subscription' || receiptType === 'attendance') && (
-        <div className="flex items-center gap-3.5 py-1 bg-(--bg-card) p-2.5 rounded-xl border border-(--border-color)">
+        <div className="receipt-qr-container flex items-center gap-3 py-1.5 px-2 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] my-1.5">
           <img
             src={qrImageUrl}
             alt="Check-in QR Code"
-            className="w-12 h-12 object-contain shrink-0 rounded bg-white p-0.5"
+            className="receipt-qr-img w-10 h-10 object-contain shrink-0 rounded bg-white p-0.5 border border-slate-200"
           />
-          <div className="text-[8px] font-mono leading-tight overflow-hidden text-left">
-            <span className="text-slate-500 font-bold block">SCAN FOR REF</span>
-            <span className="text-(--color-text) font-black block tracking-tight uppercase break-all">
+          <div className="text-[8px] font-mono leading-tight overflow-hidden text-left flex-1">
+            <span className="text-slate-500 font-bold block text-[7.5px]">SCAN FOR CHECK-IN</span>
+            <span className="text-[var(--color-text)] font-black block tracking-tight uppercase break-all text-[9px] mt-0.5">
               {receiptNo}
             </span>
           </div>
         </div>
       )}
 
-      <div className="border-b border-dashed border-(--border-color) my-2" />
+      <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
 
       {/* Metadata Table */}
-      <div className="space-y-1.5 text-[9px]">
+      <div className="space-y-1 text-[8.5px]">
         <div className="flex justify-between">
           <span className="text-slate-500">RECEIPT NO</span>
-          <span className="font-semibold text-(--color-text)">{receiptNo}</span>
+          <span className="font-semibold text-[var(--color-text)]">{receiptNo}</span>
         </div>
         {data.paymentRef && (
           <div className="flex justify-between">
             <span className="text-slate-500">PAYMENT REF</span>
-            <span className="font-semibold text-(--color-text)">{data.paymentRef}</span>
+            <span className="font-semibold text-[var(--color-text)]">{data.paymentRef}</span>
           </div>
         )}
         <div className="flex justify-between">
           <span className="text-slate-500">
             {receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER'}
           </span>
-          <span className="font-semibold text-(--color-text) uppercase truncate max-w-36">
+          <span className="font-semibold text-[var(--color-text)] uppercase truncate max-w-36">
             {data.customerName || 'Walk-In Guest'}
           </span>
         </div>
@@ -558,18 +622,18 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
             <span className="text-slate-500">
               {receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY'}
             </span>
-            <span className="font-semibold text-(--color-text) uppercase text-right max-w-32">
+            <span className="font-semibold text-[var(--color-text)] uppercase text-right max-w-32">
               {data.planType}
             </span>
           </div>
         )}
 
-        {/* Product Items Breakdown if POS Sales */}
+        {/* Product Items Breakdown */}
         {data.items && data.items.length > 0 && (
-          <div className="py-1 space-y-1 border-y border-dashed border-(--border-color) my-1">
-            <span className="text-[8px] font-bold text-slate-500 uppercase block">Purchased Items</span>
+          <div className="py-1 space-y-0.5 border-y border-dashed border-[var(--border-color)] my-1">
+            <span className="text-[7.5px] font-bold text-slate-500 uppercase block">Purchased Items</span>
             {data.items.map((item, i) => (
-              <div key={i} className="flex justify-between text-[9px]">
+              <div key={i} className="flex justify-between text-[8.5px]">
                 <span>{item.quantity}x {item.productName}</span>
                 <span className="font-semibold">₱{(item.price * item.quantity).toFixed(2)}</span>
               </div>
@@ -582,7 +646,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
             <span className="text-slate-500">
               {receiptType === 'subscription' ? 'MEMBERSHIP FEE' : 'BASE CHARGE'}
             </span>
-            <span className="font-semibold text-(--color-text)">
+            <span className="font-semibold text-[var(--color-text)]">
               ₱{basePrice.toFixed(2)}
             </span>
           </div>
@@ -604,50 +668,50 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
         <div className="flex justify-between">
           <span className="text-slate-500">PAYMENT METHOD</span>
-          <span className="font-semibold text-(--color-text) uppercase">{paymentMethod}</span>
+          <span className="font-semibold text-[var(--color-text)] uppercase">{paymentMethod}</span>
         </div>
 
         {data.gcashRefNo && (
-          <div className="flex justify-between text-emerald-600">
+          <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-mono font-bold">
             <span>GCASH REF NO</span>
-            <span className="font-bold">{data.gcashRefNo}</span>
+            <span>{data.gcashRefNo}</span>
           </div>
         )}
 
         <div className="flex justify-between">
           <span className="text-slate-500">TRANSACTION DATE</span>
-          <span className="font-semibold text-(--color-text) text-right max-w-32">
+          <span className="font-semibold text-[var(--color-text)] text-right max-w-32">
             {txDateStr}
           </span>
         </div>
 
         <div className="flex justify-between">
           <span className="text-slate-500">PROCESSED BY</span>
-          <span className="font-semibold text-(--color-text) uppercase">{processedBy}</span>
+          <span className="font-semibold text-[var(--color-text)] uppercase">{processedBy}</span>
         </div>
       </div>
 
-      <div className="border-b border-dashed border-(--border-color) my-2" />
+      <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
 
       {/* Totals */}
-      <div className="space-y-1.5 text-xs">
-        <div className="flex justify-between font-bold">
+      <div className="space-y-1 text-xs">
+        <div className="flex justify-between font-bold text-[10px]">
           <span>SUBTOTAL</span>
           <span>₱{subtotal.toFixed(2)}</span>
         </div>
 
-        <div className="flex justify-between items-center bg-(--bg-card) border border-(--border-color) rounded-xl px-3 py-2 text-(--color-text) font-extrabold text-sm">
+        <div className="flex justify-between items-center bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2.5 py-1.5 text-[var(--color-text)] font-extrabold text-xs">
           <span>TOTAL DUE</span>
-          <span className="text-(--color-primary-light)">₱{totalDue.toFixed(2)}</span>
+          <span className="text-[var(--color-primary-light)] text-sm font-black">₱{totalDue.toFixed(2)}</span>
         </div>
 
         {data.amountReceived !== undefined && data.amountReceived !== null && (
-          <div className="pt-1 text-[9px] space-y-0.5 text-slate-500 font-mono">
+          <div className="pt-0.5 text-[8px] space-y-0.5 text-slate-500 font-mono">
             <div className="flex justify-between">
               <span>CASH RECEIVED</span>
               <span>₱{data.amountReceived.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between font-bold text-(--color-text)">
+            <div className="flex justify-between font-bold text-[var(--color-text)]">
               <span>CHANGE DUE</span>
               <span>₱{(data.changeDue || 0).toFixed(2)}</span>
             </div>
@@ -658,8 +722,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       {/* Tax Breakdown */}
       {vatEnabled && (
         <>
-          <div className="border-b border-dashed border-(--border-color) my-2" />
-          <div className="space-y-1 text-[9px] text-slate-500">
+          <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
+          <div className="space-y-0.5 text-[8px] text-slate-500">
             <div className="flex justify-between">
               <span>VATABLE SALES</span>
               <span>₱{vatableSales.toFixed(2)}</span>
@@ -672,9 +736,33 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         </>
       )}
 
-      <div className="border-b border-dashed border-(--border-color) my-2" />
+      {/* Manual Recipient Information Section */}
+      <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
+      
+      <div className="pt-1 pb-1 space-y-2">
+        <span className="text-[7.5px] font-bold text-slate-500 uppercase tracking-wider block text-center">
+          Recipient Details
+        </span>
+        <div className="grid grid-cols-2 gap-3 text-[7.5px]">
+          <div>
+            <div className="manual-signature-line border-b border-slate-400 dark:border-zinc-500 h-5" />
+            <span className="text-slate-400 uppercase tracking-tight block text-center mt-1 font-sans">
+              Full Name
+            </span>
+          </div>
+          <div>
+            <div className="manual-signature-line border-b border-slate-400 dark:border-zinc-500 h-5" />
+            <span className="text-slate-400 uppercase tracking-tight block text-center mt-1 font-sans">
+              Contact Number
+            </span>
+          </div>
+        </div>
+      </div>
 
-      <div className="text-center space-y-1 pt-1 text-[8px] text-slate-500 leading-normal">
+      <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
+
+      {/* Footer */}
+      <div className="text-center space-y-0.5 pt-0.5 text-[7.5px] text-slate-500 leading-tight">
         <p className="font-semibold uppercase tracking-wider">This serves as your Sales Invoice</p>
         <div className="font-medium uppercase tracking-widest text-slate-500 space-y-0.5">
           <p>Thank you for choosing Wolf Gym.</p>
@@ -687,10 +775,10 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   if (variant === 'inline') {
     if (isLoading || loadingConfig) {
       return (
-        <div className="border border-(--border-color) rounded-2xl bg-(--bg-page) p-5 animate-pulse space-y-3">
-          <div className="h-6 bg-slate-200 dark:bg-white/10 rounded w-1/2 mx-auto" />
-          <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-3/4 mx-auto" />
-          <div className="h-24 bg-slate-200 dark:bg-white/10 rounded" />
+        <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-page)] p-4 animate-pulse space-y-2.5 max-w-sm mx-auto">
+          <div className="h-5 bg-slate-200 dark:bg-white/10 rounded w-1/2 mx-auto" />
+          <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-3/4 mx-auto" />
+          <div className="h-20 bg-slate-200 dark:bg-white/10 rounded" />
         </div>
       );
     }
@@ -702,34 +790,34 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       isOpen={isOpen}
       onClose={onClose || (() => {})}
       title="OFFICIAL RECEIPT"
-      className="max-w-sm p-6 overflow-y-auto max-h-[85vh] font-mono text-[10px] text-(--color-text) relative"
+      className="max-w-sm p-4 sm:p-5 overflow-y-auto max-h-[85vh] font-mono text-[9px] text-[var(--color-text)] relative"
     >
       {onClose && (
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
+          className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
         >
-          <X className="w-4.5 h-4.5" />
+          <X className="w-4 h-4" />
         </button>
       )}
 
-      <div className="space-y-4 pt-2">
+      <div className="space-y-3 pt-1">
         {loadingConfig ? (
-          <div className="p-6 text-center animate-pulse text-slate-400">Loading receipt details...</div>
+          <div className="p-4 text-center animate-pulse text-slate-400">Loading receipt details...</div>
         ) : (
           receiptBody
         )}
 
-        <div className="grid grid-cols-2 gap-2.5 pt-2">
+        <div className="grid grid-cols-2 gap-2 pt-1">
           {showDownloadButton && (
             <button
               type="button"
               disabled={loadingConfig}
               onClick={handleDownloadJpg}
-              className="py-3 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-heading text-[9.5px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold"
+              className="py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5" />
               <span>Download JPG</span>
             </button>
           )}
@@ -739,9 +827,9 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
               type="button"
               disabled={loadingConfig}
               onClick={handlePrint}
-              className="py-3 px-4 bg-(--bg-input) hover:bg-slate-800 disabled:opacity-50 text-(--color-text) border border-(--border-color) font-heading text-[9.5px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
+              className="py-2.5 px-3 bg-[var(--bg-input)] hover:bg-slate-800 disabled:opacity-50 text-[var(--color-text)] border border-[var(--border-color)] font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-3.5 h-3.5" />
               <span>Print Receipt</span>
             </button>
           )}

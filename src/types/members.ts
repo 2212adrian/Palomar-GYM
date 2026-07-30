@@ -1,5 +1,3 @@
-// src/types/members.ts
-
 export type MemberStatus = 'Active' | 'Suspended';
 export type SubscriptionStatus = 'Active' | 'Expired' | 'Inactive' | 'Voided';
 export type CardStatus = 'Active' | 'Inactive';
@@ -24,13 +22,25 @@ export interface Member {
   notes?: string;
   created_at: string;
   updated_at: string;
-}
 
+  // Minor & Signature fields
+  parent_name?: string | null;
+  parent_relationship?: string | null;
+  parent_phone?: string | null;
+  parent_email?: string | null;
+  applicant_signature?: string | null;
+  parent_signature?: string | null;
+  consent_date?: string | null;
+}
 export interface Subscription {
   id: string;
   member_id: string;
   plan_name: 'Monthly Membership' | 'Yearly Membership';
   price: number;
+  base_price?: number;
+  gcash_fee?: number;
+  card_fee?: number;
+  gcash_ref_no?: string;
   start_date: string;
   end_date: string;
   status: SubscriptionStatus;
@@ -65,6 +75,10 @@ export interface Receipt {
   customer_name: string;
   customer_type: 'Walk-In' | 'Existing Member' | 'New Membership';
   amount: number;
+  base_price?: number;
+  gcash_fee?: number;
+  card_fee?: number;
+  gcash_ref_no?: string;
   payment_method: PaymentMethod;
   payment_status: PaymentStatus;
   item_description: string;
@@ -140,6 +154,10 @@ export interface AttendanceRecord {
   check_in_time: string;
   plan_name?: string;
   entry_fee: number;
+  base_price?: number;
+  gcash_fee?: number;
+  card_fee?: number;
+  gcash_ref_no?: string;
   payment_method: PaymentMethod;
   receipt_number?: string;
   staff_name: string;

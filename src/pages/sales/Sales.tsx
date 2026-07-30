@@ -681,11 +681,13 @@ export const Sales: React.FC = () => {
       )}
 
       {/* --- TIMELINE CANVAS SCROLLER --- */}
-      <div className="relative w-full h-full min-h-[80vh] overflow-x-clip grid grid-cols-1 items-start">
+      <div className="relative w-full h-auto overflow-x-clip grid grid-cols-1 items-start">
         
-        {/* VIEW 1: CASHIER REGISTER */}
+       {/* VIEW 1: CASHIER REGISTER */}
         <div 
-          className="w-full h-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-36 animate-fade-in"
+          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-12 animate-fade-in ${
+            activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -779,7 +781,7 @@ export const Sales: React.FC = () => {
             onFilterChange={setPaymentFilter}
             filterOptions={PAYMENT_FILTERS}
             role={role}
-            searchPlaceholder="Search Transactions (Name, Receipt, Ref, Method)"
+            searchPlaceholder="Search here (E.g. Name, Product, ID)"
           />
 
           {/* --- HOURLY LEDGER TIMELINE --- */}
@@ -943,10 +945,12 @@ export const Sales: React.FC = () => {
           )}
         </div>
 
-        {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
+       {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
           <div 
-            className="w-full h-full pb-36 max-w-full"
+            className={`w-full pb-12 max-w-full ${
+              activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+            }`}
             style={{
               gridColumn: 1,
               gridRow: 1,
@@ -1098,29 +1102,30 @@ export const Sales: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
-            <div className="space-y-0.5 text-left select-none">
-              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                TODAY SUMMARY
-              </span>
-              <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                <AnimatedCurrency value={dailyRevenue} />
-              </span>
-              <span className="text-[9px] font-sans text-slate-500 block leading-none font-semibold">
-                {dailyCount} Sales Recorded
-              </span>
-            </div>
+          {/* Floating Mobile Bottom Sales Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
+<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+      <CircleDollarSign className="w-4 h-4" />
+      <span><AnimatedCurrency value={dailyRevenue} /></span>
+    </div>
+    <span className="text-slate-300 dark:text-zinc-700">•</span>
+    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+      <ShoppingBag className="w-4 h-4 text-blue-500" />
+      <span>{dailyCount} Sales</span>
+    </div>
+  </div>
 
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-12 h-12 text-white rounded-full cursor-pointer bg-[#10b981] hover:bg-emerald-600 border border-white/10 shadow-lg"
-              title="New Sale Transaction"
-            >
-              <Plus className="w-5.5 h-5.5" />
-            </motion.button>
-          </div>
+  <motion.button
+    type="button"
+    whileTap={{ scale: 0.9 }}
+    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+    title="New Sale Transaction"
+  >
+    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+  </motion.button>
+</div>
         </>
       )}
 
@@ -1185,26 +1190,30 @@ export const Sales: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden fixed bottom-16 left-0 right-0 h-20 bg-(--bg-card)/90 backdrop-blur-md border-t border-(--border-color) flex items-center justify-between px-6 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] transition-colors duration-300">
-            <div className="space-y-0.5 text-left select-none">
-              <span className="text-[9px] font-heading tracking-widest text-slate-400 dark:text-slate-500 uppercase leading-none block">
-                PRODUCT INVENTORY
-              </span>
-              <span className="text-xl font-heading text-(--color-primary) block leading-none pt-0.5">
-                {products.length} Items Listed
-              </span>
-            </div>
+          {/* Floating Mobile Bottom Inventory Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
+<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+    <div className="flex items-center gap-1.5 text-[#123c73] dark:text-[#bf0202]">
+      <Package className="w-4 h-4" />
+      <span>{products.length} Products</span>
+    </div>
+    <span className="text-slate-300 dark:text-zinc-700">•</span>
+    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+      <ShoppingBag className="w-4 h-4" />
+      <span>{products.filter(p => p.status === 'Active').length} Active</span>
+    </div>
+  </div>
 
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-12 h-12 text-white rounded-full cursor-pointer bg-[#10b981] hover:bg-emerald-600 border border-white/10 shadow-lg"
-              title="Inventory Actions"
-            >
-              <Plus className="w-5.5 h-5.5" />
-            </motion.button>
-          </div>
+  <motion.button
+    type="button"
+    whileTap={{ scale: 0.9 }}
+    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+    title="Inventory Actions"
+  >
+    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+  </motion.button>
+</div>
         </>
       )}
 

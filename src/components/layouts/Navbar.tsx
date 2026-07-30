@@ -6,8 +6,11 @@
   export const Navbar: React.FC = () => {
     const location = useLocation();
 
-    const getActiveColor = (pathStartsWith: string) => {
-      return location.pathname.startsWith(pathStartsWith) 
+     const getActiveColor = (pathStartsWith: string, exact: boolean = false) => {
+      const isActive = exact 
+        ? location.pathname === pathStartsWith 
+        : location.pathname.startsWith(pathStartsWith);
+      return isActive 
         ? 'text-[var(--color-primary)] font-bold' 
         : 'text-slate-500 dark:text-slate-400';
     };
@@ -22,12 +25,12 @@
         
         {/* 1. Sales (Left side - occupies 1 column) */}
         <Link 
-          to="/sales" 
-          className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/sales')}`}
-        >
-          <ShoppingBag className="w-4.5 h-4.5" />
-          <span className="text-[9px] font-heading tracking-widest uppercase">Sales</span>
-        </Link>
+        to="/sales" 
+        className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/sales', true)}`}
+      >
+        <ShoppingBag className="w-4.5 h-4.5" />
+        <span className="text-[9px] font-heading tracking-widest uppercase">Sales</span>
+      </Link>
 
         {/* 2. Logbook (Left side - occupies 1 column) */}
         <Link 
@@ -57,10 +60,10 @@
           </div>
         </div>
 
-        {/* 4. Subscription (Right side - linked to Member Directory & Subscriptions) */}
+       {/* 4. Subscription (Right side - linked to Member Directory & Subscriptions) */}
         <Link 
           to="/members/plans" 
-          className={`flex flex-col items-center gap-1 col-span-2 justify-center transition-all ${getActiveColor('/members')}`}
+          className={`flex flex-col items-center gap-1 col-span-2 justify-center transition-all ${getActiveColor('/members/plans')}`}
         >
           <Target className="w-4.5 h-4.5" />
           <span className="text-[9px] font-heading tracking-widest uppercase">Subscription</span>

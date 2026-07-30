@@ -8,7 +8,7 @@ import {
   CheckCircle2, Clock, Download, Copy, RefreshCw, Sparkles, 
   User, Phone, Mail, Calendar, MapPin, HeartHandshake, ShieldCheck, 
   CreditCard, Check, Sun, Moon, FileSignature, Eraser, Info, Users,
-  ChevronLeft, ChevronRight, Ban, ShieldAlert
+  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, List
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -19,7 +19,8 @@ import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
 import gymLogoFallback from '../../../assets/landscape-logo.webp';
 
-const LOCAL_STORAGE_KEY = 'palomar-online-registration';
+const LOCAL_STORAGE_LIST_KEY = 'palomar-online-registrations-list';
+const OLD_LOCAL_STORAGE_KEY = 'palomar-online-registration';
 
 const calculateAge = (birthdayStr: string): number => {
   if (!birthdayStr) return 0;
@@ -33,23 +34,31 @@ const calculateAge = (birthdayStr: string): number => {
   return age >= 0 ? age : 0;
 };
 
-// Zod Validation Schema with Separated Name Fields
+// Zod Validation Schema with Optional Home Address
 const registrationSchema = z.object({
   last_name: z.string().min(1, 'Last name is required'),
   first_name: z.string().min(1, 'First name is required'),
   middle_initial: z.string().optional(),
   suffix: z.string().optional(),
 
-  phone: z.string().min(7, 'Please enter a valid phone number'),
+  phone: z
+  .string()
+  .min(7, 'Please enter a valid phone number')
+  .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   gender: z.string().min(1, 'Please select your gender'),
   birthday: z.string().min(1, 'Please select your birthday'),
-  address: z.string().min(3, 'Home address is required'),
+  
+  // Home Address is optional
+  address: z.string().optional().or(z.literal('')),
   
   same_as_parent: z.boolean().optional(),
   emergency_contact_name: z.string().min(2, 'Emergency contact name is required'),
   emergency_contact_relationship: z.string().min(2, 'Relationship is required'),
-  emergency_contact_phone: z.string().min(7, 'Emergency contact phone is required'),
+  emergency_contact_phone: z
+  .string()
+  .min(7, 'Emergency contact phone is required')
+  .regex(/^[0-9]+$/, 'Emergency phone must contain numbers only'),
   
   preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
     message: 'Please select a membership plan',
@@ -63,7 +72,12 @@ const registrationSchema = z.object({
   parent_name: z.string().optional(),
   parent_relationship: z.string().optional(),
   parent_relationship_other: z.string().optional(),
-  parent_phone: z.string().optional(),
+  parent_phone: z
+  .string()
+  .optional()
+  .refine((val) => !val || /^[0-9]+$/.test(val), {
+    message: 'Parent phone must contain numbers only',
+  }),
   parent_email: z.string().email('Invalid parent email address').optional().or(z.literal('')),
   applicant_signature: z.string().nullable().optional(),
   parent_signature: z.string().nullable().optional(),
@@ -129,6 +143,8 @@ interface StoredRegistration {
   registrationId: string;
   qrData: string;
   fullName: string;
+  preferredPlan: string;
+  submittedAt: string;
   expiresAt: number;
 }
 
@@ -286,10 +302,13 @@ export const OnlineRegistrationPage: React.FC = () => {
     return document.documentElement.classList.contains('dark');
   });
 
-  const [activeRegistration, setActiveRegistration] = useState<StoredRegistration | null>(null);
-  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number }>({ hours: 0, minutes: 0, seconds: 0 });
+  const [activeRegistrations, setActiveRegistrations] = useState<StoredRegistration[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<StoredRegistration | null>(null);
+  const [viewMode, setViewMode] = useState<'form' | 'ticket' | 'list'>('form');
+
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const settings = useMemo(() => settingsService.load(), []);
 
@@ -385,6 +404,91 @@ export const OnlineRegistrationPage: React.FC = () => {
     });
   }, []);
 
+  // Helper to load and validate active registrations created within 24 hours
+  const loadRecentRegistrations = () => {
+    try {
+      let list: StoredRegistration[] = [];
+
+      // Migration check for single stored registration
+      const singleRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
+      if (singleRaw) {
+        try {
+          const parsed = JSON.parse(singleRaw);
+          if (parsed && parsed.registrationId) {
+            list.push(parsed);
+          }
+        } catch {}
+      }
+
+      const listRaw = localStorage.getItem(LOCAL_STORAGE_LIST_KEY);
+      if (listRaw) {
+        try {
+          const parsedList = JSON.parse(listRaw);
+          if (Array.isArray(parsedList)) {
+            list = [...list, ...parsedList];
+          }
+        } catch {}
+      }
+
+      // Deduplicate by registrationId
+      const uniqueMap = new Map<string, StoredRegistration>();
+      list.forEach((item) => uniqueMap.set(item.registrationId, item));
+
+      const now = Date.now();
+      const dbQueue = registrationService.getQueue();
+
+      // Filter: Keep only registrations created < 24 Hours ago and still Pending in DB
+      const validRecent = Array.from(uniqueMap.values()).filter((item) => {
+        const isNotExpiredTime = now < item.expiresAt;
+        const submitTime = new Date(item.submittedAt).getTime();
+        const isWithin24Hours = (now - submitTime) < (24 * 60 * 60 * 1000);
+
+        const dbRecord = dbQueue.find((q) => q.id === item.registrationId);
+        const isPendingInDb = !dbRecord || dbRecord.status === 'Pending';
+
+        return isNotExpiredTime && isWithin24Hours && isPendingInDb;
+      });
+
+      // Update storage with cleaned list
+      localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(validRecent));
+      if (singleRaw) {
+        localStorage.removeItem(OLD_LOCAL_STORAGE_KEY);
+      }
+
+      return validRecent;
+    } catch {
+      return [];
+    }
+  };
+
+  // Initial Sync of Recent Active Registrations
+  useEffect(() => {
+    const recent = loadRecentRegistrations();
+    setActiveRegistrations(recent);
+
+    if (recent.length > 0) {
+      setSelectedTicket(recent[0]);
+      setViewMode('ticket');
+    } else {
+      // Force redirect to registration form if no active registrations < 24h exist
+      setViewMode('form');
+    }
+  }, []);
+
+  // Live Timer Update Interval
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTimeMs(Date.now());
+      const recent = loadRecentRegistrations();
+      setActiveRegistrations(recent);
+
+      if (recent.length === 0 && viewMode !== 'form') {
+        setViewMode('form');
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [viewMode]);
+
   // Auto-sync Emergency Contact if "Same as Parent" is checked for Minors
   useEffect(() => {
     if (isMinor && watchedSameAsParent) {
@@ -399,44 +503,6 @@ export const OnlineRegistrationPage: React.FC = () => {
       }
     }
   }, [isMinor, watchedSameAsParent, watchedParentName, watchedParentRelationship, watchedParentPhone, setValue]);
-
-  useEffect(() => {
-    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed: StoredRegistration = JSON.parse(stored);
-        if (Date.now() > parsed.expiresAt) {
-          localStorage.removeItem(LOCAL_STORAGE_KEY);
-          setActiveRegistration(null);
-        } else {
-          setActiveRegistration(parsed);
-        }
-      } catch {
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!activeRegistration) return;
-
-    const calculateTimeLeft = () => {
-      const diff = activeRegistration.expiresAt - Date.now();
-      if (diff <= 0) {
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
-        setActiveRegistration(null);
-        return;
-      }
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      setTimeLeft({ hours, minutes, seconds });
-    };
-
-    calculateTimeLeft();
-    const interval = setInterval(calculateTimeLeft, 1000);
-    return () => clearInterval(interval);
-  }, [activeRegistration]);
 
   // Wizard Step Validation Handler
   const handleNextStep = async () => {
@@ -498,7 +564,7 @@ export const OnlineRegistrationPage: React.FC = () => {
         email: data.email || undefined,
         gender: data.gender,
         birthday: data.birthday,
-        address: data.address,
+        address: data.address || '',
         emergency_contact_name: data.emergency_contact_name,
         emergency_contact_phone: data.emergency_contact_phone,
         relationship: data.emergency_contact_relationship,
@@ -527,11 +593,24 @@ export const OnlineRegistrationPage: React.FC = () => {
         registrationId,
         qrData: qrPayload,
         fullName: combinedFullName,
+        preferredPlan: data.preferred_plan,
+        submittedAt: newReg.submitted_at,
         expiresAt,
       };
 
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(storedPayload));
-      setActiveRegistration(storedPayload);
+      // Save to recent active registrations array
+      const existingList = loadRecentRegistrations();
+      const updatedList = [storedPayload, ...existingList.filter(item => item.registrationId !== registrationId)];
+      
+      localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(updatedList));
+      setActiveRegistrations(updatedList);
+      setSelectedTicket(storedPayload);
+      setViewMode('ticket');
+
+      // Reset form data and step back to Step 1 for new entries
+      setCurrentStep(1);
+      reset();
+
       toast.success('Pre-registration submitted successfully!');
     } catch (err: any) {
       toast.error(err.message || 'Submission failed. Please try again.');
@@ -540,25 +619,21 @@ export const OnlineRegistrationPage: React.FC = () => {
     }
   };
 
-  const handleCopyCode = () => {
-    if (!activeRegistration) return;
-    navigator.clipboard.writeText(activeRegistration.registrationId);
-    setCopied(true);
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedId(code);
     toast.info('Registration code copied to clipboard!');
-    setTimeout(() => setCopied(false), 2500);
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const handleRegisterAnother = () => {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-    setActiveRegistration(null);
+  const handleStartNewRegistration = () => {
     setCurrentStep(1);
     reset();
+    setViewMode('form');
   };
 
-  const handleDownloadQR = () => {
-    if (!activeRegistration) return;
-
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(activeRegistration.qrData)}`;
+  const handleDownloadQR = (targetTicket: StoredRegistration) => {
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(targetTicket.qrData)}`;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = qrUrl;
@@ -593,13 +668,13 @@ export const OnlineRegistrationPage: React.FC = () => {
 
       ctx.fillStyle = '#0f172a';
       ctx.font = '900 28px monospace';
-      ctx.fillText(activeRegistration.registrationId, 300, 535);
+      ctx.fillText(targetTicket.registrationId, 300, 535);
 
       ctx.fillStyle = '#123c73';
       ctx.font = '700 18px sans-serif';
-      ctx.fillText(activeRegistration.fullName, 300, 575);
+      ctx.fillText(targetTicket.fullName, 300, 575);
 
-      const expDate = new Date(activeRegistration.expiresAt).toLocaleString('en-US', {
+      const expDate = new Date(targetTicket.expiresAt).toLocaleString('en-US', {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
@@ -619,7 +694,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       ctx.fillText('upon arrival at Wolf Palomar Gym to activate membership.', 300, 705);
 
       const link = document.createElement('a');
-      link.download = `Palomar_Registration_${activeRegistration.registrationId}.png`;
+      link.download = `Palomar_Registration_${targetTicket.registrationId}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
       toast.success('Registration QR downloaded!');
@@ -630,9 +705,14 @@ export const OnlineRegistrationPage: React.FC = () => {
     };
   };
 
-  const qrImageUrl = activeRegistration 
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(activeRegistration.qrData)}`
-    : '';
+  const getTimeRemaining = (expiresAt: number) => {
+    const diff = expiresAt - currentTimeMs;
+    if (diff <= 0) return 'Expired';
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+  };
 
   const isSubmitDisabled = isSubmitting || !isAgreed || isRestrictedUnder12 || (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
 
@@ -653,14 +733,54 @@ export const OnlineRegistrationPage: React.FC = () => {
           <span className="text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">Self-Service Portal</span>
         </div>
 
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs"
-          title="Toggle Dark/Light Mode"
-        >
-          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Active Registration Switcher */}
+          {activeRegistrations.length > 0 && (
+            <div className="flex items-center bg-(--bg-card) border border-(--border-color) p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={handleStartNewRegistration}
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
+                  viewMode === 'form' 
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>New Form</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeRegistrations.length === 1) {
+                    setSelectedTicket(activeRegistrations[0]);
+                    setViewMode('ticket');
+                  } else {
+                    setViewMode('list');
+                  }
+                }}
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
+                  viewMode !== 'form' 
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Ticket className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Active Tickets ({activeRegistrations.length})</span>
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs"
+            title="Toggle Dark/Light Mode"
+          >
+            {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+          </button>
+        </div>
       </div>
 
       {/* Top Hero Header */}
@@ -677,80 +797,164 @@ export const OnlineRegistrationPage: React.FC = () => {
           Join Wolf Palomar Fitness Gym
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto font-medium">
-          Complete your membership pre-registration setup.
+          {viewMode === 'form' ? 'Complete your membership pre-registration setup.' : 'Manage your recent membership registration tickets.'}
         </p>
       </div>
 
-      {/* Main Wizard Card */}
+      {/* Main Container Card */}
       <div className="w-full max-w-2xl bg-(--bg-card) border border-(--border-color) rounded-3xl p-5 sm:p-8 shadow-2xl transition-all duration-300">
         
-        {activeRegistration ? (
-          /* ================= SUCCESS SCREEN ================= */
+        {/* ================= VIEW 1: ACTIVE TICKETS LIST ================= */}
+        {viewMode === 'list' && activeRegistrations.length > 0 && (
+          <div className="space-y-5 animate-fade-in text-left select-none">
+            <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
+              <div>
+                <h2 className="font-heading text-sm uppercase tracking-wider font-bold text-slate-900 dark:text-white">
+                  Recent Active Pre-Registrations ({activeRegistrations.length})
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                  Tickets created within the last 24 hours ready for desk checkout.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleStartNewRegistration}
+                className="py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer border-none"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>New Registration</span>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {activeRegistrations.map((ticket) => (
+                <div
+                  key={ticket.registrationId}
+                  onClick={() => {
+                    setSelectedTicket(ticket);
+                    setViewMode('ticket');
+                  }}
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold text-sm shrink-0">
+                      {ticket.fullName[0]?.toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        {ticket.fullName}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 block mt-0.5">
+                        {ticket.registrationId} • {ticket.preferredPlan}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200 dark:border-zinc-800">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full text-[10px] font-mono font-bold">
+                      <Clock className="w-3 h-3" />
+                      <span>{getTimeRemaining(ticket.expiresAt)}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-white dark:bg-zinc-800 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-slate-300 dark:border-zinc-700 group-hover:border-blue-500 transition-colors"
+                    >
+                      View QR
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ================= VIEW 2: TICKET DETAILED VIEW ================= */}
+        {viewMode === 'ticket' && selectedTicket && (
           <div className="space-y-6 text-center animate-fade-in select-none py-2">
+            
+            {activeRegistrations.length > 1 && (
+              <div className="flex justify-start">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Back to All Tickets ({activeRegistrations.length})
+                </button>
+              </div>
+            )}
+
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
               <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12" />
             </div>
 
             <div className="space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 inline-block mb-1">
+                Active Registration Ticket
+              </span>
               <h2 className="font-heading text-lg sm:text-xl uppercase tracking-wider text-slate-900 dark:text-white font-black">
-                Registration Submitted Successfully
+                {selectedTicket.fullName}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Your pre-registration has been received. Please present the QR Code below to the reception desk upon arrival.
+                Please present the QR code below or registration ID to reception desk staff to activate your subscription.
               </p>
             </div>
 
             <div className="p-5 bg-white rounded-2xl max-w-xs mx-auto border border-slate-200 shadow-inner space-y-3">
               <img 
-                src={qrImageUrl} 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`} 
                 alt="Registration QR Code" 
                 className="w-52 h-52 sm:w-60 sm:h-60 mx-auto block object-contain"
               />
               <div className="border-t border-slate-100 pt-2">
                 <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase tracking-widest">Manual Registration Code</span>
                 <span className="text-lg font-mono font-black text-[#123c73] block tracking-wider mt-0.5">
-                  {activeRegistration.registrationId}
+                  {selectedTicket.registrationId}
                 </span>
               </div>
             </div>
 
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full text-xs font-mono font-bold">
-              <Clock className="w-4 h-4 animate-spin-slow" />
+              <Clock className="w-4 h-4" />
               <span>
-                Registration expires in: {String(timeLeft.hours).padStart(2, '0')}h {String(timeLeft.minutes).padStart(2, '0')}m {String(timeLeft.seconds).padStart(2, '0')}s
+                Registration expires in: {getTimeRemaining(selectedTicket.expiresAt)}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleDownloadQR}
-                className="py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
+                onClick={() => handleDownloadQR(selectedTicket)}
+                className="py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
               >
                 <Download className="w-4 h-4" /> Download QR
               </button>
 
               <button
                 type="button"
-                onClick={handleCopyCode}
+                onClick={() => handleCopyCode(selectedTicket.registrationId)}
                 className="py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/10"
               >
-                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+                {copiedId === selectedTicket.registrationId ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedId === selectedTicket.registrationId ? 'Copied!' : 'Copy Code'}</span>
               </button>
 
               <button
                 type="button"
-                onClick={handleRegisterAnother}
-                className="py-3 px-4 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                onClick={handleStartNewRegistration}
+                className="py-3 px-4 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border-none"
               >
-                <RefreshCw className="w-4 h-4" /> Register Another
+                <PlusCircle className="w-4 h-4" /> Register Another
               </button>
             </div>
 
           </div>
-        ) : (
-          /* ================= WIZARD SETUP FORM ================= */
+        )}
+
+        {/* ================= VIEW 3: WIZARD FORM ================= */}
+        {viewMode === 'form' && (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-left">
             
             {/* Visual Stepper Progress Bar */}
@@ -875,7 +1079,12 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="tel"
-                        {...register('phone')}
+                        maxLength={11}
+                        {...register('phone', {
+                          onChange: (e) => {
+                            e.target.value = e.target.value.replace(/\D/g, '');
+                          }
+                        })}
                         placeholder="09171234567"
                         className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.phone ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
                       />
@@ -980,23 +1189,20 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Home Address */}
+                  {/* Home Address (Optional) */}
                   <div className="space-y-1 sm:col-span-2">
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Home Address <span className="text-red-500">*</span>
+                      Home Address <span className="text-slate-400 font-normal">(optional)</span>
                     </label>
                     <div className="relative">
                       <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                       <textarea
                         rows={2}
                         {...register('address')}
-                        placeholder="Complete street address, village, city..."
-                        className={`w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border ${errors.address ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors resize-none`}
+                        placeholder="Barangay, City, Province (optional)..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors resize-none"
                       />
                     </div>
-                    {errors.address && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.address.message}</p>
-                    )}
                   </div>
 
                 </div>

@@ -165,12 +165,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { 
             name: 'Register Sale', 
             path: '/sales', 
-            description: 'Left Tab — Cash register interface' 
+            description: 'Point of Registry Sales' 
           },
           { 
             name: 'Product List', 
             path: '/sales/products', 
-            description: 'Right Tab — Inventory setup & custom Barcode generation',
+            description: 'Product Inventory & Barcode generation',
             roles: ['admin']
           }
         ]
@@ -323,9 +323,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
       `}} />
 
-      {/* ─── DESKTOP SIDEBAR ─── */}
+     {/* ─── DESKTOP SIDEBAR ─── */}
       <aside 
-        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative z-[150] select-none shrink-0 animate-fade-in"
+        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative z-10 select-none shrink-0 animate-fade-in"
         style={{
           width: collapsed ? '5rem' : '18rem',
           transition: 'width 300ms cubic-bezier(0.77, 0, 0.175, 1)'
