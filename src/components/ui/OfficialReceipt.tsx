@@ -1,7 +1,10 @@
-import { useMemo, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { useMemo, useState, useEffect, useImperativeHandle, forwardRef, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
-import { X, Download, Printer } from 'lucide-react';
+import { X, Download, Printer, Share2, Copy, Check } from 'lucide-react';
 import { saveAs } from 'file-saver';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { toast } from 'react-toastify';
 import { Modal } from './Modal';
 import { supabase } from '../../lib/supabase/client';
@@ -49,7 +52,9 @@ export interface ReceiptData {
 
 export interface OfficialReceiptRef {
   handlePrint: () => void;
-  handleDownloadJpg: () => void;
+  handleDownloadJpg: () => Promise<void>;
+  handleShareReceipt: () => Promise<void>;
+  handleCopyImageToClipboard: () => Promise<void>;
 }
 
 interface OfficialReceiptProps {
@@ -59,6 +64,7 @@ interface OfficialReceiptProps {
   onClose?: () => void;
   showPrintButton?: boolean;
   showDownloadButton?: boolean;
+  showShareButton?: boolean;
   isLoading?: boolean;
 }
 
@@ -74,6 +80,19 @@ const RECEIPT_TITLES: Record<NonNullable<ReceiptData['receiptType']>, string> = 
   attendance: 'Attendance Check-In Slip'
 };
 
+// Safe base64 data URL to Blob converter
+const dataUrlToBlob = (dataUrl: string): Blob => {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+};
+
 export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptProps>(({
   data,
   variant = 'modal',
@@ -81,11 +100,19 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   onClose,
   showPrintButton = true,
   showDownloadButton = true,
+  showShareButton = true,
   isLoading = false
 }, ref) => {
   const [gymProfile, setGymProfile] = useState<GymProfileConfig | null>(data.gymProfile || null);
   const [ratesConfig, setRatesConfig] = useState<RatesConfig | null>(data.ratesConfig || null);
   const [loadingConfig, setLoadingConfig] = useState(!data.gymProfile || !data.ratesConfig);
+
+  const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const timerRef = useRef<any>(null);
+  const isNative = Capacitor.isNativePlatform();
 
   useEffect(() => {
     if (data.gymProfile) setGymProfile(data.gymProfile);
@@ -136,9 +163,29 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const receiptType = data.receiptType || (data.items && data.items.length > 0 ? 'sales' : 'subscription');
   const receiptTitle = RECEIPT_TITLES[receiptType] || 'Official Receipt';
 
-  const basePrice = data.basePrice || 0;
+  const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
+  const isGCash = paymentMethod.includes('GCASH');
+
+  // Smart GCash Fee Resolution
+  const gcashFee = useMemo(() => {
+    if (data.gcashFee !== undefined && data.gcashFee > 0) return data.gcashFee;
+    return isGCash ? 10 : 0;
+  }, [data.gcashFee, isGCash]);
+
   const cardFee = data.cardFee || 0;
-  const gcashFee = data.gcashFee || 0;
+
+  // Base Price Resolution (adjusts if rawBasePrice already included the GCash fee)
+  const rawBasePrice = data.basePrice || 0;
+  const basePrice = useMemo(() => {
+    if (rawBasePrice > 0) {
+      if (data.items && data.items.length > 0) return rawBasePrice;
+      if (isGCash && gcashFee > 0 && rawBasePrice > gcashFee && (data.gcashFee === 0 || data.gcashFee === undefined)) {
+        return rawBasePrice - gcashFee - cardFee;
+      }
+      return rawBasePrice;
+    }
+    return 0;
+  }, [rawBasePrice, isGCash, gcashFee, cardFee, data.items, data.gcashFee]);
 
   const itemsSubtotal = useMemo(() => {
     if (data.items && data.items.length > 0) {
@@ -154,8 +201,9 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const vatAmount = vatEnabled ? totalDue - vatableSales : 0;
 
   const receiptNo = data.receiptNo || 'RCPT-PREVIEW-001';
-  const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
   const processedBy = data.processedBy || 'WOLF PALOMAR STAFF';
+
+  const gcashRefDisplay = data.gcashRefNo || data.paymentRef || 'N/A';
 
   const txDateStr = useMemo(() => {
     if (!data.transactionDate) return format(new Date(), 'MMM d, yyyy, h:mm:ss a');
@@ -169,381 +217,570 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const qrPayload = data.qrValue || receiptNo;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
 
-  // --- PRINT HANDLER ---
-  const handlePrint = () => {
-    const content = document.getElementById('unified-thermal-receipt-card');
-    if (!content) return;
+  // --- SAFE CANVAS GENERATOR ---
+  const generateReceiptCanvasDataUrl = (): string | null => {
+    try {
+      const canvas = document.createElement('canvas');
+      const width = 400;
+      const scale = 2;
 
-    const iframe = document.createElement('iframe');
-    Object.assign(iframe.style, {
-      position: 'fixed',
-      right: '0',
-      bottom: '0',
-      width: '0',
-      height: '0',
-      border: '0'
-    });
-    document.body.appendChild(iframe);
+      let itemCount = 0;
+      if (data.items && data.items.length > 0) itemCount += data.items.length + 1;
+      let extraRows = 14;
+      if (data.paymentRef && !isGCash) extraRows++;
+      if (cardFee > 0) extraRows++;
+      if (gcashFee > 0) extraRows++;
+      if (isGCash || data.gcashRefNo) extraRows++;
+      if (vatEnabled) extraRows += 2;
 
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return;
+      const height = 480 + (extraRows * 20) + (itemCount * 18) + 60;
 
-    let stylesHtml = '';
-    document.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
-      stylesHtml += el.outerHTML;
-    });
+      canvas.width = width * scale;
+      canvas.height = height * scale;
 
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${receiptTitle} - ${receiptNo}</title>
-          ${stylesHtml}
-          <style>
-            @media print {
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              html, body {
-                width: 80mm !important;
-                max-width: 80mm !important;
-                margin: 0 auto !important;
-                padding: 0 !important;
-                background: #ffffff !important;
-                color: #000000 !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-              #unified-thermal-receipt-card {
-                width: 78mm !important;
-                max-width: 78mm !important;
-                margin: 0 auto !important;
-                padding: 4mm 2mm !important;
-                border: none !important;
-                border-radius: 0 !important;
-                box-shadow: none !important;
-                background: #ffffff !important;
-                color: #000000 !important;
-                font-family: 'Courier New', Courier, monospace !important;
-                font-size: 10px !important;
-                line-height: 1.2 !important;
-                box-sizing: border-box !important;
-              }
-              #unified-thermal-receipt-card * {
-                color: #000000 !important;
-                background: transparent !important;
-                border-color: #000000 !important;
-                box-shadow: none !important;
-                text-shadow: none !important;
-              }
-              .receipt-logo {
-                max-width: 14mm !important;
-                max-height: 14mm !important;
-                object-fit: contain !important;
-                margin: 0 auto 1.5mm auto !important;
-                display: block !important;
-              }
-              .receipt-qr-img {
-                width: 12mm !important;
-                height: 12mm !important;
-                object-fit: contain !important;
-                display: block !important;
-              }
-              .receipt-qr-container {
-                display: flex !important;
-                flex-direction: row !important;
-                align-items: center !important;
-                gap: 3mm !important;
-                border: 1px solid #000 !important;
-                padding: 2mm !important;
-                margin: 2mm 0 !important;
-              }
-              .manual-signature-line {
-                border-bottom: 1px solid #000 !important;
-                height: 6mm !important;
-              }
-              .absolute, .bg-gradient-to-r {
-                display: none !important;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div id="unified-thermal-receipt-card">
-            ${content.innerHTML}
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-                setTimeout(function() {
-                  if (window.frameElement) {
-                    window.frameElement.remove();
-                  }
-                }, 500);
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    doc.close();
-  };
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
 
-  // --- JPG CANVAS DOWNLOAD HANDLER ---
-  const handleDownloadJpg = async () => {
-    const loadImage = (src: string): Promise<HTMLImageElement | null> => {
-      return new Promise((resolve) => {
-        if (!src) return resolve(null);
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
-        img.src = src;
-      });
-    };
+      ctx.scale(scale, scale);
 
-    const showQr = receiptType === 'subscription' || receiptType === 'attendance';
-    const [logoImg, qrImg] = await Promise.all([
-      loadImage(gymLogo),
-      loadImage(showQr ? qrImageUrl : '')
-    ]);
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
 
-    const canvas = document.createElement('canvas');
-    const scale = 2;
-    const width = 400;
-
-    let itemCount = 0;
-    if (data.items && data.items.length > 0) itemCount += data.items.length + 1;
-    let extraRows = 12;
-    if (data.paymentRef) extraRows++;
-    if (cardFee > 0) extraRows++;
-    if (gcashFee > 0) extraRows++;
-    if (vatEnabled) extraRows += 2;
-
-    const baseHeight = 480 + (extraRows * 20) + (itemCount * 18) + (qrImg ? 65 : 0);
-    const height = baseHeight;
-
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.scale(scale, scale);
-
-    // Canvas Background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-
-    // Card Border
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(10, 10, width - 20, height - 20);
-
-    // Top Accent Bar
-    ctx.fillStyle = '#bf0202';
-    ctx.fillRect(10, 10, width - 20, 4);
-
-    let y = 30;
-
-    if (logoImg) {
-      ctx.drawImage(logoImg, width / 2 - 20, y, 40, 40);
-      y += 48;
-    } else {
-      y += 10;
-    }
-
-    // Header Info
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 12px system-ui, sans-serif';
-    ctx.fillText(gymName.toUpperCase(), width / 2, y);
-    y += 15;
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '8px system-ui, sans-serif';
-    ctx.fillText(gymAddress.toUpperCase(), width / 2, y);
-    y += 13;
-
-    ctx.font = 'bold 8px system-ui, sans-serif';
-    ctx.fillText(staffContact.toUpperCase(), width / 2, y);
-    y += 16;
-
-    const drawDashedLine = (lineY: number) => {
+      // Outer Border
       ctx.strokeStyle = '#cbd5e1';
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(20, lineY);
-      ctx.lineTo(width - 20, lineY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    };
+      ctx.lineWidth = 1;
+      ctx.strokeRect(10, 10, width - 20, height - 20);
 
-    drawDashedLine(y);
-    y += 16;
+      // Top Red Accent Bar
+      ctx.fillStyle = '#bf0202';
+      ctx.fillRect(10, 10, width - 20, 4);
 
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText(receiptTitle.toUpperCase(), width / 2, y);
-    y += 15;
+      let y = 35;
 
-    // QR Block
-    if (qrImg) {
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(20, y, width - 40, 56);
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(20, y, width - 40, 56);
+      // Header Info
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText(gymName.toUpperCase(), width / 2, y);
+      y += 16;
 
-      ctx.drawImage(qrImg, 30, y + 6, 44, 44);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8.5px system-ui, sans-serif';
+      ctx.fillText(gymAddress.toUpperCase(), width / 2, y);
+      y += 14;
+
+      ctx.font = 'bold 8.5px system-ui, sans-serif';
+      ctx.fillText(staffContact.toUpperCase(), width / 2, y);
+      y += 18;
+
+      const drawDashedLine = (lineY: number) => {
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(20, lineY);
+        ctx.lineTo(width - 20, lineY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      drawDashedLine(y);
+      y += 16;
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(receiptTitle.toUpperCase(), width / 2, y);
+      y += 18;
+
+      if (receiptType === 'subscription' || receiptType === 'attendance') {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(20, y, width - 40, 44);
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.strokeRect(20, y, width - 40, 44);
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText('CHECK-IN ENTRY CODE', width / 2, y + 16);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(receiptNo, width / 2, y + 32);
+
+        y += 56;
+        drawDashedLine(y);
+        y += 18;
+      }
+
+      const renderRow = (label: string, value: string, isHighlight = false, fontColor = '#0f172a') => {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '9px monospace';
+        ctx.fillText(label, 20, y);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = fontColor;
+        ctx.font = isHighlight ? 'bold 10px monospace' : '600 9px monospace';
+        ctx.fillText(value, width - 20, y);
+        y += 17;
+      };
+
+      renderRow('RECEIPT NO', receiptNo, true, '#0f172a');
+      if (data.paymentRef && !isGCash) renderRow('PAYMENT REF', data.paymentRef, true, '#0284c7');
+      renderRow(receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER', (data.customerName || 'Walk-In Guest').toUpperCase(), true, '#0f172a');
+
+      if (data.planType) {
+        renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY', data.planType.toUpperCase(), false, '#15803d');
+      }
+
+      if (basePrice > 0) {
+        renderRow(receiptType === 'subscription' ? 'MEMBERSHIP FEE' : 'BASE CHARGE', `₱${basePrice.toFixed(2)}`);
+      }
+
+      if (cardFee > 0) renderRow('CARD FEE', `+₱${cardFee.toFixed(2)}`, false, '#2563eb');
+      if (gcashFee > 0) renderRow('GCASH CONVENIENCE FEE', `+₱${gcashFee.toFixed(2)}`, false, '#15803d');
+
+      renderRow('PAYMENT METHOD', paymentMethod, false, '#0f172a');
+      if (isGCash || data.gcashRefNo) renderRow('GCASH REF NO', gcashRefDisplay, true, '#0284c7');
+
+      renderRow('TRANSACTION DATE', txDateStr);
+      renderRow('PROCESSED BY', processedBy.toUpperCase());
+
+      if (data.items && data.items.length > 0) {
+        drawDashedLine(y);
+        y += 15;
+        data.items.forEach(item => {
+          renderRow(`${item.quantity}x ${item.productName}`, `₱${(item.price * item.quantity).toFixed(2)}`);
+        });
+      }
+
+      drawDashedLine(y);
+      y += 18;
 
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 8px monospace';
-      ctx.fillText('SCAN FOR CHECK-IN', 84, y + 20);
-
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 10px monospace';
-      ctx.fillText(receiptNo, 84, y + 36);
-
-      y += 66;
-    }
-
-    drawDashedLine(y);
-    y += 18;
-
-    const renderRow = (label: string, value: string, isHighlight = false, fontColor = '#0f172a') => {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#64748b';
-      ctx.font = '8.5px monospace';
-      ctx.fillText(label, 20, y);
+      ctx.fillText('SUBTOTAL', 20, y);
 
       ctx.textAlign = 'right';
-      ctx.fillStyle = fontColor;
-      ctx.font = isHighlight ? 'bold 9.5px monospace' : '600 8.5px monospace';
-      ctx.fillText(value, width - 20, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 10.5px monospace';
+      ctx.fillText(`₱${subtotal.toFixed(2)}`, width - 20, y);
+
       y += 16;
-    };
 
-    renderRow('RECEIPT NO', receiptNo, true, '#0f172a');
-    if (data.paymentRef) renderRow('PAYMENT REF', data.paymentRef, true, '#0284c7');
-    renderRow(receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER', (data.customerName || 'Walk-In Guest').toUpperCase(), true, '#0f172a');
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(20, y, width - 40, 34);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.strokeRect(20, y, width - 40, 34);
 
-    if (data.planType) {
-      renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY', data.planType.toUpperCase(), false, '#15803d');
-    }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 10.5px monospace';
+      ctx.fillText('TOTAL DUE', 30, y + 21);
 
-    if (basePrice > 0) {
-      renderRow(receiptType === 'subscription' ? 'MEMBERSHIP FEE' : 'BASE CHARGE', `₱${basePrice.toFixed(2)}`);
-    }
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#dc2626';
+      ctx.font = 'bold 13.5px monospace';
+      ctx.fillText(`₱${totalDue.toFixed(2)}`, width - 30, y + 21);
 
-    if (cardFee > 0) renderRow('CARD FEE', `+₱${cardFee.toFixed(2)}`, false, '#2563eb');
-    if (gcashFee > 0) renderRow('GCASH CONVENIENCE FEE', `+₱${gcashFee.toFixed(2)}`, false, '#15803d');
+      y += 48;
 
-    renderRow('PAYMENT METHOD', paymentMethod, false, '#0f172a');
-    if (data.gcashRefNo) renderRow('GCASH REF NO', data.gcashRefNo, true, '#0284c7');
-
-    renderRow('TRANSACTION DATE', txDateStr);
-    renderRow('PROCESSED BY', processedBy.toUpperCase());
-
-    if (data.items && data.items.length > 0) {
       drawDashedLine(y);
-      y += 14;
-      data.items.forEach(item => {
-        renderRow(`${item.quantity}x ${item.productName}`, `₱${(item.price * item.quantity).toFixed(2)}`);
-      });
+      y += 16;
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 8.5px system-ui, sans-serif';
+      ctx.fillText('RECIPIENT ACKNOWLEDGEMENT', width / 2, y);
+      y += 28;
+
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(25, y);
+      ctx.lineTo(210, y);
+      ctx.moveTo(230, y);
+      ctx.lineTo(width - 25, y);
+      ctx.stroke();
+
+      y += 13;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '7.5px system-ui, sans-serif';
+      ctx.fillText('SIGNATURE OVER PRINTED NAME', 117, y);
+      ctx.fillText('DATE SIGNED', (230 + width - 25) / 2, y);
+
+      y += 22;
+      drawDashedLine(y);
+      y += 16;
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 8.5px system-ui, sans-serif';
+      ctx.fillText('THIS SERVES AS YOUR SALES INVOICE', width / 2, y);
+      y += 13;
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '8.5px system-ui, sans-serif';
+      ctx.fillText('THANK YOU FOR CHOOSING WOLF GYM.', width / 2, y);
+
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Canvas generation error:', err);
+      return null;
     }
+  };
 
-    drawDashedLine(y);
-    y += 18;
+  const createNativeReceiptFile = async (dataUrl: string, fileName: string, directory = Directory.Cache) => {
+    const base64Data = dataUrl.split(',')[1];
+    if (!base64Data) throw new Error('Receipt image data is invalid.');
 
-    // Subtotal
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 9.5px monospace';
-    ctx.fillText('SUBTOTAL', 20, y);
+    return Filesystem.writeFile({
+      path: fileName,
+      data: base64Data,
+      directory,
+      recursive: true
+    });
+  };
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText(`₱${subtotal.toFixed(2)}`, width - 20, y);
+  // --- PRINT HANDLER ---
+  const handlePrint = async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const dataUrl = generateReceiptCanvasDataUrl();
+        if (!dataUrl) throw new Error('Failed to generate receipt image.');
 
-    y += 14;
-
-    // Total Due Box
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(20, y, width - 40, 32);
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.strokeRect(20, y, width - 40, 32);
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText('TOTAL DUE', 30, y + 20);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#dc2626';
-    ctx.font = 'bold 13px monospace';
-    ctx.fillText(`₱${totalDue.toFixed(2)}`, width - 30, y + 20);
-
-    y += 44;
-
-    drawDashedLine(y);
-    y += 14;
-
-    // --- RECIPIENT ACKNOWLEDGEMENT SECTION (MANUAL WRITING) ---
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#475569';
-    ctx.font = 'bold 8px system-ui, sans-serif';
-    ctx.fillText('RECIPIENT ACKNOWLEDGEMENT', width / 2, y);
-    y += 26;
-
-    // Underlines
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(25, y);
-    ctx.lineTo(210, y);
-    ctx.moveTo(230, y);
-    ctx.lineTo(width - 25, y);
-    ctx.stroke();
-
-    y += 12;
-    ctx.fillStyle = '#64748b';
-    ctx.font = '7px system-ui, sans-serif';
-    ctx.fillText('SIGNATURE OVER PRINTED NAME', 117, y);
-    ctx.fillText('DATE SIGNED', (230 + width - 25) / 2, y);
-
-    y += 20;
-    drawDashedLine(y);
-    y += 14;
-
-    // Footer
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#64748b';
-    ctx.font = 'bold 8px system-ui, sans-serif';
-    ctx.fillText('THIS SERVES AS YOUR SALES INVOICE', width / 2, y);
-    y += 12;
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '8px system-ui, sans-serif';
-    ctx.fillText('THANK YOU FOR CHOOSING WOLF GYM.', width / 2, y);
-
-    canvas.toBlob((blob) => {
-      if (blob) {
-        saveAs(blob, `Official_Receipt_${receiptNo}.png`);
-        toast.success('Official Receipt image downloaded!');
-      } else {
-        toast.error('Failed to export receipt image.');
+        const fileName = `Official_Receipt_${receiptNo}.png`;
+        const file = await createNativeReceiptFile(dataUrl, fileName, Directory.Cache);
+        await Share.share({
+          title: `Print Official Receipt - ${receiptNo}`,
+          text: 'Choose your printer or print service to print this receipt.',
+          files: [file.uri],
+          dialogTitle: 'Print receipt'
+        });
+        return;
       }
-    }, 'image/png');
+
+      const content = document.getElementById('unified-thermal-receipt-card');
+      if (!content) return;
+
+      const iframe = document.createElement('iframe');
+      Object.assign(iframe.style, {
+        position: 'fixed',
+        right: '0',
+        bottom: '0',
+        width: '0',
+        height: '0',
+        border: '0'
+      });
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) return;
+
+      let stylesHtml = '';
+      document.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
+        stylesHtml += el.outerHTML;
+      });
+
+      doc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${receiptTitle} - ${receiptNo}</title>
+            ${stylesHtml}
+            <style>
+              @media print {
+                @page {
+                  size: 80mm auto;
+                  margin: 0;
+                }
+                html, body {
+                  width: 80mm !important;
+                  max-width: 80mm !important;
+                  margin: 0 auto !important;
+                  padding: 0 !important;
+                  background: #ffffff !important;
+                  color: #000000 !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                #unified-thermal-receipt-card {
+                  width: 78mm !important;
+                  max-width: 78mm !important;
+                  margin: 0 auto !important;
+                  padding: 4mm 2mm !important;
+                  border: none !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: #ffffff !important;
+                  color: #000000 !important;
+                  font-family: 'Courier New', Courier, monospace !important;
+                  font-size: 10px !important;
+                  line-height: 1.2 !important;
+                  box-sizing: border-box !important;
+                }
+                #unified-thermal-receipt-card * {
+                  color: #000000 !important;
+                  background: transparent !important;
+                  border-color: #000000 !important;
+                  box-shadow: none !important;
+                  text-shadow: none !important;
+                }
+                .receipt-logo {
+                  max-width: 14mm !important;
+                  max-height: 14mm !important;
+                  object-fit: contain !important;
+                  margin: 0 auto 1.5mm auto !important;
+                  display: block !important;
+                }
+                .receipt-qr-img {
+                  width: 12mm !important;
+                  height: 12mm !important;
+                  object-fit: contain !important;
+                  display: block !important;
+                }
+                .receipt-qr-container {
+                  display: flex !important;
+                  flex-direction: row !important;
+                  align-items: center !important;
+                  gap: 3mm !important;
+                  border: 1px solid #000 !important;
+                  padding: 2mm !important;
+                  margin: 2mm 0 !important;
+                }
+                .manual-signature-line {
+                  border-bottom: 1px solid #000 !important;
+                  height: 6mm !important;
+                }
+                .absolute, .bg-gradient-to-r {
+                  display: none !important;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div id="unified-thermal-receipt-card">
+              ${content.innerHTML}
+            </div>
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  try {
+                    window.print();
+                  } catch(e) {
+                    console.warn('Window print failed:', e);
+                  }
+                  setTimeout(function() {
+                    if (window.frameElement) {
+                      window.frameElement.remove();
+                    }
+                  }, 500);
+                }, 500);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      doc.close();
+    } catch (err) {
+      console.error('Print error:', err);
+      toast.error('Could not initiate print.');
+    }
+  };
+
+  // --- DOWNLOAD HANDLER ---
+  const handleDownloadJpg = async () => {
+    try {
+      const dataUrl = generateReceiptCanvasDataUrl();
+      if (!dataUrl) {
+        toast.error('Failed to export receipt image.');
+        return;
+      }
+
+      const fileName = `Official_Receipt_${receiptNo}.png`;
+      const blob = dataUrlToBlob(dataUrl);
+
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const file = await createNativeReceiptFile(dataUrl, fileName, Directory.Cache);
+          await Share.share({
+            title: `Save Official Receipt - ${receiptNo}`,
+            text: `Official Receipt (${receiptNo}) from ${gymName}`,
+            files: [file.uri],
+            dialogTitle: 'Save receipt image to device'
+          });
+          setPreviewImgUrl(dataUrl);
+        } catch (nativeErr: any) {
+          if (nativeErr?.name === 'AbortError') return;
+          console.warn('Native download fallback triggered:', nativeErr);
+          setPreviewImgUrl(dataUrl);
+          setIsPreviewOpen(true);
+        }
+        return;
+      }
+
+      // Web Browser Download
+      try {
+        saveAs(blob, fileName);
+        toast.success('Official Receipt image downloaded!');
+      } catch (saveErr) {
+        console.warn('saveAs failed, attempting anchor fallback:', saveErr);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        toast.success('Official Receipt image downloaded!');
+      }
+
+      setPreviewImgUrl(dataUrl);
+    } catch (err) {
+      console.error('Download error:', err);
+      toast.error('Error exporting receipt image.');
+    }
+  };
+
+  // --- SHARE RECEIPT HANDLER ---
+  const handleShareReceipt = async () => {
+    try {
+      const dataUrl = generateReceiptCanvasDataUrl();
+      if (!dataUrl) {
+        toast.error('Failed to generate receipt image.');
+        return;
+      }
+
+      const fileName = `Official_Receipt_${receiptNo}.png`;
+      const blob = dataUrlToBlob(dataUrl);
+
+      if (Capacitor.isNativePlatform()) {
+        const file = await createNativeReceiptFile(dataUrl, fileName, Directory.Cache);
+        await Share.share({
+          title: `Official Receipt - ${receiptNo}`,
+          text: `Official Receipt (${receiptNo}) from ${gymName}`,
+          files: [file.uri],
+          dialogTitle: 'Share or save receipt image'
+        });
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+        try {
+          const file = new File([blob], fileName, { type: 'image/png' });
+
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `Official Receipt - ${receiptNo}`,
+              text: `Official Receipt (${receiptNo}) from ${gymName}`
+            });
+            toast.success('Official Receipt shared!');
+            return;
+          }
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') return;
+          console.warn('Web Share API failed:', shareErr);
+        }
+      }
+
+      setPreviewImgUrl(dataUrl);
+      setIsPreviewOpen(true);
+
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          toast.success('Receipt image copied to clipboard!');
+          return;
+        }
+      } catch {
+        // Ignore clipboard fallback
+      }
+
+      toast.info('Hold or tap the receipt image to copy.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      console.error('Failed to share receipt image:', err);
+      toast.error('Error sharing receipt image.');
+    }
+  };
+
+  // --- DIRECT COPY IMAGE TO CLIPBOARD (PC & MOBILE NATIVE SENSITIVE) ---
+  const handleCopyImageToClipboard = async () => {
+    try {
+      const dataUrl = generateReceiptCanvasDataUrl();
+      if (!dataUrl) {
+        toast.error('Failed to generate receipt image.');
+        return;
+      }
+
+      const fileName = `Official_Receipt_${receiptNo}.png`;
+      const blob = dataUrlToBlob(dataUrl);
+
+      // On Mobile Native, open system share sheet (which includes native "Copy to Clipboard")
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const file = await createNativeReceiptFile(dataUrl, fileName, Directory.Cache);
+          await Share.share({
+            title: `Copy or Share Receipt - ${receiptNo}`,
+            text: `Official Receipt (${receiptNo})`,
+            files: [file.uri],
+            dialogTitle: 'Copy or Share Receipt Image'
+          });
+          return;
+        } catch (nativeErr: any) {
+          if (nativeErr?.name === 'AbortError') return;
+        }
+      }
+
+      // Desktop Clipboard API
+      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          setCopied(true);
+          toast.success('Receipt image copied to clipboard!');
+          setTimeout(() => setCopied(false), 2500);
+          return;
+        } catch (clipErr) {
+          console.warn('Clipboard write failed, opening fallback preview:', clipErr);
+        }
+      }
+
+      // Fallback preview modal
+      setPreviewImgUrl(dataUrl);
+      setIsPreviewOpen(true);
+      toast.info('Press & hold image below to copy or save.');
+    } catch (err) {
+      console.error('Clipboard copy error:', err);
+      toast.error('Could not copy image automatically. Use Save / Share.');
+    }
+  };
+
+  // --- HOLD-TAP LISTENERS FOR PREVIEW IMAGE ---
+  const handleTouchStartImage = () => {
+    timerRef.current = setTimeout(() => {
+      handleCopyImageToClipboard();
+    }, 450);
+  };
+
+  const handleTouchEndImage = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
   };
 
   useImperativeHandle(ref, () => ({
     handlePrint,
-    handleDownloadJpg
+    handleDownloadJpg,
+    handleShareReceipt,
+    handleCopyImageToClipboard
   }));
 
   const receiptBody = (
@@ -602,7 +839,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
           <span className="text-slate-500">RECEIPT NO</span>
           <span className="font-semibold text-[var(--color-text)]">{receiptNo}</span>
         </div>
-        {data.paymentRef && (
+        {data.paymentRef && !isGCash && (
           <div className="flex justify-between">
             <span className="text-slate-500">PAYMENT REF</span>
             <span className="font-semibold text-[var(--color-text)]">{data.paymentRef}</span>
@@ -660,7 +897,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         )}
 
         {gcashFee > 0 && (
-          <div className="flex justify-between text-emerald-500">
+          <div className="flex justify-between text-emerald-500 font-bold">
             <span>GCASH CONVENIENCE FEE</span>
             <span className="font-semibold">+₱{gcashFee.toFixed(2)}</span>
           </div>
@@ -671,10 +908,10 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
           <span className="font-semibold text-[var(--color-text)] uppercase">{paymentMethod}</span>
         </div>
 
-        {data.gcashRefNo && (
+        {(isGCash || data.gcashRefNo) && (
           <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-mono font-bold">
             <span>GCASH REF NO</span>
-            <span>{data.gcashRefNo}</span>
+            <span>{gcashRefDisplay}</span>
           </div>
         )}
 
@@ -786,56 +1023,164 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   }
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose || (() => {})}
-      title="OFFICIAL RECEIPT"
-      className="max-w-sm p-4 sm:p-5 overflow-y-auto max-h-[85vh] font-mono text-[9px] text-[var(--color-text)] relative"
-    >
-      {onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      )}
-
-      <div className="space-y-3 pt-1">
-        {loadingConfig ? (
-          <div className="p-4 text-center animate-pulse text-slate-400">Loading receipt details...</div>
-        ) : (
-          receiptBody
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose || (() => {})}
+        title="OFFICIAL RECEIPT"
+        className="max-w-sm p-4 sm:p-5 overflow-y-auto max-h-[85vh] font-mono text-[9px] text-[var(--color-text)] relative"
+      >
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
         )}
 
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          {showDownloadButton && (
-            <button
-              type="button"
-              disabled={loadingConfig}
-              onClick={handleDownloadJpg}
-              className="py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download JPG</span>
-            </button>
+        <div className="space-y-3 pt-1">
+          {loadingConfig ? (
+            <div className="p-4 text-center animate-pulse text-slate-400">Loading receipt details...</div>
+          ) : (
+            receiptBody
           )}
 
-          {showPrintButton && (
+        {/* Action Buttons 2x2 Grid Layout */}
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            {isNative ? (
+              <button
+                type="button"
+                disabled={loadingConfig}
+                onClick={handleShareReceipt}
+                className="col-span-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
+                title="Save or Share Receipt Image"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>Save / Share</span>
+              </button>
+            ) : (
+              <>
+                {showDownloadButton && (
+                  <button
+                    type="button"
+                    disabled={loadingConfig}
+                    onClick={handleDownloadJpg}
+                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
+                    title="Download Receipt Image File"
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span>Download</span>
+                  </button>
+                )}
+
+                {showShareButton && (
+                  <button
+                    type="button"
+                    disabled={loadingConfig}
+                    onClick={handleShareReceipt}
+                    className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
+                    title="Share Receipt Image"
+                  >
+                    <Share2 className="w-4 h-4 shrink-0" />
+                    <span>Share</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Copy Image Button */}
             <button
               type="button"
               disabled={loadingConfig}
-              onClick={handlePrint}
-              className="py-2.5 px-3 bg-[var(--bg-input)] hover:bg-slate-800 disabled:opacity-50 text-[var(--color-text)] border border-[var(--border-color)] font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
+              onClick={handleCopyImageToClipboard}
+              className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
+              title="Copy Image to Clipboard"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Receipt</span>
+              {copied ? <Check className="w-4 h-4 shrink-0 text-emerald-300" /> : <Copy className="w-4 h-4 shrink-0" />}
+              <span>{copied ? 'Copied!' : 'Copy Image'}</span>
             </button>
-          )}
+
+            {/* Print Button */}
+            {showPrintButton && (
+              <button
+                type="button"
+                disabled={loadingConfig}
+                onClick={handlePrint}
+                className={`${
+                  isNative ? 'col-span-2' : ''
+                } py-2.5 px-3 bg-slate-800 hover:bg-slate-700 dark:bg-neutral-800 dark:hover:bg-neutral-700 active:scale-[0.98] disabled:opacity-50 text-slate-100 border border-slate-700 font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold`}
+                title="Print Thermal Receipt"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>Print Receipt</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      {/* Image Preview Modal Fallback */}
+      {isPreviewOpen && previewImgUrl && (
+        <Modal
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          title="RECEIPT IMAGE READY"
+          className="max-w-md p-4 space-y-3 font-mono text-[9px] text-[var(--color-text)] relative z-[9999]"
+        >
+          <button
+            type="button"
+            onClick={() => setIsPreviewOpen(false)}
+            className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          <div className="text-center space-y-1 pt-1">
+            <p className="text-[10px] font-sans font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+              Hold Tap Image Below to Copy
+            </p>
+            <p className="text-[8.5px] font-sans text-slate-500 dark:text-slate-400">
+              Press & hold the receipt image for 0.5s to copy it directly to your clipboard.
+            </p>
+          </div>
+
+          <div className="p-2 bg-slate-100 dark:bg-zinc-900 border border-[var(--border-color)] rounded-2xl flex justify-center max-h-[55vh] overflow-y-auto">
+            <img
+              src={previewImgUrl}
+              alt="Generated Official Receipt"
+              onTouchStart={handleTouchStartImage}
+              onTouchEnd={handleTouchEndImage}
+              onTouchCancel={handleTouchEndImage}
+              onMouseDown={handleTouchStartImage}
+              onMouseUp={handleTouchEndImage}
+              className="max-w-full h-auto object-contain rounded-lg shadow-md cursor-pointer select-none active:scale-[0.98] transition-transform"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleCopyImageToClipboard}
+              className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold shadow-md"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Copied!' : 'Copy Image'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPreviewOpen(false)}
+              className="py-2.5 px-3 bg-[var(--bg-input)] hover:bg-slate-800 text-[var(--color-text)] border border-[var(--border-color)] font-heading text-[9px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
+            >
+              <X className="w-4 h-4" />
+              <span>Close</span>
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 });
 

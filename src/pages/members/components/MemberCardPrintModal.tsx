@@ -10,6 +10,9 @@ import { prototypeStorage, STORAGE_KEYS } from '../memberService';
 import { toast } from 'react-toastify';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
 
 export type CardFormatType = 'qr_digital' | 'manual_template';
@@ -36,6 +39,17 @@ interface MemberCardPrintModalProps {
   initialSelectedIds?: string[];
   onClose: () => void;
 }
+
+// Helper to convert Uint8Array / ArrayBuffer to Base64 for Capacitor Filesystem
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+};
 
 export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   members,
@@ -91,8 +105,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   const [manualCardCount, setManualCardCount] = useState<number>(8);
   const [activeMobileTab, setActiveMobileTab] = useState<'configure' | 'preview'>('configure');
 
-  // Accordion state for validity/replacement
-  const [isExpiryConfigOpen, setIsExpiryConfigOpen] = useState(true);
+  // Accordion state for validity/replacement: COLLAPSED BY DEFAULT
+  const [isExpiryConfigOpen, setIsExpiryConfigOpen] = useState(false);
 
   // Locked Issue Date (Automatic to current date)
   const issueDate = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -261,8 +275,242 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     prototypeStorage.save(STORAGE_KEYS.CARDS, updatedCards);
   };
 
-  // Print Action Handler (Opens Printer Window)
-  const handlePrint = () => {
+  // Helper to build high-res PDF bytes
+  const buildPdfDocument = async (): Promise<{ pdfBytes: Uint8Array; fileName: string }> => {
+    // Convert image URL to Base64 Data URL
+    const loadBase64Image = async (url: string): Promise<HTMLImageElement> => {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+    };
+
+    const cardTemplateImgObj = await loadBase64Image(cardTemplateImg);
+    const pdfDoc = await PDFDocument.create();
+
+    // 300 DPI Resolution Setup for Letter sheet (215.9mm x 279.4mm)
+    const scale = 300 / 25.4; // 11.811 px per mm
+    const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);  // 2550 px
+    const sheetHeightPx = Math.round(LETTER_PAPER.height * scale); // 3300 px
+
+    for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
+      const pageCanvas = document.createElement('canvas');
+      pageCanvas.width = sheetWidthPx;
+      pageCanvas.height = sheetHeightPx;
+      const ctx = pageCanvas.getContext('2d');
+      if (!ctx) continue;
+
+      // White background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
+
+      const pageStartIndex = pageIdx * template.cardsPerPage;
+      const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+
+      for (let idx = 0; idx < pageItems.length; idx++) {
+        const m = pageItems[idx];
+        const col = idx % template.cols;
+        const row = Math.floor(idx / template.cols);
+
+        const cardX = (template.marginLeftMm + col * (template.cardWidthMm + template.gapHorizontalMm)) * scale;
+        const cardY = (template.marginTopMm + row * (template.cardHeightMm + template.gapVerticalMm)) * scale;
+        const cardW = template.cardWidthMm * scale;
+        const cardH = template.cardHeightMm * scale;
+
+        if (cardFormat === 'manual_template') {
+          ctx.save();
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+          else ctx.rect(cardX, cardY, cardW, cardH);
+          ctx.clip();
+          ctx.drawImage(cardTemplateImgObj, cardX, cardY, cardW, cardH);
+          ctx.restore();
+        } else {
+          const sub = getMemberSub(m.member_id);
+          const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
+          const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
+          const isExp = new Date(finalExpDate) < new Date();
+          const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+          const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+          const qrImgObj = await loadBase64Image(qrRawUrl);
+
+          ctx.save();
+
+          // 1. Black Card Background
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+          else ctx.rect(cardX, cardY, cardW, cardH);
+          ctx.fill();
+          ctx.strokeStyle = '#1a1a1a';
+          ctx.lineWidth = 1 * scale;
+          ctx.stroke();
+
+          // 2. Header Title
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `900 ${Math.round(3.6 * scale)}px Arial, sans-serif`;
+          ctx.fillText('WOLF PALOMAR GYM', cardX + cardW / 2, cardY + 5.5 * scale);
+
+          // Red Header Line
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(cardX + cardW * 0.04, cardY + 6.8 * scale, cardW * 0.92, 0.35 * scale);
+
+          // Subtitle
+          ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
+          ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
+
+          // Address & Contact
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `600 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
+          ctx.fillText('6B Judge A. Roldan St., Navotas City, Metro Manila', cardX + cardW / 2, cardY + 12.3 * scale);
+          ctx.fillText('09098893819 / 09054380792', cardX + cardW / 2, cardY + 14.1 * scale);
+
+          // 3. QR Code Box
+          const qrSize = 22 * scale;
+          const qrX = cardX + 3.5 * scale;
+          const qrY = cardY + 16.5 * scale;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
+          else ctx.rect(qrX, qrY, qrSize, qrSize);
+          ctx.fill();
+
+          if (isExp) ctx.globalAlpha = 0.25;
+          ctx.drawImage(qrImgObj, qrX + 1.5 * scale, qrY + 1.5 * scale, qrSize - 3 * scale, qrSize - 3 * scale);
+          ctx.globalAlpha = 1.0;
+
+          if (isExp) {
+            ctx.fillStyle = 'rgba(220, 38, 38, 0.85)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
+            else ctx.rect(qrX, qrY, qrSize, qrSize);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `900 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+            ctx.fillText('EXPIRED', qrX + qrSize / 2, qrY + qrSize / 2 - 0.5 * scale);
+            ctx.fillText('BADGE', qrX + qrSize / 2, qrY + qrSize / 2 + 2 * scale);
+          }
+
+          // 4. Details Section
+          const detailsX = qrX + qrSize + 3 * scale;
+          const detailsY = cardY + 16.5 * scale;
+          const detailsW = cardX + cardW - detailsX - 3.5 * scale;
+
+          ctx.textAlign = 'left';
+
+          // FULL NAME
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
+          ctx.fillText('FULL NAME', detailsX, detailsY + 1.8 * scale);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale, 1 * scale);
+          else ctx.rect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale);
+          ctx.fill();
+
+          ctx.fillStyle = '#000000';
+          ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
+          ctx.fillText(m.full_name.toUpperCase().substring(0, 22), detailsX + 1.5 * scale, detailsY + 6 * scale);
+
+          // CONTACT NUMBER
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
+          ctx.fillText('CONTACT NUMBER', detailsX, detailsY + 9.8 * scale);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale, 1 * scale);
+          else ctx.rect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale);
+          ctx.fill();
+
+          ctx.fillStyle = '#000000';
+          ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
+          ctx.fillText(m.phone || 'N/A', detailsX + 1.5 * scale, detailsY + 14 * scale);
+
+          // DATES ROW
+          const boxHalfW = (detailsW - 1.2 * scale) / 2;
+
+          // Issue Date Label & Box
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `800 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
+          ctx.fillText('ISSUE DATE', detailsX, detailsY + 17.8 * scale);
+          ctx.fillText('EXPIRATION', detailsX + boxHalfW + 1.2 * scale, detailsY + 17.8 * scale);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
+          else ctx.rect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
+          ctx.fill();
+
+          ctx.fillStyle = '#000000';
+          ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText(new Date(issueDate).toLocaleDateString(), detailsX + boxHalfW / 2, detailsY + 21.8 * scale);
+
+          // Red Vertical Divider
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(detailsX + boxHalfW + 0.45 * scale, detailsY + 17.5 * scale, 0.3 * scale, 6 * scale);
+
+          // Expiration Box
+          const expX = detailsX + boxHalfW + 1.2 * scale;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
+          else ctx.rect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
+          ctx.fill();
+
+          ctx.fillStyle = isExp ? '#dc2626' : '#000000';
+          ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
+          ctx.fillText(new Date(finalExpDate).toLocaleDateString(), expX + boxHalfW / 2, detailsY + 21.8 * scale);
+
+          // 5. Footer Divider & Text
+          const footerY = cardY + cardH - 5 * scale;
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `800 ${Math.round(1.35 * scale)}px Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('NON-REFUNDABLE  •  NON-TRANSFERRABLE  •  BE RESPONSIBLE WITH EQUIPMENT', cardX + cardW / 2, footerY + 3.2 * scale);
+
+          ctx.restore();
+        }
+      }
+
+      // Untainted 300 DPI Canvas PNG Export
+      const pngDataUrl = pageCanvas.toDataURL('image/png', 1.0);
+      const embeddedPng = await pdfDoc.embedPng(pngDataUrl);
+
+      const pdfPage = pdfDoc.addPage([612, 792]); // Letter Size
+      pdfPage.drawImage(embeddedPng, {
+        x: 0,
+        y: 0,
+        width: 612,
+        height: 792,
+      });
+    }
+
+    const pdfBytes = await pdfDoc.save();
+    const fileName = `Wolf_Palomar_Gym_Member_Cards_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    return { pdfBytes, fileName };
+  };
+
+  // Print Action Handler (Capacitor Native Share/Print vs Web Hidden iFrame Print)
+  const handlePrint = async () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
       return;
@@ -287,9 +535,38 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
 
     persistCardIssuance();
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    // CAPACITOR MOBILE PLATFORM PRINTING (via Native Share/Print dialog)
+    if (Capacitor.isNativePlatform()) {
+      setIsGeneratingPdf(true);
+      try {
+        const { pdfBytes, fileName } = await buildPdfDocument();
+        const base64Data = arrayBufferToBase64(pdfBytes.buffer as ArrayBuffer);
 
+        const file = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+
+        await Share.share({
+          title: `Print Member Credential Cards`,
+          text: `Choose your printer or print service to print member cards layout sheet.`,
+          files: [file.uri],
+          dialogTitle: 'Print Member Cards',
+        });
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error('Native print share error:', err);
+          toast.error('Could not initiate native print dialog.');
+        }
+      } finally {
+        setIsGeneratingPdf(false);
+      }
+      return;
+    }
+
+    // WEB DESKTOP PRINTING (Via Hidden iFrame - avoids popup blocker issues)
     let pagesHtml = '';
 
     for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
@@ -379,7 +656,21 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       `;
     }
 
-    printWindow.document.write(`
+    const iframe = document.createElement('iframe');
+    Object.assign(iframe.style, {
+      position: 'fixed',
+      right: '0',
+      bottom: '0',
+      width: '0',
+      height: '0',
+      border: '0'
+    });
+    document.body.appendChild(iframe);
+
+    const printDoc = iframe.contentWindow?.document;
+    if (!printDoc) return;
+
+    printDoc.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -536,17 +827,27 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           ${pagesHtml}
           <script>
             window.onload = function() {
-              window.print();
-              window.close();
-            }
+              setTimeout(function() {
+                try {
+                  window.print();
+                } catch(e) {
+                  console.warn('Print error:', e);
+                }
+                setTimeout(function() {
+                  if (window.frameElement) {
+                    window.frameElement.remove();
+                  }
+                }, 500);
+              }, 500);
+            };
           </script>
         </body>
       </html>
     `);
-    printWindow.document.close();
+    printDoc.close();
   };
 
-  // TRUE 300 DPI UNTAINTED PDF GENERATOR VIA DIRECT CANVAS 2D DRAWING
+  // PDF DOWNLOAD HANDLER (Capacitor Native Filesystem/Share vs Browser saveAs)
   const handleDownloadPdf = async () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -576,242 +877,50 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     try {
       persistCardIssuance();
 
-      // Convert image URL to Base64 Data URL
-      const loadBase64Image = async (url: string): Promise<HTMLImageElement> => {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const dataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
+      const { pdfBytes, fileName } = await buildPdfDocument();
+
+      // CAPACITOR NATIVE DOWNLOAD / SAVE HANDLER
+      if (Capacitor.isNativePlatform()) {
+        const base64Data = arrayBufferToBase64(pdfBytes.buffer as ArrayBuffer);
+        const file = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true
         });
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = reject;
-          img.src = dataUrl;
+
+        await Share.share({
+          title: `Member Cards PDF - ${fileName}`,
+          text: `Official Member Cards PDF from Wolf Palomar Gym`,
+          files: [file.uri],
+          dialogTitle: 'Save / Share PDF'
         });
-      };
 
-      const cardTemplateImgObj = await loadBase64Image(cardTemplateImg);
-
-      const pdfDoc = await PDFDocument.create();
-
-      // 300 DPI Resolution Setup for Letter sheet (215.9mm x 279.4mm)
-      const scale = 300 / 25.4; // 11.811 px per mm
-      const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);  // 2550 px
-      const sheetHeightPx = Math.round(LETTER_PAPER.height * scale); // 3300 px
-
-      for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = sheetWidthPx;
-        pageCanvas.height = sheetHeightPx;
-        const ctx = pageCanvas.getContext('2d');
-        if (!ctx) continue;
-
-        // White background
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
-
-        const pageStartIndex = pageIdx * template.cardsPerPage;
-        const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
-
-        for (let idx = 0; idx < pageItems.length; idx++) {
-          const m = pageItems[idx];
-          const col = idx % template.cols;
-          const row = Math.floor(idx / template.cols);
-
-          const cardX = (template.marginLeftMm + col * (template.cardWidthMm + template.gapHorizontalMm)) * scale;
-          const cardY = (template.marginTopMm + row * (template.cardHeightMm + template.gapVerticalMm)) * scale;
-          const cardW = template.cardWidthMm * scale;
-          const cardH = template.cardHeightMm * scale;
-
-          if (cardFormat === 'manual_template') {
-            ctx.save();
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
-            else ctx.rect(cardX, cardY, cardW, cardH);
-            ctx.clip();
-            ctx.drawImage(cardTemplateImgObj, cardX, cardY, cardW, cardH);
-            ctx.restore();
-          } else {
-            const sub = getMemberSub(m.member_id);
-            const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
-            const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
-            const isExp = new Date(finalExpDate) < new Date();
-            const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
-            const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
-            const qrImgObj = await loadBase64Image(qrRawUrl);
-
-            ctx.save();
-
-            // 1. Black Card Background
-            ctx.fillStyle = '#000000';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
-            else ctx.rect(cardX, cardY, cardW, cardH);
-            ctx.fill();
-            ctx.strokeStyle = '#1a1a1a';
-            ctx.lineWidth = 1 * scale;
-            ctx.stroke();
-
-            // 2. Header Title
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `900 ${Math.round(3.6 * scale)}px Arial, sans-serif`;
-            ctx.fillText('WOLF PALOMAR GYM', cardX + cardW / 2, cardY + 5.5 * scale);
-
-            // Red Header Line
-            ctx.fillStyle = '#dc2626';
-            ctx.fillRect(cardX + cardW * 0.04, cardY + 6.8 * scale, cardW * 0.92, 0.35 * scale);
-
-            // Subtitle
-            ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
-            ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
-
-            // Address & Contact
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `600 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
-            ctx.fillText('6B Judge A. Roldan St., Navotas City, Metro Manila', cardX + cardW / 2, cardY + 12.3 * scale);
-            ctx.fillText('09098893819 / 09054380792', cardX + cardW / 2, cardY + 14.1 * scale);
-
-            // 3. QR Code Box
-            const qrSize = 22 * scale;
-            const qrX = cardX + 3.5 * scale;
-            const qrY = cardY + 16.5 * scale;
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
-            else ctx.rect(qrX, qrY, qrSize, qrSize);
-            ctx.fill();
-
-            if (isExp) ctx.globalAlpha = 0.25;
-            ctx.drawImage(qrImgObj, qrX + 1.5 * scale, qrY + 1.5 * scale, qrSize - 3 * scale, qrSize - 3 * scale);
-            ctx.globalAlpha = 1.0;
-
-            if (isExp) {
-              ctx.fillStyle = 'rgba(220, 38, 38, 0.85)';
-              ctx.beginPath();
-              if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
-              else ctx.rect(qrX, qrY, qrSize, qrSize);
-              ctx.fill();
-
-              ctx.fillStyle = '#ffffff';
-              ctx.font = `900 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
-              ctx.fillText('EXPIRED', qrX + qrSize / 2, qrY + qrSize / 2 - 0.5 * scale);
-              ctx.fillText('BADGE', qrX + qrSize / 2, qrY + qrSize / 2 + 2 * scale);
-            }
-
-            // 4. Details Section
-            const detailsX = qrX + qrSize + 3 * scale;
-            const detailsY = cardY + 16.5 * scale;
-            const detailsW = cardX + cardW - detailsX - 3.5 * scale;
-
-            ctx.textAlign = 'left';
-
-            // FULL NAME
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
-            ctx.fillText('FULL NAME', detailsX, detailsY + 1.8 * scale);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale, 1 * scale);
-            else ctx.rect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale);
-            ctx.fill();
-
-            ctx.fillStyle = '#000000';
-            ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
-            ctx.fillText(m.full_name.toUpperCase().substring(0, 22), detailsX + 1.5 * scale, detailsY + 6 * scale);
-
-            // CONTACT NUMBER
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${Math.round(1.6 * scale)}px Arial, sans-serif`;
-            ctx.fillText('CONTACT NUMBER', detailsX, detailsY + 9.8 * scale);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale, 1 * scale);
-            else ctx.rect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale);
-            ctx.fill();
-
-            ctx.fillStyle = '#000000';
-            ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
-            ctx.fillText(m.phone || 'N/A', detailsX + 1.5 * scale, detailsY + 14 * scale);
-
-            // DATES ROW
-            const boxHalfW = (detailsW - 1.2 * scale) / 2;
-
-            // Issue Date Label & Box
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
-            ctx.fillText('ISSUE DATE', detailsX, detailsY + 17.8 * scale);
-            ctx.fillText('EXPIRATION', detailsX + boxHalfW + 1.2 * scale, detailsY + 17.8 * scale);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
-            else ctx.rect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
-            ctx.fill();
-
-            ctx.fillStyle = '#000000';
-            ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(new Date(issueDate).toLocaleDateString(), detailsX + boxHalfW / 2, detailsY + 21.8 * scale);
-
-            // Red Vertical Divider
-            ctx.fillStyle = '#dc2626';
-            ctx.fillRect(detailsX + boxHalfW + 0.45 * scale, detailsY + 17.5 * scale, 0.3 * scale, 6 * scale);
-
-            // Expiration Box
-            const expX = detailsX + boxHalfW + 1.2 * scale;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
-            else ctx.rect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
-            ctx.fill();
-
-            ctx.fillStyle = isExp ? '#dc2626' : '#000000';
-            ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
-            ctx.fillText(new Date(finalExpDate).toLocaleDateString(), expX + boxHalfW / 2, detailsY + 21.8 * scale);
-
-            // 5. Footer Divider & Text
-            const footerY = cardY + cardH - 5 * scale;
-            ctx.fillStyle = '#dc2626';
-            ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = `800 ${Math.round(1.35 * scale)}px Arial, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText('NON-REFUNDABLE  •  NON-TRANSFERRABLE  •  BE RESPONSIBLE WITH EQUIPMENT', cardX + cardW / 2, footerY + 3.2 * scale);
-
-            ctx.restore();
-          }
-        }
-
-        // Untainted 300 DPI Canvas PNG Export
-        const pngDataUrl = pageCanvas.toDataURL('image/png', 1.0);
-        const embeddedPng = await pdfDoc.embedPng(pngDataUrl);
-
-        const pdfPage = pdfDoc.addPage([612, 792]); // Letter Size
-        pdfPage.drawImage(embeddedPng, {
-          x: 0,
-          y: 0,
-          width: 612,
-          height: 792,
-        });
+        toast.success('Member Cards PDF ready for sharing/saving!');
+        return;
       }
 
-      const pdfBytes = await pdfDoc.save();
+      // WEB BROWSER DOWNLOAD HANDLER
       const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-      const fileName = `Wolf_Palomar_Gym_Member_Cards_${new Date().toISOString().split('T')[0]}.pdf`;
-      saveAs(pdfBlob, fileName);
-
-      toast.success('300 DPI PDF downloaded successfully!');
-    } catch (err) {
-      console.error('Failed to generate PDF file:', err);
-      toast.error('Failed to generate PDF document. Please try again.');
+      try {
+        saveAs(pdfBlob, fileName);
+        toast.success('300 DPI PDF downloaded successfully!');
+      } catch (saveErr) {
+        console.warn('saveAs failed, attempting anchor fallback:', saveErr);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(pdfBlob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        toast.success('300 DPI PDF downloaded successfully!');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error('Failed to generate PDF file:', err);
+        toast.error('Failed to generate PDF document. Please try again.');
+      }
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -1161,26 +1270,26 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                         />
                       </div>
                                     
-                      {/* 2. EXPIRATION DATE: Enforces min={issueDate} + Auto-clamps back to issueDate if an older date is typed */}
+                      {/* 2. EXPIRATION DATE */}
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Expiration Date</label>
                         <input
                           type="date"
-                          min={issueDate} // 👈 Blocks calendar selection of older dates
+                          min={issueDate}
                           value={customExpireDate}
                           onChange={(e) => {
                             const val = e.target.value;
                             setOverrideDates(true);
                             if (val && val < issueDate) {
                               toast.error('Expiration date cannot be earlier than Issue Date!');
-                              setCustomExpireDate(issueDate); // 👈 Hard clamp back to issue date!
+                              setCustomExpireDate(issueDate);
                             } else {
                               setCustomExpireDate(val);
                             }
                           }}
                           onBlur={(e) => {
                             if (!e.target.value || e.target.value < issueDate) {
-                              setCustomExpireDate(issueDate); // 👈 Fallback safety clamp
+                              setCustomExpireDate(issueDate);
                             }
                           }}
                           className={`w-full p-2 bg-(--bg-page) border rounded-xl text-xs font-mono font-bold outline-none transition-all ${
@@ -1488,8 +1597,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                                     )}
                                   </div>
 
-                                  {/* Dynamic Fields */}
-                                  <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}>
+                                 {/* Dynamic Fields */}
+                                    <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}                                   >
                                     
                                     {/* FULL NAME */}
                                     <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>

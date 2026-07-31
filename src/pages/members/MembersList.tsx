@@ -1175,10 +1175,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         </>
       )}
 
-      {/* 1. DESKTOP FLOATING MULTI-SELECT BAR (UNCHANGED) */}
-      {isSelectionActive && (
-        <div className="hidden md:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
-          <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
+    {/* 1. DESKTOP / TABLET FLOATING MULTI-SELECT BAR */}
+{isSelectionActive && (
+  <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
+    <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
             <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
               {selectedMemberIds.length}
             </span>

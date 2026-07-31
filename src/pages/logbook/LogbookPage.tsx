@@ -146,7 +146,7 @@ export const LogbookPage: React.FC = () => {
       }
     }
 
-    try {
+  try {
       const dbAttendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
       if (dbAttendance.length > 0) {
         return dbAttendance.map((att: AttendanceRecord) => ({
@@ -158,6 +158,12 @@ export const LogbookPage: React.FC = () => {
           categoryOrPlan: att.plan_name || 'Regular Pass',
           paymentMethod: att.payment_method,
           amountPaid: att.entry_fee,
+          basePrice: att.base_price ?? (att.entry_fee - (att.gcash_fee || 0)),
+          gcashFee: att.gcash_fee || 0,
+          cardFee: att.card_fee || 0,
+          gcashRefNo: att.gcash_ref_no,
+          referenceNumber: att.gcash_ref_no,
+          paymentRef: att.gcash_ref_no,
           paymentStatus: att.entry_fee > 0 ? 'Paid' : 'Free',
           status: 'Active'
         }));
@@ -844,19 +850,35 @@ export const LogbookPage: React.FC = () => {
             setSelectedReceiptLog(null);
             setIsReceiptModalOpen(false);
           }}
-          data={{
-            receiptType: selectedReceiptLog.customerType === 'New Membership' ? 'subscription' : 'walkin',
-            receiptNo: (selectedReceiptLog as any).receipt_no || selectedReceiptLog.id,
-            customerName: selectedReceiptLog.customerName || 'Walk-In Guest',
-            planType: selectedReceiptLog.categoryOrPlan || 'Daily Pass',
-            basePrice: (selectedReceiptLog as any).basePrice ?? selectedReceiptLog.amountPaid,
-            gcashFee: (selectedReceiptLog as any).gcashFee ?? 0,
-            cardFee: (selectedReceiptLog as any).cardFee ?? 0,
-            paymentMethod: selectedReceiptLog.paymentMethod,
-            gcashRefNo: (selectedReceiptLog as any).gcashRefNo,
-            transactionDate: selectedReceiptLog.timestamp,
-            processedBy: 'WOLF PALOMAR STAFF'
-          }}
+          data={(() => {
+            const rawLog = selectedReceiptLog as any;
+            const gcashFee = Number(
+              rawLog.gcashFee ?? rawLog.gcash_fee ?? rawLog.gcashFeeApplied ?? rawLog.gcash_fee_applied ?? 0
+            );
+            const cardFee = Number(
+              rawLog.cardFee ?? rawLog.card_fee ?? rawLog.cardFeeApplied ?? 0
+            );
+            const totalPaid = Number(selectedReceiptLog.amountPaid || 0);
+            const basePrice = rawLog.basePrice ?? rawLog.base_price ?? Math.max(0, totalPaid - gcashFee - cardFee);
+            const gcashRefNo = String(
+              rawLog.gcashRefNo || rawLog.gcash_ref_no || rawLog.gcashReference || rawLog.referenceNumber || rawLog.reference_number || rawLog.paymentRef || rawLog.payment_ref || ''
+            );
+
+            return {
+              receiptType: selectedReceiptLog.customerType === 'New Membership' ? 'subscription' : 'walkin',
+              receiptNo: rawLog.receipt_no || rawLog.receiptNo || selectedReceiptLog.id,
+              customerName: selectedReceiptLog.customerName || 'Walk-In Guest',
+              planType: selectedReceiptLog.categoryOrPlan || 'Daily Pass',
+              basePrice,
+              gcashFee,
+              cardFee,
+              paymentMethod: selectedReceiptLog.paymentMethod,
+              gcashRefNo,
+              paymentRef: rawLog.paymentRef || rawLog.payment_ref || gcashRefNo,
+              transactionDate: selectedReceiptLog.timestamp,
+              processedBy: 'WOLF PALOMAR STAFF'
+            };
+          })()}
         />
       )}
 

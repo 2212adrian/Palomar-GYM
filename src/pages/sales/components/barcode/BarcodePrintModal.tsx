@@ -1,7 +1,5 @@
-// src/pages/sales/components/barcode/BarcodePrintModal.tsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-// Explicit type-only imports resolve verbatimModuleSyntax constraints
 import type { 
   BarcodeSettingsState, PrintableItem, LabelTemplateType
 } from '../../utils/barcodePdfHelper';
@@ -9,8 +7,15 @@ import {
   LABEL_TEMPLATES, LETTER_PAPER, generatePdfFile, triggerBrowserPrint 
 } from '../../utils/barcodePdfHelper';
 import { BarcodeComponent } from '../BarcodeComponent';
-import { X, Printer, Download, Search, CheckSquare, Square, Sliders, ToggleLeft, ToggleRight, ZoomIn, ZoomOut, Maximize2, Settings, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { 
+  X, Printer, Download, Search, CheckSquare, Square, Sliders, ToggleLeft, ToggleRight, 
+  ZoomIn, ZoomOut, Maximize2, Settings, Loader2, ChevronDown, ChevronUp 
+} from 'lucide-react';
 import { toast } from 'react-toastify';
+import { saveAs } from 'file-saver';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 interface BarcodePrintModalProps {
   products: PrintableItem[];
@@ -19,7 +24,7 @@ interface BarcodePrintModalProps {
 }
 
 const DEFAULT_SETTINGS: BarcodeSettingsState = {
-  templateId: '32_labels', // Default template is updated to 32 Labels (4 x 8 Grid) for maximum physical size
+  templateId: '32_labels',
   copies: 1,
   showProductName: true,
   showPrice: true,
@@ -30,6 +35,17 @@ const DEFAULT_SETTINGS: BarcodeSettingsState = {
   margin: 3,
   gapBetweenLabels: 2,
   zoom: 100,
+};
+
+// Converts Uint8Array or ArrayBuffer to Base64
+const arrayBufferToBase64 = (buffer: ArrayBuffer | Uint8Array): string => {
+  let binary = '';
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
 };
 
 export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
@@ -51,7 +67,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     };
   }, []);
 
-  // Accordion Expand States: Both now default strictly to collapsed (false) on all viewports
+  // Accordion Expand States: Both default strictly to collapsed (false) on all viewports
   const [isLayoutPresetOpen, setIsLayoutPresetOpen] = useState(false);
   const [isDisplayParamsOpen, setIsDisplayParamsOpen] = useState(false);
 
@@ -86,47 +102,122 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   // Convert label height in mm directly to on-screen pixels for the preview
   const labelHeightPx = template.labelHeight * 3.78;
 
-  // Calculate dynamic space for barcode bars, keeping safe padding for text
+  // Calculate dynamic space for barcode bars
   const nameSpacing = settings.showProductName ? 16 : 0;
   const bottomSpacing = (settings.showBarcodeText ? 12 : 0) + (settings.showPrice ? 14 : 0);
   const availableSvgHeight = labelHeightPx - nameSpacing - bottomSpacing - 12;
 
-  // Keep barcode height balanced: up to 50% of the total label height
   const targetHeight = Math.min(availableSvgHeight, labelHeightPx * 0.50);
   const svgHeight = Math.max(10, Math.floor(targetHeight));
   const svgMargin = isSmallLabel ? 2 : 3;
 
-  // Exact math factors computed to scale container layout boundaries proportionally
+  // Zoom factor scaling
   const zoomFactor = settings.zoom / 100;
   const scaledWidthMm = LETTER_PAPER.width * zoomFactor;
   const scaledHeightMm = (LETTER_PAPER.height * totalPagesRequired) * zoomFactor + (24 * totalPagesRequired * zoomFactor);
 
+  // PDF DOWNLOAD HANDLER (Capacitor Mobile Save/Share vs Web Browser saveAs)
   const handleDownload = async () => {
     if (printableItemsList.length === 0) {
       toast.error('Please select at least one item to print.');
       return;
     }
+
     try {
       setGenerating(true);
-      await generatePdfFile(printableItemsList, settings);
-      toast.success('PDF document compiled successfully.');
-    } catch (err) {
-      console.error('PDF Generation exception captured:', err);
-      toast.error('Could not compile PDF document.');
+      toast.info('Generating high-resolution barcode PDF...');
+      
+      const pdfBytes = await generatePdfFile(printableItemsList, settings);
+      const fileName = `Store_Barcode_Labels_${new Date().toISOString().split('T')[0]}.pdf`;
+
+      if (Capacitor.isNativePlatform()) {
+        const base64Data = arrayBufferToBase64(pdfBytes);
+        const file = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+
+        await Share.share({
+          title: 'Store Barcode Labels PDF',
+          text: 'Save or share official store barcode labels PDF',
+          files: [file.uri],
+          dialogTitle: 'Save / Share Barcode PDF',
+        });
+        toast.success('Barcode labels PDF ready for sharing/saving!');
+        return;
+      }
+
+      // Web Browser download
+      const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      try {
+        saveAs(pdfBlob, fileName);
+        toast.success('Barcode PDF downloaded successfully!');
+      } catch (saveErr) {
+        console.warn('saveAs fallback triggered:', saveErr);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(pdfBlob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        toast.success('Barcode PDF downloaded successfully!');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error('PDF Generation error:', err);
+        toast.error('Could not compile PDF document.');
+      }
     } finally {
       setGenerating(false);
     }
   };
 
-  const handlePrint = () => {
+  // PRINT HANDLER (Capacitor Native Mobile Share/Print vs Web Browser iFrame Print)
+  const handlePrint = async () => {
     if (printableItemsList.length === 0) {
       toast.error('Please select at least one item to print.');
       return;
     }
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        setGenerating(true);
+        toast.info('Preparing printable barcode labels...');
+        const pdfBytes = await generatePdfFile(printableItemsList, settings);
+        const fileName = `Print_Barcode_Labels_${new Date().toISOString().split('T')[0]}.pdf`;
+        const base64Data = arrayBufferToBase64(pdfBytes);
+
+        const file = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+
+        await Share.share({
+          title: 'Print Store Barcode Labels',
+          text: 'Select your printer or print service to print store barcode labels.',
+          files: [file.uri],
+          dialogTitle: 'Print Barcode Labels',
+        });
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error('Native print share error:', err);
+          toast.error('Could not open print sheet on mobile device.');
+        }
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
+
+    // Web Browser Desktop Print
     triggerBrowserPrint('barcode-printable-area');
   };
 
-  // Uses React Portals to guarantee this print modal mounts at the body root (z-index safe)
   return createPortal(
     <div className="fixed inset-0 z-[16000] bg-[var(--bg-page)] flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
       
@@ -136,8 +227,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20">
             <Printer className="w-5 h-5 animate-pulse" />
           </div>
-          <div>
-            <h2 className="text-sm font-heading tracking-widest uppercase">Print Store Labels</h2>
+          <div className="text-left">
+            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT STORE LABELS</h2>
             <p className="text-[10px] text-slate-400 font-bold block mt-0.5">
               Select catalog items, customize sizing sheets, and download vectors.
             </p>
@@ -158,16 +249,18 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
         <button
           type="button"
           onClick={() => setActiveMobileTab('configure')}
-          className="flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg bg-blue-500 text-white shadow-md cursor-pointer"
-          title="Show configuration drawer settings"
+          className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
+            activeMobileTab === 'configure' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400'
+          }`}
         >
           Configure
         </button>
         <button
           type="button"
           onClick={() => setActiveMobileTab('preview')}
-          className="flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg bg-blue-500 text-white shadow-md cursor-pointer"
-          title="Show layout preview sheet"
+          className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
+            activeMobileTab === 'preview' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400'
+          }`}
         >
           Layout Preview
         </button>
@@ -183,14 +276,14 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           <div className="flex flex-col gap-4 overflow-y-hidden flex-1">
             
             {/* Selection Drawer */}
-            <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[220px] flex-1">
+            <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[240px] flex-1">
               <div className="flex items-center justify-between shrink-0">
                 <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Items to Print</h4>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => setSelectedIds(products.map(p => p.id))}
-                    className="text-[9px] font-bold uppercase text-blue-400 hover:underline cursor-pointer"
+                    className="text-[9px] font-bold uppercase text-blue-500 hover:underline cursor-pointer"
                   >
                     All
                   </button>
@@ -211,7 +304,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter products..."
-                  className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-slate-400 transition-all font-medium"
+                  className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-blue-500 transition-all font-medium"
                 />
               </div>
 
@@ -226,8 +319,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       )}
                       className={`p-2 rounded-xl flex items-center justify-between cursor-pointer border transition-colors ${
                         isSelected 
-                          ? 'bg-blue-500/20 dark:bg-blue-500/10 border-blue-500 text-[var(--color-text)]' 
-                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-950/20 dark:hover:bg-slate-950/40 border-transparent text-slate-700 dark:text-slate-300'
+                          ? 'bg-blue-500/10 border-blue-500 text-[var(--color-text)]' 
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900/40 border-transparent text-slate-700 dark:text-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -236,9 +329,9 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                         ) : (
                           <Square className="w-4 h-4 shrink-0 text-slate-500" />
                         )}
-                        <div className="min-w-0">
+                        <div className="min-w-0 text-left">
                           <span className="font-semibold block truncate text-xs">{product.product_name}</span>
-                          <span className="font-mono text-[9px] text-slate-500">{product.barcode_id}</span>
+                          <span className="font-mono text-[9px] text-slate-400">{product.barcode_id}</span>
                         </div>
                       </div>
                       <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">₱{product.selling_price.toFixed(2)}</span>
@@ -253,23 +346,23 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsLayoutPresetOpen(!isLayoutPresetOpen)}
-                className="w-full flex items-center justify-between p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
+                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <Settings className="w-3.5 h-3.5 text-blue-500" />
                   <span>Layout Preset</span>
                 </div>
                 {isLayoutPresetOpen ? (
-                  <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
                 )}
               </button>
 
               {isLayoutPresetOpen && (
-                <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3.5 shrink-0 animate-slide-up">
+                <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 animate-slide-up text-left">
                   <div className="grid gap-1">
-                    <label className="text-[9px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Label Layout Template</label>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Label Layout Template</label>
                     <select
                       value={settings.templateId}
                       onChange={(e) => setSettings(prev => ({ ...prev, templateId: e.target.value as LabelTemplateType }))}
@@ -291,31 +384,29 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDisplayParamsOpen(!isDisplayParamsOpen)}
-                className="w-full flex items-center justify-between p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none mb-4"
+                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  <Sliders className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <Sliders className="w-3.5 h-3.5 text-blue-500" />
                   <span>Display Parameters</span>
                 </div>
                 {isDisplayParamsOpen ? (
-                  <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
                 )}
               </button>
 
               {isDisplayParamsOpen && (
-                <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 animate-slide-up mb-4">
+                <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 animate-slide-up text-left">
                   <div className="flex items-center justify-between text-xs py-1">
                     <span className="text-slate-700 dark:text-slate-300 font-medium">Show Product Title</span>
                     <button
                       type="button"
                       onClick={() => setSettings(prev => ({ ...prev, showProductName: !prev.showProductName }))}
                       className="text-blue-500 hover:opacity-85 cursor-pointer"
-                      title="Toggle product name label visibility"
-                      aria-label="Toggle product name label visibility"
                     >
-                      {settings.showProductName ? <ToggleRight className="w-8 h-8 bg-transparent border-none" /> : <ToggleLeft className="w-8 h-8 text-slate-600 bg-transparent border-none" />}
+                      {settings.showProductName ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-slate-600" />}
                     </button>
                   </div>
 
@@ -325,10 +416,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       type="button"
                       onClick={() => setSettings(prev => ({ ...prev, showPrice: !prev.showPrice }))}
                       className="text-blue-500 hover:opacity-85 cursor-pointer"
-                      title="Toggle price indicator visibility"
-                      aria-label="Toggle price indicator visibility"
                     >
-                      {settings.showPrice ? <ToggleRight className="w-8 h-8 bg-transparent border-none" /> : <ToggleLeft className="w-8 h-8 text-slate-600 bg-transparent border-none" />}
+                      {settings.showPrice ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-slate-600" />}
                     </button>
                   </div>
 
@@ -338,14 +427,12 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       type="button"
                       onClick={() => setSettings(prev => ({ ...prev, showBarcodeText: !prev.showBarcodeText }))}
                       className="text-blue-500 hover:opacity-85 cursor-pointer"
-                      title="Toggle alphanumeric code string visibility"
-                      aria-label="Toggle alphanumeric code string visibility"
                     >
-                      {settings.showBarcodeText ? <ToggleRight className="w-8 h-8 bg-transparent border-none" /> : <ToggleLeft className="w-8 h-8 text-slate-600 bg-transparent border-none" />}
+                      {settings.showBarcodeText ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-slate-600" />}
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs border-t border-white/5 pt-3 mt-1 gap-2">
+                  <div className="flex items-center justify-between text-xs border-t border-(--border-color) pt-3 mt-1 gap-2">
                     <span className="text-slate-700 dark:text-slate-300 font-medium">Global Copies</span>
                     <input
                       type="number"
@@ -353,7 +440,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       max="1000"
                       value={settings.copies}
                       onChange={(e) => setSettings(prev => ({ ...prev, copies: Math.max(1, parseInt(e.target.value) || 1) }))}
-                      className="w-16 px-2.5 py-1.5 bg-slate-950/30 border border-white/5 rounded-xl text-xs text-white text-center outline-none font-bold font-mono"
+                      className="w-16 px-2.5 py-1.5 bg-[var(--bg-page)] border border-(--border-color) rounded-xl text-xs text-[var(--color-text)] text-center outline-none font-bold font-mono"
                     />
                   </div>
                 </div>
@@ -363,34 +450,37 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           </div>
 
           {/* Action Row Panel */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none space-y-2 mt-4">
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={handlePrint}
-                disabled={printableItemsList.length === 0}
-                className="py-2.5 px-4 bg-blue-500 hover:bg-blue-600 disabled:opacity-30 disabled:pointer-events-none text-white text-[10px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md font-bold"
+                disabled={printableItemsList.length === 0 || generating}
+                className="py-3 px-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border-none cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>Print Dialog</span>
+                <span>Print ({expandedItemsList.length})</span>
               </button>
+
               <button
                 type="button"
                 onClick={handleDownload}
                 disabled={printableItemsList.length === 0 || generating}
-                className="py-2.5 px-4 bg-[var(--bg-input)] hover:bg-slate-800 border border-(--border-color) disabled:opacity-30 disabled:pointer-events-none text-[var(--color-text)] text-[10px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer font-bold"
+                className="py-3 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border border-slate-700 cursor-pointer"
               >
                 {generating ? (
-                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                  <>
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                    <span>Saving...</span>
+                  </>
                 ) : (
-                  <Download className="w-4 h-4" />
+                  <>
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Download PDF</span>
+                  </>
                 )}
-                <span>Download PDF</span>
               </button>
             </div>
-            <p className="text-[9px] text-center text-slate-500 font-bold tracking-wide mt-2.5">
-              Print Dialog utilizes local margins. Ensure "Headers and Footers" is unchecked.
-            </p>
           </div>
         </div>
 
@@ -404,9 +494,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             <div className="bg-[var(--bg-input)] border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
               <button 
                 onClick={() => setSettings(prev => ({ ...prev, zoom: Math.max(50, prev.zoom - 25) }))}
-                className="p-1 text-slate-455 hover:text-white hover:bg-white/5 rounded transition-colors cursor-pointer"
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Zoom layout preview out"
-                aria-label="Zoom layout preview out"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
@@ -415,18 +504,16 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               </span>
               <button 
                 onClick={() => setSettings(prev => ({ ...prev, zoom: Math.min(150, prev.zoom + 25) }))}
-                className="p-1 text-slate-455 hover:text-white hover:bg-white/5 rounded transition-colors cursor-pointer"
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Zoom layout preview in"
-                aria-label="Zoom layout preview in"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
-              <div className="w-px h-4 bg-white/5" />
+              <div className="w-px h-4 bg-white/10" />
               <button 
                 onClick={() => setSettings(prev => ({ ...prev, zoom: 100 }))}
-                className="p-1 text-slate-455 hover:text-white hover:bg-white/5 rounded transition-colors cursor-pointer"
+                className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Reset zoom actual scale"
-                aria-label="Reset zoom actual scale"
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
@@ -436,17 +523,17 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           {/* Live Page Layout Sheet */}
           <div className="flex-1 flex flex-col h-full bg-[var(--bg-card)] rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs">
             <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
-              <div>
+              <div className="text-left">
                 <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">Live Layout Sheets</h4>
-                <span className="text-[10px] text-slate-700 dark:text-slate-400 font-bold block mt-0.5">
+                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
                   Format: {LETTER_PAPER.name} • {template.labelsPerPage} Labels/Sheet
                 </span>
               </div>
               <div className="text-right shrink-0">
-                <span className="text-xs font-mono font-bold text-blue-400 block">
+                <span className="text-xs font-mono font-bold text-blue-500 block">
                   {expandedItemsList.length} Total Stickers
                 </span>
-                <span className="text-[10px] text-slate-700 dark:text-slate-400 font-bold block mt-0.5">
+                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
                   Requires {totalPagesRequired} {totalPagesRequired === 1 ? 'Page' : 'Pages'}
                 </span>
               </div>
@@ -476,7 +563,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                     return (
                       <div 
                         key={`page-${pageIdx}`}
-                        className="print-page-sheet bg-white shadow-2xl relative border border-slate-200 overflow-hidden mx-auto shrink-0 mb-6 origin-top animate-fade-in"
+                        className="print-page-sheet bg-white shadow-2xl relative border border-slate-300 overflow-hidden mx-auto shrink-0 mb-6 origin-top animate-fade-in"
                         style={{
                           width: `${LETTER_PAPER.width}mm`,
                           height: `${LETTER_PAPER.height}mm`,

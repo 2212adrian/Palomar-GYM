@@ -1,7 +1,5 @@
-//src/pages/sales/utils/barcodePdfHelper.ts
 import JsBarcode from 'jsbarcode';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { saveAs } from 'file-saver';
 
 export type LabelTemplateType = 
   | '32_labels' 
@@ -52,7 +50,7 @@ export interface PrintableItem {
 export const MM_TO_POINTS = 2.83465;
 
 // Hardcoded standard Letter paper dimension coordinates: 8.5" x 11" (215.9mm x 279.4mm)
-export const LETTER_PAPER = { width: 220.9, height: 279.4, name: 'Letter (8.5" x 11")' };
+export const LETTER_PAPER = { width: 215.9, height: 279.4, name: 'Letter (8.5" x 11")' };
 
 export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
   '32_labels': {
@@ -161,18 +159,6 @@ export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
   },
 };
 
-// Decodes dataURI base64 formats safely into clean binary arrays to prevent document compile issues
-export const base64ToUint8Array = (base64Str: string): Uint8Array => {
-  const base64Data = base64Str.includes(',') ? base64Str.split(',')[1] : base64Str;
-  const binaryString = window.atob(base64Data.trim());
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-};
-
 export const generateBarcodeDataUrl = (value: string, options: { width: number; height: number; margin: number }): string => {
   const canvas = document.createElement('canvas');
   try {
@@ -192,10 +178,11 @@ export const generateBarcodeDataUrl = (value: string, options: { width: number; 
   }
 };
 
+// Generates high-resolution PDF document bytes
 export const generatePdfFile = async (
   items: PrintableItem[],
   settings: BarcodeSettingsState
-): Promise<void> => {
+): Promise<Uint8Array> => {
   const doc = await PDFDocument.create();
   const template = LABEL_TEMPLATES[settings.templateId];
 
@@ -210,7 +197,9 @@ export const generatePdfFile = async (
     }
   });
 
-  if (labelsToPrint.length === 0) return;
+  if (labelsToPrint.length === 0) {
+    return new Uint8Array();
+  }
 
   const labelsPerPage = template.labelsPerPage;
   const totalPages = Math.ceil(labelsToPrint.length / labelsPerPage);
@@ -350,9 +339,7 @@ export const generatePdfFile = async (
   }
 
   const pdfBytes = await doc.save();
-  const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
-  const datestamp = new Date().toISOString().split('T')[0];
-  saveAs(blob, `barcodes_${datestamp}.pdf`);
+  return pdfBytes;
 };
 
 export const triggerBrowserPrint = (printableElementId: string): void => {
@@ -360,12 +347,14 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
   if (!content) return;
 
   const printFrame = document.createElement('iframe');
-  printFrame.style.position = 'fixed';
-  printFrame.style.right = '0';
-  printFrame.style.bottom = '0';
-  printFrame.style.width = '0';
-  printFrame.style.height = '0';
-  printFrame.style.border = '0';
+  Object.assign(printFrame.style, {
+    position: 'fixed',
+    right: '0',
+    bottom: '0',
+    width: '0',
+    height: '0',
+    border: '0'
+  });
 
   document.body.appendChild(printFrame);
 
@@ -378,6 +367,7 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
   });
 
   doc.write(`
+    <!DOCTYPE html>
     <html>
       <head>
         <title>Barcode Print Sheets</title>
@@ -397,7 +387,6 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
               margin: 0 !important;
               background: #ffffff !important;
             }
-            /* Exclude last page from triggering trailing blank sheets */
             .print-page-sheet:not(:last-child) {
               page-break-after: always !important;
             }
@@ -412,9 +401,15 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
         <script>
           window.onload = function() {
             setTimeout(function() {
-              window.print();
+              try {
+                window.print();
+              } catch(e) {
+                console.warn('Print window error:', e);
+              }
               setTimeout(function() {
-                window.frameElement.remove();
+                if (window.frameElement) {
+                  window.frameElement.remove();
+                }
               }, 500);
             }, 500);
           };

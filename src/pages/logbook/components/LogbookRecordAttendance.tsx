@@ -490,6 +490,9 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
+   const gcashFeeVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? derivedBilling.convenienceFee : 0;
+    const gcashRefVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber.trim() : undefined;
+
     const checkInRecord = {
       id: `CHK-${Math.floor(100000 + Math.random() * 900000)}`,
       timestamp: new Date().toISOString(),
@@ -499,10 +502,38 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       categoryOrPlan: derivedBilling.title,
       paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Free',
       amountPaid: derivedBilling.totalDue,
+      basePrice: derivedBilling.subtotal,
+      gcashFee: gcashFeeVal,
+      cardFee: 0,
+      gcashRefNo: gcashRefVal,
+      referenceNumber: gcashRefVal,
+      paymentRef: gcashRefVal,
       paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Free',
-      referenceNumber: paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber : undefined,
       status: selectedClient.isWalkIn ? 'Active' : selectedClient.status
     };
+
+    try {
+      const attendanceList = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+      const newAttendance: AttendanceRecord = {
+        id: checkInRecord.id,
+        member_id: selectedClient.isWalkIn ? undefined : selectedClient.memberId || undefined,
+        customer_name: selectedClient.name,
+        customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+        check_in_time: checkInRecord.timestamp,
+        plan_name: derivedBilling.title,
+        entry_fee: derivedBilling.totalDue,
+        base_price: derivedBilling.subtotal,
+        gcash_fee: gcashFeeVal,
+        card_fee: 0,
+        gcash_ref_no: gcashRefVal,
+        payment_method: (derivedBilling.totalDue > 0 ? paymentMethod : 'Cash') as any,
+        receipt_number: checkInRecord.id,
+        staff_name: user?.email || 'Counter Staff'
+      };
+      prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendanceList]);
+    } catch (e) {
+      console.warn('Failed to persist attendance in storage:', e);
+    }
 
     // Save attendance record to unified prototypeStorage database
     try {
@@ -515,8 +546,12 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         check_in_time: checkInRecord.timestamp,
         plan_name: derivedBilling.title,
         entry_fee: derivedBilling.totalDue,
+        base_price: derivedBilling.subtotal,
+        gcash_fee: gcashFeeVal,
+        card_fee: 0,
+        gcash_ref_no: gcashRefVal,
         payment_method: (derivedBilling.totalDue > 0 ? paymentMethod : 'Cash') as any,
-        receipt_number: paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber : undefined,
+        receipt_number: checkInRecord.id,
         staff_name: user?.email || 'Counter Staff'
       };
       prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendanceList]);
@@ -633,7 +668,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 </button>
               </div>
 
-              {/* PERFECT SQUARE LIVE CAMERA VIEWFINDER */}
+              {/* LIVE CAMERA VIEWFINDER */}
               {showLiveScanner && (
                 <div className="mt-2 p-3 bg-zinc-950 border-2 border-blue-500/40 rounded-2xl relative text-center animate-fade-in z-30 shadow-2xl space-y-2">
                   <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
@@ -676,7 +711,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 </div>
               )}
 
-              {/* CLEAN CENTERED GUIDANCE CARD WHEN NO SEARCH INPUT IS ENTERED YET */}
+              {/* GUIDANCE CARD WHEN NO SEARCH INPUT IS ENTERED YET */}
               {!memberSearch.trim() && !showLiveScanner && (
                 <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-2xl text-center space-y-1.5 animate-fade-in">
                   <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
@@ -721,7 +756,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                               }`}
                             >
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                {/* CLICKABLE SQUARE MEMBER PHOTO */}
                                 <button
                                   type="button"
                                   onClick={() => setPhotoModal({ name: m.name, memberId: m.memberId, url: m.avatarUrl || null })}
@@ -779,7 +813,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     )}
                   </div>
 
-                  {/* PROCESS AS WALK-IN (POSITIONED BELOW MEMBER LIST & VALIDATED FOR 3+ CHARS) */}
+                  {/* PROCESS AS WALK-IN */}
                   <div className="pt-2 border-t border-(--border-color)">
                     <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -813,7 +847,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             </div>
           )}
 
-          {/* REDESIGNED CENTERED DUPLICATE CHECK-IN ALERT */}
+          {/* DUPLICATE CHECK-IN ALERT */}
           {duplicateLog && (
             <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
               <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
@@ -841,12 +875,11 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             </div>
           )}
 
-          {/* VERIFIED CUSTOMER CARD WITH EXCLUSIVE CLICKABLE MEMBER PHOTO */}
+          {/* VERIFIED CUSTOMER CARD */}
           {selectedClient && (
             <div className="p-3 bg-slate-100/90 dark:bg-zinc-900/90 border-2 border-(--border-color) rounded-xl flex items-center justify-between gap-3 animate-fade-in">
               <div className="flex items-center gap-3 min-w-0">
                 
-                {/* SQUARE PHOTO AVATAR — CLICKABLE ONLY FOR REGISTERED MEMBERS */}
                 {!selectedClient.isWalkIn ? (
                   <button
                     type="button"
@@ -900,7 +933,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             </div>
           )}
 
-          {/* PASS SELECTION, BILLING & CHECKOUT (LOCKED & TRANSPARENT UNTIL PROCEED ANYWAY IS CHECKED IF DUPLICATE) */}
+          {/* PASS SELECTION, BILLING & CHECKOUT */}
           {selectedClient && (
             <div className={`space-y-3 transition-all duration-300 ${
               isLockedByDuplicate 
@@ -908,16 +941,14 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 : 'opacity-100'
             }`}>
 
-              {/* CHOOSE TODAY'S ENTRY PASS (DYNAMICALLY CONDITIONAL) */}
+              {/* CHOOSE TODAY'S ENTRY PASS */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
                   SELECT ENTRY PASS
                 </label>
 
                 {selectedClient.isWalkIn ? (
-                  /* WALK-IN PASSES (REGULAR & STUDENT) ONLY */
                   <div className="grid grid-cols-2 gap-2">
-                    {/* REGULAR PASS */}
                     <button
                       type="button"
                       onClick={() => setSelectedEntry('walkin_regular')}
@@ -943,7 +974,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                       </div>
                     </button>
 
-                    {/* STUDENT PASS */}
                     <button
                       type="button"
                       onClick={() => setSelectedEntry('walkin_student')}
@@ -970,7 +1000,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     </button>
                   </div>
                 ) : (
-                  /* REGISTERED MEMBER PLAN ENTRY ONLY */
                   (() => {
                     const isInactive = selectedClient.status === 'Expired' || selectedClient.status === 'Suspended';
                     const isYearly = selectedClient.membership?.toLowerCase().includes('year');
@@ -1010,7 +1039,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 )}
               </div>
 
-              {/* BILLING & PAYMENT SUMMARY WITH EMPHASIZED TOTAL COST */}
+              {/* BILLING & PAYMENT SUMMARY */}
               {selectedEntry && (
                 <div className="p-3.5 bg-slate-50 dark:bg-zinc-900/50 border border-(--border-color) rounded-2xl space-y-3 shadow-xs text-xs">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 block">
@@ -1103,7 +1132,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     )}
                   </div>
 
-                  {/* HIGH-IMPACT PROMINENT TOTAL COST BANNER */}
+                  {/* TOTAL COST BANNER */}
                   <div className="p-3 bg-slate-900 dark:bg-black border-2 border-blue-600 dark:border-blue-500 rounded-2xl space-y-0.5 text-center shadow-xl">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 block">
                       TOTAL AMOUNT TO PAY
