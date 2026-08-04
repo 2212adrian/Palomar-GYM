@@ -1,6 +1,6 @@
 // src/components/layouts/Sidebar.tsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Menu, X, ChevronDown, LogOut, LayoutDashboard, 
   Users, ShoppingBag, ClipboardList, Settings, Loader2
@@ -14,9 +14,8 @@ import pkg from '../../../package.json';
 
 // Texture imports for background accent layers
 import axiomTexture from '../../assets/textures/hexagons.svg';
-import TwillTexture from '../../assets/textures/hexagons.svg';
 
-const APP_VERSION = pkg.version || '0.11.0';
+const APP_VERSION = pkg.version || '0.15.0';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -31,7 +30,7 @@ interface ChildItem {
   path: string;
   roles?: ('admin' | 'staff')[];
   badge?: string;
-  description?: string; // Tier 3: Metadata / feature explanation
+  description?: string;
 }
 
 interface MenuItem {
@@ -41,38 +40,40 @@ interface MenuItem {
   children?: ChildItem[];
 }
 
-// Sub-Component to dynamically resolve and render private avatar paths using signed URLs
-const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: string; isMini?: boolean }> = ({ path, fallbackChar, isMini }) => {
+// Memoized Avatar Sub-Component
+const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: string; isMini?: boolean }> = memo(({ path, fallbackChar, isMini }) => {
   const [srcUrl, setSrcUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchSignedUrl = async () => {
       if (!path) {
-        setSrcUrl(null);
+        if (isMounted) setSrcUrl(null);
         return;
       }
       if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:')) {
-        setSrcUrl(path);
+        if (isMounted) setSrcUrl(path);
         return;
       }
       const cleanPath = path.startsWith('/') ? path.slice(1) : path;
       try {
         const { data, error } = await supabase.storage
           .from('avatars')
-          .createSignedUrl(cleanPath, 86400); // 24-hour token expiry
+          .createSignedUrl(cleanPath, 86400);
 
         if (error || !data?.signedUrl) {
           const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-          setSrcUrl(pubData?.publicUrl || null);
+          if (isMounted) setSrcUrl(pubData?.publicUrl || null);
         } else {
-          setSrcUrl(data.signedUrl);
+          if (isMounted) setSrcUrl(data.signedUrl);
         }
       } catch {
         const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
-        setSrcUrl(pubData?.publicUrl || null);
+        if (isMounted) setSrcUrl(pubData?.publicUrl || null);
       }
     };
     fetchSignedUrl();
+    return () => { isMounted = false; };
   }, [path]);
 
   if (srcUrl) {
@@ -80,11 +81,13 @@ const SidebarAvatar: React.FC<{ path: string | null | undefined; fallbackChar: s
   }
 
   return (
-    <div className={`w-full h-full rounded-full bg-[#1b365d] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading relative z-10 ${isMini ? 'text-xs font-black' : 'text-sm'}`}>
+    <div className={`w-full h-full rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading relative z-10 ${isMini ? 'text-[10px] font-black' : 'text-sm font-bold'}`}>
       {fallbackChar}
     </div>
   );
-};
+});
+
+SidebarAvatar.displayName = 'SidebarAvatar';
 
 export const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
@@ -94,16 +97,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, profile } = useAuthStore() as any; 
-  const [activeHeaderTab, setActiveHeaderTab] = useState<'profile' | 'goal'>('profile');
 
-  // Single-expand Accordion State: Only allows one dropdown to be active
+  // Accordion Expand States
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
-
-  // Dedicated Mobile Single-expand State
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(null);
 
-  // Inline Confirmation States and Ref Timers
+  // Logout Inline Confirmation States
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] = useState<boolean>(false);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
@@ -111,14 +112,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Dynamic Navigation Menu structure with active-route dynamic icon switching
+  // Dynamic Settings Active State Check
+  const isSettingsActive = useMemo(() => {
+    const currentPath = location.pathname.toLowerCase();
+    return currentPath.startsWith('/settings') || currentPath.startsWith('/system/account');
+  }, [location.pathname]);
+
+  // Dynamic Navigation Menu Structure
   const navigationMenu: MenuItem[] = useMemo(() => {
     const isMemberSection = location.pathname.startsWith('/members');
 
     return [
       {
-        name: 'Dashboard',
-        icon: <LayoutDashboard className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        name: 'DASHBOARD',
+        icon: <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin'],
         children: [
           { 
@@ -135,8 +142,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ]
       },
       {
-        name: 'Logbook & Plans',
-        icon: isMemberSection ? <Users className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" /> : <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        name: 'LOGBOOK & PLANS',
+        icon: isMemberSection ? <Users className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" /> : <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
         children: [
           { 
@@ -148,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             name: 'Member List', 
             path: '/members/list', 
             description: 'Accounts & profiles',
-            roles: ['admin'] // 🔒 HIDDEN FROM STAFF
+            roles: ['admin']
           },
           { 
             name: 'Membership Plans', 
@@ -158,8 +165,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ]
       },
       {
-        name: 'Sales',
-        icon: <ShoppingBag className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        name: 'SALES',
+        icon: <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
         children: [
           { 
@@ -176,8 +183,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ]
       },
       {
-        name: 'Reports',
-        icon: <ClipboardList className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />,
+        name: 'REPORTS',
+        icon: <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
         children: [
           { 
@@ -195,9 +202,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ]
       }
     ];
-  }, [profile?.role, location.pathname]);
+  }, [location.pathname]);
 
-  // Dynamic filter structure reflecting nested child element access
+  // Role Filtering
   const allowedMenu = useMemo(() => {
     return navigationMenu
       .filter(item => !item.roles || (profile && item.roles.includes(profile.role)))
@@ -213,19 +220,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
       .filter(item => !item.children || item.children.length > 0);
   }, [navigationMenu, profile]);
 
-  // Automatically expand active accordion menu matching current location route
+  // Helper for active child path matching
+  const isPathActive = (childPath: string) => {
+    const current = location.pathname.toLowerCase().replace(/\/$/, '');
+    const target = childPath.toLowerCase().replace(/\/$/, '');
+    return current === target;
+  };
+
+  // Auto-expand accordion matching active route, or collapse if route is outside menu (e.g. /settings)
   useEffect(() => {
     const activeParent = allowedMenu.find(item => 
-      item.children?.some(child => location.pathname === child.path)
+      item.children?.some(child => isPathActive(child.path))
     );
     if (activeParent) {
       setExpandedMenu(activeParent.name);
       setMobileExpandedMenu(activeParent.name);
+    } else {
+      setExpandedMenu(null);
+      setMobileExpandedMenu(null);
     }
   }, [location.pathname, allowedMenu]);
 
-  const toggleSubmenu = (menuName: string) => {
-    setExpandedMenu(prev => (prev === menuName ? null : menuName));
+  // Parent menu click handler
+  const handleParentMenuClick = (item: MenuItem, isMobile = false) => {
+    const visibleChildren = item.children || [];
+    const activeChild = visibleChildren.find(child => isPathActive(child.path));
+
+    // When collapsed in desktop mini rail: DO NOT EXPAND SIDEBAR! Just navigate!
+    if (!isMobile && collapsed) {
+      if (activeChild) return; // already on this subpage
+      if (visibleChildren[0]?.path) {
+        navigate(visibleChildren[0].path);
+      }
+      return;
+    }
+
+    const currentExpanded = isMobile ? mobileExpandedMenu : expandedMenu;
+    const setExpanded = isMobile ? setMobileExpandedMenu : setExpandedMenu;
+
+    if (currentExpanded === item.name) {
+      setExpanded(null);
+    } else {
+      setExpanded(item.name);
+      if (!activeChild && visibleChildren[0]?.path) {
+        navigate(visibleChildren[0].path);
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -263,14 +303,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     setShowLogoutConfirm(true);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-    logoutTimerRef.current = setTimeout(() => {
-      setShowLogoutConfirm(false);
-    }, 5000);
+    logoutTimerRef.current = setTimeout(() => setShowLogoutConfirm(false), 5000);
   };
 
-  const cancelDesktopConfirm = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const cancelDesktopConfirm = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (isLoggingOut) return;
     setShowLogoutConfirm(false);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
@@ -283,9 +323,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     setShowMobileLogoutConfirm(true);
     if (mobileLogoutTimerRef.current) clearTimeout(mobileLogoutTimerRef.current);
-    mobileLogoutTimerRef.current = setTimeout(() => {
-      setShowMobileLogoutConfirm(false);
-    }, 5000);
+    mobileLogoutTimerRef.current = setTimeout(() => setShowMobileLogoutConfirm(false), 5000);
   };
 
   const cancelMobileConfirm = (e: React.MouseEvent) => {
@@ -303,541 +341,197 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
-  const fallbackCharacter = profile?.username?.[0]?.toUpperCase() || 'U';
+  const fallbackCharacter = profile?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'W';
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes scanline {
-          0% { transform: translateY(-100%); }
-          100% { transform: translateY(100%); }
-        }
-        .tech-scanline::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(to bottom, transparent 50%, rgba(191, 2, 2, 0.15) 50%);
-          background-size: 100% 4px;
-          animation: scanline 6s linear infinite;
-          pointer-events: none;
-        }
-      `}} />
-
-     {/* ─── DESKTOP SIDEBAR ─── */}
+      {/* ─── DESKTOP SIDEBAR ─── */}
       <aside 
-        className="hidden lg:flex flex-col border-r border-slate-200 dark:border-white/5 bg-white dark:bg-(--bg-card) h-full relative z-10 select-none shrink-0 animate-fade-in"
-        style={{
-          width: collapsed ? '5rem' : '18rem',
-          transition: 'width 300ms cubic-bezier(0.77, 0, 0.175, 1)'
-        }}
+        className="hidden lg:flex flex-col border-r border-slate-200/80 dark:border-white/5 bg-[#f0f4f8] dark:bg-[#0c0e12] h-full relative z-20 select-none shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.2,0,0,1)] transform-gpu will-change-[width]"
+        style={{ width: collapsed ? '5.25rem' : '20rem' }}
       >
+        {/* Subsurface Texture */}
         <div 
-          className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" 
+          className="absolute inset-0 opacity-[0.02] dark:opacity-[0.03] pointer-events-none rounded-r-2xl overflow-hidden" 
           style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
         />
 
         {/* ─── DESKTOP HEADER (EXPANDED STATE) ─── */}
-        <div className={`border-b border-slate-200 dark:border-white/5 space-y-4 transition-all duration-300 overflow-hidden relative z-10 ${
-          collapsed ? 'max-h-0 opacity-0 p-0 border-none pointer-events-none' : 'max-h-56 p-4 opacity-100'
+        <div className={`transition-all duration-300 ease-in-out relative z-10 ${
+          collapsed ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden' : 'max-h-[380px] opacity-100'
         }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <img src="/favicon.svg" alt="Icon" className="w-6 h-6" />
-              <div className="flex flex-col">
-                <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
-                <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider">v{APP_VERSION}</span>
+          <div className="relative bg-white/80 dark:bg-[var(--bg-card)]/80 border-b border-slate-200/80 dark:border-white/10 p-4 shadow-xs backdrop-blur-md overflow-hidden">
+            
+            {/* SVG Gradient Wave (Responsive: Top-Right on Mobile, Top-Left on PC) */}
+<div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
+  <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
+    <path 
+      d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
+      className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
+    />
+  </svg>
+</div>
+            <div className="relative z-10 space-y-3.5">
+              {/* Gym Branding Row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
+                    <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <div className="flex flex-col whitespace-nowrap overflow-hidden">
+                    <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
+                      WOLF PALOMAR GYM
+                    </span>
+                    <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                      v{APP_VERSION}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Desktop Collapse Button */}
+                <button 
+                  onClick={() => setCollapsed(true)}
+                  aria-label="Collapse Sidebar"
+                  title="Collapse Sidebar"
+                  className="w-7 h-7 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-600 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
               </div>
-            </div>
-            <button
-              onClick={() => setCollapsed(true)}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-900 border border-transparent hover:border-slate-200/50 dark:hover:border-white/5 cursor-pointer text-slate-500 dark:text-slate-400 transition-all duration-350"
-              title="Collapse Sidebar"
-              aria-label="Collapse Sidebar"
-            >
-              <X className="w-4.5 h-4.5" />
-            </button>
-          </div>
 
-          <div className="flex border border-slate-200 dark:border-white/10 rounded-lg overflow-hidden bg-slate-50 dark:bg-neutral-900/50 p-1 font-heading text-[10px] tracking-wider shadow-inner">
-            <button 
-              onClick={() => setActiveHeaderTab('profile')}
-              className={`flex-1 py-1.5 rounded-md cursor-pointer transition-all duration-300 font-bold ${
-                activeHeaderTab === 'profile' 
-                  ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-md' 
-                  : 'text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-              }`}
-            >
-              PROFILE
-            </button>
-            <button 
-              onClick={() => setActiveHeaderTab('goal')}
-              className={`flex-1 py-1.5 rounded-md cursor-pointer transition-all duration-300 font-bold ${
-                activeHeaderTab === 'goal' 
-                  ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-md' 
-                  : 'text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-              }`}
-            >
-              GOAL
-            </button>
-          </div>
+              {/* Gradient Line Separator */}
+              <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
 
-          <div className="relative h-18 overflow-hidden">
-            {activeHeaderTab === 'profile' ? (
-              <div className="flex items-center gap-3 animate-slide-up h-full">
-                <div className="w-13 h-13 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 shadow-lg relative bg-slate-100 dark:bg-neutral-900 overflow-hidden">
-                  <div 
-                    className="absolute inset-0 opacity-[0.15] mix-blend-overlay" 
-                    style={{ backgroundImage: `url(${TwillTexture})` }}
-                  />
+              {/* User Profile Info */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
                   <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
                 </div>
-                <div className="overflow-hidden text-left">
-                  <h4 className="font-heading text-xs tracking-wider uppercase truncate text-slate-800 dark:text-slate-200">{profile?.username || 'User'}</h4>
-                  <p className="text-[9px] font-heading text-[#1b365d] dark:text-[#bf0202] uppercase tracking-widest flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                    {profile?.role || 'Staff'}
+
+                <div className="flex-1 min-w-0 text-left">
+                  <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
+                    {profile?.username || 'Wolf Palomar'}
+                  </h4>
+
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      {profile?.role || 'ADMIN'}
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
+                    {user?.email || 'wolf.palomar@gmail.com'}
                   </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">{user?.email}</p>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2.5 animate-slide-up text-[10px] font-bold text-slate-500 dark:text-slate-400 h-full flex flex-col justify-center text-left">
-                <div className="flex justify-between font-heading tracking-wider">
-                  <span>REVENUE GOAL:</span>
-                  <span className="text-slate-900 dark:text-white font-mono font-black">₱5,000 / ₱8,000</span>
-                </div>
-                <div className="w-full h-2 bg-slate-200 dark:bg-neutral-800 rounded-full overflow-hidden p-px shadow-inner relative">
-                  <div 
-                    className="h-full bg-linear-to-r from-blue-500 to-[#1b365d] dark:from-red-600 dark:to-[#bf0202] rounded-full shadow-lg transition-all duration-500" 
-                    style={{ width: '62%' }}
-                  />
-                </div>
-                <div className="flex justify-between text-[9px] tracking-widest font-heading">
-                  <span className="text-emerald-500 font-extrabold">62% ACHIEVED</span>
-                  <span>₱3,000 REMAINING</span>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
         {/* ─── DESKTOP HEADER (COLLAPSED MINIRAIL) ─── */}
-        <div className={`flex flex-col items-center gap-4 border-b border-slate-200 dark:border-white/5 relative z-10 transition-all duration-300 ${
+        <div className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 transition-all duration-300 ease-in-out ${
           collapsed ? 'p-4 max-h-36 opacity-100' : 'max-h-0 opacity-0 p-0 border-none pointer-events-none overflow-hidden'
         }`}>
           <button
             onClick={() => setCollapsed(false)}
-            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-900 border border-transparent hover:border-slate-200/50 dark:hover:border-white/5 cursor-pointer text-slate-500 dark:text-slate-400 transition-all duration-350 shadow-sm"
+            className="p-2.5 rounded-2xl bg-white dark:bg-[#161920] hover:bg-slate-100 dark:hover:bg-[#1e232d] border border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 transition-all shadow-xs cursor-pointer"
             title="Expand Sidebar"
             aria-label="Expand Sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
           
-          <div className="w-10 h-10 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 shadow-lg relative bg-slate-100 dark:bg-neutral-900 overflow-hidden">
-            <div 
-              className="absolute inset-0 opacity-[0.15] mix-blend-overlay transform-gpu" 
-              style={{ backgroundImage: `url(${TwillTexture})` }}
-            />
+          <div className="w-10 h-10 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 shadow-xs relative bg-slate-100 dark:bg-neutral-900 overflow-hidden">
             <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} isMini={true} />
           </div>
         </div>
 
-        {/* ─── NAV NAVIGATION BUTTONS ─── */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-3 relative z-10 font-body">
+        {/* ─── ACCORDION NAVIGATION BUTTONS ─── */}
+        <nav className="flex-1 overflow-y-auto p-4 space-y-3.5 relative z-10 font-body">
           {allowedMenu.map((item, index) => {
             const visibleChildren = item.children || [];
-            const hasMultipleChildren = visibleChildren.length > 1;
-            const singleChild = visibleChildren[0];
-            const isChildActive = visibleChildren.some(child => location.pathname === child.path);
+            const isChildActive = visibleChildren.some(child => isPathActive(child.path));
             const isExpanded = !collapsed && expandedMenu === item.name;
 
-            if (!hasMultipleChildren && singleChild) {
-              const isActive = location.pathname === singleChild.path;
-              return (
-                <div key={index} className="space-y-1.5">
-                  <div
-                    onClick={() => {
-                      if (collapsed) {
-                        setCollapsed(false);
-                      }
-                    }}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border cursor-pointer ${
-                      isActive 
-                        ? 'bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-white/10 shadow-md' 
-                        : 'border-transparent hover:bg-slate-50 dark:hover:bg-neutral-900/30'
-                    } ${collapsed ? 'justify-center' : ''}`}
-                  >
-                    <span className={`absolute left-0 top-1/4 h-1/2 w-1 rounded-r-md transition-all duration-300 ${
-                      isActive 
-                        ? 'bg-[#1b365d] dark:bg-[#bf0202] scale-y-100 opacity-100 shadow-[0_0_8px_rgba(191,2,2,0.6)]' 
-                        : 'bg-slate-300 dark:bg-neutral-700 scale-y-0 opacity-0'
-                    }`} />
-
-                    <Link
-                      to={singleChild.path}
-                      className="flex items-center gap-3 flex-1 select-none cursor-pointer group"
-                      title={collapsed ? item.name : undefined}
-                    >
-                      <span className={`transition-all duration-300 ${
-                        isActive 
-                          ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                          : 'text-slate-400 dark:text-slate-505 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                      }`}>
-                        {item.icon}
-                      </span>
-                      <span className={`text-[11px] font-heading tracking-wider uppercase transition-all duration-300 origin-left overflow-hidden whitespace-nowrap ${
-                        collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'
-                      } ${isActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-500 dark:text-slate-400 font-bold group-hover:text-slate-800 dark:group-hover:text-slate-200'}`}>
-                        {item.name}
-                      </span>
-                    </Link>
-                  </div>
-                </div>
-              );
-            }
-
             return (
-              <div key={index} className="space-y-1.5">
-                <div
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300 relative border cursor-pointer ${
-                    isChildActive 
-                      ? 'bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-white/10 shadow-md' 
-                      : 'border-transparent hover:bg-slate-50 dark:hover:bg-neutral-900/30'
-                  } ${collapsed ? 'justify-center' : ''}`}
+              <div key={index} className="space-y-2">
+                {/* Accordion / Rail Trigger Button */}
+                <button
+                  onClick={() => handleParentMenuClick(item, false)}
+                  className={`flex items-center font-heading text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
+                    collapsed 
+                      ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0' 
+                      : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
+                  } ${
+                    (isExpanded || isChildActive)
+                      ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-md border-transparent font-black' 
+                      : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
+                  }`}
+                  title={collapsed ? item.name : undefined}
                 >
-                  <span className={`absolute left-0 top-1/4 h-1/2 w-1 rounded-r-md transition-all duration-300 ${
-                    isChildActive 
-                      ? 'bg-[#1b365d] dark:bg-[#bf0202] scale-y-100 opacity-100 shadow-[0_0_8px_rgba(191,2,2,0.6)]' 
-                      : 'bg-slate-300 dark:bg-neutral-700 scale-y-0 opacity-0'
-                  }`} />
-
-                  {/* Main parent link — Navigates to 1st child item path & expands sidebar/dropdown */}
-                  <Link
-                    to={visibleChildren[0]?.path || '#'}
-                    onClick={() => {
-                      if (collapsed) {
-                        setCollapsed(false);
-                      }
-                      setExpandedMenu(item.name);
-                    }}
-                    className="flex items-center gap-3 flex-1 select-none cursor-pointer group"
-                    title={collapsed ? item.name : undefined}
-                  >
-                    <span className={`transition-all duration-300 ${
-                      isChildActive 
-                        ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                        : 'text-slate-400 dark:text-slate-505 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                    }`}>
+                  <div className="flex items-center gap-3 shrink-0 min-w-0">
+                    <span className={(isExpanded || isChildActive) ? 'text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}>
                       {item.icon}
                     </span>
-                    <span className={`text-[11px] font-heading tracking-wider uppercase transition-all duration-300 origin-left overflow-hidden whitespace-nowrap ${
-                      collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'
-                    } ${isChildActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-500 dark:text-slate-400 font-bold group-hover:text-slate-800 dark:group-hover:text-slate-200'}`}>
-                      {item.name}
-                    </span>
-                  </Link>
-
-                  {/* Dedicated Dropdown Arrow Toggle */}
-{!collapsed && (
-  <button
-    onClick={(e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleSubmenu(item.name);
-    }}
-    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer rounded-md hover:bg-slate-200/50 dark:hover:bg-neutral-800"
-    aria-label={`Toggle ${item.name} submenu`}
-  >
-    <ChevronDown 
-      className={`w-4 h-4 transition-transform duration-300 ${
-        !isExpanded ? 'rotate-180' : 'text-[#1b365d] dark:text-[#bf0202]'
-      }`} 
-    />
-  </button>
-)}
-                </div>
-
-                {/* Submenu Children Items Container */}
-                {!collapsed && (
-                  <div 
-                    className={`pl-6 ml-5 border-l border-slate-200 dark:border-white/5 space-y-3 overflow-hidden transition-all duration-500 ease-in-out ${
-                      isExpanded ? 'max-h-96 opacity-100 py-1' : 'max-h-0 opacity-0 pointer-events-none'
-                    }`}
-                  >
-                    {visibleChildren.map((child, cIdx) => {
-                      const isActive = location.pathname === child.path;
-                      return (
-                        <Link
-                          key={cIdx}
-                          to={child.path}
-                          className="block relative group/item py-1.5 px-2 rounded-lg transition-all duration-200 hover:bg-slate-50 dark:hover:bg-neutral-900/30"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={`text-[10px] uppercase tracking-wider font-heading transition-colors duration-200 ${
-                              isActive 
-                                ? 'text-[#1b365d] dark:text-[#bf0202] font-black' 
-                                : 'text-slate-600 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-slate-200'
-                            }`}>
-                              {child.name}
-                            </span>
-                            {child.badge && (
-                              <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-[#bf0202] border border-red-500/20 rounded-md">
-                                {child.badge}
-                              </span>
-                            )}
-                          </div>
-                          {child.description && (
-                            <p className="text-[9px] text-slate-400 dark:text-slate-505 font-bold mt-0.5 leading-tight group-hover/item:text-slate-500 dark:group-hover/item:text-slate-400 transition-colors duration-200">
-                              {child.description}
-                            </p>
-                          )}
-                        </Link>
-                      );
-                    })}
+                    {!collapsed && (
+                      <span className="whitespace-nowrap font-bold truncate">
+                        {item.name}
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
 
-        {/* Sidebar Footer Controls */}
-        <div className={`border-t border-slate-200 dark:border-white/5 mt-auto relative z-10 bg-slate-50/30 dark:bg-neutral-950/20 transition-all duration-300 ${
-          collapsed ? 'p-3 space-y-3' : 'p-4 space-y-3'
-        }`}>
-          <Link
-            to="/settings"
-            className={`flex items-center justify-center rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5 text-slate-700 dark:text-slate-300 hover:opacity-90 transition-all cursor-pointer ${
-              collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
-            }`}
-            title={collapsed ? "System Settings" : undefined}
-          >
-            <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-            <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>SETTINGS</span>
-          </Link>
-
-          {showLogoutConfirm ? (
-            collapsed ? (
-              <div className="flex flex-col items-center justify-center rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-11 py-2 gap-2 font-heading text-[8px] font-black transition-all mx-auto">
-                <span className="text-[7px] tracking-tighter">{isLoggingOut ? 'WAIT...' : 'SURE?'}</span>
-                <div className="flex flex-col gap-1.5 w-full px-1">
-                  <button
-                    disabled={isLoggingOut}
-                    onClick={cancelDesktopConfirm}
-                    className="w-full py-1.5 rounded bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-black cursor-pointer text-[7px] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    NO
-                  </button>
-                  <button
-                    disabled={isLoggingOut}
-                    onClick={handleLogout}
-                    className="w-full py-1.5 rounded bg-red-600 hover:bg-red-700 text-white font-black cursor-pointer text-[7px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isLoggingOut ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'YES'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 w-full p-2.5 font-heading text-[10px] tracking-widest font-black transition-all">
-                <span className="text-[9px] mr-1 shrink-0">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
-                <div className="flex gap-2.5">
-                  <button
-                    disabled={isLoggingOut}
-                    onClick={cancelDesktopConfirm}
-                    className="px-4 py-2 rounded-lg bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    NO
-                  </button>
-                  <button
-                    disabled={isLoggingOut}
-                    onClick={handleLogout}
-                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
-                  </button>
-                </div>
-              </div>
-            )
-          ) : (
-            <button
-              onClick={triggerDesktopConfirm}
-              aria-label="Logout"
-              title={collapsed ? "Logout" : undefined}
-              className={`flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer ${
-                collapsed ? 'w-11 h-11 mx-auto' : 'w-full p-3 gap-2.5 font-heading text-[10px] tracking-widest font-black'
-              }`}
-            >
-              <LogOut className="w-4 h-4 shrink-0" />
-              <span className={`transition-all duration-300 origin-left ${collapsed ? 'w-0 opacity-0 scale-x-0 hidden' : 'w-auto opacity-100 scale-x-100 block'}`}>LOGOUT</span>
-            </button>
-          )}
-
-          {/* System Version Indicator */}
-          <div className="pt-1 text-center select-none">
-            <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500 tracking-widest uppercase font-bold opacity-80">
-              {collapsed ? `v${APP_VERSION}` : `SYSTEM VERSION v${APP_VERSION}`}
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      {/* ─── MOBILE DRAWER (RIGHT SIDE) ─── */}
-      <div className={`fixed inset-0 z-[300] lg:hidden ${mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-        <div 
-          onClick={() => setMobileOpen(false)}
-          className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
-        />
-        <aside 
-         className={`fixed top-0 right-0 bottom-0 w-80 max-w-full bg-white dark:bg-(--bg-card) border-l border-slate-200 dark:border-white/5 p-6 flex flex-col justify-between transition-transform duration-300 ${
-           mobileOpen ? 'translate-x-0' : 'translate-x-full'
-         }`}
-        >
-          <div 
-            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none transform-gpu" 
-            style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
-          />
-
-          <div className="flex flex-col h-full justify-between relative z-10">
-            <div className="space-y-6">
-              
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
-                <div className="flex flex-col">
-                  <span className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">WOLF PALOMAR GYM</span>
-                  <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider">v{APP_VERSION}</span>
-                </div>
-
-                <button 
-                  onClick={() => setMobileOpen(false)} 
-                  aria-label="Close Mobile Drawer"
-                  title="Close Drawer"
-                  className="text-slate-505 dark:text-slate-400 cursor-pointer p-1.5 rounded-lg bg-slate-100 dark:bg-neutral-900 border border-slate-200/50 dark:border-white/5"
-                >
-                  <X className="w-5 h-5" />
+                  {!collapsed && (
+                    <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                  )}
                 </button>
-              </div>
 
-              <div className="flex items-center gap-3 bg-slate-50/50 dark:bg-neutral-900/30 p-3 rounded-2xl border border-slate-200/50 dark:border-white/5 shadow-inner">
-                <div className="w-12 h-12 rounded-full border border-slate-200 dark:border-white/10 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-950 overflow-hidden">
-                  <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
-                </div>
-                <div className="overflow-hidden text-left">
-                  <h4 className="font-heading text-xs tracking-wider uppercase text-slate-900 dark:text-white truncate">{profile?.username || 'User'}</h4>
-                  <p className="text-[9px] font-heading text-[#1b365d] dark:text-[#bf0202] uppercase tracking-widest">{profile?.role || 'Staff'}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">{user?.email}</p>
-                </div>
-              </div>
-
-              <nav className="space-y-4 pt-2 overflow-y-auto max-h-[55vh] pr-1">
-                {allowedMenu.map((item, idx) => {
-                  const visibleChildren = item.children || [];
-                  const hasMultipleChildren = visibleChildren.length > 1;
-                  const singleChild = visibleChildren[0];
-                  const isChildActive = visibleChildren.some(child => location.pathname === child.path);
-                  const isMobileExpanded = mobileExpandedMenu === item.name;
-
-                  if (!hasMultipleChildren && singleChild) {
-                    const isActive = location.pathname === singleChild.path;
-                    return (
-                      <div key={idx} className="space-y-2 animate-fade-in">
-                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none">
-                          <Link
-                            to={singleChild.path}
-                            onClick={() => setMobileOpen(false)}
-                            className="flex items-center gap-2 hover:opacity-85"
-                          >
-                            <span className={`transition-all duration-300 ${
-                              isActive 
-                                ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                                : 'text-slate-500 dark:text-slate-400'
-                            }`}>
-                              {item.icon}
-                            </span>
-                            <span className={`font-heading text-[10px] tracking-widest uppercase transition-colors duration-300 ${
-                              isActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-400 dark:text-slate-350'
-                            }`}>
-                              {item.name}
-                            </span>
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={idx} className="space-y-2">
-                      <div 
-                        onClick={() => setMobileExpandedMenu(prev => prev === item.name ? null : item.name)}
-                        className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-1 select-none cursor-pointer"
-                      >
-                        <Link
-                          to={visibleChildren[0]?.path || '#'}
-                          onClick={() => {
-                            setMobileExpandedMenu(item.name);
-                            setMobileOpen(false);
-                          }}
-                          className="flex items-center gap-2 hover:opacity-85"
-                        >
-                          <span className={`transition-all duration-300 ${
-                            isChildActive 
-                              ? 'text-[#1b365d] dark:text-[#bf0202] drop-shadow-[0_0_6px_rgba(191,2,2,0.4)]' 
-                              : 'text-slate-505 dark:text-slate-400'
-                          }`}>
-                            {item.icon}
-                          </span>
-                          <span className={`font-heading text-[10px] tracking-widest uppercase transition-colors duration-300 ${
-                            isChildActive ? 'text-slate-900 dark:text-white font-black' : 'text-slate-400 dark:text-slate-300'
-                          }`}>
-                            {item.name}
-                          </span>
-                        </Link>
-
-                        <button
-  onClick={(e) => {
-    e.stopPropagation();
-    setMobileExpandedMenu(prev => prev === item.name ? null : item.name);
-  }}
-  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-  aria-label={`Toggle ${item.name} Sub-options`}
->
-  <ChevronDown 
-    className={`w-3.5 h-3.5 transition-transform duration-300 ${
-      !isMobileExpanded ? 'rotate-180' : 'text-[#1b365d] dark:text-[#bf0202]'
-    }`} 
-  />
-</button>
-                      </div>
-
-                      <div 
-                        className={`pl-3 space-y-3 overflow-hidden transition-all duration-300 ease-in-out ${
-                          isMobileExpanded ? 'max-h-64 opacity-100 py-1' : 'max-h-0 opacity-0 pointer-events-none'
-                        }`}
-                      >
+                {/* Submenu Grid Height Animation (Only visible when expanded) */}
+                {!collapsed && (
+                  <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                    isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                  }`}>
+                    <div className="overflow-hidden">
+                      <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
                         {visibleChildren.map((child, cIdx) => {
-                          const isActive = location.pathname === child.path;
+                          const isActive = isPathActive(child.path);
                           return (
                             <Link
                               key={cIdx}
                               to={child.path}
-                              onClick={() => setMobileOpen(false)}
-                              className="block group/mob"
+                              className={`block p-3 rounded-xl transition-all duration-200 border ${
+                                isActive 
+                                  ? 'bg-[#123c73]/15 dark:bg-red-500/20 border-[#123c73]/30 dark:border-red-500/50 shadow-xs' 
+                                  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+                              }`}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className={`text-[11px] font-heading tracking-wider uppercase ${
-                                  isActive 
-                                    ? 'text-[#1b365d] dark:text-[#bf0202] font-black' 
-                                    : 'text-slate-600 dark:text-slate-300 group-hover/mob:text-slate-900 group-hover/mob:text-white'
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
+                                    isActive 
+                                      ? 'bg-[#123c73] dark:bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-125' 
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                  }`} />
+                                  <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
+                                    isActive 
+                                      ? 'text-[#123c73] dark:text-red-400 font-black' 
+                                      : 'text-slate-700 dark:text-slate-300 font-bold'
                                   }`}>
-                                  {child.name}
-                                </span>
+                                    {child.name}
+                                  </span>
+                                </div>
+
                                 {child.badge && (
-                                  <span className="text-[7px] font-heading font-black tracking-widest px-1 py-0.5 bg-red-500/10 text-[#bf0202] dark:text-[#bf0202] border border-red-500/20 rounded">
+                                  <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
                                     {child.badge}
                                   </span>
                                 )}
                               </div>
+
                               {child.description && (
-                                <p className="text-[9px] text-slate-400 dark:text-slate-555 font-bold mt-0.5">
+                                <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
+                                  isActive ? 'text-[#123c73]/80 dark:text-red-200/80' : 'text-slate-400 dark:text-slate-500'
+                                }`}>
                                   {child.description}
                                 </p>
                               )}
@@ -846,58 +540,342 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         })}
                       </div>
                     </div>
-                  );
-                })}
-              </nav>
-            </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
 
-            {/* Mobile Footer Buttons */}
-            <div className="border-t border-slate-200 dark:border-white/5 pt-4 space-y-3 mt-auto">
+        {/* Sidebar Footer Action Controls */}
+        <div className={`border-t border-slate-200/80 dark:border-white/5 mt-auto relative z-20 transition-all duration-300 ${
+          collapsed ? 'p-3' : 'p-4'
+        }`}>
+          {collapsed ? (
+            <div className="space-y-3 relative">
+              {/* Collapsed Mini Rail Settings Button */}
               <Link
                 to="/settings"
-                onClick={() => setMobileOpen(false)}
-                className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-neutral-800 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
+                className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
+                  isSettingsActive
+                    ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                    : 'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
+                }`}
+                title="System Settings"
               >
-                <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                <span>SETTINGS</span>
+                <Settings className={`w-4 h-4 shrink-0 ${isSettingsActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
               </Link>
 
-              {showMobileLogoutConfirm ? (
-                <div className="w-full flex items-center justify-between p-3 rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all shadow-inner">
-                  <span className="text-[9px]">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
-                  <div className="flex gap-2.5">
+              {/* Collapsed Mini Rail Logout Button & Flyout */}
+              <div className="relative">
+                <button
+                  onClick={triggerDesktopConfirm}
+                  aria-label="Logout"
+                  title="Logout"
+                  className="w-11 h-11 mx-auto flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/30 transition-all cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 shrink-0" />
+                </button>
+
+                {/* Popover Confirmation */}
+                {showLogoutConfirm && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={cancelDesktopConfirm} />
+                    <div className="absolute left-full bottom-0 ml-3 z-50 flex items-center justify-between gap-3 rounded-[16px] bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-white/10 p-3 shadow-2xl font-heading text-xs tracking-wider whitespace-nowrap animate-in fade-in slide-in-from-left-2 duration-150">
+                      <span className="text-[10px] font-black text-slate-900 dark:text-white mr-1">
+                        {isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={isLoggingOut}
+                          onClick={cancelDesktopConfirm}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px]"
+                        >
+                          NO
+                        </button>
+                        <button
+                          disabled={isLoggingOut}
+                          onClick={handleLogout}
+                          className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              {showLogoutConfirm ? (
+                <div className="flex items-center justify-between rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 w-full p-2.5 font-heading text-[10px] tracking-widest font-black transition-all">
+                  <span className="text-[9px] mr-1 shrink-0">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
+                  <div className="flex gap-2">
                     <button
                       disabled={isLoggingOut}
-                      onClick={cancelMobileConfirm}
-                      className="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-neutral-700 font-bold transition-all cursor-pointer text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
+                      onClick={cancelDesktopConfirm}
+                      className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 font-bold transition-all cursor-pointer text-[10px]"
                     >
                       NO
                     </button>
                     <button
                       disabled={isLoggingOut}
                       onClick={handleLogout}
-                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all cursor-pointer text-[10px] flex items-center justify-center gap-1.5"
                     >
                       {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
                     </button>
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={triggerMobileConfirm}
-                  className="w-full flex items-center justify-center gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all cursor-pointer font-heading text-[10px] tracking-widest font-black shadow-inner"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>LOGOUT</span>
-                </button>
-              )}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Expanded Settings Button */}
+                  <Link
+                    to="/settings"
+                    className={`h-[52px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                      isSettingsActive
+                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
+                    }`}
+                  >
+                    <Settings className={`w-4 h-4 shrink-0 ${isSettingsActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>SETTINGS</span>
+                  </Link>
 
-              {/* Mobile Drawer System Version Indicator */}
-              <div className="pt-2 text-center select-none">
-                <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500 tracking-widest uppercase font-bold opacity-80">
-                  SYSTEM VERSION v{APP_VERSION}
-                </span>
+                  {/* Distinct Danger Action Logout Button */}
+                  <button
+                    onClick={triggerDesktopConfirm}
+                    className="h-[52px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 shrink-0" />
+                    <span>LOGOUT</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ─── MOBILE DRAWER ─── */}
+      <div className={`fixed inset-0 z-[300] lg:hidden ${mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+        {/* Backdrop Overlay */}
+        <div 
+          onClick={() => setMobileOpen(false)}
+          className={`absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
+        />
+
+        {/* Mobile Drawer Sheet */}
+        <aside 
+          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-[#f0f4f8] dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col justify-between transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
+            mobileOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          <div 
+            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" 
+            style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
+          />
+
+          <div className="flex flex-col h-full justify-between relative z-10">
+            <div className="space-y-4">
+              
+              {/* MOBILE HEADER */}
+              <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md overflow-hidden">
+                <div className="absolute top-0 right-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0">
+                  <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
+                    <path 
+                      d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
+                      className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
+                    />
+                  </svg>
+                </div>
+
+                <div className="relative z-10 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
+                        <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
+                          WOLF PALOMAR GYM
+                        </span>
+                        <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                          v{APP_VERSION}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => setMobileOpen(false)}
+                      aria-label="Close Drawer"
+                      className="w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
+                      <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
+                    </div>
+
+                    <div className="flex-1 min-w-0 text-left">
+                      <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
+                        {profile?.username || 'Wolf Palomar'}
+                      </h4>
+
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          {profile?.role || 'ADMIN'}
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
+                        {user?.email || 'wolf.palomar@gmail.com'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              {/* Mobile Accordion Nav Stack */}
+              <nav className="space-y-3.5 p-5 pt-1 overflow-y-auto">
+                {allowedMenu.map((item, idx) => {
+                  const visibleChildren = item.children || [];
+                  const isMobileExpanded = mobileExpandedMenu === item.name;
+
+                  return (
+                    <div key={idx} className="space-y-2">
+                      <button
+                        onClick={() => handleParentMenuClick(item, true)}
+                        className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
+                          isMobileExpanded 
+                            ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-md border-transparent' 
+                            : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={isMobileExpanded ? 'text-white' : 'text-slate-400'}>
+                            {item.icon}
+                          </span>
+                          <span className="font-bold">{item.name}</span>
+                        </div>
+
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                      </button>
+
+                      {/* Smooth Mobile Grid Transition */}
+                      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                        isMobileExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                      }`}>
+                        <div className="overflow-hidden">
+                          <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
+                            {visibleChildren.map((child, cIdx) => {
+                              const isActive = isPathActive(child.path);
+                              return (
+                                <Link
+                                  key={cIdx}
+                                  to={child.path}
+                                  onClick={() => setMobileOpen(false)}
+                                  className={`block p-3 rounded-xl transition-all duration-200 border ${
+                                    isActive 
+                                      ? 'bg-[#123c73]/15 dark:bg-red-500/20 border-[#123c73]/30 dark:border-red-500/50 shadow-xs' 
+                                      : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2.5">
+                                      <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
+                                        isActive 
+                                          ? 'bg-[#123c73] dark:bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-125' 
+                                          : 'bg-slate-300 dark:bg-slate-600'
+                                      }`} />
+                                      <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
+                                        isActive 
+                                          ? 'text-[#123c73] dark:text-red-400 font-black' 
+                                          : 'text-slate-700 dark:text-slate-300 font-bold'
+                                      }`}>
+                                        {child.name}
+                                      </span>
+                                    </div>
+
+                                    {child.badge && (
+                                      <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md">
+                                        {child.badge}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {child.description && (
+                                    <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
+                                      isActive ? 'text-[#123c73]/80 dark:text-red-200/80' : 'text-slate-400 dark:text-slate-500'
+                                    }`}>
+                                      {child.description}
+                                    </p>
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Mobile Footer Sticky Action Controls */}
+            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto">
+              {showMobileLogoutConfirm ? (
+                <div className="w-full flex items-center justify-between p-2.5 rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
+                  <span className="text-[9px]">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={isLoggingOut}
+                      onClick={cancelMobileConfirm}
+                      className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]"
+                    >
+                      NO
+                    </button>
+                    <button
+                      disabled={isLoggingOut}
+                      onClick={handleLogout}
+                      className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] flex items-center gap-1.5"
+                    >
+                      {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'YES'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <Link
+                    to="/settings"
+                    onClick={() => setMobileOpen(false)}
+                    className={`h-[52px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                      isSettingsActive
+                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
+                    }`}
+                  >
+                    <Settings className={`w-4 h-4 ${isSettingsActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>SETTINGS</span>
+                  </Link>
+
+                  <button
+                    onClick={triggerMobileConfirm}
+                    className="h-[52px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>LOGOUT</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </aside>

@@ -18,12 +18,21 @@ export interface ReceiptItem {
 export interface GymProfileConfig {
   gym_name?: string;
   gym_address?: string;
+  contact_name_1?: string;
   contact_number_1?: string;
+  contact_name_2?: string;
   contact_number_2?: string;
   gym_logo?: string;
 }
 
 export interface RatesConfig {
+  monthly_rate?: number;
+  yearly_rate?: number;
+  regular_walk_in?: number;
+  student_walk_in?: number;
+  yearly_walk_in?: number;
+  gcash_fee?: number;
+  new_card_fee?: number;
   vat_enabled?: boolean;
   vat_percentage?: number;
 }
@@ -69,7 +78,7 @@ interface OfficialReceiptProps {
 }
 
 const DEFAULT_GYM_NAME = "WOLF PALOMAR GYM";
-const DEFAULT_GYM_ADDRESS = "6B JUDGE A. ROLDAN ST., NAVOTAS CITY, METRO MANILA";
+const DEFAULT_GYM_ADDRESS = "123 SAMPLE STREET, BARANGAY CENTRAL, QUEZON CITY, METRO MANILA";
 const DEFAULT_CONTACTS = "STAFF CONTACT: 09762607481 / 09123456789";
 const DEFAULT_LOGO = "/favicon.svg";
 
@@ -80,7 +89,6 @@ const RECEIPT_TITLES: Record<NonNullable<ReceiptData['receiptType']>, string> = 
   attendance: 'Attendance Check-In Slip'
 };
 
-// Safe base64 data URL to Blob converter
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const arr = dataUrl.split(',');
   const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
@@ -131,8 +139,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       setLoadingConfig(true);
       try {
         const [profileRes, ratesRes] = await Promise.all([
-          supabase.from('gym_profile').select('*').eq('id', 1).single(),
-          supabase.from('rates_config').select('*').eq('id', 1).single()
+          supabase.from('gym_profile').select('*').eq('id', 1).maybeSingle(),
+          supabase.from('rates_config').select('*').eq('id', 1).maybeSingle()
         ]);
 
         if (isMounted) {
@@ -152,9 +160,14 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
   const gymName = gymProfile?.gym_name || DEFAULT_GYM_NAME;
   const gymAddress = gymProfile?.gym_address || DEFAULT_GYM_ADDRESS;
-  const staffContact = gymProfile?.contact_number_1
-    ? `STAFF CONTACT: ${gymProfile.contact_number_1}${gymProfile.contact_number_2 ? ` / ${gymProfile.contact_number_2}` : ''}`
-    : DEFAULT_CONTACTS;
+  
+  const contact1 = gymProfile?.contact_number_1 
+    ? `${gymProfile.contact_name_1 || 'STAFF'}: ${gymProfile.contact_number_1}` 
+    : null;
+  const contact2 = gymProfile?.contact_number_2 
+    ? `${gymProfile.contact_name_2 || 'ADMIN'}: ${gymProfile.contact_number_2}` 
+    : null;
+  const staffContact = [contact1, contact2].filter(Boolean).join(' / ') || DEFAULT_CONTACTS;
   const gymLogo = gymProfile?.gym_logo || DEFAULT_LOGO;
 
   const vatEnabled = ratesConfig?.vat_enabled ?? true;
@@ -166,15 +179,13 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
   const isGCash = paymentMethod.includes('GCASH');
 
-  // Smart GCash Fee Resolution
   const gcashFee = useMemo(() => {
     if (data.gcashFee !== undefined && data.gcashFee > 0) return data.gcashFee;
-    return isGCash ? 10 : 0;
-  }, [data.gcashFee, isGCash]);
+    return isGCash ? (ratesConfig?.gcash_fee ?? 10) : 0;
+  }, [data.gcashFee, isGCash, ratesConfig]);
 
   const cardFee = data.cardFee || 0;
 
-  // Base Price Resolution (adjusts if rawBasePrice already included the GCash fee)
   const rawBasePrice = data.basePrice || 0;
   const basePrice = useMemo(() => {
     if (rawBasePrice > 0) {
@@ -217,7 +228,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const qrPayload = data.qrValue || receiptNo;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
 
-  // --- SAFE CANVAS GENERATOR ---
   const generateReceiptCanvasDataUrl = (): string | null => {
     try {
       const canvas = document.createElement('canvas');
@@ -243,22 +253,18 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
       ctx.scale(scale, scale);
 
-      // Background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);
 
-      // Outer Border
       ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 1;
       ctx.strokeRect(10, 10, width - 20, height - 20);
 
-      // Top Red Accent Bar
       ctx.fillStyle = '#bf0202';
       ctx.fillRect(10, 10, width - 20, 4);
 
       let y = 35;
 
-      // Header Info
       ctx.textAlign = 'center';
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 13px system-ui, sans-serif';
@@ -444,7 +450,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     });
   };
 
-  // --- PRINT HANDLER ---
   const handlePrint = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
@@ -590,7 +595,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     }
   };
 
-  // --- DOWNLOAD HANDLER ---
   const handleDownloadJpg = async () => {
     try {
       const dataUrl = generateReceiptCanvasDataUrl();
@@ -621,7 +625,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         return;
       }
 
-      // Web Browser Download
       try {
         saveAs(blob, fileName);
         toast.success('Official Receipt image downloaded!');
@@ -644,7 +647,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     }
   };
 
-  // --- SHARE RECEIPT HANDLER ---
   const handleShareReceipt = async () => {
     try {
       const dataUrl = generateReceiptCanvasDataUrl();
@@ -698,7 +700,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
           return;
         }
       } catch {
-        // Ignore clipboard fallback
+        // Ignore fallback
       }
 
       toast.info('Hold or tap the receipt image to copy.');
@@ -709,7 +711,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     }
   };
 
-  // --- DIRECT COPY IMAGE TO CLIPBOARD (PC & MOBILE NATIVE SENSITIVE) ---
   const handleCopyImageToClipboard = async () => {
     try {
       const dataUrl = generateReceiptCanvasDataUrl();
@@ -721,7 +722,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       const fileName = `Official_Receipt_${receiptNo}.png`;
       const blob = dataUrlToBlob(dataUrl);
 
-      // On Mobile Native, open system share sheet (which includes native "Copy to Clipboard")
       if (Capacitor.isNativePlatform()) {
         try {
           const file = await createNativeReceiptFile(dataUrl, fileName, Directory.Cache);
@@ -737,7 +737,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         }
       }
 
-      // Desktop Clipboard API
       if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
         try {
           await navigator.clipboard.write([
@@ -752,7 +751,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         }
       }
 
-      // Fallback preview modal
       setPreviewImgUrl(dataUrl);
       setIsPreviewOpen(true);
       toast.info('Press & hold image below to copy or save.');
@@ -762,7 +760,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
     }
   };
 
-  // --- HOLD-TAP LISTENERS FOR PREVIEW IMAGE ---
   const handleTouchStartImage = () => {
     timerRef.current = setTimeout(() => {
       handleCopyImageToClipboard();
@@ -1047,7 +1044,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
             receiptBody
           )}
 
-        {/* Action Buttons 2x2 Grid Layout */}
           <div className="grid grid-cols-2 gap-2 pt-2">
             {isNative ? (
               <button
@@ -1090,7 +1086,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
               </>
             )}
 
-            {/* Copy Image Button */}
             <button
               type="button"
               disabled={loadingConfig}
@@ -1102,7 +1097,6 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
               <span>{copied ? 'Copied!' : 'Copy Image'}</span>
             </button>
 
-            {/* Print Button */}
             {showPrintButton && (
               <button
                 type="button"

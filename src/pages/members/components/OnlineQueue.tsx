@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Clock, CheckSquare, XSquare, Eye, RefreshCw, X, Printer, ExternalLink, 
@@ -55,9 +55,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
 
   const itemsPerPage = useResponsiveItemsPerPage();
 
-  const fetchQueue = () => {
-    setQueue(registrationService.getQueue());
-  };
+  const fetchQueue = useCallback(async () => {
+    try {
+      const q = await registrationService.getQueue();
+      setQueue(q);
+    } catch (err: any) {
+      console.error('Failed to fetch online queue:', err);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedReg) {
@@ -71,7 +76,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     setActivePosterToken(token);
     const interval = setInterval(fetchQueue, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchQueue]);
 
   // Filter pending tickets excluding those currently in the Undo countdown
   const pendingQueue = useMemo(() => {
@@ -95,14 +100,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
   };
 
   // Confirm Final Rejection when timer ends
-  const handleConfirmReject = () => {
+  const handleConfirmReject = async () => {
     if (!undoState.targetReg) return;
     const targetId = undoState.targetReg.id;
 
     try {
-      registrationService.reject(targetId, 'Staff Rejected via Queue', 'Admin Staff');
+      await registrationService.reject(targetId, 'Staff Rejected via Queue', 'Admin Staff');
       toast.info(`Registration ${targetId} rejected.`);
-      fetchQueue();
+      await fetchQueue();
       if (selectedReg?.id === targetId) {
         setSelectedReg(null);
       }
@@ -128,11 +133,11 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     window.open('/register', '_blank');
   };
 
-  const handlePrintPoster = () => {
+  const handlePrintPoster = async () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const settings = settingsService.load();
+    const settings = await settingsService.load();
     const tokenTimestamp = Date.now();
     const newToken = `POSTER-${tokenTimestamp}-${new Date().getFullYear()}`;
     localStorage.setItem('palomar_active_poster_token', newToken);
@@ -449,14 +454,13 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
           </button>
 
           <button 
-  onClick={() => {
-    // Pass prefilled data and launch directly into Step 2 (Membership & Checkout)
-    onApproveLaunchWizard(item);
-  }} 
-  className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none cursor-pointer transition-all shadow-xs"
->
-  <CheckSquare className="w-3.5 h-3.5" /> Approve
-</button>
+            onClick={() => {
+              onApproveLaunchWizard(item);
+            }} 
+            className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none cursor-pointer transition-all shadow-xs"
+          >
+            <CheckSquare className="w-3.5 h-3.5" /> Approve
+          </button>
         </div>
       )
     }
@@ -611,119 +615,119 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
               </div>
             </div>
 
-           {(selectedReg.parent_consent_required || selectedReg.applicant_signature || selectedReg.parent_signature) && (
-  <div className="pt-2 border-t border-(--border-color)">
-    <div className="w-full p-4 rounded-2xl bg-slate-100/60 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-white/10 space-y-3.5 shadow-xs select-none">
-      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/60 dark:border-white/10">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="min-w-0">
-            <h5 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white leading-tight truncate">
-              Parent / Legal Guardian Verification
-            </h5>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal leading-none mt-0.5">
-              E-Consent digitally verified and linked
-            </p>
-          </div>
-        </div>
+            {(selectedReg.parent_consent_required || selectedReg.applicant_signature || selectedReg.parent_signature) && (
+              <div className="pt-2 border-t border-(--border-color)">
+                <div className="w-full p-4 rounded-2xl bg-slate-100/60 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-white/10 space-y-3.5 shadow-xs select-none">
+                  <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/60 dark:border-white/10">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white leading-tight truncate">
+                          Parent / Legal Guardian Verification
+                        </h5>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal leading-none mt-0.5">
+                          E-Consent digitally verified and linked
+                        </p>
+                      </div>
+                    </div>
 
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 shrink-0">
-          <CheckCircle className="w-3 h-3 text-emerald-500" />
-          Verified
-        </span>
-      </div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+                      <CheckCircle className="w-3 h-3 text-emerald-500" />
+                      Verified
+                    </span>
+                  </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-            Parent / Guardian
-          </span>
-          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
-            {selectedReg.parent_name || 'N/A'}
-          </span>
-        </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                        Parent / Guardian
+                      </span>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+                        {selectedReg.parent_name || 'N/A'}
+                      </span>
+                    </div>
 
-        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-            Relationship
-          </span>
-          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
-            {selectedReg.parent_relationship || 'N/A'}
-          </span>
-        </div>
+                    <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                        Relationship
+                      </span>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+                        {selectedReg.parent_relationship || 'N/A'}
+                      </span>
+                    </div>
 
-        <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-            Contact Phone
-          </span>
-          <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
-            {selectedReg.parent_phone || 'N/A'}
-          </span>
-        </div>
-      </div>
+                    <div className="p-2.5 rounded-xl bg-white/80 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-white/5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                        Contact Phone
+                      </span>
+                      <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 block truncate mt-0.5">
+                        {selectedReg.parent_phone || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
 
-      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 pt-0.5">
-        <span className="flex items-center gap-1.5">
-          <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Verified on {selectedReg.consent_date ? new Date(selectedReg.consent_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-        </span>
-        {selectedReg.parent_email && <span className="truncate max-w-[180px] text-[9px] text-slate-400">{selectedReg.parent_email}</span>}
-      </div>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 pt-0.5">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Verified on {selectedReg.consent_date ? new Date(selectedReg.consent_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </span>
+                    {selectedReg.parent_email && <span className="truncate max-w-45 text-[9px] text-slate-400">{selectedReg.parent_email}</span>}
+                  </div>
 
-     {/* Render Digital Signatures ONLY if at least one signature exists */}
-{Boolean(selectedReg.applicant_signature || selectedReg.parent_signature) && (
-  <div className="pt-3 border-t border-(--border-color) space-y-2 select-none">
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
-        <span>Digital Signatures</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => setShowModalSignatures(!showModalSignatures)}
-        className="px-2.5 py-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-200 dark:border-white/5"
-      >
-        <Eye className="w-3.5 h-3.5 text-blue-500" />
-        <span>{showModalSignatures ? 'Hide Signatures' : 'Show Signatures'}</span>
-      </button>
-    </div>
+                  {/* Render Digital Signatures ONLY if at least one signature exists */}
+                  {Boolean(selectedReg.applicant_signature || selectedReg.parent_signature) && (
+                    <div className="pt-3 border-t border-(--border-color) space-y-2 select-none">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Digital Signatures</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowModalSignatures(!showModalSignatures)}
+                          className="px-2.5 py-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-200 dark:border-white/5"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-blue-500" />
+                          <span>{showModalSignatures ? 'Hide Signatures' : 'Show Signatures'}</span>
+                        </button>
+                      </div>
 
-    {showModalSignatures && (
-      <div className="grid grid-cols-2 gap-3 pt-1">
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-            <FileSignature className="w-3 h-3 text-blue-500" /> Applicant Signature
-          </span>
-          {selectedReg.applicant_signature ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={selectedReg.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
+                      {showModalSignatures && (
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase mb-1 flex items-center gap-1">
+                              <FileSignature className="w-3 h-3 text-blue-500" /> Applicant Signature
+                            </span>
+                            {selectedReg.applicant_signature ? (
+                              <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                                <img src={selectedReg.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+                              </div>
+                            ) : (
+                              <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                            )}
+                          </div>
 
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-            <FileSignature className="w-3 h-3 text-emerald-500" /> Parent / Guardian Signature
-          </span>
-          {selectedReg.parent_signature ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={selectedReg.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
-      </div>
-    )}
-  </div>
-)}
-    </div>
-  </div>
-)}
+                          <div>
+                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase mb-1 flex items-center gap-1">
+                              <FileSignature className="w-3 h-3 text-emerald-500" /> Parent / Guardian Signature
+                            </span>
+                            {selectedReg.parent_signature ? (
+                              <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                                <img src={selectedReg.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                              </div>
+                            ) : (
+                              <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Submission Footer Metadata */}
             <div className="pt-2 border-t border-(--border-color) text-[10px] text-slate-500 dark:text-slate-400 flex justify-between items-center font-mono">

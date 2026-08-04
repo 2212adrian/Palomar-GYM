@@ -1,3 +1,4 @@
+// src/lib/supabase/audit.ts
 import { supabase } from './client';
 
 export async function logAudit(

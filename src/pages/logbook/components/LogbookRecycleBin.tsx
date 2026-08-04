@@ -1,11 +1,12 @@
 // src/pages/logbook/components/LogbookRecycleBin.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, RotateCcw, Search, AlertCircle, ClipboardList, 
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
+import { supabase } from '../../../lib/supabase/client';
 
 interface LogbookRecycleBinProps {
   isOpen: boolean;
@@ -26,18 +27,37 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  const fetchDeletedLogs = async () => {
+  const fetchDeletedLogs = useCallback(async () => {
     setLoading(true);
     try {
-      // In sandbox we mock the deletions by setting client state or tracking soft deletes
-      const savedLogs = localStorage.getItem('palomar_gym_logbook_deleted');
-      setDeletedLogs(savedLogs ? JSON.parse(savedLogs) : []);
-    } catch {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        const mappedLogs = data.map((att: any) => ({
+          id: att.id,
+          timestamp: att.check_in_time,
+          memberId: att.member_id || null,
+          customerName: att.customer_name,
+          customerType: att.customer_type,
+          categoryOrPlan: att.plan_name || 'Regular Pass',
+          amountPaid: Number(att.entry_fee || 0),
+          deletedAt: att.deleted_at
+        }));
+        setDeletedLogs(mappedLogs);
+      }
+    } catch (err: any) {
+      console.error('Error fetching soft-deleted logs:', err);
       toast.error('Failed to load transaction data from Recycle Bin.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -46,7 +66,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       setCurrentPage(1);
       setSearchQuery('');
     }
-  }, [isOpen]);
+  }, [isOpen, fetchDeletedLogs]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,26 +100,24 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   }, [filteredLogs, currentPage]);
 
   const handleBulkRestore = async (selectedList: any[]) => {
+    if (selectedList.length === 0) return;
     setLoading(true);
     try {
       const selectedTxIds = selectedList.map((l: any) => l.id);
-      
-      // Update primary log database storage sashes
-      const activeSaved = localStorage.getItem('palomar_gym_logbook');
-      const activeLogs = activeSaved ? JSON.parse(activeSaved) : [];
-      
-      const restoredRecords = deletedLogs.filter(l => selectedTxIds.includes(l.id));
-      const newActiveLogs = [...restoredRecords, ...activeLogs];
-      localStorage.setItem('palomar_gym_logbook', JSON.stringify(newActiveLogs));
 
-      const newDeletedLogs = deletedLogs.filter(l => !selectedTxIds.includes(l.id));
-      localStorage.setItem('palomar_gym_logbook_deleted', JSON.stringify(newDeletedLogs));
-      setDeletedLogs(newDeletedLogs);
+      const { error } = await supabase
+        .from('attendance')
+        .update({ deleted_at: null, deleted_by: null })
+        .in('id', selectedTxIds);
 
+      if (error) throw error;
+
+      setDeletedLogs(prev => prev.filter(l => !selectedTxIds.includes(l.id)));
       setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));
       onRestoreSuccess();
-      toast.success(`Restored ${selectedList.length} check-in logs.`);
-    } catch {
+      toast.success(`Restored ${selectedList.length} check-in log(s).`);
+    } catch (err: any) {
+      console.error('Restoration database error:', err);
       toast.error('Restoration database error.');
     } finally {
       setLoading(false);
@@ -179,8 +197,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                     </div>
                     <button
                       type="button"
+                      disabled={loading}
                       onClick={(e) => { e.stopPropagation(); handleBulkRestore([tx]); }}
-                      className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer"
+                      className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
                     >
                       Restore
                     </button>
@@ -202,8 +221,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         {isSelectionActive && (
           <div className="pt-2 border-t border-(--border-color) flex gap-2 w-full">
             <button
+              disabled={loading}
               onClick={() => handleBulkRestore(deletedLogs.filter(l => selectedIds.includes(l.id)))}
-              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 font-black"
+              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 font-black disabled:opacity-50"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Restore Selected ({selectedIds.length})</span>

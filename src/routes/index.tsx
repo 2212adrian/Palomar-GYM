@@ -89,9 +89,9 @@ const HeaderLayout: React.FC = () => {
 
   return (
     <HeaderActionsContext.Provider value={{ setActions }}>
-      <div className="space-y-6 min-h-screen pt-2 pb-24 md:pb-6 relative animate-fade-in text-(--color-text)">
+      <div className="space-y-6 h-full flex flex-col min-h-0 pt-2 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
         {headerInfo && (
-          <div className="hidden md:block">
+          <div className="hidden md:block shrink-0">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
@@ -137,40 +137,32 @@ const router = createBrowserRouter([
             element: <HeaderLayout />, // Consolidated dynamic page headers
             children: [
               // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
-{
-  element: <ProtectedRoute allowedRoles={['admin']} />,
-  children: [
-    { path: '/dashboard', element: <Dashboard /> },
-    { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
-    
-    // Moved /members/list & /members/plans out of here!
-    
-    { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
-    { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
-    { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
-  ]
-},
+              {
+                element: <ProtectedRoute allowedRoles={['admin']} />,
+                children: [
+                  { path: '/dashboard', element: <Dashboard /> },
+                  { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
+                  { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
+                  { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
+                  { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
+                ]
+              },
 
-// ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
-{
-  element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
-  children: [
-    { path: '/sales', element: <Sales /> },
-    { path: '/sales/:subview', element: <Sales /> },
-    
-    { path: '/logbook', element: <LogbookPage /> },
-
-    // 🟢 MOVED HERE SO STAFF CAN ACCESS THEM:
-    { path: '/members/list', element: <LogbookPage /> },
-    { path: '/members/plans', element: <StaffPlansConsole /> },
-    
-    { path: '/reports', element: <IncidentReports /> }, 
-    
-    { path: '/settings/:activeTab', element: <Settings /> },
-    { path: '/settings', element: <Settings /> },
-    { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
-  ]
-}
+              // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
+              {
+                element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
+                children: [
+                  { path: '/sales', element: <Sales /> },
+                  { path: '/sales/:subview', element: <Sales /> },
+                  { path: '/logbook', element: <LogbookPage /> },
+                  { path: '/members/list', element: <LogbookPage /> },
+                  { path: '/members/plans', element: <StaffPlansConsole /> },
+                  { path: '/reports', element: <IncidentReports /> }, 
+                  { path: '/settings/:activeTab', element: <Settings /> },
+                  { path: '/settings', element: <Settings /> },
+                  { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
+                ]
+              }
             ]
           }
         ]

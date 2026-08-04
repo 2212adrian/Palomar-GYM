@@ -1,5 +1,5 @@
 // src/pages/logbook/LogbookPage.tsx
-import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from 'react';
 import { 
   format, 
   startOfWeek, 
@@ -27,6 +27,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 // Supabase & Authentication Stores
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
+import { supabase } from '../../lib/supabase/client';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -43,10 +44,6 @@ import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
-
-// Storage Engine
-import { prototypeStorage, STORAGE_KEYS } from '../members/memberService';
-import type { AttendanceRecord } from '../../types/members';
 
 // ─── ANIMATED TICKER HELPERS ───
 const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
@@ -106,6 +103,12 @@ const ATTENDANCE_FILTERS = [
   { label: 'Subs', value: 'Subs' }
 ];
 
+const PAYMENT_FILTERS = [
+  { label: 'All Pay', value: 'All' },
+  { label: 'Cash', value: 'Cash' },
+  { label: 'GCash', value: 'GCash' }
+];
+
 const isLogDeletable = (log: LogRecord) => {
   if (
     log.isSubscription ||
@@ -123,6 +126,42 @@ const isLogDeletable = (log: LogRecord) => {
   return logDate === todayStr;
 };
 
+const TransactionSkeleton: React.FC = () => {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
+      <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
+        <div className="flex flex-col items-center gap-1.5 shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+          <div className="h-4 w-12 bg-slate-200/60 dark:bg-zinc-800/60 rounded mt-0.5" />
+        </div>
+
+        <div className="min-w-0 flex-1 text-left space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="h-4.5 w-40 sm:w-56 bg-slate-200/60 dark:bg-zinc-800/60 rounded" />
+            <div className="h-4.5 w-16 bg-slate-100 dark:bg-zinc-800/80 rounded-full border border-(--border-color)" />
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            <div className="h-5 w-24 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
+            <div className="h-5 w-32 bg-slate-100/50 dark:bg-zinc-800/30 rounded-lg border border-(--border-color)" />
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+            <div className="h-3 w-28 bg-slate-200/30 dark:bg-zinc-800/20 rounded" />
+            <span className="text-slate-200 dark:text-zinc-800">•</span>
+            <div className="h-3 w-16 bg-slate-200/30 dark:bg-zinc-800/20 rounded" />
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden md:flex items-center gap-2 shrink-0">
+        <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+        <div className="w-10.5 h-10.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
+      </div>
+    </div>
+  );
+};
+
 export const LogbookPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -131,25 +170,32 @@ export const LogbookPage: React.FC = () => {
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
-    return (profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff');
+    const userRole = profile?.role || user?.user_metadata?.role || user?.app_metadata?.role;
+    return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
   const isAdmin = useMemo(() => role === 'admin', [role]);
 
-  const [logs, setLogs] = useState<LogRecord[]>(() => {
-    const saved = localStorage.getItem('palomar_gym_logbook');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Logbook parse error:', e);
-      }
-    }
+  const [logs, setLogs] = useState<LogRecord[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState<boolean>(true);
 
-  try {
-      const dbAttendance = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-      if (dbAttendance.length > 0) {
-        return dbAttendance.map((att: AttendanceRecord) => ({
+  // Fetch Attendance Records from Supabase with Realtime Listener
+  const fetchAttendanceFromSupabase = useCallback(async () => {
+    try {
+      setLoadingLogs(true);
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .is('deleted_at', null)
+        .order('check_in_time', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching attendance from Supabase:', error);
+        return;
+      }
+
+      if (data) {
+        const mappedLogs: LogRecord[] = data.map((att: any) => ({
           id: att.id,
           timestamp: att.check_in_time,
           memberId: att.member_id || null,
@@ -157,47 +203,37 @@ export const LogbookPage: React.FC = () => {
           customerType: att.customer_type,
           categoryOrPlan: att.plan_name || 'Regular Pass',
           paymentMethod: att.payment_method,
-          amountPaid: att.entry_fee,
-          basePrice: att.base_price ?? (att.entry_fee - (att.gcash_fee || 0)),
-          gcashFee: att.gcash_fee || 0,
-          cardFee: att.card_fee || 0,
+          amountPaid: Number(att.entry_fee || 0),
+          basePrice: Number(att.base_price ?? (att.entry_fee - (att.gcash_fee || 0))),
+          gcashFee: Number(att.gcash_fee || 0),
+          cardFee: Number(att.card_fee || 0),
           gcashRefNo: att.gcash_ref_no,
           referenceNumber: att.gcash_ref_no,
           paymentRef: att.gcash_ref_no,
-          paymentStatus: att.entry_fee > 0 ? 'Paid' : 'Free',
+          paymentStatus: Number(att.entry_fee) > 0 ? 'Paid' : 'Free',
           status: 'Active'
         }));
+        setLogs(mappedLogs);
       }
-    } catch (e) {
-      console.error('Attendance hydration error:', e);
+    } catch (err) {
+      console.error('Attendance fetch error:', err);
+    } finally {
+      setLoadingLogs(false);
     }
-
-    return INITIAL_LOGS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('palomar_gym_logbook', JSON.stringify(logs));
-  }, [logs]);
-
-  useEffect(() => {
-    const handleLogbookUpdate = () => {
-      const saved = localStorage.getItem('palomar_gym_logbook');
-      if (saved) {
-        try {
-          setLogs(JSON.parse(saved));
-        } catch (e) {
-          console.error('Error re-syncing logbook:', e);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleLogbookUpdate);
-    window.addEventListener('palomar_logbook_updated', handleLogbookUpdate);
-    return () => {
-      window.removeEventListener('storage', handleLogbookUpdate);
-      window.removeEventListener('palomar_logbook_updated', handleLogbookUpdate);
-    };
   }, []);
+
+  useEffect(() => {
+    fetchAttendanceFromSupabase();
+
+    const channel = supabase
+      .channel('attendance_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, fetchAttendanceFromSupabase)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchAttendanceFromSupabase]);
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
     startOfWeek(new Date(), { weekStartsOn: 0 })
@@ -205,6 +241,7 @@ export const LogbookPage: React.FC = () => {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState<'All' | 'Walk-In' | 'Member' | 'Subs'>('All');
+  const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash' | 'Card'>('All');
   
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -214,7 +251,6 @@ export const LogbookPage: React.FC = () => {
   const [selectedReceiptLog, setSelectedReceiptLog] = useState<LogRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LogRecord | null>(null);
   const [showUndoToast, setShowUndoToast] = useState(false);
-  const [loading] = useState(false);
 
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
 
@@ -238,29 +274,35 @@ export const LogbookPage: React.FC = () => {
   }, [selectedDate, logs]);
 
   const filteredLogs = useMemo(() => {
-    return dayLogs.filter((l: LogRecord) => {
-      const q = ledgerSearch.toLowerCase().trim();
-      const matchesSearch = q === '' ||
-        l.customerName.toLowerCase().includes(q) ||
-        (l.memberId && l.memberId.toLowerCase().includes(q)) ||
-        l.categoryOrPlan.toLowerCase().includes(q);
+  return dayLogs.filter((l: LogRecord) => {
+    const q = ledgerSearch.toLowerCase().trim();
+    const matchesSearch = q === '' ||
+      l.customerName.toLowerCase().includes(q) ||
+      (l.memberId && l.memberId.toLowerCase().includes(q)) ||
+      l.categoryOrPlan.toLowerCase().includes(q);
 
-      let matchesType = true;
-      if (customerFilter === 'Walk-In') {
-        matchesType = l.customerType === 'Walk-In';
-      } else if (customerFilter === 'Member') {
-        matchesType = l.customerType === 'Existing Member';
-      } else if (customerFilter === 'Subs') {
-        matchesType =
-          l.customerType === 'New Membership' ||
-          !!l.isSubscription ||
-          (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
-          (l.categoryOrPlan || '').toLowerCase().includes('subscription');
-      }
+    let matchesType = true;
+    if (customerFilter === 'Walk-In') {
+      matchesType = l.customerType === 'Walk-In';
+    } else if (customerFilter === 'Member') {
+      matchesType = l.customerType === 'Existing Member';
+    } else if (customerFilter === 'Subs') {
+      matchesType =
+        l.customerType === 'New Membership' ||
+        !!l.isSubscription ||
+        (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
+        (l.categoryOrPlan || '').toLowerCase().includes('subscription');
+    }
 
-      return matchesSearch && matchesType;
-    });
-  }, [dayLogs, ledgerSearch, customerFilter]);
+    let matchesPayment = true;
+    if (paymentFilter !== 'All') {
+      const pMethod = (l.paymentMethod || '').toLowerCase();
+      matchesPayment = pMethod.includes(paymentFilter.toLowerCase());
+    }
+
+    return matchesSearch && matchesType && matchesPayment;
+  });
+}, [dayLogs, ledgerSearch, customerFilter, paymentFilter]);
 
   const totalItems = filteredLogs.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
@@ -285,6 +327,15 @@ export const LogbookPage: React.FC = () => {
   const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
   const prevRevenueRef = useRef<number>(totalCollectedToday);
 
+  const [, setIsTransitioning] = useState(false);
+
+// Lock scrolling during the 800ms transition whenever activePage changes
+useEffect(() => {
+  setIsTransitioning(true);
+  const timer = setTimeout(() => setIsTransitioning(false), 800);
+  return () => clearTimeout(timer);
+}, [activePage]);
+
   useEffect(() => {
     if (totalCollectedToday > prevRevenueRef.current) {
       setRevenueTrend('increasing');
@@ -308,9 +359,16 @@ export const LogbookPage: React.FC = () => {
     return dayLogs.filter((l: LogRecord) => l.customerType === 'New Membership').length;
   }, [dayLogs]);
 
-  const handleCheckInSuccess = (newLog: LogRecord) => {
+ const handleCheckInSuccess = (newLog: LogRecord) => {
     setLogs(prev => [newLog, ...prev]);
     toast.success('Attendance check-in success.');
+
+    // Automatically switch timeline view to Present Day (Today)
+    const today = new Date();
+    setCurrentWeekStart(startOfWeek(today, { weekStartsOn: 0 }));
+    setSelectedDayIndex(getDay(today));
+
+    fetchAttendanceFromSupabase();
   };
 
   const handleTriggerCollectPayment = (log: LogRecord) => {
@@ -333,7 +391,7 @@ export const LogbookPage: React.FC = () => {
     toast.info(`Undone payment. Set back to Unpaid.`);
   };
 
-  const handleDeleteLog = (log: LogRecord) => {
+  const handleDeleteLog = async (log: LogRecord) => {
     if (!isLogDeletable(log)) {
       if (
         log.isSubscription || 
@@ -346,14 +404,22 @@ export const LogbookPage: React.FC = () => {
       }
       return;
     }
-    setPendingDelete(log);
-    
-    const savedDeleted = localStorage.getItem('palomar_gym_logbook_deleted');
-    const deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
-    localStorage.setItem('palomar_gym_logbook_deleted', JSON.stringify([{ ...log, deleted_at: new Date().toISOString() }, ...deletedList]));
 
-    setLogs(prev => prev.filter(item => item.id !== log.id));
-    setShowUndoToast(true);
+    try {
+      const { error } = await supabase
+        .from('attendance')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', log.id);
+
+      if (error) throw error;
+
+      setPendingDelete(log);
+      setLogs(prev => prev.filter(item => item.id !== log.id));
+      setShowUndoToast(true);
+      toast.success('Check-in log moved to Recycle Bin.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete check-in log.');
+    }
   };
 
   const confirmDelete = () => {
@@ -361,23 +427,29 @@ export const LogbookPage: React.FC = () => {
     setShowUndoToast(false);
   };
 
-  const undoDelete = () => {
+  const undoDelete = async () => {
     if (!pendingDelete) return;
     
-    const savedDeleted = localStorage.getItem('palomar_gym_logbook_deleted');
-    if (savedDeleted) {
-      const deletedList = JSON.parse(savedDeleted).filter((item: any) => item.id !== pendingDelete.id);
-      localStorage.setItem('palomar_gym_logbook_deleted', JSON.stringify(deletedList));
-    }
+    try {
+      const { error } = await supabase
+        .from('attendance')
+        .update({ deleted_at: null, deleted_by: null })
+        .eq('id', pendingDelete.id);
 
-    setLogs(prev => [pendingDelete, ...prev].sort((a, b) => {
-      const dateA = a.timestamp || '';
-      const dateB = b.timestamp || '';
-      return dateB.localeCompare(dateA);
-    }));
-    setPendingDelete(null);
-    setShowUndoToast(false);
-    toast.success('Check-in record restored.');
+      if (error) throw error;
+
+      setLogs(prev => [pendingDelete, ...prev].sort((a, b) => {
+        const dateA = a.timestamp || '';
+        const dateB = b.timestamp || '';
+        return dateB.localeCompare(dateA);
+      }));
+      setPendingDelete(null);
+      setShowUndoToast(false);
+      toast.success('Check-in record restored.');
+      fetchAttendanceFromSupabase();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to restore record.');
+    }
   };
 
   // Centralized Header Actions Synchronizer
@@ -514,7 +586,7 @@ export const LogbookPage: React.FC = () => {
 
   return (
     <div className="relative min-h-[85vh] w-full">
-      <TabLoader isVisible={loading} />
+      <TabLoader isVisible={false} />
 
       {/* ─── DESKTOP SIDE ARROWS ─── */}
       {isAdmin && (
@@ -570,13 +642,13 @@ export const LogbookPage: React.FC = () => {
       )}
 
       {/* ─── SLIDING TIMELINE CANVAS GRID SCROLLER ─── */}
-      <div className="relative w-full h-auto overflow-x-clip grid grid-cols-1 items-start">
+      <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
         
         {/* VIEW 1: LEFT SLIDE (LOGBOOK COUNTER) */}
         <div 
-          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-12 ${
-            activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-          }`}
+         className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 ${
+    activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+  }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -588,96 +660,99 @@ export const LogbookPage: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* ─── TODAY'S SUMMARY DASHBOARD CARD ─── */}
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-4 sm:px-6 py-4 shadow-sm animate-fade-in">
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 items-center">
-              
-              {/* Check-ins Metric (Left) */}
-              <div className="flex flex-col sm:flex-row items-center justify-start gap-2 sm:gap-3 min-w-0">
-                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-                  <Users className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-blue-500" />
-                </div>
-                <div className="min-w-0 text-center sm:text-left">
-                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                    Check-ins
-                  </span>
-                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
-                    <AnimatedNumber value={dayLogs.length} />
-                  </span>
-                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                    Total Today
-                  </span>
-                </div>
-              </div>
+          {/* ─── TODAY'S SUMMARY DASHBOARD CARD (STRICT 1-ROW DESIGN) ─── */}
+<div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
+  <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
+    
+    {/* Left: Check-ins */}
+    <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+        <Users className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+      </div>
+      <div className="min-w-0">
+        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+          Check-ins
+        </span>
+        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+          <AnimatedNumber value={dayLogs.length} />
+        </span>
+      </div>
+    </div>
 
-              {/* Today's Revenue Metric (Center) */}
-              <div className="flex flex-col items-center justify-center text-center min-w-0 py-1 border-x border-(--border-color)/40 px-2 sm:px-4">
-                <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                  Revenue
-                </span>
-                <motion.div
-                  animate={{
-                    scale: revenueTrend === 'increasing' ? 1.2 : revenueTrend === 'decreasing' ? 0.85 : 1,
-                  }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="my-1 flex items-center justify-center gap-1 sm:gap-1.5"
-                >
-                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 transition-colors duration-300 ${
-                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
-                  }`} />
-                  <span className={`font-heading text-xl sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-500 truncate ${
-                    revenueTrend === 'increasing'
-                      ? 'text-emerald-500'
-                      : revenueTrend === 'decreasing'
-                      ? 'text-rose-500'
-                      : 'text-(--color-text)'
-                  }`}>
-                    <AnimatedCurrency value={totalCollectedToday} />
-                  </span>
-                </motion.div>
-                <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                  Total Collected
-                </span>
-              </div>
+    {/* Center: Highlighted Total Revenue */}
+    <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
+      <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
+        Total Revenue
+      </span>
+      <motion.div
+        animate={{
+          scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
+        }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
+      >
+        <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
+          revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+        }`} />
+        <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
+          revenueTrend === 'increasing'
+            ? 'text-emerald-500'
+            : revenueTrend === 'decreasing'
+            ? 'text-rose-500'
+            : 'text-(--color-text)'
+        }`}>
+          <AnimatedCurrency value={totalCollectedToday} />
+        </span>
+      </motion.div>
+    </div>
 
-              {/* New Members Metric (Right) */}
-              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 sm:gap-3 min-w-0">
-                <div className="min-w-0 text-center sm:text-right order-2 sm:order-1">
-                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                    New Members
-                  </span>
-                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
-                    <AnimatedNumber value={newMembersCount} />
-                  </span>
-                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                    New Registrations
-                  </span>
-                </div>
-                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-1 sm:order-2">
-                  <UserPlus className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-emerald-500" />
-                </div>
-              </div>
+    {/* Right: New Members */}
+    <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+      <div className="min-w-0 text-right order-1">
+        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+          New Members
+        </span>
+        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+          <AnimatedNumber value={newMembersCount} />
+        </span>
+      </div>
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
+        <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
+      </div>
+    </div>
 
-            </div>
-          </div>
-
+  </div>
+</div>
           <TimelineBar
-            currentWeekStart={currentWeekStart}
-            onWeekStartChange={setCurrentWeekStart}
-            selectedDayIndex={selectedDayIndex}
-            onDayIndexChange={setSelectedDayIndex}
-            searchQuery={ledgerSearch}
-            onSearchQueryChange={setLedgerSearch}
-            activeFilter={customerFilter}
-            onFilterChange={setCustomerFilter}
-            filterOptions={ATTENDANCE_FILTERS}
-            role={role}
-            searchPlaceholder="Search members, phone, QR, customer type..."
-          />
+  currentWeekStart={currentWeekStart}
+  onWeekStartChange={setCurrentWeekStart}
+  selectedDayIndex={selectedDayIndex}
+  onDayIndexChange={setSelectedDayIndex}
+  searchQuery={ledgerSearch}
+  onSearchQueryChange={setLedgerSearch}
+  activeFilter={customerFilter}
+  onFilterChange={setCustomerFilter}
+  filterOptions={ATTENDANCE_FILTERS}
+  paymentFilter={paymentFilter}
+  onPaymentFilterChange={setPaymentFilter}
+  paymentOptions={PAYMENT_FILTERS}
+  role={role}
+  searchPlaceholder="Search members, phone, QR, customer type..."
+/>
 
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
               {(() => {
+                if (loadingLogs) {
+                  return (
+                    <div className="space-y-3">
+                      {Array.from({ length: 3 }).map((_, idx) => (
+                        <TransactionSkeleton key={idx} />
+                      ))}
+                    </div>
+                  );
+                }
+
                 const hourlyGroups: { label: string; records: LogRecord[] }[] = [];
                 
                 paginatedLogs.forEach(log => {
@@ -699,7 +774,7 @@ export const LogbookPage: React.FC = () => {
                 });
 
                 if (totalItems === 0) {
-                  const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All';
+                   const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All' || paymentFilter !== 'All';
 
                   return (
                     <motion.div
@@ -725,6 +800,7 @@ export const LogbookPage: React.FC = () => {
                           onClick={() => {
                             setLedgerSearch('');
                             setCustomerFilter('All');
+                            setPaymentFilter('All');
                           }}
                           className="mt-4 px-4 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
                         >
@@ -738,9 +814,9 @@ export const LogbookPage: React.FC = () => {
                 return hourlyGroups.map(group => (
                   <div key={group.label} className="space-y-4 font-body animate-fade-in">
                     <div className="flex items-center gap-3 select-none pt-2">
-                      <div className="text-[9px] font-heading font-black tracking-widest text-(--color-primary-light) bg-(--color-primary)/10 border border-(--border-color) px-3 py-1 rounded-full uppercase shrink-0">
-                        {group.label}
-                      </div>
+                      <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
+  {group.label}
+</div>
                       <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
                     </div>
 
@@ -815,11 +891,11 @@ export const LogbookPage: React.FC = () => {
           )}
         </div>
 
-       {/* VIEW 2: RIGHT SLIDE */}
+        {/* VIEW 2: RIGHT SLIDE */}
         <div 
-          className={`w-full pb-12 max-w-full animate-fade-in ${
-            activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-          }`}
+          className={`w-full pb-40 md:pb-12 max-w-full animate-fade-in ${
+    activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+  }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -887,8 +963,7 @@ export const LogbookPage: React.FC = () => {
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
           onRestoreSuccess={() => {
-            const saved = localStorage.getItem('palomar_gym_logbook');
-            setLogs(saved ? JSON.parse(saved) : []);
+            fetchAttendanceFromSupabase();
           }}
         />
       )}
@@ -979,86 +1054,33 @@ export const LogbookPage: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          {/* Floating Mobile Bottom Logbook Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
-<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
-  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-      <CircleDollarSign className="w-4 h-4" />
-      <span><AnimatedCurrency value={totalCollectedToday} /></span>
-    </div>
-    <span className="text-slate-300 dark:text-zinc-700">•</span>
-    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-      <Users className="w-4 h-4 text-blue-500" />
-      <span>{dayLogs.length} Check-ins</span>
-    </div>
-  </div>
+          <div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <CircleDollarSign className="w-4 h-4" />
+                <span><AnimatedCurrency value={totalCollectedToday} /></span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <Users className="w-4 h-4 text-blue-500" />
+                <span>{dayLogs.length} Check-ins</span>
+              </div>
+            </div>
 
-  <motion.button
-    type="button"
-    whileTap={{ scale: 0.9 }}
-    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-    title="Attendance Actions"
-  >
-    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-  </motion.button>
-</div>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+              title="Attendance Actions"
+            >
+              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+            </motion.button>
+          </div>
         </>
       )}
     </div>
   );
 };
-
-const INITIAL_LOGS: LogRecord[] = [
-  {
-    id: 'log-1',
-    timestamp: '2026-07-28T09:11:00Z',
-    memberId: null,
-    customerName: 'MATTHEW',
-    customerType: 'Walk-In',
-    categoryOrPlan: 'Walk-In Student',
-    paymentMethod: 'Cash',
-    amountPaid: 60,
-    paymentStatus: 'Paid',
-    status: 'Active'
-  },
-  {
-    id: 'log-2',
-    timestamp: '2026-07-28T09:02:00Z',
-    memberId: null,
-    customerName: 'LOVER',
-    customerType: 'Walk-In',
-    categoryOrPlan: 'Walk-In Regular',
-    paymentMethod: 'Cash',
-    amountPaid: 90, 
-    paymentStatus: 'Paid',
-    status: 'Active'
-  },
-  {
-    id: 'log-3',
-    timestamp: '2026-07-28T09:02:00Z',
-    memberId: 'MEM-000003',
-    customerName: 'MARIA CLARA SANTOS',
-    customerType: 'Existing Member',
-    categoryOrPlan: 'Monthly Member Entry',
-    paymentMethod: 'Free',
-    amountPaid: 0,
-    paymentStatus: 'Paid',
-    status: 'Active'
-  },
-  {
-    id: 'log-4',
-    timestamp: '2026-07-28T08:38:00Z',
-    memberId: 'MEM-000196',
-    customerName: 'MUG BOOK, GREEN APPLE',
-    customerType: 'New Membership',
-    categoryOrPlan: 'Monthly Membership',
-    paymentMethod: 'Cash',
-    amountPaid: 1000,
-    paymentStatus: 'Paid',
-    status: 'Active',
-    isSubscription: true
-  }
-];
 
 export default LogbookPage;

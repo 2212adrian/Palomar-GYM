@@ -21,8 +21,8 @@ import type {
   Member, Subscription, MemberCard, OnlineRegistration
 } from '../../types/members';
 
-// Import Consolidated Service & Storage
-import { memberService, prototypeStorage, STORAGE_KEYS } from './memberService';
+// Import Services
+import { memberService, subscriptionService, cardService } from './memberService';
 
 // Import Modals & Views
 import { OnlineQueue } from './components/OnlineQueue';
@@ -58,6 +58,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   const [activeTab, setActiveTab] = useState<'Directory' | 'Queue'>('Directory');
   const [members, setMembers] = useState<Member[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [cards, setCards] = useState<MemberCard[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChip, setActiveChip] = useState<FilterChip>('all');
@@ -91,20 +93,23 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   const itemsPerPage = useResponsiveItemsPerPage();
 
-  const subscriptions = useMemo(() => {
-    return prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-  }, [members, activeTab]);
-
-  const cards = useMemo(() => {
-    return prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
-  }, [members, activeTab]);
-
-  const fetchMembers = useCallback(() => {
+  const fetchMembers = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      setMembers(memberService.getAll());
+    try {
+      const [membersData, subsData, cardsData] = await Promise.all([
+        memberService.getAll(),
+        subscriptionService.getAll(),
+        cardService.getAll()
+      ]);
+      setMembers(membersData);
+      setSubscriptions(subsData);
+      setCards(cardsData);
+    } catch (err: any) {
+      console.error('Error fetching members data:', err);
+      toast.error(err.message || 'Failed to load member records');
+    } finally {
       setLoading(false);
-    }, 250);
+    }
   }, []);
 
   useEffect(() => {
@@ -269,7 +274,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       }).length,
       expired: members.filter(m => {
         const hasActive = !!getActiveSubscription(m.member_id);
-        const hasExpiredSub = subscriptions.some(s => s.member_id === m.member_id && s.status === 'Expired');
+        const hasExpiredSub = subscriptions.some((s: Subscription) => s.member_id === m.member_id && s.status === 'Expired');
         return !hasActive && hasExpiredSub;
       }).length,
       has_card: members.filter(m => {
@@ -315,7 +320,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         }
         case 'expired': {
           const hasActive = !!getActiveSubscription(m.member_id);
-          const hasExpiredSub = subscriptions.some(s => s.member_id === m.member_id && s.status === 'Expired');
+          const hasExpiredSub = subscriptions.some((s: Subscription) => s.member_id === m.member_id && s.status === 'Expired');
           return !hasActive && hasExpiredSub;
         }
         case 'has_card': {
@@ -340,10 +345,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return filteredMembers.slice(start, start + itemsPerPage);
   }, [filteredMembers, mobilePage, itemsPerPage]);
 
-  const handleToggleSuspend = (memberItem: Member) => {
+  const handleToggleSuspend = async (memberItem: Member) => {
     const nextStatus = memberItem.status === 'Active' ? 'Suspended' : 'Active';
     try {
-      memberService.update(memberItem.id, { status: nextStatus }, 'Admin Staff');
+      await memberService.update(memberItem.id, { status: nextStatus }, 'Admin Staff');
       toast.success(`Member set to ${nextStatus}.`);
       fetchMembers();
     } catch (err: any) {
@@ -710,7 +715,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             {activeTab === 'Directory' && (
               <div className="space-y-4 md:space-y-6 pb-40 md:pb-24">
                 
-                {/* 1. DESKTOP STATS GRID (UNCHANGED) */}
+                {/* 1. DESKTOP STATS GRID */}
                 <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
                   <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
@@ -767,7 +772,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
                 {/* 2. MOBILE COMPACT 2X2 STATS GRID (< MD) */}
                 <div className="grid grid-cols-2 gap-2.5 md:hidden select-none">
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
                     <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
                       <Users className="w-4.5 h-4.5" />
                     </div>
@@ -779,7 +784,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     </div>
                   </div>
 
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
                     <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shrink-0">
                       <Award className="w-4.5 h-4.5" />
                     </div>
@@ -791,7 +796,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     </div>
                   </div>
 
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
                     <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
                       <Clock className="w-4.5 h-4.5" />
                     </div>
@@ -803,7 +808,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     </div>
                   </div>
 
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-[76px]">
+                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
                     <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shrink-0">
                       <UserX className="w-4.5 h-4.5" />
                     </div>

@@ -1,3 +1,5 @@
+// src/types/members.ts
+
 export type MemberStatus = 'Active' | 'Suspended';
 export type SubscriptionStatus = 'Active' | 'Expired' | 'Inactive' | 'Voided';
 export type CardStatus = 'Active' | 'Inactive';
@@ -10,18 +12,25 @@ export interface Member {
   member_id: string;
   full_name: string;
   phone: string;
-  email?: string;
+  email?: string | null;
   gender: string;
-  birthday: string;
-  emergency_contact_name: string;
-  relationship: string;  
-  emergency_contact_phone: string;
-  address: string;
+  birthday?: string | null;
+  emergency_contact_name?: string | null;
+  relationship?: string | null;  
+  emergency_contact_phone?: string | null;
+  address?: string | null;
   avatar_url?: string | null;
+  image_url?: string | null;
   status: MemberStatus;
-  notes?: string;
-  created_at: string;
-  updated_at: string;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+
+  // Security Card fields
+  card_number?: string | null;
+  card_type?: 'QR' | 'Manual' | 'None';
+  card_version?: number;
+  card_issued_at?: string | null;
 
   // Minor & Signature fields
   parent_name?: string | null;
@@ -31,11 +40,18 @@ export interface Member {
   applicant_signature?: string | null;
   parent_signature?: string | null;
   consent_date?: string | null;
+
+  // Soft Delete Metadata (Recycle Bin)
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
 }
+
 export interface Subscription {
   id: string;
   member_id: string;
   plan_name: 'Monthly Membership' | 'Yearly Membership';
+  plan_type?: 'monthly' | 'yearly';
   price: number;
   base_price?: number;
   gcash_fee?: number;
@@ -46,15 +62,15 @@ export interface Subscription {
   status: SubscriptionStatus;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
-  receipt_number: string;
-  created_at: string;
-  updated_at: string;
+  receipt_number?: string;
+  created_at?: string;
+  updated_at?: string;
 
   // Void tracking metadata
-  voided_at?: string;
-  voided_by?: string;
-  void_reason?: string;
-  void_notes?: string;
+  voided_at?: string | null;
+  voided_by?: string | null;
+  void_reason?: string | null;
+  void_notes?: string | null;
 }
 
 export interface MemberCard {
@@ -82,24 +98,24 @@ export interface Receipt {
   payment_method: PaymentMethod;
   payment_status: PaymentStatus;
   item_description: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface OnlineRegistration {
   id: string;
   full_name: string;
-  email?: string;             
+  email?: string | null;             
   phone: string;
   gender: string;
   birthday: string;
-  address: string;
+  address?: string | null;
   emergency_contact_name: string;
-  relationship?: string;          
+  relationship?: string | null;          
   emergency_contact_phone: string;
-  preferred_plan: 'Monthly Membership' | 'Yearly Membership';
+  preferred_plan: 'Monthly Membership' | 'Yearly Membership' | 'monthly' | 'yearly';
   status: 'Pending' | 'Approved' | 'Rejected';
   submitted_at: string;
-  notes?: string;
+  notes?: string | null;
 
   // Conditional Parental Consent Fields for Minors (< 18 Yrs)
   parent_consent_required?: boolean;
@@ -131,6 +147,7 @@ export interface MembershipSettings {
   monthly_plan_price: number;
   yearly_plan_price: number;
   regular_walkin_fee: number;
+  student_walkin_fee: number;
   monthly_member_checkin_fee: number;
   yearly_member_checkin_fee: number;
   qr_card_enabled: boolean;

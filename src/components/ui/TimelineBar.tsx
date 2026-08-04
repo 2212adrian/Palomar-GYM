@@ -11,7 +11,7 @@ import {
   endOfWeek,
   getDay
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, RotateCcw, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Search, X, ChevronDown } from 'lucide-react';
 
 interface FilterOption {
   label: string;
@@ -28,6 +28,9 @@ interface TimelineBarProps {
   activeFilter?: string;
   onFilterChange?: (filter: any) => void;
   filterOptions?: FilterOption[];
+  paymentFilter?: string;
+  onPaymentFilterChange?: (filter: any) => void;
+  paymentOptions?: FilterOption[];
   role?: 'admin' | 'staff';
   searchPlaceholder?: string;
 }
@@ -44,6 +47,9 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   activeFilter,
   onFilterChange,
   filterOptions = [],
+  paymentFilter,
+  onPaymentFilterChange,
+  paymentOptions = [],
   role = 'admin',
   searchPlaceholder = 'Search records...'
 }) => {
@@ -78,11 +84,15 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     }
     return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
   }, [role]);
-
-  // Automatically adjust selectedDayIndex if the currently selected day becomes unselectable
+  
+// Automatically adjust selectedDayIndex if the currently selected day becomes unselectable
   useEffect(() => {
     const selectedDate = addDays(currentWeekStart, selectedDayIndex);
-    
+    const isPastOrToday = startOfDay(selectedDate).getTime() <= startOfDay(new Date()).getTime();
+
+    // Do not reset past date views for admins
+    if (role === 'admin' && isPastOrToday) return;
+
     if (!isTabSelectable(selectedDate)) {
       const today = new Date();
       const todayStart = startOfDay(today).getTime();
@@ -104,7 +114,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         }
       }
     }
-  }, [currentWeekStart, selectedDayIndex, isTabSelectable, onDayIndexChange]);
+  }, [currentWeekStart, selectedDayIndex, isTabSelectable, onDayIndexChange, role]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) return;
@@ -177,10 +187,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             onClick={() => dateInputRef.current?.showPicker()} 
             className="text-center flex-1 cursor-pointer hover:opacity-85 transition-opacity relative"
           >
-            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-[#bf0202] uppercase select-none block font-bold">
+            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-slate-400 uppercase select-none block font-bold">
               SELECTED WEEK DATE
             </span>
-            <span className="font-heading text-xs sm:text-sm text-(--color-primary-light) tracking-wider block mt-0.5 select-none font-extrabold">
+            <span className="font-heading text-xs sm:text-sm text-[#193d70] dark:text-slate-100 tracking-wider block mt-0.5 select-none font-extrabold">
               {role === 'admin' ? (
                 `${format(currentWeekStart, 'MMMM d')} — ${format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'MMMM d, yyyy')}`
               ) : (
@@ -254,13 +264,13 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     onClick={() => selectable && onDayIndexChange(idx)}
                     disabled={!selectable}
                     style={{ animationDelay: staggerDelay }}
-                    className={`py-2 px-0.5 sm:px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
-                      active 
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-[#fff] border-[#123c73] dark:border-[#bf0202] shadow-sm scale-[1.02] z-10 font-bold' 
-                        : selectable 
-                          ? 'bg-(--bg-card) border-(--border-color) text-slate-700 dark:text-slate-300 hover:border-slate-350 dark:hover:border-white/10 font-bold active:scale-95' 
-                          : 'bg-transparent border-transparent text-slate-350 dark:text-zinc-755 opacity-40 cursor-not-allowed'
-                    }`}
+                   className={`py-2 px-0.5 sm:px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
+  active 
+    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-sm scale-[1.02] z-10 font-bold' 
+    : selectable 
+      ? 'bg-(--bg-card) border-(--border-color) text-slate-700 dark:text-slate-300 hover:border-slate-350 dark:hover:border-white/10 font-bold active:scale-95' 
+      : 'bg-transparent border-transparent text-slate-350 dark:text-zinc-755 opacity-40 cursor-not-allowed'
+}`}
                   >
                     <span className="text-[8px] sm:text-[9px] font-heading tracking-wider">{day}</span>
                     <span className="text-s font-sans font-extrabold">{format(date, 'd')}</span>
@@ -275,50 +285,78 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         )}
       </div>
 
-      {/* ─── SINGLE ROW SEARCH & FILTER TOOLBAR ─── */}
-      <div className="flex items-center gap-1.5 sm:gap-2 w-full mb-4">
-        {/* Search Input Box */}
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="w-full pl-9 pr-8 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
-          />
+  {/* ─── NON-SCROLLABLE 1-ROW SEARCH & DROPDOWN FILTERS TOOLBAR ─── */}
+<div className="flex items-center gap-2 w-full mb-4">
+  {/* Flexible Search Input */}
+  <div className="relative flex-1 min-w-0">
+    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 pointer-events-none" />
+    <input
+      type="text"
+      value={searchQuery}
+      onChange={(e) => onSearchQueryChange(e.target.value)}
+      placeholder={searchPlaceholder}
+      className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
+    />
+    {searchQuery && (
+      <button
+        type="button"
+        onClick={() => onSearchQueryChange('')}
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-(--color-text) cursor-pointer"
+        title="Clear search"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    )}
+  </div>
 
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => onSearchQueryChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
-              title="Clear search query"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+{/* Customer Type Dropdown Filter */}
+{filterOptions.length > 0 && onFilterChange && (
+  <div className="relative shrink-0">
+    <select
+      value={activeFilter || 'All'}
+      onChange={(e) => onFilterChange(e.target.value)}
+      style={{ 
+        backgroundImage: 'none', 
+        WebkitAppearance: 'none', 
+        MozAppearance: 'none', 
+        appearance: 'none' 
+      }}
+      className="bg-(--bg-card) border border-(--border-color) text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-400 dark:hover:border-zinc-600 transition-colors shadow-xs"
+    >
+      {filterOptions.map((opt) => (
+        <option key={opt.value} value={opt.value} className="bg-(--bg-card) text-(--color-text)">
+          {opt.label === 'All' ? 'Type: All' : opt.label}
+        </option>
+      ))}
+    </select>
+    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+  </div>
+)}
 
-        {/* Filter Pills (ALL, CASH, GCASH) on the same row */}
-        {filterOptions.length > 0 && onFilterChange && (
-          <div className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar">
-            {filterOptions.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => onFilterChange(opt.value)}
-                className={`px-2.5 sm:px-3 py-2 rounded-xl text-[9px] sm:text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
-                  activeFilter === opt.value
-                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs font-extrabold'
-                    : 'bg-(--bg-card) border border-(--border-color) text-slate-500 dark:text-slate-400 hover:opacity-85'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+{/* Payment Method Dropdown Filter */}
+{paymentOptions && paymentOptions.length > 0 && onPaymentFilterChange && (
+  <div className="relative shrink-0">
+    <select
+      value={paymentFilter || 'All'}
+      onChange={(e) => onPaymentFilterChange(e.target.value)}
+      style={{ 
+        backgroundImage: 'none', 
+        WebkitAppearance: 'none', 
+        MozAppearance: 'none', 
+        appearance: 'none' 
+      }}
+      className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
+    >
+      {paymentOptions.map((opt) => (
+        <option key={opt.value} value={opt.value} className="bg-(--bg-card) text-(--color-text)">
+          {opt.label === 'All Pay' || opt.label === 'All' ? 'Pay: All' : `Pay: ${opt.label}`}
+        </option>
+      ))}
+    </select>
+    <ChevronDown className="w-3.5 h-3.5 text-emerald-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+  </div>
+)}
+</div>
     </>
   );
 };

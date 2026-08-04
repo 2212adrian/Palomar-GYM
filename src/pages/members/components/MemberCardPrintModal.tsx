@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, Printer, Search, CheckSquare, Square, ZoomIn, ZoomOut, Maximize2, 
@@ -6,7 +6,7 @@ import {
   Download, Loader2, Lock, ShieldCheck, Sparkles, AlertTriangle
 } from 'lucide-react';
 import type { Member, Subscription, MemberCard } from '../../../types/members';
-import { prototypeStorage, STORAGE_KEYS } from '../memberService';
+import { subscriptionService, cardService } from '../memberService';
 import { toast } from 'react-toastify';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
@@ -56,21 +56,35 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   initialSelectedIds = [],
   onClose,
 }) => {
-  // Subscriptions & Cards Storage Collection
-  const subscriptions = useMemo(() => {
-    return prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-  }, []);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [cards, setCards] = useState<MemberCard[]>([]);
 
-  const cards = useMemo(() => {
-    return prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
+  useEffect(() => {
+    let isMounted = true;
+    const loadData = async () => {
+      try {
+        const [subsData, cardsData] = await Promise.all([
+          subscriptionService.getAll(),
+          cardService.getAll()
+        ]);
+        if (isMounted) {
+          setSubscriptions(subsData);
+          setCards(cardsData);
+        }
+      } catch (err) {
+        console.error('Error loading cards or subscriptions:', err);
+      }
+    };
+    loadData();
+    return () => { isMounted = false; };
   }, []);
 
   const getMemberCard = (memberId: string) => {
-    return cards.find(c => c.member_id === memberId && c.status === 'Active' && c.card_type !== 'None');
+    return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active' && c.card_type !== 'None');
   };
 
   const getMemberSub = (memberId: string) => {
-    return subscriptions.find(s => s.member_id === memberId && s.status === 'Active');
+    return subscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
   };
 
   // Check if active card exists in system
@@ -185,6 +199,12 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         full_name: 'MANUAL TEMPLATE CARD',
         phone: '',
         email: '',
+        gender: 'Male',
+        birthday: '2000-01-01',
+        emergency_contact_name: 'Gym Staff',
+        relationship: 'Counter',
+        emergency_contact_phone: '09762607481',
+        address: 'Navotas City',
         status: 'Active' as const,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -234,50 +254,21 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     setSelectedIds(eligibleIds);
   };
 
-  // Update card storage records when issuing
-  const persistCardIssuance = () => {
+  // Update card storage records in Supabase when issuing
+  const persistCardIssuance = async () => {
     if (cardFormat !== 'qr_digital') return;
 
-    const allCards = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
-    let updatedCards = [...allCards];
-
-    selectedMembersList.forEach(m => {
-      const existingActiveCard = allCards.find(c => c.member_id === m.member_id && c.status === 'Active');
-
-      if (rerollQrTokens) {
-        updatedCards = updatedCards.map(c => {
-          if (c.member_id === m.member_id && c.status === 'Active') {
-            return { 
-              ...c, 
-              status: 'Inactive' as MemberCard['status'], 
-              replaced_at: new Date().toISOString(),
-              replacement_reason: 'Card Reissued / QR Rerolled',
-              updated_at: new Date().toISOString() 
-            };
-          }
-          return c;
-        });
+    try {
+      for (const m of selectedMembersList) {
+        await cardService.issue(m.member_id, 'QR', 'Counter Staff');
       }
-
-      const newCardToken = `CARD-${m.member_id}-${Date.now().toString(36).toUpperCase()}`;
-      const newCardRecord: MemberCard = {
-        id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        member_id: m.member_id,
-        card_type: 'QR',
-        card_number: newCardToken,
-        version: (existingActiveCard?.version || 0) + 1,
-        status: 'Active',
-        issued_at: new Date(issueDate).toISOString()
-      };
-      updatedCards.push(newCardRecord);
-    });
-
-    prototypeStorage.save(STORAGE_KEYS.CARDS, updatedCards);
+    } catch (e) {
+      console.error('Failed to persist card issuance in Supabase:', e);
+    }
   };
 
   // Helper to build high-res PDF bytes
   const buildPdfDocument = async (): Promise<{ pdfBytes: Uint8Array; fileName: string }> => {
-    // Convert image URL to Base64 Data URL
     const loadBase64Image = async (url: string): Promise<HTMLImageElement> => {
       const response = await fetch(url);
       const blob = await response.blob();
@@ -297,7 +288,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     const cardTemplateImgObj = await loadBase64Image(cardTemplateImg);
     const pdfDoc = await PDFDocument.create();
 
-    // 300 DPI Resolution Setup for Letter sheet (215.9mm x 279.4mm)
     const scale = 300 / 25.4; // 11.811 px per mm
     const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);  // 2550 px
     const sheetHeightPx = Math.round(LETTER_PAPER.height * scale); // 3300 px
@@ -309,7 +299,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       const ctx = pageCanvas.getContext('2d');
       if (!ctx) continue;
 
-      // White background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
 
@@ -443,7 +432,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           // DATES ROW
           const boxHalfW = (detailsW - 1.2 * scale) / 2;
 
-          // Issue Date Label & Box
           ctx.fillStyle = '#ffffff';
           ctx.font = `800 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
           ctx.fillText('ISSUE DATE', detailsX, detailsY + 17.8 * scale);
@@ -460,11 +448,9 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           ctx.textAlign = 'center';
           ctx.fillText(new Date(issueDate).toLocaleDateString(), detailsX + boxHalfW / 2, detailsY + 21.8 * scale);
 
-          // Red Vertical Divider
           ctx.fillStyle = '#dc2626';
           ctx.fillRect(detailsX + boxHalfW + 0.45 * scale, detailsY + 17.5 * scale, 0.3 * scale, 6 * scale);
 
-          // Expiration Box
           const expX = detailsX + boxHalfW + 1.2 * scale;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
@@ -476,7 +462,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
           ctx.fillText(new Date(finalExpDate).toLocaleDateString(), expX + boxHalfW / 2, detailsY + 21.8 * scale);
 
-          // 5. Footer Divider & Text
           const footerY = cardY + cardH - 5 * scale;
           ctx.fillStyle = '#dc2626';
           ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
@@ -490,7 +475,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         }
       }
 
-      // Untainted 300 DPI Canvas PNG Export
       const pngDataUrl = pageCanvas.toDataURL('image/png', 1.0);
       const embeddedPng = await pdfDoc.embedPng(pngDataUrl);
 
@@ -509,7 +493,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     return { pdfBytes, fileName };
   };
 
-  // Print Action Handler (Capacitor Native Share/Print vs Web Hidden iFrame Print)
   const handlePrint = async () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -533,9 +516,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       return;
     }
 
-    persistCardIssuance();
+    await persistCardIssuance();
 
-    // CAPACITOR MOBILE PLATFORM PRINTING (via Native Share/Print dialog)
     if (Capacitor.isNativePlatform()) {
       setIsGeneratingPdf(true);
       try {
@@ -566,7 +548,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       return;
     }
 
-    // WEB DESKTOP PRINTING (Via Hidden iFrame - avoids popup blocker issues)
     let pagesHtml = '';
 
     for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
@@ -847,7 +828,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     printDoc.close();
   };
 
-  // PDF DOWNLOAD HANDLER (Capacitor Native Filesystem/Share vs Browser saveAs)
   const handleDownloadPdf = async () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -875,11 +855,10 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     toast.info('Generating high-resolution 300 DPI PDF file...');
 
     try {
-      persistCardIssuance();
+      await persistCardIssuance();
 
       const { pdfBytes, fileName } = await buildPdfDocument();
 
-      // CAPACITOR NATIVE DOWNLOAD / SAVE HANDLER
       if (Capacitor.isNativePlatform()) {
         const base64Data = arrayBufferToBase64(pdfBytes.buffer as ArrayBuffer);
         const file = await Filesystem.writeFile({
@@ -900,7 +879,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         return;
       }
 
-      // WEB BROWSER DOWNLOAD HANDLER
       const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       try {
         saveAs(pdfBlob, fileName);
@@ -927,7 +905,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[16000] bg-[var(--bg-page)] flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
+    <div className="fixed inset-0 z-16000 bg-(--bg-page) flex flex-col font-body text-(--color-text) select-none animate-fade-in">
       
       {/* SCOPED STYLES FOR LIVE PREVIEW */}
       <style>{`
@@ -1016,13 +994,13 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       `}</style>
 
       {/* Top Header Bar */}
-      <div className="px-6 py-4 border-b border-(--border-color) bg-[var(--bg-card)] flex items-center justify-between shrink-0">
+      <div className="px-6 py-4 border-b border-(--border-color) bg-(--bg-card) flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-2 bg-[var(--color-primary)]/10 rounded-xl text-[var(--color-primary)] border border-[var(--color-primary)]/20">
+          <div className="p-2 bg-(--color-primary)/10 rounded-xl text-(--color-primary) border border-(--color-primary)/20">
             <Printer className="w-5 h-5 animate-pulse" />
           </div>
           <div className="text-left">
-            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT MEMBER CREDENTIAL CARDS</h2>
+            <h2 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">PRINT MEMBER CREDENTIAL CARDS</h2>
             <p className="text-[10px] text-slate-400 font-bold block mt-0.5">
               Select members, set validity dates, print physical sheets or download official PDF files.
             </p>
@@ -1043,7 +1021,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           type="button"
           onClick={() => setActiveMobileTab('configure')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'configure' ? 'bg-[var(--color-primary)] text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'configure' ? 'bg-(--color-primary) text-white shadow-md' : 'text-slate-400'
           }`}
         >
           Configure
@@ -1052,7 +1030,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           type="button"
           onClick={() => setActiveMobileTab('preview')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'preview' ? 'bg-[var(--color-primary)] text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'preview' ? 'bg-(--color-primary) text-white shadow-md' : 'text-slate-400'
           }`}
         >
           Layout Preview
@@ -1063,13 +1041,13 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
         
         {/* LEFT CONTROL SIDEBAR PANEL */}
-        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-[180px] md:pb-6 ${
+        <div className={`lg:col-span-4 border-r border-(--border-color) bg-(--bg-card) p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-45 md:pb-6 ${
           activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
         }`}>
           <div className="flex flex-col gap-4 overflow-y-hidden flex-1">
             
             {/* Card Format Choice */}
-            <div className="p-3 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-2 text-left shrink-0">
+            <div className="p-3 bg-(--bg-input) border border-(--border-color) rounded-2xl space-y-2 text-left shrink-0">
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                 Card Type Format
               </label>
@@ -1079,8 +1057,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                   onClick={() => setCardFormat('qr_digital')}
                   className={`p-2.5 rounded-xl border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     cardFormat === 'qr_digital'
-                      ? 'bg-[var(--color-primary)] text-white border-transparent shadow-md'
-                      : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                      ? 'bg-(--color-primary) text-white border-transparent shadow-md'
+                      : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
                   }`}
                 >
                   <QrCode className="w-3.5 h-3.5" />
@@ -1093,7 +1071,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                   className={`p-2.5 rounded-xl border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     cardFormat === 'manual_template'
                       ? 'bg-amber-600 text-white border-transparent shadow-md'
-                      : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                      : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
                   }`}
                 >
                   <CreditCard className="w-3.5 h-3.5" />
@@ -1104,7 +1082,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
 
             {/* Selection Drawer vs Manual Copies Count */}
             {cardFormat === 'manual_template' ? (
-              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 text-left">
+              <div className="p-4 bg-(--bg-input) border border-(--border-color) rounded-2xl space-y-3 shrink-0 text-left">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Manual Template Copies
@@ -1127,7 +1105,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                       max="100"
                       value={manualCardCount}
                       onChange={(e) => setManualCardCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-24 p-2 bg-[var(--bg-page)] border border-(--border-color) rounded-xl text-xs font-mono font-bold text-(--color-text) outline-none focus:border-amber-500"
+                      className="w-24 p-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs font-mono font-bold text-(--color-text) outline-none focus:border-amber-500"
                     />
                     <div className="flex gap-1.5 flex-1 overflow-x-auto">
                       {[1, 4, 8, 16].map((num) => (
@@ -1138,7 +1116,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           className={`px-2.5 py-1.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${
                             manualCardCount === num
                               ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                              : 'bg-[var(--bg-page)] border-(--border-color) text-slate-400 hover:text-(--color-text)'
+                              : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
                           }`}
                         >
                           {num} {num === 1 ? 'Card' : 'Cards'}
@@ -1149,14 +1127,14 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[240px] flex-1">
+              <div className="p-4 bg-(--bg-input) border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-60 flex-1">
                 <div className="flex items-center justify-between shrink-0">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Members</h4>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={handleSelectAllEligible}
-                      className="text-[9px] font-bold uppercase text-[var(--color-primary)] hover:underline cursor-pointer"
+                      className="text-[9px] font-bold uppercase text-(--color-primary) hover:underline cursor-pointer"
                       title="Select all eligible members"
                     >
                       All Eligible
@@ -1178,7 +1156,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Filter members..."
-                    className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] transition-all font-medium"
+                    className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-(--color-primary) transition-all font-medium"
                   />
                 </div>
 
@@ -1197,7 +1175,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           !eligible
                             ? 'opacity-50 cursor-not-allowed bg-slate-200/50 dark:bg-zinc-900/20 border border-transparent'
                             : isSelected 
-                              ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)] text-[var(--color-text)] cursor-pointer' 
+                              ? 'bg-(--color-primary)/10 border border-(--color-primary) text-(--color-text) cursor-pointer' 
                               : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900/40 border border-transparent text-slate-700 dark:text-slate-300 cursor-pointer'
                         }`}
                       >
@@ -1205,7 +1183,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           {!eligible ? (
                             <Lock className="w-4 h-4 shrink-0 text-slate-400" />
                           ) : isSelected ? (
-                            <CheckSquare className="w-4 h-4 shrink-0 text-[var(--color-primary)]" />
+                            <CheckSquare className="w-4 h-4 shrink-0 text-(--color-primary)" />
                           ) : (
                             <Square className="w-4 h-4 shrink-0 text-slate-500" />
                           )}
@@ -1217,7 +1195,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
 
                         {hasActiveCard ? (
                           rerollQrTokens ? (
-                            <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20 flex items-center gap-1">
+                            <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-(--color-primary)/10 text-(--color-primary) border-(--color-primary)/20 flex items-center gap-1">
                               <ShieldCheck className="w-2.5 h-2.5" /> Reissue Ready
                             </span>
                           ) : (
@@ -1316,7 +1294,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                         onClick={() => applyPresetDays(30)}
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
                           activePresetDays === 30
-                            ? 'bg-[var(--color-primary)] text-white shadow-md'
+                            ? 'bg-(--color-primary) text-white shadow-md'
                             : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
                         }`}
                       >
@@ -1328,7 +1306,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                         onClick={() => applyPresetDays(365)}
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
                           activePresetDays === 365
-                            ? 'bg-[var(--color-primary)] text-white shadow-md'
+                            ? 'bg-(--color-primary) text-white shadow-md'
                             : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
                         }`}
                       >
@@ -1341,7 +1319,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                         onClick={() => applyPresetDays(1095)}
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer flex items-center gap-1 ${
                           activePresetDays === 1095
-                            ? 'bg-[var(--color-primary)] text-white shadow-md font-extrabold border border-white/20'
+                            ? 'bg-(--color-primary) text-white shadow-md font-extrabold border border-white/20'
                             : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
                         }`}
                       >
@@ -1353,8 +1331,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                         onClick={() => setOverrideDates(false)}
                         className={`px-2 py-1 rounded-lg text-[9px] font-heading font-bold uppercase cursor-pointer flex items-center gap-1 border ${
                           !overrideDates 
-                            ? 'bg-[var(--color-primary)] text-white border-transparent' 
-                            : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20'
+                            ? 'bg-(--color-primary) text-white border-transparent' 
+                            : 'bg-(--color-primary)/10 text-(--color-primary) border-(--color-primary)/20'
                         }`}
                       >
                         <RefreshCw className="w-2.5 h-2.5" /> Sync Sub
@@ -1368,14 +1346,14 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           type="checkbox"
                           checked={rerollQrTokens}
                           onChange={(e) => handleRerollToggle(e.target.checked)}
-                          className="w-4 h-4 mt-0.5 rounded text-[var(--color-primary)] focus:ring-[var(--color-primary)] accent-[var(--color-primary)] cursor-pointer shrink-0"
+                          className="w-4 h-4 mt-0.5 rounded text-(--color-primary) focus:ring-(--color-primary) accent-(--color-primary) cursor-pointer shrink-0"
                         />
                         <div className="min-w-0 text-left">
                           <span className="text-[10px] font-bold text-(--color-text) block leading-tight">
                             Generate Fresh QR Tokens (Allow Reissuing)
                           </span>
                           <span className="text-[8px] text-slate-400 block mt-0.5 leading-relaxed">
-                            When <strong className="text-[var(--color-primary)]">ON</strong>, members with existing cards can be selected to receive a replacement card. Old cards will be automatically deactivated.
+                            When <strong className="text-(--color-primary)">ON</strong>, members with existing cards can be selected to receive a replacement card. Old cards will be automatically deactivated.
                           </span>
                         </div>
                       </label>
@@ -1389,7 +1367,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           </div>
 
           {/* Action Row Panel: PRINT & DOWNLOAD PDF */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none space-y-2 mt-4">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-(--bg-card)/95 border-t border-(--border-color) z-201 md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none space-y-2 mt-4">
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -1404,7 +1382,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                     ? 'bg-slate-600 cursor-not-allowed opacity-40'
                     : cardFormat === 'manual_template' 
                       ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer' 
-                      : 'bg-[var(--color-primary)] hover:opacity-90 cursor-pointer'
+                      : 'bg-(--color-primary) hover:opacity-90 cursor-pointer'
                 }`}
               >
                 <Printer className="w-4 h-4" />
@@ -1442,13 +1420,13 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         </div>
 
         {/* RIGHT PREVIEW PANEL */}
-        <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative ${
+        <div className={`lg:col-span-8 bg-(--bg-page) p-6 flex flex-col justify-between overflow-hidden relative ${
           activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
         }`}>
           
           {/* Zoom floating toolbar */}
           <div className="absolute top-4 right-4 z-10 animate-fade-in">
-            <div className="bg-[var(--bg-input)] border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
+            <div className="bg-(--bg-input) border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
               <button 
                 onClick={() => setZoom(prev => Math.max(50, prev - 25))}
                 className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
@@ -1456,7 +1434,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
-              <span className="font-mono font-bold text-[10px] tracking-wider text-[var(--color-text)] w-12 text-center select-none">
+              <span className="font-mono font-bold text-[10px] tracking-wider text-(--color-text) w-12 text-center select-none">
                 {zoom}%
               </span>
               <button 
@@ -1478,16 +1456,16 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           </div>
 
           {/* Live Page Layout Sheet */}
-          <div className="flex-1 flex flex-col h-full bg-[var(--bg-card)] rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs card-sheet-container">
+          <div className="flex-1 flex flex-col h-full bg-(--bg-card) rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs card-sheet-container">
             <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
               <div className="text-left">
-                <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">Live Card Sheet Layout</h4>
+                <h4 className="text-xs font-heading uppercase tracking-widest text-(--color-text)">Live Card Sheet Layout</h4>
                 <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
                   Format: {template.name} • Mode: {cardFormat === 'manual_template' ? 'Manual Template Asset' : 'Digital Dynamic QR'}
                 </span>
               </div>
               <div className="text-right shrink-0">
-                <span className="text-xs font-mono font-bold text-[var(--color-primary)] block">
+                <span className="text-xs font-mono font-bold text-(--color-primary) block">
                   {effectiveCardsList.length} Total Cards
                 </span>
                 <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
@@ -1597,8 +1575,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                                     )}
                                   </div>
 
-                                 {/* Dynamic Fields */}
-                                    <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}                                   >
+                                  {/* Dynamic Fields */}
+                                  <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}>
                                     
                                     {/* FULL NAME */}
                                     <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>

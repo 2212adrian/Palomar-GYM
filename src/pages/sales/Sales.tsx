@@ -681,13 +681,13 @@ export const Sales: React.FC = () => {
       )}
 
       {/* --- TIMELINE CANVAS SCROLLER --- */}
-      <div className="relative w-full h-auto overflow-x-clip grid grid-cols-1 items-start">
+      <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
         
        {/* VIEW 1: CASHIER REGISTER */}
         <div 
-          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-12 animate-fade-in ${
-            activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-          }`}
+          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 animate-fade-in ${
+    activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+  }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -697,92 +697,83 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* ─── TODAY'S SALES SUMMARY ─── */}
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-4 sm:px-6 py-4 shadow-sm animate-fade-in">
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 items-center">
-              
-              {/* Transactions Metric (Left) */}
-              <div className="flex flex-col sm:flex-row items-center justify-start gap-2 sm:gap-3 min-w-0">
-                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-                  <ShoppingBag className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-blue-500" />
-                </div>
-                <div className="min-w-0 text-center sm:text-left">
-                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                    Transactions
-                  </span>
-                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
-                    <AnimatedNumber value={dailyCount} />
-                  </span>
-                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                    Completed Today
-                  </span>
-                </div>
-              </div>
+         {/* ─── TODAY'S SALES SUMMARY (STRICT 1-ROW DESIGN) ─── */}
+<div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
+  <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
+    
+    {/* Left: Transactions */}
+    <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+        <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+      </div>
+      <div className="min-w-0">
+        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+          Transactions
+        </span>
+        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+          <AnimatedNumber value={dailyCount} />
+        </span>
+      </div>
+    </div>
 
-              {/* Today's Revenue Metric (Center Highlighted with FX) */}
-              <div className="flex flex-col items-center justify-center text-center min-w-0 py-1 border-x border-(--border-color)/40 px-2 sm:px-4">
-                <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                  Revenue
-                </span>
-                <motion.div
-                  animate={{
-                    scale: revenueTrend === 'increasing' ? 1.2 : revenueTrend === 'decreasing' ? 0.85 : 1,
-                  }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="my-1 flex items-center justify-center gap-1 sm:gap-1.5"
-                >
-                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 transition-colors duration-300 ${
-                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
-                  }`} />
-                  <span className={`font-heading text-xl sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-500 truncate ${
-                    revenueTrend === 'increasing'
-                      ? 'text-emerald-500'
-                      : revenueTrend === 'decreasing'
-                      ? 'text-rose-500'
-                      : 'text-(--color-text)'
-                  }`}>
-                    <AnimatedCurrency value={dailyRevenue} />
-                  </span>
-                </motion.div>
-                <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                  Total Earnings
-                </span>
-              </div>
+    {/* Center: Highlighted Total Revenue */}
+    <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
+      <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
+        Total Revenue
+      </span>
+      <motion.div
+        animate={{
+          scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
+        }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
+      >
+        <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
+          revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+        }`} />
+        <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
+          revenueTrend === 'increasing'
+            ? 'text-emerald-500'
+            : revenueTrend === 'decreasing'
+            ? 'text-rose-500'
+            : 'text-(--color-text)'
+        }`}>
+          <AnimatedCurrency value={dailyRevenue} />
+        </span>
+      </motion.div>
+    </div>
 
-              {/* Items Sold Metric (Right) */}
-              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 sm:gap-3 min-w-0">
-                <div className="min-w-0 text-center sm:text-right order-2 sm:order-1">
-                  <span className="text-[9px] uppercase tracking-widest font-heading text-slate-500 dark:text-slate-400 block truncate font-bold">
-                    Items Sold
-                  </span>
-                  <span className="font-heading text-xl sm:text-3xl font-extrabold text-(--color-text) block leading-tight truncate">
-                    <AnimatedNumber value={itemsSoldToday} />
-                  </span>
-                  <span className="text-[10px] font-body text-slate-400 hidden sm:block truncate">
-                    Units Dispatched
-                  </span>
-                </div>
-                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-1 sm:order-2">
-                  <Package className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-emerald-500" />
-                </div>
-              </div>
+    {/* Right: Items Sold */}
+    <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+      <div className="min-w-0 text-right order-1">
+        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+          Items Sold
+        </span>
+        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+          <AnimatedNumber value={itemsSoldToday} />
+        </span>
+      </div>
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
+        <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
+      </div>
+    </div>
 
-            </div>
-          </div>
+  </div>
+</div>
 
           <TimelineBar
-            currentWeekStart={currentWeekStart}
-            onWeekStartChange={setCurrentWeekStart}
-            selectedDayIndex={selectedDayIndex}
-            onDayIndexChange={setSelectedDayIndex}
-            searchQuery={ledgerSearch}
-            onSearchQueryChange={setLedgerSearch}
-            activeFilter={paymentFilter}
-            onFilterChange={setPaymentFilter}
-            filterOptions={PAYMENT_FILTERS}
-            role={role}
-            searchPlaceholder="Search here (E.g. Name, Product, ID)"
-          />
+  currentWeekStart={currentWeekStart}
+  onWeekStartChange={setCurrentWeekStart}
+  selectedDayIndex={selectedDayIndex}
+  onDayIndexChange={setSelectedDayIndex}
+  searchQuery={ledgerSearch}
+  onSearchQueryChange={setLedgerSearch}
+  paymentFilter={paymentFilter}
+  onPaymentFilterChange={setPaymentFilter}
+  paymentOptions={PAYMENT_FILTERS}
+  role={role}
+  searchPlaceholder="Search here (E.g. Name, Product, ID)"
+/>
 
           {/* --- HOURLY LEDGER TIMELINE --- */}
           <div className="space-y-6">
@@ -873,9 +864,9 @@ export const Sales: React.FC = () => {
                 return hourlyGroups.map((group) => (
                   <div key={group.label} className="space-y-4">
                     <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
-                      <div className="text-[9px] font-heading font-black tracking-widest text-(--color-primary-light) bg-(--color-primary)/10 border border-(--color-primary)/10 px-3 py-1 rounded-full uppercase shrink-0">
-                        {group.label}
-                      </div>
+                      <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
+  {group.label}
+</div>
                       <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
                     </div>
 
@@ -948,9 +939,9 @@ export const Sales: React.FC = () => {
        {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
           <div 
-            className={`w-full pb-12 max-w-full ${
-              activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-            }`}
+           className={`w-full pb-40 md:pb-12 max-w-full ${
+    activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+  }`}
             style={{
               gridColumn: 1,
               gridRow: 1,

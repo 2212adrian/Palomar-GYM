@@ -9,7 +9,7 @@ import {
   User
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
-import { memberService, subscriptionService, cardService, prototypeStorage, STORAGE_KEYS } from '../memberService';
+import { memberService, subscriptionService, cardService } from '../memberService';
 import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord } from '../../../types/members';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
@@ -76,6 +76,34 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [editEmergencyPhone, setEditEmergencyPhone] = useState(member.emergency_contact_phone || '');
   const [showSignatures, setShowSignatures] = useState(false);
 
+  // Supabase Async Collections State
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [cards, setCards] = useState<MemberCard[]>([]);
+
+  const loadProfileCollections = async () => {
+    try {
+      const [subsData, cardsData, { data: rcptsData }, { data: attData }] = await Promise.all([
+        subscriptionService.getByMemberId(localMember.member_id),
+        cardService.getAll(),
+        supabase.from('receipts').select('*').eq('member_id', localMember.member_id).order('created_at', { ascending: false }),
+        supabase.from('attendance').select('*').eq('member_id', localMember.member_id).order('check_in_time', { ascending: false })
+      ]);
+
+      setSubscriptions(subsData || []);
+      setCards((cardsData || []).filter((c: MemberCard) => c.member_id === localMember.member_id));
+      setReceipts((rcptsData || []) as Receipt[]);
+      setAttendance((attData || []) as AttendanceRecord[]);
+    } catch (err) {
+      console.error('Error loading member profile details:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadProfileCollections();
+  }, [localMember.member_id, refreshKey]);
+
   useEffect(() => {
     setLocalMember(member);
     setEditFullName(member.full_name || '');
@@ -105,26 +133,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   }, []);
 
   const stats = useMemo(() => {
-    const subs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS).filter((s: Subscription) => s.member_id === localMember.member_id);
-    const rcpts = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS).filter((r: Receipt) => r.member_id === localMember.member_id);
-    const atts = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE).filter((a: AttendanceRecord) => a.member_id === localMember.member_id);
-    const crds = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS).filter((c: MemberCard) => c.member_id === localMember.member_id);
-
     return {
-      totalContracts: subs.length,
-      totalSpent: rcpts.reduce((acc: number, curr: Receipt) => acc + curr.amount, 0),
-      totalVisits: atts.length,
-      cardReplacements: crds.filter((c: MemberCard) => !!c.replaced_at).length,
-      activeContract: subs.find((s: Subscription) => s.status === 'Active')
+      totalContracts: subscriptions.length,
+      totalSpent: receipts.reduce((acc: number, curr: Receipt) => acc + curr.amount, 0),
+      totalVisits: attendance.length,
+      cardReplacements: cards.filter((c: MemberCard) => !!c.replaced_at).length,
+      activeContract: subscriptions.find((s: Subscription) => s.status === 'Active')
     };
-  }, [localMember, refreshKey]);
+  }, [subscriptions, receipts, attendance, cards]);
 
   const attendanceLogs = useMemo(() => {
-    const list = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-    return list
-      .filter((a: AttendanceRecord) => a.member_id === localMember.member_id)
-      .sort((a, b) => new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime());
-  }, [localMember, refreshKey]);
+    return [...attendance].sort((a: AttendanceRecord, b: AttendanceRecord) => 
+      new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime()
+    );
+  }, [attendance]);
 
   // Reissue Confirmation Modal State
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
@@ -164,7 +186,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       };
     }
 
-    const hasFacilityVisitsAfterSub = attendanceLogs.some((att) => {
+    const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
       if (att.customer_type === 'New Membership') return false;
       const checkInTime = new Date(att.check_in_time).getTime();
       return checkInTime > createdTime;
@@ -365,34 +387,25 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       cardFee: cardFee,
       paymentMethod: payMethod,
       gcashRefNo: gcashRefNo,
-      transactionDate: receipt.created_at,
+      transactionDate: receipt.created_at || new Date().toISOString(),
       processedBy: 'Admin Staff',
     };
     setSelectedReceiptData(data);
   };
 
   const currentCard = useMemo(() => {
-    const list = prototypeStorage.getCollection<MemberCard>(STORAGE_KEYS.CARDS);
-    return list.find((c: MemberCard) => c.member_id === localMember.member_id && c.status === 'Active');
-  }, [localMember, refreshKey]);
+    return cards.find((c: MemberCard) => c.status === 'Active');
+  }, [cards]);
 
-  const subHistory = useMemo(() => {
-    const list = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-    return list.filter((s: Subscription) => s.member_id === localMember.member_id);
-  }, [localMember, refreshKey]);
-
-  const invoices = useMemo(() => {
-    const list = prototypeStorage.getCollection<Receipt>(STORAGE_KEYS.RECEIPTS);
-    return list.filter((r: Receipt) => r.member_id === localMember.member_id);
-  }, [localMember, refreshKey]);
+  const subHistory = subscriptions;
+  const invoices = receipts;
 
   const extMember = localMember as any;
 
   const registrationDateText = useMemo(() => {
     if (!localMember.created_at) return 'N/A';
     const dateObj = new Date(localMember.created_at);
-    if (isNaN(dateObj.getTime())) return 'N/A';
-    return dateObj.toLocaleDateString();
+    return isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString();
   }, [localMember.created_at]);
 
   return createPortal(
@@ -401,7 +414,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
+      className="fixed inset-0 z-9999 flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
       onClick={onClose}
     >
       <motion.div 
@@ -461,26 +474,26 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
           {/* SWIPEABLE HORIZONTAL STATS CAROUSEL ON MOBILE */}
           <div className="flex sm:grid sm:grid-cols-4 gap-2.5 overflow-x-auto scrollbar-none pt-1">
-            <div className="min-w-[130px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+            <div className="min-w-32.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Total Spent</span>
               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block mt-1">
                 ₱{stats.totalSpent.toLocaleString()}
               </span>
             </div>
 
-            <div className="min-w-[110px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+            <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Check-ins</span>
               <span className="text-xs font-bold text-(--color-text) block mt-1">{stats.totalVisits} visits</span>
             </div>
 
-            <div className="min-w-[140px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+            <div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
               <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate block mt-1">
                 {stats.activeContract ? stats.activeContract.plan_name : 'Profile Only'}
               </span>
             </div>
 
-            <div className="min-w-[110px] flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+            <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Reissued</span>
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1">
                 {stats.cardReplacements} cards
@@ -495,7 +508,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             <button 
               key={tab} 
               onClick={() => setActiveTab(tab as any)}
-              className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
+              className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
                 activeTab === tab 
                   ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
                   : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
@@ -528,7 +541,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsWizardOpen(true)}
-                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
+                    className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
                   >
                     <CreditCard className="w-4 h-4" />
                     <span>Subscribe Plan</span>
@@ -574,7 +587,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Email</span>
-                        <span className="text-(--color-text) truncate max-w-[180px]">{localMember.email || 'N/A'}</span>
+                        <span className="text-(--color-text) truncate max-w-45">{localMember.email || 'N/A'}</span>
                       </div>
                       <div className="pt-1">
                         <span className="text-slate-400 block mb-0.5">Home Address</span>
@@ -785,7 +798,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     {extMember.parent_email && (
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Parent Email</span>
-                        <span className="text-(--color-text) truncate max-w-[160px]">{extMember.parent_email}</span>
+                        <span className="text-(--color-text) truncate max-w-40">{extMember.parent_email}</span>
                       </div>
                     )}
                   </div>
@@ -918,7 +931,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setIsVoidModalOpen(true)}
-                        className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
+                        className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
                       >
                         <span>Void Subscription</span>
                       </button>
@@ -929,7 +942,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
               {/* INVOICES LIST */}
               <div className="space-y-3 pt-3 border-t border-(--border-color)">
-                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block flex items-center gap-1.5">
+                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5">
                   <ReceiptIcon className="w-4 h-4 text-emerald-500" /> Invoices & Receipts
                 </span>
                 {invoices.length === 0 ? (
@@ -942,7 +955,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div className="space-y-1">
                         <h5 className="font-bold text-sm text-(--color-text)">{r.item_description}</h5>
                         <p className="font-mono text-xs text-slate-400">
-                          {r.id} • {r.payment_method} • {new Date(r.created_at).toLocaleDateString()}
+                          {r.id} • {r.payment_method} • {new Date(r.created_at || Date.now()).toLocaleDateString()}
                         </p>
                       </div>
                       
@@ -954,7 +967,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenReceipt(r)}
-                          className="min-h-[38px] px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
+                          className="min-h-9.5 px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
                           title="View Official Receipt"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -999,7 +1012,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setIsDigitalQrModalOpen(true)}
-                        className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
+                        className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
                       >
                         <Eye className="w-4 h-4" />
                         <span>Print Digital Badge</span>
@@ -1028,7 +1041,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         
                         {/* QR CODE BOX */}
                         <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
-                          <img 
+                          <img
                             src={qrImg} 
                             alt="Member QR" 
                             className="w-full h-full object-contain"

@@ -12,8 +12,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import type { OnlineRegistration } from '../../../types/members';
-import { registrationService, settingsService } from '../memberService';
+import type { OnlineRegistration, MembershipSettings } from '../../../types/members';
+import { registrationService, settingsService, DEFAULT_SETTINGS } from '../memberService';
 
 import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
@@ -34,6 +34,19 @@ const calculateAge = (birthdayStr: string): number => {
   return age >= 0 ? age : 0;
 };
 
+/**
+ * Calculates the exact timestamp (ms) for 12:00 AM Manila Time (Asia/Manila midnight next day)
+ */
+const getNextManilaMidnightMs = (): number => {
+  const now = new Date();
+  const manilaDateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
+  const [month, day, year] = manilaDateStr.split('/').map(Number);
+  
+  // Manila is UTC+8. Midnight 00:00:00 Asia/Manila corresponds to 16:00:00 UTC of previous day.
+  const midnightUtcMs = Date.UTC(year, month - 1, day + 1, 0, 0, 0) - (8 * 60 * 60 * 1000);
+  return midnightUtcMs;
+};
+
 // Zod Validation Schema with Optional Home Address
 const registrationSchema = z.object({
   last_name: z.string().min(1, 'Last name is required'),
@@ -49,7 +62,6 @@ const registrationSchema = z.object({
   gender: z.string().min(1, 'Please select your gender'),
   birthday: z.string().min(1, 'Please select your birthday'),
   
-  // Home Address is optional
   address: z.string().optional().or(z.literal('')),
   
   same_as_parent: z.boolean().optional(),
@@ -84,7 +96,6 @@ const registrationSchema = z.object({
 }).superRefine((data, ctx) => {
   const age = calculateAge(data.birthday);
   
-  // Under 12 Policy
   if (data.birthday && age < 12) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -93,7 +104,6 @@ const registrationSchema = z.object({
     });
   }
 
-  // Minor Policy (12-17 Yrs)
   if (data.birthday && age >= 12 && age < 18) {
     if (!data.parent_name || data.parent_name.trim().length < 2) {
       ctx.addIssue({
@@ -310,7 +320,11 @@ export const OnlineRegistrationPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const settings = useMemo(() => settingsService.load(), []);
+  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    settingsService.load().then(setSettings).catch(console.warn);
+  }, []);
 
   // Sync Theme on Mount
   useEffect(() => {
@@ -391,7 +405,6 @@ export const OnlineRegistrationPage: React.FC = () => {
   const watchedApplicantSignature = watch('applicant_signature');
   const watchedParentSignature = watch('parent_signature');
 
-  // Calculated Age & Policy Categories
   const applicantAge = useMemo(() => calculateAge(watchedBirthday), [watchedBirthday]);
   const isRestrictedUnder12 = useMemo(() => !!watchedBirthday && applicantAge < 12, [watchedBirthday, applicantAge]);
   const isMinor = useMemo(() => !!watchedBirthday && applicantAge >= 12 && applicantAge < 18, [watchedBirthday, applicantAge]);
@@ -404,8 +417,10 @@ export const OnlineRegistrationPage: React.FC = () => {
     });
   }, []);
 
-  // Helper to load and validate active registrations created within 24 hours
-  const loadRecentRegistrations = () => {
+  /**
+   * Synchronous LocalStorage loader - retains registrations until 12:00 AM Manila Time
+   */
+  const loadRecentRegistrations = (): StoredRegistration[] => {
     try {
       let list: StoredRegistration[] = [];
 
@@ -418,6 +433,7 @@ export const OnlineRegistrationPage: React.FC = () => {
             list.push(parsed);
           }
         } catch {}
+        localStorage.removeItem(OLD_LOCAL_STORAGE_KEY);
       }
 
       const listRaw = localStorage.getItem(LOCAL_STORAGE_LIST_KEY);
@@ -435,25 +451,14 @@ export const OnlineRegistrationPage: React.FC = () => {
       list.forEach((item) => uniqueMap.set(item.registrationId, item));
 
       const now = Date.now();
-      const dbQueue = registrationService.getQueue();
 
-      // Filter: Keep only registrations created < 24 Hours ago and still Pending in DB
+      // Filter: Keep only registrations that have not passed their expiry time
       const validRecent = Array.from(uniqueMap.values()).filter((item) => {
-        const isNotExpiredTime = now < item.expiresAt;
-        const submitTime = new Date(item.submittedAt).getTime();
-        const isWithin24Hours = (now - submitTime) < (24 * 60 * 60 * 1000);
-
-        const dbRecord = dbQueue.find((q) => q.id === item.registrationId);
-        const isPendingInDb = !dbRecord || dbRecord.status === 'Pending';
-
-        return isNotExpiredTime && isWithin24Hours && isPendingInDb;
+        return now < item.expiresAt;
       });
 
-      // Update storage with cleaned list
+      // Update storage with valid list
       localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(validRecent));
-      if (singleRaw) {
-        localStorage.removeItem(OLD_LOCAL_STORAGE_KEY);
-      }
 
       return validRecent;
     } catch {
@@ -470,12 +475,11 @@ export const OnlineRegistrationPage: React.FC = () => {
       setSelectedTicket(recent[0]);
       setViewMode('ticket');
     } else {
-      // Force redirect to registration form if no active registrations < 24h exist
       setViewMode('form');
     }
   }, []);
 
-  // Live Timer Update Interval
+  // Live Timer Interval (Local tick without database query interference)
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTimeMs(Date.now());
@@ -504,7 +508,6 @@ export const OnlineRegistrationPage: React.FC = () => {
     }
   }, [isMinor, watchedSameAsParent, watchedParentName, watchedParentRelationship, watchedParentPhone, setValue]);
 
-  // Wizard Step Validation Handler
   const handleNextStep = async () => {
     if (currentStep === 1) {
       const valid = await trigger(['last_name', 'first_name', 'middle_initial', 'suffix', 'phone', 'email', 'gender', 'birthday', 'address']);
@@ -548,7 +551,6 @@ export const OnlineRegistrationPage: React.FC = () => {
 
       const qrPayload = registrationId;
 
-      // Construct Standardized Full Name: "Last, First M. Suffix"
       const mi = data.middle_initial?.trim() ? ` ${data.middle_initial.trim().replace('.', '')}.` : '';
       const suff = data.suffix?.trim() ? ` ${data.suffix.trim()}` : '';
       const combinedFullName = `${data.last_name.trim()}, ${data.first_name.trim()}${mi}${suff}`;
@@ -584,10 +586,10 @@ export const OnlineRegistrationPage: React.FC = () => {
         guardian_consent: isMinor ? true : null,
       };
 
-      registrationService.submit(newReg);
+      await registrationService.submit(newReg);
 
-      const expiryHours = settings.registration_expiry_hours || 24;
-      const expiresAt = Date.now() + expiryHours * 60 * 60 * 1000;
+      // Set Expiry to 12:00 AM Manila Time (Asia/Manila Midnight)
+      const expiresAt = getNextManilaMidnightMs();
 
       const storedPayload: StoredRegistration = {
         registrationId,
@@ -598,7 +600,6 @@ export const OnlineRegistrationPage: React.FC = () => {
         expiresAt,
       };
 
-      // Save to recent active registrations array
       const existingList = loadRecentRegistrations();
       const updatedList = [storedPayload, ...existingList.filter(item => item.registrationId !== registrationId)];
       
@@ -607,7 +608,6 @@ export const OnlineRegistrationPage: React.FC = () => {
       setSelectedTicket(storedPayload);
       setViewMode('ticket');
 
-      // Reset form data and step back to Step 1 for new entries
       setCurrentStep(1);
       reset();
 
@@ -677,10 +677,11 @@ export const OnlineRegistrationPage: React.FC = () => {
       const expDate = new Date(targetTicket.expiresAt).toLocaleString('en-US', {
         dateStyle: 'medium',
         timeStyle: 'short',
+        timeZone: 'Asia/Manila',
       });
       ctx.fillStyle = '#bf0202';
       ctx.font = '600 13px sans-serif';
-      ctx.fillText(`Expires: ${expDate}`, 300, 620);
+      ctx.fillText(`Expires: ${expDate} (Manila Time)`, 300, 620);
 
       ctx.fillStyle = '#f8fafc';
       ctx.fillRect(50, 650, 500, 90);
@@ -734,7 +735,6 @@ export const OnlineRegistrationPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Active Registration Switcher */}
           {activeRegistrations.length > 0 && (
             <div className="flex items-center bg-(--bg-card) border border-(--border-color) p-1 rounded-xl">
               <button
@@ -813,7 +813,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                   Recent Active Pre-Registrations ({activeRegistrations.length})
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  Tickets created within the last 24 hours ready for desk checkout.
+                  Tickets active until 12:00 AM Manila Time ready for desk checkout.
                 </p>
               </div>
 
@@ -919,7 +919,7 @@ export const OnlineRegistrationPage: React.FC = () => {
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full text-xs font-mono font-bold">
               <Clock className="w-4 h-4" />
               <span>
-                Registration expires in: {getTimeRemaining(selectedTicket.expiresAt)}
+                Ticket valid for: {getTimeRemaining(selectedTicket.expiresAt)} (Until 12 AM Manila)
               </span>
             </div>
 
@@ -1132,7 +1132,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Birthday & Age Policy Calculation */}
+                  {/* Birthday */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
                       <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
@@ -1163,7 +1163,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* RESTRICTED AGE POLICY BANNER (0-11 YEARS OLD) */}
                   {isRestrictedUnder12 && (
                     <div className="sm:col-span-2 p-4 rounded-2xl bg-red-500/10 border-2 border-red-500/30 text-red-600 dark:text-red-400 flex items-start gap-3 shadow-xs animate-shake">
                       <Ban className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -1178,7 +1177,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* MINOR AGE POLICY BANNER (12-17 YEARS OLD) */}
                   {isMinor && (
                     <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-start gap-2.5 text-left">
                       <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
@@ -1209,7 +1207,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 2: EMERGENCY & PARENT/GUARDIAN CONTACTS */}
+            {/* STEP 2: CONTACTS */}
             {currentStep === 2 && (
               <div className="space-y-4 animate-fade-in">
                 <div className="flex items-center gap-2 border-b border-(--border-color) pb-2 select-none">
@@ -1219,7 +1217,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                   </h2>
                 </div>
 
-                {/* Parent Fields (Rendered for Minors 12-17 Yrs) */}
                 {isMinor ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1 sm:col-span-2">
@@ -1257,16 +1254,46 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                     {watchedParentRelationship === 'Other' && (
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Specify Relationship <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          {...register('parent_relationship_other')}
-                          placeholder="e.g. Uncle / Aunt / Step-parent"
-                          className="w-full px-4 py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)"
-                        />
-                      </div>
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Relationship <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        {...register('emergency_contact_relationship')}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.emergency_contact_relationship ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) cursor-pointer text-slate-900 dark:text-white`}
+                      >
+                        <option value="">Select Relationship *</option>
+                        
+                        <optgroup label="Immediate Family">
+                          <option value="Mother">Mother</option>
+                          <option value="Father">Father</option>
+                          <option value="Spouse / Partner">Spouse / Partner</option>
+                          <option value="Husband">Husband</option>
+                          <option value="Wife">Wife</option>
+                          <option value="Brother">Brother</option>
+                          <option value="Sister">Sister</option>
+                          <option value="Son">Son</option>
+                          <option value="Daughter">Daughter</option>
+                        </optgroup>
+
+                        <optgroup label="Extended Family">
+                          <option value="Grandmother">Grandmother</option>
+                          <option value="Grandfather">Grandfather</option>
+                          <option value="Aunt">Aunt</option>
+                          <option value="Uncle">Uncle</option>
+                          <option value="Cousin">Cousin</option>
+                          <option value="Relative">Other Relative</option>
+                        </optgroup>
+
+                        <optgroup label="Guardian & Other">
+                          <option value="Legal Guardian">Legal Guardian</option>
+                          <option value="Friend / Colleague">Friend / Colleague</option>
+                          <option value="Other">Other</option>
+                        </optgroup>
+                      </select>
+                      {errors.emergency_contact_relationship && (
+                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_relationship.message}</p>
+                      )}
+                    </div>
                     )}
 
                     <div className="space-y-1">
@@ -1296,7 +1323,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                       />
                     </div>
 
-                    {/* Auto-sync Checkbox */}
                     <div className="sm:col-span-2 p-3.5 bg-(--bg-input) rounded-2xl border border-(--border-color) flex items-center justify-between">
                       <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300">
                         <input
@@ -1311,7 +1337,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                {/* Emergency Contact Fields (Adults or Unsynced Minors) */}
                 {(!isMinor || !watchedSameAsParent) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                     <div className="space-y-1">
@@ -1366,7 +1391,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 3: MEMBERSHIP PLAN SELECTION */}
+            {/* STEP 3: MEMBERSHIP PLAN */}
             {currentStep === 3 && (
               <div className="space-y-4 select-none animate-fade-in">
                 <div className="flex items-center gap-2 border-b border-(--border-color) pb-2">
@@ -1448,7 +1473,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 4: WAIVER, DIGITAL SIGNATURES & FINAL SUBMISSION */}
+            {/* STEP 4: WAIVER & SUBMISSION */}
             {currentStep === 4 && (
               <div className="space-y-4 select-none animate-fade-in">
                 <div className="flex items-center gap-2 border-b border-(--border-color) pb-2">
@@ -1462,7 +1487,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                   
                   {isMinor && (
                     <>
-                      {/* Dual Canvas Signatures */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <SignaturePad
                           label="Applicant Signature"
@@ -1490,7 +1514,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </>
                   )}
 
-                  {/* MASTER CERTIFICATION CHECKBOX */}
                   <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20">
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
@@ -1515,7 +1538,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* RA 8792 E-Signature Legal Note */}
                   {isMinor && (
                     <div className="flex items-start gap-2 text-[10px] text-slate-400 leading-relaxed italic">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
@@ -1529,10 +1551,9 @@ export const OnlineRegistrationPage: React.FC = () => {
               </div>
             )}
 
-            {/* WIZARD NAVIGATION CONTROL BUTTONS */}
+            {/* WIZARD BUTTONS */}
             <div className="flex justify-between items-center pt-4 border-t border-(--border-color) select-none">
               
-              {/* Previous Button */}
               {currentStep > 1 ? (
                 <button
                   type="button"
@@ -1545,7 +1566,6 @@ export const OnlineRegistrationPage: React.FC = () => {
                 <div />
               )}
 
-              {/* Next or Submit Button */}
               {currentStep < 4 ? (
                 <button
                   type="button"

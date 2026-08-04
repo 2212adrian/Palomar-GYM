@@ -1,3 +1,4 @@
+// src/pages/system/Settings.tsx
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
@@ -165,7 +166,6 @@ export default function Settings() {
     return () => window.removeEventListener('theme-changed', handleThemeEvent);
   }, []);
 
-  // Monitors route changes to activate the view only after destination component mounts
   useEffect(() => {
     if (urlTabParam && urlTabParam === navigatingTab) {
       setMobileView('detail');
@@ -173,7 +173,6 @@ export default function Settings() {
     }
   }, [urlTabParam, navigatingTab]);
 
-  // Synchronize mobile view state on popstate or general location updates
   useEffect(() => {
     if (!urlTabParam) {
       setMobileView('menu');
@@ -182,7 +181,6 @@ export default function Settings() {
     }
   }, [urlTabParam]);
 
-  // Self-contained desktop-only redirect fallback (avoids infinite loops on mobile menu views)
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 1280 && !urlTabParam) {
       navigate('/settings/personal-account', { replace: true });
@@ -269,7 +267,7 @@ export default function Settings() {
   };
 
   return (
-    <div className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-6 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-8rem)] xl:max-h-[820px] flex flex-col overflow-visible xl:overflow-hidden relative`}>
+    <div className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}>
       
       <style>{`
         @keyframes slideUp {
@@ -288,7 +286,7 @@ export default function Settings() {
       `}</style>
 
       {/* Header */}
-      <div className="hidden xl:block mb-8 shrink-0">
+      <div className="hidden xl:block mb-6 shrink-0">
         <h1 className="text-xl font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase">
           System Settings
         </h1>
@@ -441,7 +439,7 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Dynamic Theme Toggle in PC Sidebar (Moved outside of the isAdmin block so Staff can see it) */}
+          {/* Dynamic Theme Toggle in PC Sidebar */}
           <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 animate-slide-up">
             <button
               onClick={toggleTheme}
@@ -496,14 +494,14 @@ export default function Settings() {
 
           {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
           <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
-  {activeTab === 'personal-account' && <PersonalAccount />}
-  {activeTab === 'gym-profile' && <GymProfile />}
-  {activeTab === 'rates-and-payments' && <RatesPayments />}
-  {activeTab === 'user-management' && <UserManagement />}
-  {activeTab === 'database-backup' && <DatabaseBackup />}
-  {activeTab === 'audit-logs' && <AuditLogs />}
-  {activeTab === 'system-information' && <SystemInformation />}
-</div>
+            {activeTab === 'personal-account' && <PersonalAccount />}
+            {activeTab === 'gym-profile' && <GymProfile />}
+            {activeTab === 'rates-and-payments' && <RatesPayments />}
+            {activeTab === 'user-management' && <UserManagement />}
+            {activeTab === 'database-backup' && <DatabaseBackup />}
+            {activeTab === 'audit-logs' && <AuditLogs />}
+            {activeTab === 'system-information' && <SystemInformation />}
+          </div>
         </div>
       </div>
 

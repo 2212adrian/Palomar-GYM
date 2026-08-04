@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
@@ -13,103 +13,100 @@ import {
   Lock
 } from 'lucide-react';
 
-const getInitialGymConfig = () => {
-  const saved = localStorage.getItem('palomar_gym_profile');
-  const defaultConfig = {
-    gymName: 'WOLF PALOMAR GYM',
-    gymDescription: 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
-    gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
-    contactName1: 'Staff Ryan',
-    contactNumber1: '09762607481',
-    contactName2: 'Admin Wolf',
-    contactNumber2: '09123456789',
-    emailAddress: 'contact@wolfpalomargym.com',
-    gymLogo: '',
-    carouselImages: [] as string[]
-  };
-  if (saved) {
-    try {
-      const config = JSON.parse(saved);
-      return { ...defaultConfig, ...config };
-    } catch {
-      return defaultConfig;
-    }
-  }
-  return defaultConfig;
+const DEFAULT_GYM_CONFIG = {
+  gymName: 'WOLF PALOMAR GYM',
+  gymDescription: 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
+  gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
+  contactName1: 'Staff Ryan',
+  contactNumber1: '09762607481',
+  contactName2: 'Admin Wolf',
+  contactNumber2: '09123456789',
+  emailAddress: 'contact@wolfpalomargym.com',
+  gymLogo: '',
+  carouselImages: [] as string[]
 };
 
 export const GymProfile: React.FC = () => {
-  const loadedConfig = getInitialGymConfig();
   const { user } = useAuthStore();
 
-  const [gymName, setGymName] = useState<string>(loadedConfig.gymName);
-  const [gymDescription, setGymDescription] = useState<string>(loadedConfig.gymDescription);
-  const [gymAddress, setGymAddress] = useState<string>(loadedConfig.gymAddress);
-  const [contactName1, setContactName1] = useState<string>(loadedConfig.contactName1);
-  const [contactNumber1, setContactNumber1] = useState<string>(loadedConfig.contactNumber1);
-  const [contactName2, setContactName2] = useState<string>(loadedConfig.contactName2);
-  const [contactNumber2, setContactNumber2] = useState<string>(loadedConfig.contactNumber2);
-  const [emailAddress, setEmailAddress] = useState<string>(loadedConfig.emailAddress);
-  const [gymLogo, setGymLogo] = useState<string>(loadedConfig.gymLogo);
-  const [carouselImages, setCarouselImages] = useState<string[]>(loadedConfig.carouselImages);
+  const [gymName, setGymName] = useState<string>(DEFAULT_GYM_CONFIG.gymName);
+  const [gymDescription, setGymDescription] = useState<string>(DEFAULT_GYM_CONFIG.gymDescription);
+  const [gymAddress, setGymAddress] = useState<string>(DEFAULT_GYM_CONFIG.gymAddress);
+  const [contactName1, setContactName1] = useState<string>(DEFAULT_GYM_CONFIG.contactName1);
+  const [contactNumber1, setContactNumber1] = useState<string>(DEFAULT_GYM_CONFIG.contactNumber1);
+  const [contactName2, setContactName2] = useState<string>(DEFAULT_GYM_CONFIG.contactName2);
+  const [contactNumber2, setContactNumber2] = useState<string>(DEFAULT_GYM_CONFIG.contactNumber2);
+  const [emailAddress, setEmailAddress] = useState<string>(DEFAULT_GYM_CONFIG.emailAddress);
+  const [gymLogo, setGymLogo] = useState<string>(DEFAULT_GYM_CONFIG.gymLogo);
+  const [carouselImages, setCarouselImages] = useState<string[]>(DEFAULT_GYM_CONFIG.carouselImages);
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [initialConfig, setInitialConfig] = useState<any>(loadedConfig);
+  const [initialConfig, setInitialConfig] = useState<any>(DEFAULT_GYM_CONFIG);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const carouselInputRef = useRef<HTMLInputElement>(null);
-  const initialConfigRef = useRef<any>(loadedConfig);
+  const initialConfigRef = useRef<any>(DEFAULT_GYM_CONFIG);
   const currentConfigRef = useRef<any>(null);
 
-  const fetchGymProfile = async () => {
+  const fetchGymProfile = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('gym_profile')
         .select('*')
         .eq('id', 1)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
       if (data) {
-        setGymName(data.gym_name);
-        setGymDescription(data.gym_description);
-        setGymAddress(data.gym_address);
-        setContactName1(data.contact_name_1);
-        setContactNumber1(data.contact_number_1);
-        setContactName2(data.contact_name_2);
-        setContactNumber2(data.contact_number_2);
-        setEmailAddress(data.email_address);
-        setGymLogo(data.gym_logo || '');
-        setCarouselImages(data.carousel_images || []);
-
         const parsedConfig = {
-          gymName: data.gym_name,
-          gymDescription: data.gym_description,
-          gymAddress: data.gym_address,
-          contactName1: data.contact_name_1,
-          contactNumber1: data.contact_number_1,
-          contactName2: data.contact_name_2,
-          contactNumber2: data.contact_number_2,
-          emailAddress: data.email_address,
+          gymName: data.gym_name || DEFAULT_GYM_CONFIG.gymName,
+          gymDescription: data.gym_description || DEFAULT_GYM_CONFIG.gymDescription,
+          gymAddress: data.gym_address || DEFAULT_GYM_CONFIG.gymAddress,
+          contactName1: data.contact_name_1 || DEFAULT_GYM_CONFIG.contactName1,
+          contactNumber1: data.contact_number_1 || DEFAULT_GYM_CONFIG.contactNumber1,
+          contactName2: data.contact_name_2 || DEFAULT_GYM_CONFIG.contactName2,
+          contactNumber2: data.contact_number_2 || DEFAULT_GYM_CONFIG.contactNumber2,
+          emailAddress: data.email_address || DEFAULT_GYM_CONFIG.emailAddress,
           gymLogo: data.gym_logo || '',
           carouselImages: data.carousel_images || []
         };
+
+        setGymName(parsedConfig.gymName);
+        setGymDescription(parsedConfig.gymDescription);
+        setGymAddress(parsedConfig.gymAddress);
+        setContactName1(parsedConfig.contactName1);
+        setContactNumber1(parsedConfig.contactNumber1);
+        setContactName2(parsedConfig.contactName2);
+        setContactNumber2(parsedConfig.contactNumber2);
+        setEmailAddress(parsedConfig.emailAddress);
+        setGymLogo(parsedConfig.gymLogo);
+        setCarouselImages(parsedConfig.carouselImages);
+
         setInitialConfig(parsedConfig);
         initialConfigRef.current = parsedConfig;
       }
     } catch (err: any) {
-      console.warn('Failed to load cloud configuration, using default variables:', err.message);
+      console.warn('Failed to load gym profile configuration:', err.message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchGymProfile();
-  }, []);
+
+    const channel = supabase
+      .channel('gym_profile_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gym_profile' }, fetchGymProfile)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchGymProfile]);
 
   currentConfigRef.current = {
     gymName,
@@ -124,23 +121,7 @@ export const GymProfile: React.FC = () => {
     carouselImages
   };
 
-  useEffect(() => {
-    const draft = {
-      gymName,
-      gymDescription,
-      gymAddress,
-      contactName1,
-      contactNumber1,
-      contactName2,
-      contactNumber2,
-      emailAddress,
-      gymLogo,
-      carouselImages
-    };
-    localStorage.setItem('palomar_gym_profile_draft', JSON.stringify(draft));
-  }, [gymName, gymDescription, gymAddress, contactName1, contactNumber1, contactName2, contactNumber2, emailAddress, gymLogo, carouselImages]);
-
-  const isDirty = initialConfig && (
+  const isDirty = Boolean(initialConfig && (
     gymName !== initialConfig.gymName ||
     gymDescription !== initialConfig.gymDescription ||
     gymAddress !== initialConfig.gymAddress ||
@@ -151,7 +132,7 @@ export const GymProfile: React.FC = () => {
     emailAddress !== initialConfig.emailAddress ||
     gymLogo !== initialConfig.gymLogo ||
     JSON.stringify(carouselImages) !== JSON.stringify(initialConfig.carouselImages)
-  );
+  ));
 
   const handleSaveConfig = async () => {
     setIsSaving(true);
@@ -159,7 +140,8 @@ export const GymProfile: React.FC = () => {
     try {
       const { error } = await supabase
         .from('gym_profile')
-        .update({
+        .upsert([{
+          id: 1,
           gym_name: current.gymName,
           gym_description: current.gymDescription,
           gym_address: current.gymAddress,
@@ -172,12 +154,10 @@ export const GymProfile: React.FC = () => {
           carousel_images: current.carouselImages,
           updated_at: new Date().toISOString(),
           updated_by: user?.id
-        })
-        .eq('id', 1);
+        }]);
 
       if (error) throw error;
 
-      localStorage.removeItem('palomar_gym_profile_draft');
       setInitialConfig(current);
       initialConfigRef.current = current;
       toast.success('GYM profile settings saved successfully.');
@@ -189,9 +169,7 @@ export const GymProfile: React.FC = () => {
   };
 
   useEffect(() => {
-    const handleSaveTrigger = () => {
-      handleSaveConfig();
-    };
+    const handleSaveTrigger = () => handleSaveConfig();
     window.addEventListener('trigger-rates-save', handleSaveTrigger);
     return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, []);
@@ -210,13 +188,12 @@ export const GymProfile: React.FC = () => {
         setEmailAddress(config.emailAddress);
         setGymLogo(config.gymLogo);
         setCarouselImages(config.carouselImages);
-        localStorage.removeItem('palomar_gym_profile_draft');
         toast.info('Changes discarded.');
       }
     };
     window.addEventListener('trigger-rates-cancel', handleCancelTrigger);
     return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
-  }, [initialConfig]);
+  }, []);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
@@ -229,7 +206,6 @@ export const GymProfile: React.FC = () => {
       window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
         detail: { isDirty: false, isSaving: false } 
       }));
-      localStorage.removeItem('palomar_gym_profile_draft');
     };
   }, []);
 
@@ -308,7 +284,7 @@ export const GymProfile: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-body">
+    <div className="space-y-6 font-body text-(--color-text)">
       <div>
         <h2 className="text-xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100">
           Gym Profile
@@ -320,10 +296,9 @@ export const GymProfile: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* Left Side: Setup Forms */}
+        {/* Left Side: Forms */}
         <div className="lg:col-span-7 space-y-6">
           
-          {/* Identity Form */}
           <div className="p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <Building className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
@@ -592,7 +567,7 @@ export const GymProfile: React.FC = () => {
 
         </div>
 
-        {/* Right Hand: Sandbox Navigation Redirect Block (Always fully loaded and interactive) */}
+        {/* Right Side: Live Terminal Preview Info */}
         <div className="lg:col-span-5 space-y-6">
           <div className="p-6 bg-slate-50 dark:bg-[#111315] border border-slate-200 dark:border-white/5 rounded-2xl shadow-xs space-y-5 flex flex-col h-full justify-between">
             <div className="space-y-4">
@@ -603,11 +578,10 @@ export const GymProfile: React.FC = () => {
 
               <div className="p-4 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/15 dark:border-blue-500/20 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>To ensure your brand identity, logo, and active carousels render cleanly on high-definition monitors, we have created a dedicated, sandboxed viewer.</span>
+                <span>To ensure your brand identity, logo, address, and active carousels render cleanly on high-definition monitors, we have created a dedicated sandboxed viewer.</span>
               </div>
             </div>
 
-            {/* Redirect Action Card */}
             <div className="p-6 border border-slate-200 dark:border-white/5 rounded-2xl bg-white dark:bg-[#0d0f12] text-center space-y-4 animate-slide-up shadow-sm">
               <div className="w-12 h-12 rounded-full bg-blue-500/10 dark:bg-[#bf0202]/10 border border-blue-500/20 dark:border-red-500/20 flex items-center justify-center mx-auto text-blue-600 dark:text-[#bf0202]">
                 <ExternalLink className="w-5 h-5" />

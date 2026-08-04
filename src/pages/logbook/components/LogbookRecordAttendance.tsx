@@ -1,5 +1,5 @@
 // src/pages/logbook/components/LogbookRecordAttendance.tsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Search, 
   X, 
@@ -26,10 +26,11 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
 import { isSuperAdmin } from '../../../constants/auth';
+import { supabase } from '../../../lib/supabase/client';
 
 // Dynamic Members Engine Integration
-import { memberService, subscriptionService, cardService, prototypeStorage, STORAGE_KEYS } from '../../members/memberService';
-import type { Member, Subscription, MemberCard, AttendanceRecord } from '../../../types/members';
+import { memberService, subscriptionService, cardService, settingsService } from '../../members/memberService';
+import type { Member, Subscription, MemberCard } from '../../../types/members';
 
 interface LogbookRecordAttendanceProps {
   isOpen: boolean;
@@ -77,22 +78,20 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Dynamic Members State
   const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>([]);
+  const [todayLogs, setTodayLogs] = useState<any[]>([]);
 
   // Search and Suggestions
   const [memberSearch, setMemberSearch] = useState('');
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
 
-  // Photo Preview Lightbox State for Member Verification
+  // Lightbox & Camera
   const [photoModal, setPhotoModal] = useState<{ name: string; memberId?: string; url: string | null } | null>(null);
-
-  // Camera & Scanning States
   const [isScanningLoading, setIsScanningLoading] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
 
-  // Selected entry type ('walkin_regular' | 'walkin_student' | 'member_entry')
+  // Selected entry type
   const [selectedEntry, setSelectedEntry] = useState<'walkin_regular' | 'walkin_student' | 'member_entry' | null>(null);
 
   // Payment Setup
@@ -100,23 +99,60 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
 
-  // Admin override toggles for duplicates
+  // Admin override toggles
   const [adminOverride, setAdminOverride] = useState(false);
 
-  // Resolve user role
+  // Dynamic Rates State
+  const [walkinRegularFee, setWalkinRegularFee] = useState(100);
+  const [walkinStudentFee, setWalkinStudentFee] = useState(80);
+  const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
+  const [gcashFeeRate, setGcashFeeRate] = useState(10);
+
   const isAdmin = useMemo(() => {
     if (isSuperAdmin(user?.email)) return true;
     return profile?.role?.toLowerCase() === 'admin';
   }, [user, profile]);
 
-  // Load active member profiles dynamically from database
-  const loadDynamicMembers = () => {
+  // Load active rates configuration directly from Supabase rates_config table
+  const loadRates = useCallback(async () => {
     try {
-      const members = memberService.getAll();
-      const subscriptions = subscriptionService.getAll();
-      const cards = cardService.getAll();
-      const attendanceList = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+      const { data: ratesData, error } = await supabase
+        .from('rates_config')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
 
+      if (error) throw error;
+
+      if (ratesData) {
+        setWalkinRegularFee(Number(ratesData.regular_walk_in) || 100);
+        setWalkinStudentFee(Number(ratesData.student_walk_in) || 80);
+        setYearlyMemberFee(Number(ratesData.yearly_walk_in) || 50);
+        // 🚨 Dynamic GCash extra charge straight from Supabase!
+        setGcashFeeRate(Number(ratesData.gcash_fee) ?? 10);
+      } else {
+        const activeSettings = await settingsService.load();
+        setWalkinRegularFee(activeSettings.regular_walkin_fee || 100);
+        setWalkinStudentFee(activeSettings.student_walkin_fee || 80);
+        setYearlyMemberFee(activeSettings.yearly_member_checkin_fee || 50);
+        setGcashFeeRate(activeSettings.gcash_fee ?? 10);
+      }
+    } catch (e) {
+      console.warn('Failed to load rates configuration:', e);
+    }
+  }, []);
+
+  // Load active member profiles dynamically from database
+  const loadDynamicMembers = useCallback(async () => {
+    try {
+      const [members, subscriptions, cards, { data: dbAttendance }] = await Promise.all([
+        memberService.getAll(),
+        subscriptionService.getAll(),
+        cardService.getAll(),
+        supabase.from('attendance').select('*').is('deleted_at', null)
+      ]);
+
+      const attendanceList = dbAttendance || [];
       const now = new Date();
 
       const mappedProfiles: MemberProfile[] = members.map((m: Member) => {
@@ -146,13 +182,13 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           .filter((c: MemberCard) => c.member_id === m.member_id)
           .map((c: MemberCard) => c.card_number);
 
-        const memberVisits = attendanceList.filter((a: AttendanceRecord) => a.member_id === m.member_id);
+        const memberVisits = attendanceList.filter((a: any) => a.member_id === m.member_id);
         const lastVisitRecord = memberVisits[0];
         const lastVisitStr = lastVisitRecord 
           ? new Date(lastVisitRecord.check_in_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           : 'First Visit';
 
-        const todayVisits = memberVisits.filter((a: AttendanceRecord) => {
+        const todayVisits = memberVisits.filter((a: any) => {
           const d = new Date(a.check_in_time);
           return d.getDate() === now.getDate() &&
                  d.getMonth() === now.getMonth() &&
@@ -168,7 +204,9 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           phone: m.phone || '',
           email: m.email || '',
           address: m.address || '',
-          regDate: new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          regDate: m.created_at 
+  ? new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+  : 'N/A',
           expDate: expDateStr,
           lastVisit: lastVisitStr,
           todayVisits,
@@ -181,70 +219,65 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     } catch (e) {
       console.error('Failed to load dynamic member records:', e);
     }
-  };
+  }, []);
 
-  // Load today's check-ins from local storage to trace duplicate records dynamically
-  const todayLogs = useMemo(() => {
+  const loadTodayLogs = useCallback(async () => {
     try {
-      const saved = localStorage.getItem('palomar_gym_logbook');
-      const logs = saved ? JSON.parse(saved) : [];
-      
-      const today = new Date();
-      return logs.filter((log: any) => {
-        if (!log.timestamp) return false;
-        const logDate = new Date(log.timestamp);
-        return logDate.getDate() === today.getDate() &&
-               logDate.getMonth() === today.getMonth() &&
-               logDate.getFullYear() === today.getFullYear();
-      });
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('attendance')
+        .select('*')
+        .is('deleted_at', null)
+        .gte('check_in_time', `${todayStr}T00:00:00Z`);
+
+      setTodayLogs(data || []);
     } catch (e) {
-      return [];
+      console.warn('Failed to load today logs:', e);
     }
-  }, [isOpen, selectedClient, isSuccess]);
+  }, []);
 
   // Find duplicates
   const duplicateLog = useMemo(() => {
     if (!selectedClient) return null;
     return todayLogs.find((log: any) => {
       if (selectedClient.isWalkIn) {
-        return log.customerName.toLowerCase() === selectedClient.name.toLowerCase() && log.customerType === 'Walk-In';
+        return log.customer_name?.toLowerCase() === selectedClient.name.toLowerCase() && log.customer_type === 'Walk-In';
       } else {
-        return log.memberId === selectedClient.memberId;
+        return log.member_id === selectedClient.memberId;
       }
     });
   }, [selectedClient, todayLogs]);
 
-  // Evaluate duplicate lockout state
   const isLockedByDuplicate = Boolean(duplicateLog && !adminOverride);
 
-  // Request Android / iOS camera permissions explicitly
   const requestCameraPermission = async (): Promise<boolean> => {
     try {
       const status = await Camera.checkPermissions();
       if (status.camera !== 'granted') {
         const requestRes = await Camera.requestPermissions({ permissions: ['camera'] });
         if (requestRes.camera !== 'granted') {
-          toast.error('Camera permission was denied. Please allow camera access in App Settings.');
+          toast.error('Camera permission was denied.');
           return false;
         }
       }
       return true;
     } catch (err) {
-      console.warn('Permission request check failed:', err);
+      console.warn('Permission request failed:', err);
       return true;
     }
   };
 
   useEffect(() => {
     if (isOpen) {
+      loadRates();
       loadDynamicMembers();
+      loadTodayLogs();
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       resetForm();
     }
-  }, [isOpen]);
+  }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
 
-  // Effect for live camera feed
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
 
@@ -316,7 +349,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     );
     setSuggestions(filtered);
 
-    // Auto select on exact ID, phone, or printed card token match
     const exactMatch = dynamicMembers.find(
       m => m.memberId.toLowerCase() === query || 
            m.phone === query ||
@@ -343,7 +375,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setMemberSearch('');
     setSuggestions([]);
     
-    // Auto-select Member Entry if account state is healthy
     if (member.status === 'Active' || member.status === 'Expires Soon') {
       setSelectedEntry('member_entry');
     } else {
@@ -367,7 +398,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setSelectedEntry('walkin_regular');
   };
 
-  // Decode QR/Barcode from image file using html5-qrcode
   const scanImageFile = async (file: File) => {
     let html5QrCode: Html5Qrcode | null = null;
     try {
@@ -389,7 +419,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     return false;
   };
 
-  // Capacitor Native Camera scanner trigger
   const handleCapacitorCameraScan = async () => {
     setIsScanningLoading(true);
     try {
@@ -419,7 +448,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   };
 
-  // Toggle camera mode based on environment & clear search
   const handleStartScan = async () => {
     setMemberSearch('');
     setSuggestions([]);
@@ -434,22 +462,21 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   };
 
-  // Derive active pricing logic
-  const derivedBilling = useMemo(() => {
+ const derivedBilling = useMemo(() => {
     let subtotal = 0;
     let title = 'None Selected';
-    let discount = 0;
 
+    // 1. Determine subtotal based on selected entry
     if (selectedEntry === 'walkin_regular') {
-      subtotal = 90;
+      subtotal = Number(walkinRegularFee) || 0;
       title = 'Walk-In Regular Pass';
     } else if (selectedEntry === 'walkin_student') {
-      subtotal = 60;
+      subtotal = Number(walkinStudentFee) || 0;
       title = 'Walk-In Student Pass';
     } else if (selectedEntry === 'member_entry' && selectedClient && !selectedClient.isWalkIn) {
       const isYearly = selectedClient.membership?.toLowerCase().includes('year');
       if (isYearly) {
-        subtotal = 70;
+        subtotal = Number(yearlyMemberFee) || 0;
         title = 'Yearly Member Entry';
       } else {
         subtotal = 0;
@@ -457,19 +484,32 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       }
     }
 
-    const convenienceFee = paymentMethod === 'GCash' && subtotal > 0 ? 10 : 0;
-    const totalDue = Math.max(0, subtotal - discount + convenienceFee);
+    // 2. Calculate GCash convenience fee
+    const convenienceFee = paymentMethod === 'GCash' && subtotal > 0 ? Number(gcashFeeRate) || 0 : 0;
+
+    // 3. Calculate exact total due (subtotal + convenienceFee)
+    const totalDue = Math.max(0, subtotal + convenienceFee);
+
+    // 4. Calculate change for cash payments
     const calculatedChange = Math.max(0, (Number(amountReceived) || 0) - totalDue);
 
     return {
       subtotal,
       title,
-      discount,
       convenienceFee,
       totalDue,
       calculatedChange
     };
-  }, [selectedEntry, selectedClient, paymentMethod, amountReceived]);
+  }, [
+    selectedEntry, 
+    selectedClient, 
+    paymentMethod, 
+    amountReceived, 
+    walkinRegularFee, 
+    walkinStudentFee, 
+    yearlyMemberFee, 
+    gcashFeeRate
+  ]);
 
   useEffect(() => {
     if (paymentMethod === 'Cash') {
@@ -479,7 +519,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [paymentMethod, derivedBilling.totalDue]);
 
-  const handleCompleteCheckIn = () => {
+  const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
 
     if (duplicateLog && !adminOverride) {
@@ -490,84 +530,66 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
-   const gcashFeeVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? derivedBilling.convenienceFee : 0;
+    const gcashFeeVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? derivedBilling.convenienceFee : 0;
     const gcashRefVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber.trim() : undefined;
 
-    const checkInRecord = {
-      id: `CHK-${Math.floor(100000 + Math.random() * 900000)}`,
-      timestamp: new Date().toISOString(),
-      memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
-      customerName: selectedClient.name,
-      customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
-      categoryOrPlan: derivedBilling.title,
-      paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Free',
-      amountPaid: derivedBilling.totalDue,
-      basePrice: derivedBilling.subtotal,
-      gcashFee: gcashFeeVal,
-      cardFee: 0,
-      gcashRefNo: gcashRefVal,
-      referenceNumber: gcashRefVal,
-      paymentRef: gcashRefVal,
-      paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Free',
-      status: selectedClient.isWalkIn ? 'Active' : selectedClient.status
-    };
-
     try {
-      const attendanceList = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-      const newAttendance: AttendanceRecord = {
-        id: checkInRecord.id,
-        member_id: selectedClient.isWalkIn ? undefined : selectedClient.memberId || undefined,
-        customer_name: selectedClient.name,
-        customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
-        check_in_time: checkInRecord.timestamp,
-        plan_name: derivedBilling.title,
-        entry_fee: derivedBilling.totalDue,
-        base_price: derivedBilling.subtotal,
-        gcash_fee: gcashFeeVal,
-        card_fee: 0,
-        gcash_ref_no: gcashRefVal,
-        payment_method: (derivedBilling.totalDue > 0 ? paymentMethod : 'Cash') as any,
-        receipt_number: checkInRecord.id,
-        staff_name: user?.email || 'Counter Staff'
+      const { data: inserted, error } = await supabase
+        .from('attendance')
+        .insert([{
+          member_id: selectedClient.isWalkIn ? null : selectedClient.memberId || null,
+          customer_name: selectedClient.name,
+          customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+          check_in_time: new Date().toISOString(),
+          plan_name: derivedBilling.title,
+          entry_fee: derivedBilling.totalDue,
+          base_price: derivedBilling.subtotal,
+          gcash_fee: gcashFeeVal,
+          card_fee: 0,
+          gcash_ref_no: gcashRefVal || null,
+          payment_method: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
+          staff_name: user?.email || 'Counter Staff'
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const checkInRecord = {
+        id: inserted.id,
+        timestamp: inserted.check_in_time,
+        memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
+        customerName: selectedClient.name,
+        customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+        categoryOrPlan: derivedBilling.title,
+        paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Free',
+        amountPaid: derivedBilling.totalDue,
+        basePrice: derivedBilling.subtotal,
+        gcashFee: gcashFeeVal,
+        cardFee: 0,
+        gcashRefNo: gcashRefVal,
+        referenceNumber: gcashRefVal,
+        paymentRef: gcashRefVal,
+        paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Free',
+        status: selectedClient.isWalkIn ? 'Active' : (selectedClient.status || 'Active')
       };
-      prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendanceList]);
-    } catch (e) {
-      console.warn('Failed to persist attendance in storage:', e);
-    }
 
-    // Save attendance record to unified prototypeStorage database
-    try {
-      const attendanceList = prototypeStorage.getCollection<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-      const newAttendance: AttendanceRecord = {
-        id: checkInRecord.id,
-        member_id: selectedClient.isWalkIn ? undefined : selectedClient.memberId || undefined,
-        customer_name: selectedClient.name,
-        customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
-        check_in_time: checkInRecord.timestamp,
-        plan_name: derivedBilling.title,
-        entry_fee: derivedBilling.totalDue,
-        base_price: derivedBilling.subtotal,
-        gcash_fee: gcashFeeVal,
-        card_fee: 0,
-        gcash_ref_no: gcashRefVal,
-        payment_method: (derivedBilling.totalDue > 0 ? paymentMethod : 'Cash') as any,
-        receipt_number: checkInRecord.id,
-        staff_name: user?.email || 'Counter Staff'
-      };
-      prototypeStorage.save(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...attendanceList]);
-    } catch (e) {
-      console.warn('Failed to persist attendance in storage:', e);
-    }
+      setIsSuccess(true);
 
-    setIsSuccess(true);
+      setTimeout(() => {
+        onCheckInSuccess(checkInRecord);
+        setIsSuccess(false);
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        onClose();
+      }, 1500);
 
-    setTimeout(() => {
-      onCheckInSuccess(checkInRecord);
-      setIsSuccess(false);
+    } catch (err: any) {
+      console.error('Check-in error:', err);
+      toast.error(err.message || 'Failed to complete check-in.');
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      onClose();
-    }, 1500);
+    }
   };
 
   const isFormValid = useMemo(() => {
@@ -688,7 +710,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   <div className="relative w-full aspect-square max-w-55 mx-auto rounded-2xl overflow-hidden bg-black border-2 border-dashed border-blue-500/50 flex items-center justify-center shadow-inner">
                     <div id="live-qr-reader" className="w-full h-full object-cover" />
                     
-                    {/* Scanner Target Frame Reticle */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
                       <div className="w-full h-full border-2 border-blue-500 rounded-xl relative animate-pulse">
                         <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-4 border-l-4 border-blue-400" />
@@ -711,7 +732,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 </div>
               )}
 
-              {/* GUIDANCE CARD WHEN NO SEARCH INPUT IS ENTERED YET */}
               {!memberSearch.trim() && !showLiveScanner && (
                 <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-2xl text-center space-y-1.5 animate-fade-in">
                   <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
@@ -728,11 +748,9 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 </div>
               )}
 
-              {/* SEARCH RESULTS & PROCESS WALK-IN */}
               {memberSearch.trim().length > 0 && (
                 <div className="mt-2.5 space-y-2.5 animate-fade-in">
                   
-                  {/* MEMBER MATCHES LIST */}
                   <div className="space-y-1.5">
                     <span className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white block uppercase tracking-wider px-0.5">
                       REGISTERED MEMBERS FOUND ({suggestions.length})
@@ -813,7 +831,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     )}
                   </div>
 
-                  {/* PROCESS AS WALK-IN */}
                   <div className="pt-2 border-t border-(--border-color)">
                     <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -970,7 +987,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                         </div>
                       </div>
                       <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                        ₱90.00
+                        ₱{walkinRegularFee.toFixed(2)}
                       </div>
                     </button>
 
@@ -995,7 +1012,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                         </div>
                       </div>
                       <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                        ₱60.00
+                        ₱{walkinStudentFee.toFixed(2)}
                       </div>
                     </button>
                   </div>
@@ -1031,7 +1048,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                           </div>
                         </div>
                         <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
-                          {isYearly ? '₱70.00' : '₱0.00'}
+                          {isYearly ? `₱${yearlyMemberFee.toFixed(2)}` : '₱0.00'}
                         </div>
                       </button>
                     );
@@ -1119,11 +1136,11 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                       <span className="font-bold text-slate-900 dark:text-white">₱{derivedBilling.subtotal.toFixed(2)}</span>
                     </div>
                     {paymentMethod === 'GCash' && derivedBilling.convenienceFee > 0 && (
-                      <div className="flex justify-between">
-                        <span>Convenience Fee:</span>
-                        <span className="text-rose-500 font-bold">+₱10.00</span>
-                      </div>
-                    )}
+    <div className="flex justify-between">
+      <span>Gcacsh Fee:</span>
+      <span className="text-rose-500 font-bold">+₱{derivedBilling.convenienceFee.toFixed(2)}</span>
+    </div>
+  )}
                     {amountReceived && paymentMethod === 'Cash' && derivedBilling.totalDue > 0 && (
                       <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
                         <span>Calculated Change:</span>
@@ -1152,7 +1169,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     variant="primary"
                     onClick={handleCompleteCheckIn}
                     disabled={!isFormValid || isSubmitting || isLockedByDuplicate}
-                    className="w-full py-3.5 text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200"
+                    className="w-full py-3.5 text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 cursor-pointer"
                   >
                     {isSubmitting ? 'RECORDING CHECK-IN...' : 'COMPLETE CHECK-IN'}
                   </Button>

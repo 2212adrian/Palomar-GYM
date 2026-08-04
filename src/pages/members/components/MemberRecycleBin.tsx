@@ -1,3 +1,5 @@
+// src/pages/members/components/MemberRecycleBin.tsx
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
@@ -7,21 +9,13 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { AnimatePresence, motion } from 'framer-motion';
-import { logAudit } from '../../../lib/supabase/audit';
-import { prototypeStorage, STORAGE_KEYS } from '../memberService';
+import type { Member } from '../../../types/members';
+import { memberService } from '../memberService';
 
-interface DeletedMember {
-  id: string;
-  member_id: string;
-  full_name: string;
-  avatar_url?: string | null;
-  membership_plan?: string;
-  phone?: string;
-  email?: string;
-  status?: string;
+interface DeletedMember extends Member {
   deleted_at?: string | null;
-  deleted_by?: string;
-  [key: string]: any;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
 }
 
 interface MemberRecycleBinProps {
@@ -47,17 +41,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   const fetchDeletedMembers = async () => {
     setLoading(true);
     try {
-      const deletedKey = (STORAGE_KEYS as any)?.DELETED_MEMBERS || 'palomar_gym_members_deleted';
-      let data = prototypeStorage.getCollection<DeletedMember>(deletedKey);
-      
-      if (!data || data.length === 0) {
-        const savedDeleted = localStorage.getItem('palomar_gym_members_deleted');
-        data = savedDeleted ? JSON.parse(savedDeleted) : [];
-      }
+      const data = await memberService.getArchived();
       setDeletedItems(data || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('Failed to load transaction data from Recycle Bin.');
+      toast.error(err.message || 'Failed to load archived members from Recycle Bin.');
     } finally {
       setLoading(false);
     }
@@ -94,8 +82,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
       return (
         item.id?.toLowerCase().includes(q) ||
         item.full_name?.toLowerCase().includes(q) ||
-        item.member_id?.toLowerCase().includes(q) ||
-        item.membership_plan?.toLowerCase().includes(q)
+        item.member_id?.toLowerCase().includes(q)
       );
     });
   }, [deletedItems, searchQuery]);
@@ -165,76 +152,22 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
 
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
-  const handleBulkRestore = async (selectedList: any[]) => {
+  const handleBulkRestore = async (selectedList: DeletedMember[]) => {
     if (selectedList.length === 0) return;
     setLoading(true);
 
     try {
-      const selectedIdsToRestore = selectedList.map((t: any) => t.id);
-      
-      const deletedKey = (STORAGE_KEYS as any)?.DELETED_MEMBERS || 'palomar_gym_members_deleted';
-      const membersKey = STORAGE_KEYS?.MEMBERS || 'palomar_gym_members';
-
-      let deletedList: DeletedMember[] = prototypeStorage.getCollection<DeletedMember>(deletedKey);
-      if (!deletedList || deletedList.length === 0) {
-        const saved = localStorage.getItem('palomar_gym_members_deleted');
-        deletedList = saved ? JSON.parse(saved) : [];
+      for (const member of selectedList) {
+        await memberService.restore(member.id, 'Admin Staff');
       }
-
-      let activeList: any[] = prototypeStorage.getCollection<any>(membersKey);
-      if (!activeList || activeList.length === 0) {
-        const saved = localStorage.getItem('palomar_gym_members') || localStorage.getItem('palomar_members');
-        activeList = saved ? JSON.parse(saved) : [];
-      }
-
-      const itemsToRestore = deletedList
-        .filter(t => selectedIdsToRestore.includes(t.id))
-        .map(t => {
-          const restoredItem: Record<string, any> = {
-            ...t,
-            status: t.status || 'Active',
-            created_at: t.created_at || new Date().toISOString(),
-            full_name: t.full_name || 'Restored Member',
-            member_id: t.member_id || t.id,
-            phone: t.phone || '',
-            email: t.email || '',
-            gender: t.gender || 'Male',
-            birthday: t.birthday || '',
-            address: t.address || '',
-            emergency_contact_name: t.emergency_contact_name || '',
-            relationship: t.relationship || '',
-            emergency_contact_phone: t.emergency_contact_phone || '',
-          };
-          delete restoredItem.deleted_at;
-          delete restoredItem.deleted_by;
-          return restoredItem;
-        });
-
-      const remainingDeleted = deletedList.filter(t => !selectedIdsToRestore.includes(t.id));
-      const updatedActiveList = [...itemsToRestore, ...activeList];
-
-      // Save through prototypeStorage engine using .save()
-      prototypeStorage.save(deletedKey, remainingDeleted);
-      prototypeStorage.save(membersKey, updatedActiveList);
-
-      // Mirror directly to localStorage keys for fail-safe sync
-      localStorage.setItem('palomar_gym_members_deleted', JSON.stringify(remainingDeleted));
-      localStorage.setItem('palomar_gym_members', JSON.stringify(updatedActiveList));
-      localStorage.setItem('palomar_members', JSON.stringify(updatedActiveList));
-
-      const restoredDetails = selectedList.map(t => `${t.full_name} (${t.member_id})`).join(', ');
-      await logAudit(
-        'MEMBERS_RESTORED',
-        `Successfully restored ${selectedList.length} members back to directory:\n\n${restoredDetails}`
-      );
 
       setSelectedIds([]);
       onRestoreSuccess();
       toast.success(`Successfully restored ${selectedList.length} member(s) back to your directory.`);
-      fetchDeletedMembers();
-    } catch (err) {
+      await fetchDeletedMembers();
+    } catch (err: any) {
       console.error('Error executing database restoration:', err);
-      toast.error('Failed to complete member profile restoration.');
+      toast.error(err.message || 'Failed to complete member profile restoration.');
     } finally {
       setLoading(false);
     }
@@ -429,7 +362,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                           <div className="min-w-0">
                             <span className="font-bold block text-[11px] text-(--color-text) truncate">{item.full_name}</span>
                             <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
-                              {item.member_id} • {item.membership_plan || 'Standard Plan'}
+                              {item.member_id} • {item.phone || 'No phone'}
                             </span>
                           </div>
                         </div>

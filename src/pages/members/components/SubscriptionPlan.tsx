@@ -16,11 +16,10 @@ import {
   cardService, 
   registrationService, 
   settingsService, 
-  prototypeStorage, 
-  STORAGE_KEYS 
+  DEFAULT_SETTINGS
 } from '../memberService';
 import { OfficialReceipt, type OfficialReceiptRef } from '../../../components/ui/OfficialReceipt';
-import type { OnlineRegistration, PaymentMethod, Member, Subscription } from '../../../types/members';
+import type { OnlineRegistration, PaymentMethod, Member, Subscription, MembershipSettings } from '../../../types/members';
 
 // Canvas Signature Pad Component
 interface SignaturePadProps {
@@ -255,7 +254,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     initialPlan || 'Monthly Membership'
   );
   
-  const settings = useMemo(() => settingsService.load(), []);
+  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [allMembers, setAllMembers] = useState<Member[]>([]);
+  const [allSubscriptions, setAllSubscriptions] = useState<Subscription[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      settingsService.load().then(setSettings).catch(console.warn);
+      memberService.getAll().then(setAllMembers).catch(console.error);
+      subscriptionService.getAll().then(setAllSubscriptions).catch(console.error);
+    }
+  }, [isOpen]);
+
   const cardFee = settings.card_printing_fee || 50;
   const gcashFee = settings.gcash_fee || 10;
 
@@ -326,17 +336,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const matchingSearchMembers = useMemo(() => {
     if (!memberSearchQuery.trim()) return [];
     const q = memberSearchQuery.toLowerCase().trim();
-    const allMembers = memberService.getAll();
-    return allMembers.filter(m => 
+    return allMembers.filter((m: Member) => 
       m.full_name.toLowerCase().includes(q) ||
       m.member_id.toLowerCase().includes(q) ||
       (m.phone && m.phone.includes(q))
     );
-  }, [memberSearchQuery]);
+  }, [memberSearchQuery, allMembers]);
 
   const getActiveSubscriptionForMember = (memberId: string): Subscription | undefined => {
-    const allSubs = prototypeStorage.getCollection<Subscription>(STORAGE_KEYS.SUBSCRIPTIONS);
-    return allSubs.find(s => s.member_id === memberId && s.status === 'Active');
+    return allSubscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
   };
 
   const getCombinedFullName = () => {
@@ -471,37 +479,35 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const existingMemberMatch = useMemo<Member | null>(() => {
     if (!firstName.trim() || !lastName.trim()) return null;
 
-    const membersList = memberService.getAll();
     const targetFirst = firstName.trim().toLowerCase();
     const targetLast = lastName.trim().toLowerCase();
 
-    return membersList.find((m) => {
+    return allMembers.find((m: Member) => {
       if (selectedExistingMember && m.id === selectedExistingMember.id) return false;
       if (prefillMember && m.id === prefillMember.id) return false;
 
       const flatFullName = m.full_name.toLowerCase();
       return flatFullName.includes(targetFirst) && flatFullName.includes(targetLast);
     }) || null;
-  }, [firstName, lastName, selectedExistingMember, prefillMember]);
+  }, [firstName, lastName, selectedExistingMember, prefillMember, allMembers]);
 
   // Non-blocking helper to detect duplicate contact phone
   const phoneMatchMember = useMemo<Member | null>(() => {
     const cleanPhone = phone.trim();
     if (!cleanPhone || cleanPhone.length < 7 || cleanPhone.toLowerCase() === 'no phone') return null;
 
-    const membersList = memberService.getAll();
-    return membersList.find((m) => {
+    return allMembers.find((m: Member) => {
       if (selectedExistingMember && m.id === selectedExistingMember.id) return false;
       if (prefillMember && m.id === prefillMember.id) return false;
       return m.phone && m.phone.trim() === cleanPhone;
     }) || null;
-  }, [phone, selectedExistingMember, prefillMember]);
+  }, [phone, selectedExistingMember, prefillMember, allMembers]);
 
   const matchActiveSub = useMemo(() => {
     const target = selectedExistingMember || prefillMember || existingMemberMatch;
     if (!target) return undefined;
     return getActiveSubscriptionForMember(target.member_id);
-  }, [selectedExistingMember, prefillMember, existingMemberMatch]);
+  }, [selectedExistingMember, prefillMember, existingMemberMatch, allSubscriptions]);
 
   const calculatedAge = useMemo(() => {
     if (!birthday) return 0;
@@ -577,7 +583,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       actionMember: null,
       notices
     };
-  }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember, phone]);
+  }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember]);
 
   // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY
   const membershipStatusSummary = useMemo(() => {
@@ -732,7 +738,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     });
   };
 
-  const handleValidateId = (input: string) => {
+  const handleValidateId = async (input: string) => {
     let cleanId = input.trim();
 
     try {
@@ -757,7 +763,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     lastScannedIdRef.current = cleanId;
     lastScanTimeRef.current = now;
 
-    const list = registrationService.getQueue();
+    const list = await registrationService.getQueue();
     const found = list.find((q: OnlineRegistration) => q.id.toUpperCase() === cleanId);
 
     if (!found) {
@@ -879,7 +885,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setStep(prev => Math.max(1, prev - 1));
   };
 
-  const handleExecuteCheckout = () => {
+  const handleExecuteCheckout = async () => {
     try {
       if (membershipStatusSummary.isBlocked) {
         toast.error(membershipStatusSummary.description);
@@ -890,7 +896,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const combinedName = getCombinedFullName();
 
       const existingByPhone = phone.trim() 
-        ? memberService.getAll().find(m => m.phone === phone.trim()) 
+        ? allMembers.find((m: Member) => m.phone === phone.trim()) 
         : null;
 
       const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
@@ -915,10 +921,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       };
 
       if (activeMemberToUse) {
-        targetMember = activeMemberToUse;
-        memberService.update(targetMember.id, memberFields, 'Admin Staff');
+        targetMember = await memberService.update(activeMemberToUse.id, memberFields, 'Admin Staff');
       } else {
-        targetMember = memberService.create({
+        targetMember = await memberService.create({
           ...memberFields,
           status: 'Active'
         }, 'Admin Staff');
@@ -926,9 +931,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
 
-      let createdSub = null;
+      let createdSub: Subscription | null = null;
       if (selectedPlan !== 'No Subscription') {
-        createdSub = subscriptionService.create(
+        createdSub = await subscriptionService.create(
           targetMember.member_id,
           selectedPlan,
           mappedPayment,
@@ -944,16 +949,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       }
 
       if (addIdCard) {
-        cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
+        await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
       }
 
       if (importedQueueReg) {
-        const queue = registrationService.getQueue();
-        const index = queue.findIndex((r: OnlineRegistration) => r.id === importedQueueReg.id);
-        if (index !== -1) {
-          queue[index].status = 'Approved';
-          prototypeStorage.save(STORAGE_KEYS.REGISTRATIONS, queue);
-        }
+        await registrationService.approve(importedQueueReg.id, 'Admin Staff');
       }
 
       const now = new Date();
@@ -968,38 +968,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         receipt_no: receiptNo,
         transaction_date: formattedDate
       });
-
-      // Record in logbook ONLY for "No Subscription" profile enrollments
-      if (selectedPlan === 'No Subscription') {
-        const nowIso = now.toISOString();
-        const logRecord: any = {
-          id: `ATT-${Date.now()}`,
-          timestamp: nowIso,
-          memberId: targetMember.member_id,
-          customerName: combinedName,
-          customerType: activeMemberToUse ? 'Existing Member' : 'New Membership',
-          categoryOrPlan: 'No Subscription (Profile Only)',
-          basePrice: 0,
-          gcashFee: 0,
-          cardFee: appliedCardFee,
-          amountPaid: totalPrice,
-          paymentMethod: mappedPayment,
-          gcashRefNo: gcashReference.trim(),
-          paymentStatus: totalPrice > 0 ? 'Paid' : 'Free',
-          status: 'Active',
-          isSubscription: false,
-          receipt_no: receiptNo,
-          deletable: true
-        };
-
-        try {
-          const savedLogbook = localStorage.getItem('palomar_gym_logbook');
-          const currentLogs = savedLogbook ? JSON.parse(savedLogbook) : [];
-          localStorage.setItem('palomar_gym_logbook', JSON.stringify([logRecord, ...currentLogs]));
-        } catch (e) {
-          console.error('Error saving to palomar_gym_logbook:', e);
-        }
-      }
 
       // Sync Logbook UI
       window.dispatchEvent(new Event('palomar_logbook_updated'));
@@ -1149,7 +1117,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <div className="flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                     <div>
-                      <span className="block font-heading text-xs text-slate-900 dark:text-white uppercase">
+                      <span className="font-heading text-xs text-slate-900 dark:text-white uppercase block">
                         Enrolling Existing Member: {selectedExistingMember.full_name}
                       </span>
                       <span className="text-[9px] font-mono text-slate-600 dark:text-slate-300">
@@ -1200,7 +1168,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   {memberSearchQuery.trim().length > 0 && (
                     <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-48 overflow-y-auto space-y-1 z-30 relative">
                       {matchingSearchMembers.length > 0 ? (
-                        matchingSearchMembers.map((m) => {
+                        matchingSearchMembers.map((m: Member) => {
                           const activeSub = getActiveSubscriptionForMember(m.member_id);
                           const isSubscribed = !!activeSub;
 
@@ -1291,7 +1259,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleSelectExistingMember(applicantStatusSummary.actionMember!)}
-                      className="px-3 py-1.5 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950 font-black"
+                      className="px-3 py-1.5 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
                     >
                       Attach Member
                     </button>
@@ -1417,7 +1385,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
               {/* Phone with Contextual Helper Notice */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                   <span>Contact Phone <span className="text-red-500">*</span></span>
                   {isMissing(phone) && (
                     <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Phone</span>
@@ -1484,7 +1452,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               {/* Birthday & Age Policy */}
               <div className="grid grid-cols-2 gap-2 col-span-1">
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                     <span>Birthday *</span>
                     {isMissing(birthday) && (
                       <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Birthday</span>
@@ -1521,9 +1489,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               </div>
 
-             {/* Address */}
+              {/* Address */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                   <span>Home Address <span className="text-slate-400 font-normal">(optional)</span></span>
                 </label>
                 <input 
@@ -1620,9 +1588,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   value={emergencyPhone} 
                   disabled={isEmergencyPhoneLocked}
                   onChange={e => {
-  setEmergencyPhone(e.target.value.replace(/\D/g, ''));
-  if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
-}}
+                    setEmergencyPhone(e.target.value.replace(/\D/g, ''));
+                    if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
+                  }}
                   className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
                     isMissing(emergencyPhone) || errors.emergencyPhone 
                       ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
@@ -1635,55 +1603,55 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
               </div>
 
-         {/* Digital Signatures (Completely Standalone - Outside of any Card Container) */}
-{Boolean(applicantSig || parentSig) && (
-  <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
-        <span>Digital Signatures</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
-        className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
-      >
-        <Eye className="w-3.5 h-3.5 text-blue-500" />
-        <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
-      </button>
-    </div>
+              {/* Digital Signatures (Completely Standalone) */}
+              {Boolean(applicantSig || parentSig) && (
+                <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Digital Signatures</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
+                      className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-blue-500" />
+                      <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
+                    </button>
+                  </div>
 
-    {showSignaturesInAudit && (
-      <div className="grid grid-cols-2 gap-3 pt-1">
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-            Applicant Signature
-          </span>
-          {applicantSig ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
+                  {showSignaturesInAudit && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+                          Applicant Signature
+                        </span>
+                        {applicantSig ? (
+                          <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                            <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+                          </div>
+                        ) : (
+                          <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                        )}
+                      </div>
 
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-            Parent / Guardian Signature
-          </span>
-          {parentSig ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
-      </div>
-    )}
-  </div>
-)}
+                      <div>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+                          Parent / Guardian Signature
+                        </span>
+                        {parentSig ? (
+                          <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                            <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                          </div>
+                        ) : (
+                          <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Master Waiver Checkbox */}
               <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
@@ -1753,8 +1721,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </div>
                 </div>
 
-                
-
                 {/* COMPREHENSIVE CLIENT AUDIT DRAWER */}
                 {showClientDetails && (
                   <div className="p-4 bg-white dark:bg-zinc-950/90 border border-slate-200 dark:border-blue-500/20 rounded-2xl space-y-4 animate-fade-in text-[11px] text-slate-700 dark:text-slate-300 font-medium shadow-xs">
@@ -1785,55 +1751,55 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
 
-                  {/* Digital Signatures (Completely Standalone - Outside of any Card Container) */}
-{Boolean(applicantSig || parentSig) && (
-  <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
-        <span>Digital Signatures</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
-        className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
-      >
-        <Eye className="w-3.5 h-3.5 text-blue-500" />
-        <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
-      </button>
-    </div>
+                    {/* Digital Signatures */}
+                    {Boolean(applicantSig || parentSig) && (
+                      <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Digital Signatures</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
+                            className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-blue-500" />
+                            <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
+                          </button>
+                        </div>
 
-    {showSignaturesInAudit && (
-      <div className="grid grid-cols-2 gap-3 pt-1">
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-            Applicant Signature
-          </span>
-          {applicantSig ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
+                        {showSignaturesInAudit && (
+                          <div className="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+                                Applicant Signature
+                              </span>
+                              {applicantSig ? (
+                                <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                                  <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+                                </div>
+                              ) : (
+                                <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                              )}
+                            </div>
 
-        <div>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-            Parent / Guardian Signature
-          </span>
-          {parentSig ? (
-            <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-              <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-          )}
-        </div>
-      </div>
-    )}
-  </div>
-)}
+                            <div>
+                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
+                                Parent / Guardian Signature
+                              </span>
+                              {parentSig ? (
+                                <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
+                                  <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                                </div>
+                              ) : (
+                                <span className="text-[9px] text-slate-400 italic">No signature on file</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2029,7 +1995,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               </div>
 
               {/* COMPACT RECEIPT WRAPPER CONTAINER */}
-              <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 max-h-[360px] overflow-y-auto shadow-inner">
+              <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 max-h-90 overflow-y-auto shadow-inner">
                 <OfficialReceipt
                   ref={receiptRef}
                   variant="inline"
@@ -2059,19 +2025,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {step < 3 ? (
             <>
               <button 
-  disabled={step === 1} 
-  onClick={handleBack} 
-  className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
->
-  {step === 2 ? (
-    <>
-      <ChevronLeft className="w-4 h-4 text-blue-500" />
-      <span>Edit Information</span>
-    </>
-  ) : (
-    'Back'
-  )}
-</button>
+                disabled={step === 1} 
+                onClick={handleBack} 
+                className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
+              >
+                {step === 2 ? (
+                  <>
+                    <ChevronLeft className="w-4 h-4 text-blue-500" />
+                    <span>Edit Information</span>
+                  </>
+                ) : (
+                  'Back'
+                )}
+              </button>
               
               {step === 2 ? (
                 <button 
@@ -2145,7 +2111,11 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
     plan: 'Monthly Membership' | 'Yearly Membership' | 'No Subscription' | null;
   }>({ isOpen: false, mode: null, plan: null });
 
-  const settings = useMemo(() => settingsService.load(), []);
+  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    settingsService.load().then(setSettings).catch(console.warn);
+  }, []);
 
   return (
     <div className="relative space-y-6">
