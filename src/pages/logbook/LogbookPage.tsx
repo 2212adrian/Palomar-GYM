@@ -45,7 +45,7 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
 
-// ─── ANIMATED TICKER HELPERS ───
+// ANIMATED TICKER HELPERS
 const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
   const nodeRef = useRef<HTMLSpanElement>(null);
   const prevValueRef = useRef(value);
@@ -118,7 +118,7 @@ const isLogDeletable = (log: LogRecord) => {
     log.categoryOrPlan.includes('Monthly') ||
     log.categoryOrPlan.includes('Yearly')
   ) {
-    return false;
+    return false; // Subscription & official receipt records are read-only in Logbook
   }
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -179,44 +179,79 @@ export const LogbookPage: React.FC = () => {
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(true);
 
-  // Fetch Attendance Records from Supabase with Realtime Listener
+  // Fetch both Attendance (check-ins) and Receipts (subscriptions) tables
   const fetchAttendanceFromSupabase = useCallback(async () => {
     try {
       setLoadingLogs(true);
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .is('deleted_at', null)
-        .order('check_in_time', { ascending: false });
+      const [attRes, rcptRes] = await Promise.all([
+        supabase
+          .from('attendance')
+          .select('*')
+          .is('deleted_at', null)
+          .order('check_in_time', { ascending: false }),
+        supabase
+          .from('receipts')
+          .select('*')
+          .order('created_at', { ascending: false })
+      ]);
 
-      if (error) {
-        console.error('Error fetching attendance from Supabase:', error);
-        return;
+      if (attRes.error) {
+        console.error('Error fetching attendance:', attRes.error);
       }
 
-      if (data) {
-        const mappedLogs: LogRecord[] = data.map((att: any) => ({
-          id: att.id,
-          timestamp: att.check_in_time,
-          memberId: att.member_id || null,
-          customerName: att.customer_name,
-          customerType: att.customer_type,
-          categoryOrPlan: att.plan_name || 'Regular Pass',
-          paymentMethod: att.payment_method,
-          amountPaid: Number(att.entry_fee || 0),
-          basePrice: Number(att.base_price ?? (att.entry_fee - (att.gcash_fee || 0))),
-          gcashFee: Number(att.gcash_fee || 0),
-          cardFee: Number(att.card_fee || 0),
-          gcashRefNo: att.gcash_ref_no,
-          referenceNumber: att.gcash_ref_no,
-          paymentRef: att.gcash_ref_no,
-          paymentStatus: Number(att.entry_fee) > 0 ? 'Paid' : 'Free',
-          status: 'Active'
-        }));
-        setLogs(mappedLogs);
-      }
+      const mappedAttLogs: LogRecord[] = (attRes.data || []).map((att: any) => ({
+        id: att.id,
+        timestamp: att.check_in_time,
+        memberId: att.member_id || null,
+        customerName: att.customer_name,
+        customerType: att.customer_type,
+        categoryOrPlan: att.plan_name || 'Regular Pass',
+        paymentMethod: att.payment_method,
+        amountPaid: Number(att.entry_fee || 0),
+        basePrice: Number(att.base_price ?? (att.entry_fee - (att.gcash_fee || 0))),
+        gcashFee: Number(att.gcash_fee || 0),
+        cardFee: Number(att.card_fee || 0),
+        gcashRefNo: att.gcash_ref_no,
+        referenceNumber: att.gcash_ref_no,
+        paymentRef: att.gcash_ref_no,
+        paymentStatus: Number(att.entry_fee) > 0 ? 'Paid' : 'Free',
+        status: 'Active',
+        isSubscription: false,
+        deletable: true
+      }));
+
+      // Map receipts table rows (subscriptions/payments) as read-only logbook records
+      const mappedRcptLogs: LogRecord[] = (rcptRes.data || []).map((rcpt: any) => ({
+        id: `rcpt-${rcpt.id}`,
+        receipt_no: rcpt.id,
+        timestamp: rcpt.created_at,
+        memberId: rcpt.member_id || null,
+        customerName: rcpt.customer_name,
+        customerType: rcpt.customer_type || 'New Membership',
+        categoryOrPlan: rcpt.item_description || 'Subscription',
+        paymentMethod: rcpt.payment_method,
+        amountPaid: Number(rcpt.amount || 0),
+        basePrice: Number(rcpt.base_price || rcpt.amount || 0),
+        gcashFee: Number(rcpt.gcash_fee || 0),
+        cardFee: Number(rcpt.card_fee || 0),
+        gcashRefNo: rcpt.gcash_ref_no,
+        referenceNumber: rcpt.gcash_ref_no,
+        paymentRef: rcpt.gcash_ref_no,
+        paymentStatus: 'Paid',
+        status: 'Active',
+        isSubscription: true,
+        deletable: false
+      }));
+
+      const combinedLogs = [...mappedAttLogs, ...mappedRcptLogs].sort((a, b) => {
+        const timeA = new Date(a.timestamp || 0).getTime();
+        const timeB = new Date(b.timestamp || 0).getTime();
+        return timeB - timeA;
+      });
+
+      setLogs(combinedLogs);
     } catch (err) {
-      console.error('Attendance fetch error:', err);
+      console.error('Logbook fetch error:', err);
     } finally {
       setLoadingLogs(false);
     }
@@ -226,8 +261,9 @@ export const LogbookPage: React.FC = () => {
     fetchAttendanceFromSupabase();
 
     const channel = supabase
-      .channel('attendance_realtime')
+      .channel('logbook_realtime_channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, fetchAttendanceFromSupabase)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, fetchAttendanceFromSupabase)
       .subscribe();
 
     return () => {
@@ -274,35 +310,35 @@ export const LogbookPage: React.FC = () => {
   }, [selectedDate, logs]);
 
   const filteredLogs = useMemo(() => {
-  return dayLogs.filter((l: LogRecord) => {
-    const q = ledgerSearch.toLowerCase().trim();
-    const matchesSearch = q === '' ||
-      l.customerName.toLowerCase().includes(q) ||
-      (l.memberId && l.memberId.toLowerCase().includes(q)) ||
-      l.categoryOrPlan.toLowerCase().includes(q);
+    return dayLogs.filter((l: LogRecord) => {
+      const q = ledgerSearch.toLowerCase().trim();
+      const matchesSearch = q === '' ||
+        l.customerName.toLowerCase().includes(q) ||
+        (l.memberId && l.memberId.toLowerCase().includes(q)) ||
+        l.categoryOrPlan.toLowerCase().includes(q);
 
-    let matchesType = true;
-    if (customerFilter === 'Walk-In') {
-      matchesType = l.customerType === 'Walk-In';
-    } else if (customerFilter === 'Member') {
-      matchesType = l.customerType === 'Existing Member';
-    } else if (customerFilter === 'Subs') {
-      matchesType =
-        l.customerType === 'New Membership' ||
-        !!l.isSubscription ||
-        (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
-        (l.categoryOrPlan || '').toLowerCase().includes('subscription');
-    }
+      let matchesType = true;
+      if (customerFilter === 'Walk-In') {
+        matchesType = l.customerType === 'Walk-In';
+      } else if (customerFilter === 'Member') {
+        matchesType = l.customerType === 'Existing Member';
+      } else if (customerFilter === 'Subs') {
+        matchesType =
+          l.customerType === 'New Membership' ||
+          !!l.isSubscription ||
+          (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
+          (l.categoryOrPlan || '').toLowerCase().includes('subscription');
+      }
 
-    let matchesPayment = true;
-    if (paymentFilter !== 'All') {
-      const pMethod = (l.paymentMethod || '').toLowerCase();
-      matchesPayment = pMethod.includes(paymentFilter.toLowerCase());
-    }
+      let matchesPayment = true;
+      if (paymentFilter !== 'All') {
+        const pMethod = (l.paymentMethod || '').toLowerCase();
+        matchesPayment = pMethod.includes(paymentFilter.toLowerCase());
+      }
 
-    return matchesSearch && matchesType && matchesPayment;
-  });
-}, [dayLogs, ledgerSearch, customerFilter, paymentFilter]);
+      return matchesSearch && matchesType && matchesPayment;
+    });
+  }, [dayLogs, ledgerSearch, customerFilter, paymentFilter]);
 
   const totalItems = filteredLogs.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
@@ -329,12 +365,11 @@ export const LogbookPage: React.FC = () => {
 
   const [, setIsTransitioning] = useState(false);
 
-// Lock scrolling during the 800ms transition whenever activePage changes
-useEffect(() => {
-  setIsTransitioning(true);
-  const timer = setTimeout(() => setIsTransitioning(false), 800);
-  return () => clearTimeout(timer);
-}, [activePage]);
+  useEffect(() => {
+    setIsTransitioning(true);
+    const timer = setTimeout(() => setIsTransitioning(false), 800);
+    return () => clearTimeout(timer);
+  }, [activePage]);
 
   useEffect(() => {
     if (totalCollectedToday > prevRevenueRef.current) {
@@ -356,14 +391,13 @@ useEffect(() => {
   }, [totalCollectedToday]);
 
   const newMembersCount = useMemo(() => {
-    return dayLogs.filter((l: LogRecord) => l.customerType === 'New Membership').length;
+    return dayLogs.filter((l: LogRecord) => l.customerType === 'New Membership' || l.isSubscription).length;
   }, [dayLogs]);
 
- const handleCheckInSuccess = (newLog: LogRecord) => {
+  const handleCheckInSuccess = (newLog: LogRecord) => {
     setLogs(prev => [newLog, ...prev]);
     toast.success('Attendance check-in success.');
 
-    // Automatically switch timeline view to Present Day (Today)
     const today = new Date();
     setCurrentWeekStart(startOfWeek(today, { weekStartsOn: 0 }));
     setSelectedDayIndex(getDay(today));
@@ -398,7 +432,7 @@ useEffect(() => {
         log.customerType === 'New Membership' || 
         log.categoryOrPlan.includes('Membership')
       ) {
-        toast.error('Subscription contract records cannot be deleted.');
+        toast.error('Subscription transactions cannot be deleted from Logbook.');
       } else {
         toast.error('Only standard check-in logs recorded today can be deleted.');
       }
@@ -452,7 +486,6 @@ useEffect(() => {
     }
   };
 
-  // Centralized Header Actions Synchronizer
   useEffect(() => {
     if (activePage === 'logbook') {
       setActions(
@@ -588,7 +621,7 @@ useEffect(() => {
     <div className="relative min-h-[85vh] w-full">
       <TabLoader isVisible={false} />
 
-      {/* ─── DESKTOP SIDE ARROWS ─── */}
+      {/* DESKTOP SIDE ARROWS */}
       {isAdmin && (
         <div className="hidden xl:block">
           <AnimatePresence mode="popLayout">
@@ -641,14 +674,14 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ─── SLIDING TIMELINE CANVAS GRID SCROLLER ─── */}
+      {/* SLIDING TIMELINE CANVAS GRID SCROLLER */}
       <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
         
         {/* VIEW 1: LEFT SLIDE (LOGBOOK COUNTER) */}
         <div 
-         className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 ${
-    activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-  }`}
+          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 ${
+            activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -660,85 +693,83 @@ useEffect(() => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* ─── TODAY'S SUMMARY DASHBOARD CARD (STRICT 1-ROW DESIGN) ─── */}
-<div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
-  <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
-    
-    {/* Left: Check-ins */}
-    <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
-      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-        <Users className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
-      </div>
-      <div className="min-w-0">
-        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-          Check-ins
-        </span>
-        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-          <AnimatedNumber value={dayLogs.length} />
-        </span>
-      </div>
-    </div>
+          {/* TODAY'S SUMMARY DASHBOARD CARD */}
+          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
+            <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
+              
+              <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+                    Check-ins
+                  </span>
+                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+                    <AnimatedNumber value={dayLogs.length} />
+                  </span>
+                </div>
+              </div>
 
-    {/* Center: Highlighted Total Revenue */}
-    <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
-      <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
-        Total Revenue
-      </span>
-      <motion.div
-        animate={{
-          scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
-        }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-        className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
-      >
-        <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
-          revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
-        }`} />
-        <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
-          revenueTrend === 'increasing'
-            ? 'text-emerald-500'
-            : revenueTrend === 'decreasing'
-            ? 'text-rose-500'
-            : 'text-(--color-text)'
-        }`}>
-          <AnimatedCurrency value={totalCollectedToday} />
-        </span>
-      </motion.div>
-    </div>
+              <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
+                <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
+                  Total Revenue
+                </span>
+                <motion.div
+                  animate={{
+                    scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
+                >
+                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
+                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+                  }`} />
+                  <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
+                    revenueTrend === 'increasing'
+                      ? 'text-emerald-500'
+                      : revenueTrend === 'decreasing'
+                      ? 'text-rose-500'
+                      : 'text-(--color-text)'
+                  }`}>
+                    <AnimatedCurrency value={totalCollectedToday} />
+                  </span>
+                </motion.div>
+              </div>
 
-    {/* Right: New Members */}
-    <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
-      <div className="min-w-0 text-right order-1">
-        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-          New Members
-        </span>
-        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-          <AnimatedNumber value={newMembersCount} />
-        </span>
-      </div>
-      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
-        <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
-      </div>
-    </div>
+              <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+                <div className="min-w-0 text-right order-1">
+                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+                    New Members
+                  </span>
+                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+                    <AnimatedNumber value={newMembersCount} />
+                  </span>
+                </div>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
+                  <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
+                </div>
+              </div>
 
-  </div>
-</div>
+            </div>
+          </div>
+
           <TimelineBar
-  currentWeekStart={currentWeekStart}
-  onWeekStartChange={setCurrentWeekStart}
-  selectedDayIndex={selectedDayIndex}
-  onDayIndexChange={setSelectedDayIndex}
-  searchQuery={ledgerSearch}
-  onSearchQueryChange={setLedgerSearch}
-  activeFilter={customerFilter}
-  onFilterChange={setCustomerFilter}
-  filterOptions={ATTENDANCE_FILTERS}
-  paymentFilter={paymentFilter}
-  onPaymentFilterChange={setPaymentFilter}
-  paymentOptions={PAYMENT_FILTERS}
-  role={role}
-  searchPlaceholder="Search members, phone, QR, customer type..."
-/>
+            currentWeekStart={currentWeekStart}
+            onWeekStartChange={setCurrentWeekStart}
+            selectedDayIndex={selectedDayIndex}
+            onDayIndexChange={setSelectedDayIndex}
+            searchQuery={ledgerSearch}
+            onSearchQueryChange={setLedgerSearch}
+            activeFilter={customerFilter}
+            onFilterChange={setCustomerFilter}
+            filterOptions={ATTENDANCE_FILTERS}
+            paymentFilter={paymentFilter}
+            onPaymentFilterChange={setPaymentFilter}
+            paymentOptions={PAYMENT_FILTERS}
+            role={role}
+            searchPlaceholder="Search members, phone, QR, customer type..."
+          />
 
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
@@ -774,7 +805,7 @@ useEffect(() => {
                 });
 
                 if (totalItems === 0) {
-                   const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All' || paymentFilter !== 'All';
+                  const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All' || paymentFilter !== 'All';
 
                   return (
                     <motion.div
@@ -815,8 +846,8 @@ useEffect(() => {
                   <div key={group.label} className="space-y-4 font-body animate-fade-in">
                     <div className="flex items-center gap-3 select-none pt-2">
                       <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
-  {group.label}
-</div>
+                        {group.label}
+                      </div>
                       <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
                     </div>
 
@@ -894,8 +925,8 @@ useEffect(() => {
         {/* VIEW 2: RIGHT SLIDE */}
         <div 
           className={`w-full pb-40 md:pb-12 max-w-full animate-fade-in ${
-    activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-  }`}
+            activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
           style={{
             gridColumn: 1,
             gridRow: 1,

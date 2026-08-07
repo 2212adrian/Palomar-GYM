@@ -22,7 +22,9 @@ import {
   Activity,
   Shield,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -38,7 +40,6 @@ const CATEGORIES = [
 
 export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
-  // Initializing to true prevents content flashing on initial mount
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -73,6 +74,9 @@ export const AuditLogs: React.FC = () => {
 
   const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
+    if (act.includes('ONLINE_REGISTRATION_APPROVED') || act.includes('ONLINE_REG_APPROVED')) return 'Approved Online Pre-Registration';
+    if (act.includes('ONLINE_REGISTRATION_REJECTED') || act.includes('ONLINE_REG_REJECTED')) return 'Rejected Online Pre-Registration';
+    if (act.includes('ONLINE_REGISTRATION_PURGED') || act.includes('ONLINE_REG_PURGED')) return 'Purged Expired Registrations';
     if (act.includes('CHECK_IN')) return 'Member Checked In';
     if (act.includes('CHECK_OUT')) return 'Member Checked Out';
     if (act.includes('LOGBOOK')) return 'Logbook Entry Recorded';
@@ -94,7 +98,7 @@ export const AuditLogs: React.FC = () => {
     const act = action.toLowerCase();
     if (act.includes('login') || act.includes('logout') || act.includes('auth')) return 'auth';
     if (act.includes('check_in') || act.includes('check_out') || act.includes('logbook') || act.includes('attendance')) return 'attendance';
-    if (act.includes('member')) return 'members';
+    if (act.includes('member') || act.includes('online_registration') || act.includes('online_reg')) return 'members';
     if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('reset')) return 'security';
     if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('sale') || act.includes('rates')) return 'payments';
     if (act.includes('backup') || act.includes('snapshot')) return 'backups';
@@ -104,7 +108,7 @@ export const AuditLogs: React.FC = () => {
 
   const getActionSeverity = (action: string): 'info' | 'warning' | 'critical' => {
     const act = action.toUpperCase();
-    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE_ADMIN') || act.includes('DEACTIVATE')) {
+    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE_ADMIN') || act.includes('DEACTIVATE') || act.includes('ONLINE_REGISTRATION_REJECTED')) {
       return 'critical';
     }
     if (act.includes('UPDATE') || act.includes('CONFIG') || act.includes('EDIT') || act.includes('BACKUP') || act.includes('SAVE')) {
@@ -116,6 +120,8 @@ export const AuditLogs: React.FC = () => {
   const getActionIcon = (action: string, severity: string) => {
     const act = action.toUpperCase();
     const style = "w-4 h-4";
+    if (act.includes('ONLINE_REGISTRATION_APPROVED')) return <UserCheck className={`${style} text-emerald-450`} />;
+    if (act.includes('ONLINE_REGISTRATION_REJECTED')) return <UserX className={`${style} text-red-500`} />;
     if (severity === 'critical') return <Trash2 className={`${style} text-red-500`} />;
     if (act.includes('CHECK_IN') || act.includes('CHECK_OUT') || act.includes('LOGBOOK')) {
       return <CheckCircle2 className={`${style} text-emerald-450`} />;
@@ -298,7 +304,6 @@ export const AuditLogs: React.FC = () => {
     setExpandedGroupId((prev) => (prev === groupId ? null : groupId));
   };
 
-  // Helper trigger to scroll back to timeline focus on index switches
   const handlePageChange = (direction: 'next' | 'prev') => {
     setCurrentPage((prev) => {
       const target = direction === 'next' ? Math.min(totalPages, prev + 1) : Math.max(1, prev - 1);
@@ -347,7 +352,7 @@ export const AuditLogs: React.FC = () => {
           <span className="text-[9px] text-slate-500 font-bold hidden group-hover/kpis:inline">Collapse metrics</span>
         </div>
         
-        {/* KPI Grid (Card values skeletonized surgically during loading) */}
+        {/* KPI Grid */}
         <div className="opacity-0 max-h-0 scale-y-95 origin-top overflow-hidden group-hover/kpis:opacity-100 group-hover/kpis:max-h-96 group-hover/kpis:scale-y-100 group-hover/kpis:mt-4 transition-all duration-500 ease-in-out grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           
           <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex flex-col justify-between space-y-3 shadow-xs">
@@ -459,7 +464,6 @@ export const AuditLogs: React.FC = () => {
       <div className="space-y-4 bg-(--bg-card) p-4 sm:p-5 rounded-2xl border border-(--border-color) shadow-xs text-left">
         
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
-          {/* Search Input block */}
           <div className="relative flex-1 max-w-md w-full">
             <input
               type="text"
@@ -474,7 +478,6 @@ export const AuditLogs: React.FC = () => {
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           </div>
 
-          {/* Inline Filters block */}
           <div className="grid grid-cols-2 gap-3 w-full lg:flex lg:flex-row lg:items-center lg:gap-4 lg:w-auto">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 w-full">
               <label htmlFor="severity-filter" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Severity:</label>
@@ -520,7 +523,7 @@ export const AuditLogs: React.FC = () => {
           </div>
         </div>
 
-        {/* Category Chips filtering scroll block */}
+        {/* Category Chips */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin border-t border-(--border-color) pt-4 no-scrollbar">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 shrink-0">Category:</span>
           {CATEGORIES.map((cat) => (
@@ -545,16 +548,13 @@ export const AuditLogs: React.FC = () => {
       {/* Unified Timeline Layout */}
       <div className="space-y-6">
         {isLoading ? (
-          /* Timeline Surgical Skeleton Container */
           <div className="space-y-8 relative before:absolute before:inset-y-0 before:left-2.5 sm:before:left-6 before:w-0.5 before:bg-slate-800/60 dark:before:bg-slate-800/30">
             {[...Array(2)].map((_, groupIdx) => (
               <div key={groupIdx} className="space-y-4 relative">
-                {/* Date header placeholder */}
                 <div className="relative z-10 -ml-1 sm:ml-0 text-left">
                   <div className="h-6 w-28 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-full animate-pulse" />
                 </div>
 
-                {/* Sub-events timeline items */}
                 <div className="space-y-3 pl-6 sm:pl-10">
                   {[...Array(groupIdx === 0 ? 2 : 1)].map((_, itemIdx) => (
                     <div 
@@ -565,10 +565,7 @@ export const AuditLogs: React.FC = () => {
                       
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-4 flex-1 min-w-0">
-                          {/* Left icon box skeleton */}
                           <div className="w-10 h-10 bg-slate-100 dark:bg-[#13161a] border border-(--border-color) rounded-xl shrink-0" />
-                          
-                          {/* Inner details skeleton */}
                           <div className="space-y-2 text-left flex-1 min-w-0">
                             <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-1/4" />
                             <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-3/4" />
@@ -576,7 +573,6 @@ export const AuditLogs: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Right dynamic states skeleton */}
                         <div className="flex flex-col items-end gap-2 shrink-0">
                           <div className="h-4 bg-slate-200 dark:bg-white/10 rounded-full w-14" />
                           <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-4" />
@@ -600,14 +596,12 @@ export const AuditLogs: React.FC = () => {
             {paginatedTimelineGroups.map((dayGroup) => (
               <div key={dayGroup.day} className="space-y-4 relative">
                 
-                {/* Daily Divider Header */}
                 <div className="relative z-10 -ml-1 sm:ml-0 text-left">
                   <span className="px-3.5 py-1.5 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-full text-slate-500 dark:text-slate-400 font-bold shadow-xs">
                     {dayGroup.day}
                   </span>
                 </div>
 
-                {/* Consecutive grouped cards */}
                 <div className="space-y-3 pl-6 sm:pl-10">
                   {dayGroup.items.map((group: any) => {
                     const isExpanded = expandedGroupId === group.id;
@@ -631,7 +625,6 @@ export const AuditLogs: React.FC = () => {
                               : 'border-blue-400 shadow-md shadow-blue-400/10'
                         }`} />
 
-                        {/* Top Line Card content */}
                         <div 
                           onClick={() => toggleGroupExpand(group.id)}
                           className="flex items-start justify-between gap-2.5 sm:gap-4 cursor-pointer"
@@ -691,7 +684,7 @@ export const AuditLogs: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Expandable nested details logic */}
+                        {/* Expandable Details */}
                         {isExpanded && (
                           <div className="mt-4 pt-4 border-t border-(--border-color) space-y-4 animate-slide-up text-left">
                             
@@ -747,7 +740,7 @@ export const AuditLogs: React.FC = () => {
               </div>
             ))}
 
-            {/* Pagination Controls block */}
+            {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-(--bg-card) border border-(--border-color) rounded-2xl p-4 shadow-xs font-semibold">
                 <span className="text-xs text-slate-400 text-center sm:text-left">

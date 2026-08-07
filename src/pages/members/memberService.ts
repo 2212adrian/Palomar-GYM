@@ -1,3 +1,4 @@
+// src/pages/members/memberService.ts
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 
@@ -70,7 +71,15 @@ export const DEFAULT_SETTINGS: MembershipSettings = {
   max_registrations_per_day: 5
 };
 
-// Safe Audit Log Helper utilizing central logAudit RPC/function
+// ==========================================
+// INTERNAL HELPERS
+// ==========================================
+
+const isUUID = (str?: string | null): boolean => {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+};
+
 const writeAudit = async (
   action: string,
   category: ActivityLog['category'],
@@ -85,6 +94,33 @@ const writeAudit = async (
   } catch (err) {
     console.warn('Audit logging bypassed:', err);
   }
+};
+
+/**
+ * Computes effective subscription status dynamically.
+ * - 'Voided' if voided
+ * - 'Scheduled' if start_date is in the future
+ * - 'Expired' if end_date is in the past
+ * - 'Active' if start_date <= NOW <= end_date
+ */
+export const getEffectiveSubscriptionStatus = (
+  status: SubscriptionStatus | string, 
+  startDateStr: string,
+  endDateStr: string
+): SubscriptionStatus => {
+  if (status === 'Voided') return 'Voided';
+  
+  const now = Date.now();
+  const startMs = new Date(startDateStr).getTime();
+  const endMs = new Date(endDateStr).getTime();
+
+  if (!isNaN(startMs) && startMs > now) {
+    return 'Inactive' as SubscriptionStatus; // Scheduled queued subscription
+  }
+  if (!isNaN(endMs) && endMs < now) {
+    return 'Expired';
+  }
+  return 'Active';
 };
 
 // ==========================================
@@ -110,14 +146,19 @@ export const memberService = {
   },
 
   getById: async (id: string): Promise<Member | null> => {
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .or(`id.eq.${id},member_id.eq.${id}`)
-      .single();
+    if (!id) return null;
+
+    let query = supabase.from('members').select('*');
+    if (isUUID(id)) {
+      query = query.eq('id', id);
+    } else {
+      query = query.eq('member_id', id);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
-      if (error.code === 'PGRST116') return null; // Record not found
+      if (error.code === 'PGRST116') return null;
       console.error('Error fetching member by ID:', error);
       throw new Error(error.message);
     }
@@ -162,13 +203,6 @@ export const memberService = {
       status: d.status || 'Active',
       notes: d.notes || null,
 
-      // Security Card Defaults
-      card_number: d.card_number || null,
-      card_type: d.card_type || 'None',
-      card_version: d.card_version || 1,
-      card_issued_at: d.card_issued_at || null,
-
-      // Minor & Signature Fields
       parent_name: d.parent_name || null,
       parent_relationship: d.parent_relationship || null,
       parent_phone: d.parent_phone || null,
@@ -199,18 +233,22 @@ export const memberService = {
   },
 
   update: async (id: string, updates: Partial<Member>, user: string): Promise<Member> => {
+    if (!id) throw new Error('Member ID is required for update.');
+
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
     if ('avatar_url' in updates && !('image_url' in updates)) {
       payload.image_url = updates.avatar_url;
     }
-    delete payload.id; // Prevent updating UUID primary key
+    delete payload.id;
 
-    const { data: updated, error } = await supabase
-      .from('members')
-      .update(payload)
-      .or(`id.eq.${id},member_id.eq.${id}`)
-      .select()
-      .single();
+    let query = supabase.from('members').update(payload);
+    if (isUUID(id)) {
+      query = query.eq('id', id);
+    } else {
+      query = query.eq('member_id', id);
+    }
+
+    const { data: updated, error } = await query.select().single();
 
     if (error) {
       console.error('Error updating member:', error);
@@ -227,34 +265,46 @@ export const memberService = {
   },
 
   archive: async (id: string, reason: string, user: string): Promise<void> => {
-    const { data: target, error: findError } = await supabase
-      .from('members')
-      .select('*')
-      .or(`id.eq.${id},member_id.eq.${id}`)
-      .single();
+    if (!id) throw new Error('Member ID is required for archive.');
+
+    let findQuery = supabase.from('members').select('*');
+    if (isUUID(id)) {
+      findQuery = findQuery.eq('id', id);
+    } else {
+      findQuery = findQuery.eq('member_id', id);
+    }
+
+    const { data: target, error: findError } = await findQuery.single();
 
     if (findError || !target) {
       throw new Error('Member profile not found.');
     }
 
-    const { data: activeSub } = await supabase
+    // Check if member has an ongoing active subscription contract
+    const { data: activeSubs } = await supabase
       .from('subscriptions')
-      .select('id, plan_type')
+      .select('id, plan_type, status, end_date')
       .eq('member_id', target.member_id)
-      .eq('status', 'Active')
-      .maybeSingle();
+      .eq('status', 'Active');
 
-    if (activeSub) {
+    const hasCurrentlyActiveSub = (activeSubs || []).some(s => new Date(s.end_date).getTime() >= Date.now());
+
+    if (hasCurrentlyActiveSub) {
       throw new Error(`Archiving rejected: ${target.full_name} has an active subscription contract.`);
     }
 
-    const { error: updateErr } = await supabase
-      .from('members')
-      .update({
-        deleted_at: new Date().toISOString(),
-        delete_reason: reason
-      })
-      .or(`id.eq.${id},member_id.eq.${id}`);
+    let archiveQuery = supabase.from('members').update({
+      deleted_at: new Date().toISOString(),
+      delete_reason: reason
+    });
+
+    if (isUUID(id)) {
+      archiveQuery = archiveQuery.eq('id', id);
+    } else {
+      archiveQuery = archiveQuery.eq('member_id', id);
+    }
+
+    const { error: updateErr } = await archiveQuery;
 
     if (updateErr) {
       console.error('Error archiving member:', updateErr);
@@ -265,18 +315,23 @@ export const memberService = {
   },
 
   restore: async (id: string, user: string): Promise<Member> => {
-    const { data: restored, error } = await supabase
-      .from('members')
-      .update({
-        deleted_at: null,
-        deleted_by: null,
-        delete_reason: null,
-        status: 'Active',
-        updated_at: new Date().toISOString()
-      })
-      .or(`id.eq.${id},member_id.eq.${id}`)
-      .select()
-      .single();
+    if (!id) throw new Error('Member ID is required for restore.');
+
+    let query = supabase.from('members').update({
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null,
+      status: 'Active',
+      updated_at: new Date().toISOString()
+    });
+
+    if (isUUID(id)) {
+      query = query.eq('id', id);
+    } else {
+      query = query.eq('member_id', id);
+    }
+
+    const { data: restored, error } = await query.select().single();
 
     if (error) {
       console.error('Error restoring member:', error);
@@ -308,13 +363,19 @@ export const subscriptionService = {
       throw new Error(error.message);
     }
 
-    return (data || []).map(s => ({
-      ...s,
-      plan_name: s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
-    }));
+    return (data || []).map(s => {
+      const effStatus = getEffectiveSubscriptionStatus(s.status, s.start_date, s.end_date);
+      return {
+        ...s,
+        status: effStatus,
+        plan_name: s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
+      };
+    });
   },
 
   getByMemberId: async (memberId: string): Promise<Subscription[]> => {
+    if (!memberId) return [];
+
     const { data, error } = await supabase
       .from('subscriptions')
       .select('*')
@@ -326,10 +387,14 @@ export const subscriptionService = {
       throw new Error(error.message);
     }
 
-    return (data || []).map(s => ({
-      ...s,
-      plan_name: s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
-    }));
+    return (data || []).map(s => {
+      const effStatus = getEffectiveSubscriptionStatus(s.status, s.start_date, s.end_date);
+      return {
+        ...s,
+        status: effStatus,
+        plan_name: s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
+      };
+    });
   },
 
   create: async (
@@ -345,25 +410,42 @@ export const subscriptionService = {
       gcashRefNo?: string;
     }
   ): Promise<Subscription> => {
-    const { data: m, error: mErr } = await supabase
-      .from('members')
-      .select('*')
-      .or(`member_id.eq.${memberId},id.eq.${memberId}`)
-      .single();
+    if (!memberId) {
+      throw new Error('Member ID is missing or invalid.');
+    }
 
-    if (mErr || !m) throw new Error('Member lookup missing.');
-    if (m.status === 'Suspended') throw new Error(`Member is currently ${m.status}.`);
+    let mQuery = supabase.from('members').select('*');
+    if (isUUID(memberId)) {
+      mQuery = mQuery.eq('id', memberId);
+    } else {
+      mQuery = mQuery.eq('member_id', memberId);
+    }
 
-    const { data: existingActive } = await supabase
+    const { data: m, error: mErr } = await mQuery.single();
+
+    if (mErr || !m) {
+      console.error('Member lookup failed for ID:', memberId, mErr);
+      throw new Error(`Member lookup missing for identifier "${memberId}".`);
+    }
+
+    if (m.status === 'Suspended') {
+      throw new Error(`Member ${m.full_name} is currently suspended.`);
+    }
+
+    // Check for any currently ACTIVE subscription that has not expired yet
+    const { data: memberSubs } = await supabase
       .from('subscriptions')
-      .select('id')
+      .select('*')
       .eq('member_id', m.member_id)
-      .eq('status', 'Active')
-      .maybeSingle();
+      .neq('status', 'Voided')
+      .order('end_date', { ascending: false });
 
-    if (existingActive) throw new Error('Member currently possesses an active subscription.');
+    const now = new Date();
+    const activeSub = (memberSubs || []).find(s => {
+      const endMs = new Date(s.end_date).getTime();
+      return s.status === 'Active' && endMs > now.getTime();
+    });
 
-    // Fetch dynamic rate configuration parameters from rates_config
     const activeSettings = await settingsService.load();
 
     const dbPlanType = planName === 'Yearly Membership' ? 'yearly' : 'monthly';
@@ -376,11 +458,26 @@ export const subscriptionService = {
     const totalAmount = amountPaidOverride ?? (basePrice + gcashFee + cardFee);
     const durationDays = planName === 'Monthly Membership' ? 30 : 365;
 
-    const start = new Date();
-    const end = new Date();
+    let start: Date;
+    let initialStatus: SubscriptionStatus;
+
+    if (activeSub) {
+      // QUEUED / SCHEDULED RENEWAL:
+      // Current subscription remains active until its end_date.
+      // The new subscription starts exactly when the current subscription ends!
+      start = new Date(activeSub.end_date);
+      initialStatus = 'Inactive'; // Will automatically become Active when start_date is reached
+    } else {
+      // IMMEDIATE NEW SUBSCRIPTION:
+      start = new Date();
+      initialStatus = 'Active';
+    }
+
+    const end = new Date(start.getTime());
     end.setDate(end.getDate() + durationDays);
 
-    const { data: sub, error: subErr } = await supabase
+    // Insert a BRAND NEW subscription row so history and receipts remain 1-to-1 permanent
+    const { data: insertedSub, error: subErr } = await supabase
       .from('subscriptions')
       .insert([{
         member_id: m.member_id,
@@ -392,7 +489,7 @@ export const subscriptionService = {
         gcash_ref_no: gcashRefNo,
         start_date: start.toISOString(),
         end_date: end.toISOString(),
-        status: 'Active',
+        status: initialStatus,
         payment_status: 'Paid',
         payment_method: paymentMethod
       }])
@@ -404,52 +501,44 @@ export const subscriptionService = {
       throw new Error(subErr.message);
     }
 
-    const receiptNo = sub.receipt_number;
+    const receiptNo = insertedSub.receipt_number;
 
     await supabase
       .from('members')
       .update({ status: 'Active', updated_at: new Date().toISOString() })
       .eq('member_id', m.member_id);
 
-    await supabase
-      .from('receipts')
-      .insert([{
-        id: receiptNo,
-        member_id: m.member_id,
-        customer_name: m.full_name,
-        customer_type: 'New Membership',
-        amount: totalAmount,
-        base_price: basePrice,
-        gcash_fee: gcashFee,
-        card_fee: cardFee,
-        gcash_ref_no: gcashRefNo,
-        payment_method: paymentMethod,
-        payment_status: 'Paid',
-        item_description: `Subscribed under ${planName}`
-      }]);
+    // Insert official financial transaction into receipts table (Never overwrites past receipts)
+    if (receiptNo) {
+      await supabase
+        .from('receipts')
+        .insert([{
+          id: receiptNo,
+          member_id: m.member_id,
+          customer_name: m.full_name,
+          customer_type: 'New Membership',
+          amount: totalAmount,
+          base_price: basePrice,
+          gcash_fee: gcashFee,
+          card_fee: cardFee,
+          gcash_ref_no: gcashRefNo,
+          payment_method: paymentMethod,
+          payment_status: 'Paid',
+          item_description: activeSub 
+            ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})` 
+            : `Subscribed under ${planName}`
+        }]);
+    }
 
-    await supabase
-      .from('attendance')
-      .insert([{
-        member_id: m.member_id,
-        customer_name: m.full_name,
-        customer_type: 'New Membership',
-        check_in_time: new Date().toISOString(),
-        plan_name: planName,
-        entry_fee: totalAmount,
-        base_price: basePrice,
-        gcash_fee: gcashFee,
-        card_fee: cardFee,
-        gcash_ref_no: gcashRefNo,
-        payment_method: paymentMethod,
-        receipt_number: receiptNo,
-        staff_name: user
-      }]);
+    const auditActionText = activeSub 
+      ? `Scheduled ${planName} Renewal starting ${start.toLocaleDateString()}.`
+      : `Issued ${planName} Contract.`;
 
-    await writeAudit('SUBSCRIPTION_CREATED', 'Subscriptions', user, m.member_id, undefined, `Issued ${planName} Contract.`);
+    await writeAudit('SUBSCRIPTION_CREATED', 'Subscriptions', user, m.member_id, undefined, auditActionText);
 
     return {
-      ...sub,
+      ...insertedSub,
+      status: activeSub ? 'Inactive' : 'Active',
       plan_name: planName
     };
   },
@@ -468,14 +557,37 @@ export const subscriptionService = {
 
     if (findErr || !target) throw new Error('Subscription record not found.');
 
+    // 1. Delete ONLY the single specific receipt linked to this voided subscription transaction
+    if (target.receipt_number) {
+      const { error: rcptErr } = await supabase
+        .from('receipts')
+        .delete()
+        .eq('id', target.receipt_number);
+
+      if (rcptErr) {
+        console.error('Error purging receipt on void:', rcptErr.message);
+      }
+
+      const { error: attErr } = await supabase
+        .from('attendance')
+        .delete()
+        .eq('receipt_number', target.receipt_number);
+
+      if (attErr) {
+        console.warn('Attendance deletion on void:', attErr.message);
+      }
+    }
+
+    // 2. Mark target subscription as 'Voided'
     const { error: voidErr } = await supabase
       .from('subscriptions')
       .update({
         status: 'Voided',
+        payment_status: 'Cancelled',
         voided_at: new Date().toISOString(),
         voided_by: user,
         void_reason: reason,
-        void_notes: notes,
+        void_notes: notes || null,
         updated_at: new Date().toISOString()
       })
       .eq('id', subscriptionId);
@@ -485,149 +597,210 @@ export const subscriptionService = {
       throw new Error(voidErr.message);
     }
 
-    if (target.receipt_number) {
-      await supabase
-        .from('receipts')
-        .delete()
-        .eq('id', target.receipt_number);
-
-      await supabase
-        .from('attendance')
-        .delete()
-        .eq('receipt_number', target.receipt_number);
-    }
-
     await writeAudit(
       'SUBSCRIPTION_VOIDED',
       'Subscriptions',
       user,
       target.member_id,
       reason,
-      `Voided & purged contract (${target.id}) and receipt ${target.receipt_number}. Notes: ${notes || 'None'}.`
+      `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}. Notes: ${notes || 'None'}.`
     );
   }
 };
 
 // ==========================================
-// CARD SERVICE
+// CARD SERVICE (EXCLUSIVELY USES CARDS TABLE)
 // ==========================================
 export const cardService = {
   getAll: async (): Promise<MemberCard[]> => {
     const { data, error } = await supabase
-      .from('members')
-      .select('id, member_id, card_number, card_type, card_version, card_issued_at, created_at, status')
-      .neq('card_type', 'None')
-      .is('deleted_at', null);
+      .from('cards')
+      .select('*')
+      .order('issued_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching cards:', error);
-      throw new Error(error.message);
+      console.error('Error fetching cards from cards table:', error);
+      return [];
     }
 
-    return (data || []).map(m => ({
-      id: `card-${m.id}`,
-      member_id: m.member_id,
-      card_number: m.card_number || `CARD-${m.card_type}-${m.member_id}`,
-      card_type: m.card_type as 'QR' | 'Manual' | 'None',
-      status: m.status === 'Active' ? 'Active' : 'Inactive',
-      version: m.card_version || 1,
-      issued_at: m.card_issued_at || m.created_at
+    return (data || []).map(c => ({
+      id: c.id,
+      member_id: c.member_id,
+      card_number: c.card_number,
+      card_type: c.card_type as 'QR' | 'Manual' | 'None',
+      status: (new Date(c.expires_at).getTime() < Date.now() ? 'Inactive' : c.status) as CardStatus,
+      version: c.version || 1,
+      issued_at: c.issued_at,
+      expires_at: c.expires_at,
+      replacement_reason: c.replacement_reason || undefined,
+      created_at: c.created_at,
+      updated_at: c.updated_at
     }));
   },
 
-  issue: async (memberId: string, type: 'QR' | 'Manual' | 'None', user: string): Promise<MemberCard | null> => {
-    if (type === 'None') {
-      await supabase
-        .from('members')
-        .update({
-          card_type: 'None',
-          card_number: null,
-          updated_at: new Date().toISOString()
-        })
-        .or(`member_id.eq.${memberId},id.eq.${memberId}`);
+  getByMemberId: async (memberId: string): Promise<MemberCard | null> => {
+    if (!memberId) return null;
+
+    const { data, error } = await supabase
+      .from('cards')
+      .select('*')
+      .eq('member_id', memberId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching card by member_id:', error);
       return null;
     }
 
-    const isQr = type === 'QR';
-    const cardNumber = `${isQr ? 'CARD-QR' : 'CARD-MAN'}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const nowIso = new Date().toISOString();
+    if (!data) return null;
 
-    const { data: updated, error } = await supabase
-      .from('members')
-      .update({
-        card_type: type,
-        card_number: cardNumber,
-        card_version: 1,
-        card_issued_at: nowIso,
-        updated_at: nowIso
-      })
-      .or(`member_id.eq.${memberId},id.eq.${memberId}`)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error issuing security card:', error);
-      throw new Error(error.message);
-    }
-
-    await writeAudit('CARD_ISSUED', 'Cards', user, updated.member_id, undefined, `Assigned new ${type} security token.`);
+    const isExpired = new Date(data.expires_at).getTime() < Date.now();
 
     return {
-      id: `card-${updated.id}`,
-      member_id: updated.member_id,
-      card_number: updated.card_number,
-      card_type: updated.card_type as 'QR' | 'Manual' | 'None',
-      status: 'Active',
-      version: updated.card_version,
-      issued_at: updated.card_issued_at
+      id: data.id,
+      member_id: data.member_id,
+      card_number: data.card_number,
+      card_type: data.card_type as 'QR' | 'Manual' | 'None',
+      status: isExpired ? 'Inactive' : (data.status as CardStatus),
+      version: data.version || 1,
+      issued_at: data.issued_at,
+      expires_at: data.expires_at,
+      replacement_reason: data.replacement_reason || undefined,
+      created_at: data.created_at,
+      updated_at: data.updated_at
     };
   },
 
-  replace: async (memberId: string, reason: string, user: string): Promise<MemberCard> => {
-    const { data: existing, error: getErr } = await supabase
-      .from('members')
-      .select('*')
-      .or(`member_id.eq.${memberId},id.eq.${memberId}`)
-      .single();
+  issue: async (
+    memberId: string, 
+    type: 'QR' | 'Manual' | 'None', 
+    user: string,
+    customExpireIso?: string
+  ): Promise<MemberCard | null> => {
+    if (!memberId) throw new Error('Member ID is required to issue card.');
 
-    if (getErr || !existing) throw new Error('Original card registry entry not found.');
+    if (type === 'None') {
+      await supabase.from('cards').delete().eq('member_id', memberId);
+      return null;
+    }
 
-    const currentType = existing.card_type === 'None' ? 'QR' : existing.card_type;
-    const isQr = currentType === 'QR';
-    const newCardNumber = `${isQr ? 'CARD-QR' : 'CARD-MAN'}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const newVersion = (existing.card_version || 1) + 1;
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('members')
-      .update({
-        card_type: currentType,
-        card_number: newCardNumber,
-        card_version: newVersion,
-        card_issued_at: nowIso,
+    // Default 3 years validity from issue date
+    let expiresIso = customExpireIso;
+    if (!expiresIso) {
+      const expDate = new Date(now);
+      expDate.setFullYear(expDate.getFullYear() + 3);
+      expiresIso = expDate.toISOString();
+    }
+
+    const expiryDateOnly = expiresIso.split('T')[0];
+
+    // Payload string strictly uses MEMBER_ID:EXPIRYDATE
+    const cardNumber = `${memberId}:${expiryDateOnly}`;
+
+    // Upsert into cards table (ensures 1 card per member restriction)
+    const { data: cardRow, error: cardErr } = await supabase
+      .from('cards')
+      .upsert({
+        member_id: memberId,
+        card_number: cardNumber,
+        card_type: type,
+        status: 'Active',
+        version: 1,
+        issued_at: nowIso,
+        expires_at: expiresIso,
         updated_at: nowIso
-      })
-      .or(`member_id.eq.${memberId},id.eq.${memberId}`)
+      }, { onConflict: 'member_id' })
       .select()
       .single();
 
-    if (updateErr) {
-      console.error('Error replacing member card:', updateErr);
-      throw new Error(updateErr.message);
+    if (cardErr) {
+      console.error('Error upserting card record:', cardErr);
+      throw new Error(cardErr.message);
     }
 
-    await writeAudit('CARD_REPLACED', 'Cards', user, updated.member_id, reason, `Reissued card version ${newVersion}.`);
+    await writeAudit('CARD_ISSUED', 'Cards', user, memberId, undefined, `Assigned new ${type} security token (${cardNumber}).`);
 
     return {
-      id: `card-${updated.id}`,
+      id: cardRow.id,
+      member_id: cardRow.member_id,
+      card_number: cardRow.card_number,
+      card_type: cardRow.card_type as 'QR' | 'Manual' | 'None',
+      status: 'Active',
+      version: cardRow.version,
+      issued_at: cardRow.issued_at,
+      expires_at: cardRow.expires_at,
+      created_at: cardRow.created_at,
+      updated_at: cardRow.updated_at
+    };
+  },
+
+  replace: async (
+    memberId: string, 
+    reason: string, 
+    user: string,
+    customExpireIso?: string
+  ): Promise<MemberCard> => {
+    if (!memberId) throw new Error('Member ID is required for card replacement.');
+
+    const existing = await cardService.getByMemberId(memberId);
+    const newVersion = existing ? existing.version + 1 : 1;
+    const currentType = existing?.card_type && existing.card_type !== 'None' ? existing.card_type : 'QR';
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    let expiresIso = customExpireIso;
+    if (!expiresIso) {
+      const expDate = new Date(now);
+      expDate.setFullYear(expDate.getFullYear() + 3);
+      expiresIso = expDate.toISOString();
+    }
+
+    const expiryDateOnly = expiresIso.split('T')[0];
+
+    // Payload string strictly uses MEMBER_ID:EXPIRYDATE
+    const newCardNumber = `${memberId}:${expiryDateOnly}`;
+
+    // Overwrites old card row in cards table
+    const { data: updated, error: cardErr } = await supabase
+      .from('cards')
+      .upsert({
+        member_id: memberId,
+        card_number: newCardNumber,
+        card_type: currentType,
+        status: 'Active',
+        version: newVersion,
+        issued_at: nowIso,
+        expires_at: expiresIso,
+        replacement_reason: reason,
+        updated_at: nowIso
+      }, { onConflict: 'member_id' })
+      .select()
+      .single();
+
+    if (cardErr) {
+      console.error('Error replacing member card:', cardErr);
+      throw new Error(cardErr.message);
+    }
+
+    await writeAudit('CARD_REPLACED', 'Cards', user, memberId, reason, `Reissued card version ${newVersion} (${newCardNumber}).`);
+
+    return {
+      id: updated.id,
       member_id: updated.member_id,
       card_number: updated.card_number,
       card_type: updated.card_type as 'QR' | 'Manual' | 'None',
       status: 'Active',
-      version: updated.card_version,
-      issued_at: updated.card_issued_at,
+      version: updated.version,
+      issued_at: updated.issued_at,
+      expires_at: updated.expires_at,
       replaced_at: nowIso,
-      replacement_reason: reason
+      replacement_reason: reason,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at
     };
   }
 };
@@ -640,10 +813,30 @@ export const registrationService = {
     const { data, error } = await supabase
       .from('online_registrations')
       .select('*')
+      .eq('is_archived', false)
+      .is('deleted_at', null)
       .order('submitted_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching online registrations queue:', error);
+      throw new Error(error.message);
+    }
+
+    return (data || []).map(r => ({
+      ...r,
+      preferred_plan: r.preferred_plan === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
+    }));
+  },
+
+  getArchived: async (): Promise<OnlineRegistration[]> => {
+    const { data, error } = await supabase
+      .from('online_registrations')
+      .select('*')
+      .or('is_archived.eq.true,deleted_at.not.is.null')
+      .order('deleted_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching archived online registrations:', error);
       throw new Error(error.message);
     }
 
@@ -673,7 +866,6 @@ export const registrationService = {
       submitted_at: reg.submitted_at || new Date().toISOString(),
       notes: reg.notes || null,
 
-      // Minor & Signature Fields
       parent_consent_required: reg.parent_consent_required || false,
       parent_name: reg.parent_name || null,
       parent_relationship: reg.parent_relationship || null,
@@ -700,6 +892,44 @@ export const registrationService = {
       ...inserted,
       preferred_plan: inserted.preferred_plan === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'
     };
+  },
+
+  archive: async (regId: string, reason: string, user: string): Promise<void> => {
+    const { error } = await supabase
+      .from('online_registrations')
+      .update({
+        is_archived: true,
+        deleted_at: new Date().toISOString(),
+        deleted_by: user,
+        delete_reason: reason
+      })
+      .eq('id', regId);
+
+    if (error) {
+      console.error('Error archiving online registration:', error);
+      throw new Error(error.message);
+    }
+
+    await writeAudit('PRE_REG_ARCHIVED', 'Registrations', user, regId, reason, `Archived registration ticket to prevent daily purge.`);
+  },
+
+  restore: async (regId: string, user: string): Promise<void> => {
+    const { error } = await supabase
+      .from('online_registrations')
+      .update({
+        is_archived: false,
+        deleted_at: null,
+        deleted_by: null,
+        delete_reason: null
+      })
+      .eq('id', regId);
+
+    if (error) {
+      console.error('Error restoring online registration:', error);
+      throw new Error(error.message);
+    }
+
+    await writeAudit('PRE_REG_RESTORED', 'Registrations', user, regId, undefined, `Restored registration ticket from archive.`);
   },
 
   reject: async (regId: string, reason: string, user: string): Promise<void> => {
@@ -755,14 +985,13 @@ export const settingsService = {
         yearly_plan_price: Number(rData?.yearly_rate ?? DEFAULT_SETTINGS.yearly_plan_price),
         regular_walkin_fee: Number(rData?.regular_walk_in ?? DEFAULT_SETTINGS.regular_walkin_fee),
         student_walkin_fee: Number(rData?.student_walk_in ?? DEFAULT_SETTINGS.student_walkin_fee),
-        monthly_member_checkin_fee: 0,
         yearly_member_checkin_fee: Number(rData?.yearly_walk_in ?? DEFAULT_SETTINGS.yearly_member_checkin_fee),
         card_printing_fee: Number(rData?.new_card_fee ?? DEFAULT_SETTINGS.card_printing_fee),
         card_replacement_fee: Number(rData?.new_card_fee ?? DEFAULT_SETTINGS.card_replacement_fee),
         gcash_fee: Number(rData?.gcash_fee ?? DEFAULT_SETTINGS.gcash_fee)
       };
     } catch (e) {
-      console.warn('Unable to load rates_config from Supabase, returning DEFAULT_SETTINGS:', e);
+      console.warn('Unable to load rates_config from Supabase:', e);
     }
     return DEFAULT_SETTINGS;
   },

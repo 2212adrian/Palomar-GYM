@@ -34,21 +34,31 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         .from('attendance')
         .select('*')
         .not('deleted_at', 'is', null)
+        .neq('customer_type', 'New Membership') // Exclude New Memberships
         .order('deleted_at', { ascending: false });
 
       if (error) throw error;
 
       if (data) {
-        const mappedLogs = data.map((att: any) => ({
-          id: att.id,
-          timestamp: att.check_in_time,
-          memberId: att.member_id || null,
-          customerName: att.customer_name,
-          customerType: att.customer_type,
-          categoryOrPlan: att.plan_name || 'Regular Pass',
-          amountPaid: Number(att.entry_fee || 0),
-          deletedAt: att.deleted_at
-        }));
+        // Filter out any subscription records on the client side as a secondary safeguard
+        const mappedLogs = data
+          .filter((att: any) => {
+            const plan = (att.plan_name || '').toLowerCase();
+            return att.customer_type !== 'New Membership' && 
+                   !plan.includes('membership') && 
+                   !plan.includes('subscription');
+          })
+          .map((att: any) => ({
+            id: att.id,
+            timestamp: att.check_in_time,
+            memberId: att.member_id || null,
+            customerName: att.customer_name,
+            customerType: att.customer_type,
+            categoryOrPlan: att.plan_name || 'Regular Pass',
+            amountPaid: Number(att.entry_fee || 0),
+            deletedAt: att.deleted_at
+          }));
+
         setDeletedLogs(mappedLogs);
       }
     } catch (err: any) {

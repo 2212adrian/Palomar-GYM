@@ -1,8 +1,10 @@
+// src/pages/members/components/OnlineQueue.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Clock, CheckSquare, XSquare, Eye, RefreshCw, X, Printer, ExternalLink, 
-  ShieldCheck, FileSignature, User, HeartHandshake, UserCheck, CheckCircle
+  ShieldCheck, FileSignature, User, HeartHandshake, UserCheck, CheckCircle,
+  Archive, RotateCcw, ShieldAlert
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -35,9 +37,11 @@ const calculateAge = (birthdayStr: string): number => {
 
 export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard }) => {
   const [queue, setQueue] = useState<OnlineRegistration[]>([]);
+  const [archivedQueue, setArchivedQueue] = useState<OnlineRegistration[]>([]);
   const [selectedReg, setSelectedReg] = useState<OnlineRegistration | null>(null);
   const [activePosterToken, setActivePosterToken] = useState<string>('');
   const [showModalSignatures, setShowModalSignatures] = useState<boolean>(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
 
   // Pending soft-hidden IDs during UndoToast countdown
   const [pendingRejectIds, setPendingRejectIds] = useState<string[]>([]);
@@ -64,6 +68,15 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     }
   }, []);
 
+  const fetchArchived = useCallback(async () => {
+    try {
+      const arch = await registrationService.getArchived();
+      setArchivedQueue(arch);
+    } catch (err: any) {
+      console.error('Failed to fetch archived queue:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedReg) {
       setShowModalSignatures(false);
@@ -86,12 +99,34 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     );
   }, [queue, pendingRejectIds]);
 
+  // Handle Archive Action (Exempts ticket from daily midnight purge)
+  const handleArchiveRegistration = async (reg: OnlineRegistration) => {
+    try {
+      await registrationService.archive(reg.id, 'Archived by staff to prevent daily purge', 'Admin Staff');
+      toast.success(`Archived ${reg.full_name} (${reg.id}). Exempt from daily purges.`);
+      if (selectedReg?.id === reg.id) {
+        setSelectedReg(null);
+      }
+      await fetchQueue();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to archive ticket.');
+    }
+  };
+
+  // Handle Restore Action from Archived Tickets Modal
+  const handleRestoreRegistration = async (reg: OnlineRegistration) => {
+    try {
+      await registrationService.restore(reg.id, 'Admin Staff');
+      toast.success(`Restored ${reg.full_name} (${reg.id}) to active queue.`);
+      await Promise.all([fetchQueue(), fetchArchived()]);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to restore ticket.');
+    }
+  };
+
   // Initiate Rejection with Optimistic UI Hide + Undo Toast
   const handleInitiateReject = (reg: OnlineRegistration) => {
-    // 1. Instantly soft-hide row from table UI
     setPendingRejectIds((prev) => [...prev, reg.id]);
-
-    // 2. Open UndoToast countdown
     setUndoState({
       isOpen: true,
       targetReg: reg,
@@ -434,7 +469,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     {
       key: 'actions',
       header: 'Actions',
-      cellClassName: 'text-right min-w-[160px]',
+      cellClassName: 'text-right min-w-[200px]',
       render: (item) => (
         <div className="flex items-center justify-end gap-1.5 select-none">
           <button 
@@ -445,6 +480,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
             <Eye className="w-4 h-4" />
           </button>
           
+          <button 
+            onClick={() => handleArchiveRegistration(item)} 
+            className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-500/20 cursor-pointer transition-colors" 
+            title="Archive ticket (Exempts from daily 12:00 AM purge)"
+          >
+            <Archive className="w-4 h-4" />
+          </button>
+
           <button 
             onClick={() => handleInitiateReject(item)} 
             className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-lg border border-red-500/20 cursor-pointer transition-colors" 
@@ -466,6 +509,47 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
     }
   ];
 
+  // Archived Tickets Columns Definition
+  const archivedColumns: Column<OnlineRegistration>[] = [
+    {
+      key: 'full_name',
+      header: 'Archived Applicant / ID',
+      render: (item) => (
+        <div className="text-left font-bold text-xs text-slate-900 dark:text-white">
+          <span>{item.full_name}</span>
+          <span className="text-[10px] text-slate-400 font-mono block font-normal">{item.id} • {item.phone}</span>
+        </div>
+      )
+    },
+    {
+      key: 'preferred_plan',
+      header: 'Plan',
+      render: (item) => <span className="font-bold text-xs text-emerald-600">{item.preferred_plan}</span>
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: () => (
+        <span className="text-[9px] font-mono font-bold bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded border border-amber-500/20">
+          ARCHIVED (Exempt from Purge)
+        </span>
+      )
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      cellClassName: 'text-right',
+      render: (item) => (
+        <button
+          onClick={() => handleRestoreRegistration(item)}
+          className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg font-heading text-[9px] font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 justify-end ml-auto"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> Restore to Queue
+        </button>
+      )
+    }
+  ];
+
   return (
     <div className="space-y-6">
       
@@ -478,11 +562,22 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
         
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => {
+              fetchArchived();
+              setIsArchiveModalOpen(true);
+            }} 
+            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+            title="View Archived Pre-Registration Tickets (Exempt from Daily Midnight Purges)"
+          >
+            <Archive className="w-3.5 h-3.5 text-amber-500" /> Archived Tickets
+          </button>
+
+          <button 
             onClick={handleOpenRegistrationPortal} 
             className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
             title="Open Anonymous Self-Service Pre-Registration Page in new tab"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Open Pre-Registration Form
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Open Form
           </button>
 
           <button 
@@ -490,14 +585,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
             className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
             title="Print Physical QR registration Poster with Dynamic Token Expiration"
           >
-            <Printer className="w-3.5 h-3.5 text-blue-500" /> Print QR Poster
+            <Printer className="w-3.5 h-3.5 text-blue-500" /> Print Poster
           </button>
           
           <button 
             onClick={fetchQueue} 
             className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Sync Queue
+            <RefreshCw className="w-3.5 h-3.5" /> Sync
           </button>
         </div>
       </div>
@@ -531,6 +626,70 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({ onApproveLaunchWizard 
         onUndo={handleUndoReject}
         onClose={handleUndoReject}
       />
+
+      {/* ARCHIVED TICKETS RECYCLE BIN MODAL */}
+      {isArchiveModalOpen && createPortal(
+        <div className="fixed inset-0 z-130 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
+          <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-2xl sm:max-w-3xl shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto text-left">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-(--border-color) pb-3 select-none">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                  <Archive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading text-sm font-bold tracking-wider uppercase text-(--color-text)">
+                    Archived Pre-Registration Tickets
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-mono block">
+                    Permanent Ticket Storage • Exempt from Daily Purges
+                  </span>
+                </div>
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => setIsArchiveModalOpen(false)} 
+                className="p-2 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer"
+                title="Close modal"
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
+            </div>
+
+            {/* Caution Banner */}
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2.5 text-xs text-amber-600 dark:text-amber-400 font-medium">
+              <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                Archived tickets are permanently exempt from the daily 12:00 AM Manila Time automated purges.
+              </span>
+            </div>
+
+            {/* Tickets Table / Empty State */}
+            {archivedQueue.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-400 border border-dashed border-(--border-color) rounded-2xl space-y-2">
+                <Archive className="w-8 h-8 text-slate-400 mx-auto opacity-50" />
+                <p className="font-semibold text-(--color-text)">No archived pre-registration tickets found.</p>
+                <p className="text-[10px] text-slate-400">Tickets manually archived by staff will appear here.</p>
+              </div>
+            ) : (
+              <div className="p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
+                <Table<OnlineRegistration>
+                  data={archivedQueue}
+                  columns={archivedColumns}
+                  itemsPerPage={5}
+                  loading={false}
+                  searchKeys={['full_name', 'id', 'phone', 'email']}
+                  searchPlaceholder="Search archived tickets by name, ID, phone..."
+                />
+              </div>
+            )}
+
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* DETAILED PREVIEW MODAL */}
       {selectedReg && createPortal(

@@ -1,6 +1,6 @@
 // src/pages/members/components/OnlineRegistrationPage.tsx
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import {
   CheckCircle2, Clock, Download, Copy, RefreshCw, Sparkles, 
   User, Phone, Mail, Calendar, MapPin, HeartHandshake, ShieldCheck, 
   CreditCard, Check, Sun, Moon, FileSignature, Eraser, Info, Users,
-  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket
+  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, AlertCircle
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -21,6 +21,9 @@ import gymLogoFallback from '../../../assets/landscape-logo.webp';
 
 const LOCAL_STORAGE_LIST_KEY = 'palomar-online-registrations-list';
 const OLD_LOCAL_STORAGE_KEY = 'palomar-online-registration';
+
+// Maximum allowed active tickets per user session
+const MAX_ACTIVE_TICKETS = 3;
 
 const calculateAge = (birthdayStr: string): number => {
   if (!birthdayStr) return 0;
@@ -42,12 +45,11 @@ const getNextManilaMidnightMs = (): number => {
   const manilaDateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
   const [month, day, year] = manilaDateStr.split('/').map(Number);
   
-  // Manila is UTC+8. Midnight 00:00:00 Asia/Manila corresponds to 16:00:00 UTC of previous day.
   const midnightUtcMs = Date.UTC(year, month - 1, day + 1, 0, 0, 0) - (8 * 60 * 60 * 1000);
   return midnightUtcMs;
 };
 
-// Zod Validation Schema with Optional Home Address
+// Zod Validation Schema
 const registrationSchema = z.object({
   last_name: z.string().min(1, 'Last name is required'),
   first_name: z.string().min(1, 'First name is required'),
@@ -55,9 +57,9 @@ const registrationSchema = z.object({
   suffix: z.string().optional(),
 
   phone: z
-  .string()
-  .min(7, 'Please enter a valid phone number')
-  .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
+    .string()
+    .min(7, 'Please enter a valid phone number')
+    .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   gender: z.string().min(1, 'Please select your gender'),
   birthday: z.string().min(1, 'Please select your birthday'),
@@ -68,9 +70,9 @@ const registrationSchema = z.object({
   emergency_contact_name: z.string().min(2, 'Emergency contact name is required'),
   emergency_contact_relationship: z.string().min(2, 'Relationship is required'),
   emergency_contact_phone: z
-  .string()
-  .min(7, 'Emergency contact phone is required')
-  .regex(/^[0-9]+$/, 'Emergency phone must contain numbers only'),
+    .string()
+    .min(7, 'Emergency contact phone is required')
+    .regex(/^[0-9]+$/, 'Emergency phone must contain numbers only'),
   
   preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
     message: 'Please select a membership plan',
@@ -85,26 +87,62 @@ const registrationSchema = z.object({
   parent_relationship: z.string().optional(),
   parent_relationship_other: z.string().optional(),
   parent_phone: z
-  .string()
-  .optional()
-  .refine((val) => !val || /^[0-9]+$/.test(val), {
-    message: 'Parent phone must contain numbers only',
-  }),
+    .string()
+    .optional()
+    .refine((val) => !val || /^[0-9]+$/.test(val), {
+      message: 'Parent phone must contain numbers only',
+    }),
   parent_email: z.string().email('Invalid parent email address').optional().or(z.literal('')),
   applicant_signature: z.string().nullable().optional(),
   parent_signature: z.string().nullable().optional(),
 }).superRefine((data, ctx) => {
+  if (!data.birthday) return;
+
+  const birthDate = new Date(data.birthday);
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const birthYear = birthDate.getFullYear();
+
+  if (isNaN(birthDate.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Please enter a valid date',
+      path: ['birthday'],
+    });
+    return;
+  }
+
+  if (birthDate > today) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Birthday cannot be in the future',
+      path: ['birthday'],
+    });
+    return;
+  }
+
   const age = calculateAge(data.birthday);
-  
-  if (data.birthday && age < 12) {
+  const MIN_BIRTH_YEAR = currentYear - 120;
+
+  if (age > 120 || birthYear < MIN_BIRTH_YEAR) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Please enter a valid birth year (between ${MIN_BIRTH_YEAR} and ${currentYear})`,
+      path: ['birthday'],
+    });
+    return;
+  }
+
+  if (age < 12) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Regular online membership is restricted for individuals under 12 years old.',
       path: ['birthday'],
     });
+    return;
   }
 
-  if (data.birthday && age >= 12 && age < 18) {
+  if (age >= 12 && age < 18) {
     if (!data.parent_name || data.parent_name.trim().length < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -118,6 +156,14 @@ const registrationSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'Relationship to applicant is required',
         path: ['parent_relationship'],
+      });
+    }
+
+    if (data.parent_relationship === 'Other' && (!data.parent_relationship_other || data.parent_relationship_other.trim().length < 2)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Please specify your relationship to the applicant',
+        path: ['parent_relationship_other'],
       });
     }
 
@@ -262,15 +308,25 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
           <FileSignature className="w-3.5 h-3.5 text-blue-500" />
           <span>{label}</span> <span className="text-red-500">*</span>
         </label>
-        {hasDrawn && (
+        {hasDrawn ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
             <Check className="w-3 h-3 stroke-3" /> Signed
           </span>
-        )}
+        ) : isDrawing ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+            Signing...
+          </span>
+        ) : null}
       </div>
 
       <div className={`relative rounded-xl overflow-hidden border-2 bg-white transition-colors ${
-        error ? 'border-red-500' : hasDrawn ? 'border-emerald-500' : 'border-slate-300 dark:border-zinc-700'
+        error 
+          ? 'border-red-500 ring-1 ring-red-500/50' 
+          : hasDrawn 
+          ? 'border-emerald-500 ring-1 ring-emerald-500/30' 
+          : isDrawing 
+          ? 'border-amber-400 ring-1 ring-amber-400/50' 
+          : 'border-slate-300 dark:border-zinc-700 hover:border-amber-400'
       }`}>
         <canvas
           ref={canvasRef}
@@ -318,6 +374,7 @@ export const OnlineRegistrationPage: React.FC = () => {
 
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
@@ -365,7 +422,7 @@ export const OnlineRegistrationPage: React.FC = () => {
     watch,
     trigger,
     reset,
-    formState: { errors },
+    formState: { errors, touchedFields, isSubmitted },
   } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
     defaultValues: {
@@ -392,22 +449,30 @@ export const OnlineRegistrationPage: React.FC = () => {
       applicant_signature: null,
       parent_signature: null,
     },
-    mode: 'onChange',
+    mode: 'onTouched',
   });
 
-  const selectedPlan = watch('preferred_plan');
-  const isAgreed = watch('agreement');
-  const watchedBirthday = watch('birthday');
-  const watchedParentName = watch('parent_name');
-  const watchedParentRelationship = watch('parent_relationship');
-  const watchedParentPhone = watch('parent_phone');
-  const watchedSameAsParent = watch('same_as_parent');
-  const watchedApplicantSignature = watch('applicant_signature');
-  const watchedParentSignature = watch('parent_signature');
+  const watchedValues = watch();
+
+  const selectedPlan = watchedValues.preferred_plan;
+  const isAgreed = watchedValues.agreement;
+  const watchedBirthday = watchedValues.birthday;
+  const watchedParentName = watchedValues.parent_name;
+  const watchedParentRelationship = watchedValues.parent_relationship;
+  const watchedParentPhone = watchedValues.parent_phone;
+  const watchedSameAsParent = watchedValues.same_as_parent;
+  const watchedApplicantSignature = watchedValues.applicant_signature;
+  const watchedParentSignature = watchedValues.parent_signature;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const minDateStr = `${new Date().getFullYear() - 120}-01-01`;
 
   const applicantAge = useMemo(() => calculateAge(watchedBirthday), [watchedBirthday]);
   const isRestrictedUnder12 = useMemo(() => !!watchedBirthday && applicantAge < 12, [watchedBirthday, applicantAge]);
   const isMinor = useMemo(() => !!watchedBirthday && applicantAge >= 12 && applicantAge < 18, [watchedBirthday, applicantAge]);
+  
+  // Check if maximum limit of 3 tickets is reached
+  const isTicketLimitReached = useMemo(() => activeRegistrations.length >= MAX_ACTIVE_TICKETS, [activeRegistrations]);
 
   const todayFormatted = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -417,14 +482,47 @@ export const OnlineRegistrationPage: React.FC = () => {
     });
   }, []);
 
-  /**
-   * Synchronous LocalStorage loader - retains registrations until 12:00 AM Manila Time
-   */
+  const getFieldBorderClass = (fieldName: keyof RegistrationFormData, isWarning?: boolean) => {
+    const val = watchedValues[fieldName];
+    const err = errors[fieldName];
+    const isTouched = touchedFields[fieldName];
+
+    if (err && (isTouched || isSubmitted)) {
+      return 'border-red-500 dark:border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 text-slate-900 dark:text-white';
+    }
+
+    if (isWarning) {
+      return 'border-amber-400 dark:border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/30 text-slate-900 dark:text-white';
+    }
+
+    if (!err && val !== undefined && val !== null && String(val).trim() !== '') {
+      return 'border-emerald-500 dark:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-slate-900 dark:text-white';
+    }
+
+    return 'border-slate-300 dark:border-zinc-700 focus:border-amber-400 dark:focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30 text-slate-900 dark:text-white';
+  };
+
+  const renderStatusBadge = (fieldName: keyof RegistrationFormData, isWarning?: boolean) => {
+    const val = watchedValues[fieldName];
+    const err = errors[fieldName];
+    const isTouched = touchedFields[fieldName];
+
+    if (err && (isTouched || isSubmitted)) {
+      return <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />;
+    }
+    if (isWarning) {
+      return <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    }
+    if (!err && val !== undefined && val !== null && String(val).trim() !== '') {
+      return <Check className="w-3.5 h-3.5 text-emerald-500 stroke-3 shrink-0" />;
+    }
+    return null;
+  };
+
   const loadRecentRegistrations = (): StoredRegistration[] => {
     try {
       let list: StoredRegistration[] = [];
 
-      // Migration check for single stored registration
       const singleRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
       if (singleRaw) {
         try {
@@ -446,27 +544,81 @@ export const OnlineRegistrationPage: React.FC = () => {
         } catch {}
       }
 
-      // Deduplicate by registrationId
       const uniqueMap = new Map<string, StoredRegistration>();
       list.forEach((item) => uniqueMap.set(item.registrationId, item));
 
       const now = Date.now();
-
-      // Filter: Keep only registrations that have not passed their expiry time
       const validRecent = Array.from(uniqueMap.values()).filter((item) => {
         return now < item.expiresAt;
       });
 
-      // Update storage with valid list
       localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(validRecent));
-
       return validRecent;
     } catch {
       return [];
     }
   };
 
-  // Initial Sync of Recent Active Registrations
+  // Synchronize local active tickets with server pending queue
+  const syncActiveTickets = useCallback(async (showToastNotice = false) => {
+    const localTickets = loadRecentRegistrations();
+    if (localTickets.length === 0) {
+      setActiveRegistrations([]);
+      setIsSyncing(false);
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      // Query server queue for active pending registrations
+      const serverQueue = await registrationService.getQueue();
+      
+      // Valid active tickets MUST be status === 'Pending' AND NOT archived
+      const serverPendingIds = new Set(
+        serverQueue
+          .filter((item: OnlineRegistration) => item.status === 'Pending' && !(item as any).is_archived)
+          .map((item: OnlineRegistration) => item.id)
+      );
+
+      // Filter out tickets that are archived, rejected, deleted, or approved by staff
+      const validTickets = localTickets.filter((t) => serverPendingIds.has(t.registrationId));
+
+      if (validTickets.length !== localTickets.length) {
+        const removedCount = localTickets.length - validTickets.length;
+        localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(validTickets));
+        setActiveRegistrations(validTickets);
+
+        toast.info(
+          removedCount === 1
+            ? 'An active registration ticket was processed, archived, or removed by staff.'
+            : `${removedCount} tickets were processed, archived, or removed by staff.`
+        );
+
+        // Reset selected ticket if it was archived or deleted
+        setSelectedTicket((prevSelected) => {
+          if (prevSelected && !validTickets.some((vt) => vt.registrationId === prevSelected.registrationId)) {
+            if (validTickets.length > 0) {
+              return validTickets[0];
+            } else {
+              setViewMode('form');
+              return null;
+            }
+          }
+          return prevSelected;
+        });
+      } else {
+        setActiveRegistrations(validTickets);
+        if (showToastNotice) {
+          toast.success('Active tickets synchronized with server.');
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync active tickets with server:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
   useEffect(() => {
     const recent = loadRecentRegistrations();
     setActiveRegistrations(recent);
@@ -477,9 +629,12 @@ export const OnlineRegistrationPage: React.FC = () => {
     } else {
       setViewMode('form');
     }
-  }, []);
 
-  // Live Timer Interval (Local tick without database query interference)
+    // Perform initial server verification
+    syncActiveTickets();
+  }, [syncActiveTickets]);
+
+  // Clock Ticker + Periodic Sync
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTimeMs(Date.now());
@@ -490,10 +645,19 @@ export const OnlineRegistrationPage: React.FC = () => {
         setViewMode('form');
       }
     }, 1000);
+
     return () => clearInterval(timer);
   }, [viewMode]);
 
-  // Auto-sync Emergency Contact if "Same as Parent" is checked for Minors
+  // Periodic Background Server Sync Every 10 Seconds
+  useEffect(() => {
+    const syncTimer = setInterval(() => {
+      syncActiveTickets();
+    }, 10000);
+
+    return () => clearInterval(syncTimer);
+  }, [syncActiveTickets]);
+
   useEffect(() => {
     if (isMinor && watchedSameAsParent) {
       if (watchedParentName) {
@@ -520,7 +684,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (isMinor) {
-        const validParent = await trigger(['parent_name', 'parent_relationship', 'parent_phone', 'parent_email']);
+        const validParent = await trigger(['parent_name', 'parent_relationship', 'parent_relationship_other', 'parent_phone', 'parent_email']);
         if (!validParent) return;
 
         if (!watchedSameAsParent) {
@@ -544,11 +708,16 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const onSubmit = async (data: RegistrationFormData) => {
+    // Check local ticket count restriction
+    if (isTicketLimitReached) {
+      toast.error(`Limit reached! You can only have up to ${MAX_ACTIVE_TICKETS} active pre-registration tickets at a time.`);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const randStr = Math.random().toString(36).substring(2, 10).toUpperCase();
       const registrationId = `REG-${randStr}`;
-
       const qrPayload = registrationId;
 
       const mi = data.middle_initial?.trim() ? ` ${data.middle_initial.trim().replace('.', '')}.` : '';
@@ -588,7 +757,6 @@ export const OnlineRegistrationPage: React.FC = () => {
 
       await registrationService.submit(newReg);
 
-      // Set Expiry to 12:00 AM Manila Time (Asia/Manila Midnight)
       const expiresAt = getNextManilaMidnightMs();
 
       const storedPayload: StoredRegistration = {
@@ -613,7 +781,12 @@ export const OnlineRegistrationPage: React.FC = () => {
 
       toast.success('Pre-registration submitted successfully!');
     } catch (err: any) {
-      toast.error(err.message || 'Submission failed. Please try again.');
+      const errorMsg = err?.message || '';
+      if (errorMsg.includes('Maximum limit of 3 pending registrations')) {
+        toast.error('Limit Reached: You already have 3 pending registrations associated with this phone number.');
+      } else {
+        toast.error(errorMsg || 'Submission failed. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -627,6 +800,11 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const handleStartNewRegistration = () => {
+    if (isTicketLimitReached) {
+      toast.warning(`Maximum of ${MAX_ACTIVE_TICKETS} active tickets reached. Please present your existing tickets at the reception desk.`);
+      setViewMode('list');
+      return;
+    }
     setCurrentStep(1);
     reset();
     setViewMode('form');
@@ -715,7 +893,7 @@ export const OnlineRegistrationPage: React.FC = () => {
     return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
   };
 
-  const isSubmitDisabled = isSubmitting || !isAgreed || isRestrictedUnder12 || (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
+  const isSubmitDisabled = isSubmitting || !isAgreed || isRestrictedUnder12 || isTicketLimitReached || (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
 
   const wizardSteps = [
     { id: 1, label: 'Personal' },
@@ -735,16 +913,30 @@ export const OnlineRegistrationPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Refresh / Sync Button */}
+          <button
+            type="button"
+            onClick={() => syncActiveTickets(true)}
+            disabled={isSyncing}
+            className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer shadow-xs flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+            title="Refresh and sync ticket status with server"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
           {activeRegistrations.length > 0 && (
             <div className="flex items-center bg-(--bg-card) border border-(--border-color) p-1 rounded-xl">
               <button
                 type="button"
                 onClick={handleStartNewRegistration}
+                disabled={isTicketLimitReached}
                 className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
                   viewMode === 'form' 
                     ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
+                } ${isTicketLimitReached ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isTicketLimitReached ? `Maximum limit of ${MAX_ACTIVE_TICKETS} tickets reached` : ''}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>New Form</span>
@@ -767,7 +959,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 }`}
               >
                 <Ticket className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Active Tickets ({activeRegistrations.length})</span>
+                <span>Active Tickets ({activeRegistrations.length}/{MAX_ACTIVE_TICKETS})</span>
               </button>
             </div>
           )}
@@ -810,21 +1002,36 @@ export const OnlineRegistrationPage: React.FC = () => {
             <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
               <div>
                 <h2 className="font-heading text-sm uppercase tracking-wider font-bold text-slate-900 dark:text-white">
-                  Recent Active Pre-Registrations ({activeRegistrations.length})
+                  Recent Active Pre-Registrations ({activeRegistrations.length}/{MAX_ACTIVE_TICKETS})
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                   Tickets active until 12:00 AM Manila Time ready for desk checkout.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleStartNewRegistration}
-                className="py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer border-none"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>New Registration</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => syncActiveTickets(true)}
+                  disabled={isSyncing}
+                  className="p-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-white/5"
+                  title="Check ticket status from server"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+                  <span>Sync</span>
+                </button>
+
+                {!isTicketLimitReached && (
+                  <button
+                    type="button"
+                    onClick={handleStartNewRegistration}
+                    className="py-2 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer border-none"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>New Registration</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -923,30 +1130,46 @@ export const OnlineRegistrationPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => syncActiveTickets(true)}
+                disabled={isSyncing}
+                className="py-3 px-3 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 dark:border-zinc-700"
+                title="Sync with server"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+                <span>Refresh</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => handleDownloadQR(selectedTicket)}
-                className="py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
+                className="py-3 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
               >
-                <Download className="w-4 h-4" /> Download QR
+                <Download className="w-3.5 h-3.5" /> Download
               </button>
 
               <button
                 type="button"
                 onClick={() => handleCopyCode(selectedTicket.registrationId)}
-                className="py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/10"
+                className="py-3 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/10"
               >
-                {copiedId === selectedTicket.registrationId ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedId === selectedTicket.registrationId ? 'Copied!' : 'Copy Code'}</span>
+                {copiedId === selectedTicket.registrationId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedId === selectedTicket.registrationId ? 'Copied!' : 'Copy'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleStartNewRegistration}
-                className="py-3 px-4 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border-none"
+                disabled={isTicketLimitReached}
+                className={`py-3 px-3 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all border-none ${
+                  !isTicketLimitReached 
+                    ? 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 cursor-pointer'
+                    : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-60'
+                }`}
               >
-                <PlusCircle className="w-4 h-4" /> Register Another
+                <PlusCircle className="w-3.5 h-3.5" /> New Form
               </button>
             </div>
 
@@ -957,6 +1180,21 @@ export const OnlineRegistrationPage: React.FC = () => {
         {viewMode === 'form' && (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-left">
             
+            {/* Limit Banner Alert */}
+            {isTicketLimitReached && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-start gap-3 shadow-xs">
+                <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-left">
+                  <span className="font-heading text-xs uppercase tracking-wider font-black block text-amber-500">
+                    ⚠️ Maximum Active Ticket Limit Reached ({MAX_ACTIVE_TICKETS}/{MAX_ACTIVE_TICKETS})
+                  </span>
+                  <p className="text-[11px] font-medium leading-relaxed">
+                    You currently have 3 active pre-registration tickets. To maintain network security and prevent system abuse, new registration submissions are locked until your current tickets expire at midnight (12:00 AM Manila Time) or are processed at the gym front desk.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Visual Stepper Progress Bar */}
             <div className="select-none">
               <div className="flex items-center justify-between relative mb-2">
@@ -1006,16 +1244,19 @@ export const OnlineRegistrationPage: React.FC = () => {
                   
                   {/* Last Name */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Last Name <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Last Name <span className="text-red-500">*</span>
+                      </label>
+                      {renderStatusBadge('last_name')}
+                    </div>
                     <div className="relative">
                       <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
                         {...register('last_name')}
                         placeholder="e.g. Dela Cruz"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.last_name ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
+                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('last_name')}`}
                       />
                     </div>
                     {errors.last_name && (
@@ -1025,16 +1266,19 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                   {/* First Name */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      First Name <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        First Name <span className="text-red-500">*</span>
+                      </label>
+                      {renderStatusBadge('first_name')}
+                    </div>
                     <div className="relative">
                       <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
                         {...register('first_name')}
                         placeholder="e.g. Juan"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.first_name ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
+                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('first_name')}`}
                       />
                     </div>
                     {errors.first_name && (
@@ -1045,36 +1289,45 @@ export const OnlineRegistrationPage: React.FC = () => {
                   {/* Middle Initial & Suffix */}
                   <div className="grid grid-cols-2 gap-2 sm:col-span-2">
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        M.I. <span className="text-slate-400 font-normal">(optional)</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          M.I. <span className="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        {renderStatusBadge('middle_initial')}
+                      </div>
                       <input
                         type="text"
                         maxLength={2}
                         {...register('middle_initial')}
                         placeholder="e.g. M."
-                        className="w-full px-4 py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors"
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('middle_initial')}`}
                       />
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Suffix <span className="text-slate-400 font-normal">(optional)</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Suffix <span className="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        {renderStatusBadge('suffix')}
+                      </div>
                       <input
                         type="text"
                         {...register('suffix')}
                         placeholder="e.g. Jr."
-                        className="w-full px-4 py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors"
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('suffix')}`}
                       />
                     </div>
                   </div>
 
                   {/* Phone Number */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Phone Number <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      {renderStatusBadge('phone')}
+                    </div>
                     <div className="relative">
                       <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
@@ -1086,7 +1339,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           }
                         })}
                         placeholder="09171234567"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.phone ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
+                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('phone')}`}
                       />
                     </div>
                     {errors.phone && (
@@ -1096,16 +1349,19 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                   {/* Email Address */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Email Address <span className="text-slate-400 font-normal">(optional)</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Email Address <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      {renderStatusBadge('email')}
+                    </div>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="email"
                         {...register('email')}
                         placeholder="juan@example.com"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.email ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
+                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('email')}`}
                       />
                     </div>
                     {errors.email && (
@@ -1115,12 +1371,15 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                   {/* Gender */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Gender <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Gender <span className="text-red-500">*</span>
+                      </label>
+                      {renderStatusBadge('gender')}
+                    </div>
                     <select
                       {...register('gender')}
-                      className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.gender ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors cursor-pointer`}
+                      className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('gender')}`}
                     >
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -1138,24 +1397,29 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
                         Birthday <span className="text-red-500">*</span>
                       </label>
-                      {watchedBirthday && (
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                          isRestrictedUnder12
-                            ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                            : isMinor 
-                            ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' 
-                            : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                        }`}>
-                          Age: {applicantAge} {isRestrictedUnder12 ? '(Restricted)' : isMinor ? '(Minor)' : '(Adult)'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {renderStatusBadge('birthday', isMinor)}
+                        {watchedBirthday && (
+                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                            isRestrictedUnder12
+                              ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                              : isMinor 
+                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' 
+                              : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          }`}>
+                            Age: {applicantAge} {isRestrictedUnder12 ? '(Restricted)' : isMinor ? '(Minor)' : '(Adult)'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="relative">
                       <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="date"
+                        min={minDateStr}
+                        max={todayStr}
                         {...register('birthday')}
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.birthday || isRestrictedUnder12 ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors`}
+                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('birthday', isMinor)}`}
                       />
                     </div>
                     {errors.birthday && (
@@ -1178,7 +1442,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                   )}
 
                   {isMinor && (
-                    <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-start gap-2.5 text-left">
+                    <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-start gap-2.5 text-left">
                       <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <div className="text-[11px] font-medium leading-relaxed">
                         <span className="font-bold block">Minor Applicant Policy (Age: {applicantAge} Yrs)</span>
@@ -1187,18 +1451,21 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Home Address (Optional) */}
+                  {/* Home Address */}
                   <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Home Address <span className="text-slate-400 font-normal">(optional)</span>
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                        Home Address <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      {renderStatusBadge('address')}
+                    </div>
                     <div className="relative">
                       <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                       <textarea
                         rows={2}
                         {...register('address')}
                         placeholder="Barangay, City, Province (optional)..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) transition-colors resize-none"
+                        className={`w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors resize-none ${getFieldBorderClass('address')}`}
                       />
                     </div>
                   </div>
@@ -1220,14 +1487,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                 {isMinor ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Parent / Legal Guardian Full Name <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Parent / Legal Guardian Full Name <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('parent_name')}
+                      </div>
                       <input
                         type="text"
                         {...register('parent_name')}
                         placeholder="e.g. Roberto Dela Cruz"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.parent_name ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)`}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_name')}`}
                       />
                       {errors.parent_name && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_name.message}</p>
@@ -1235,12 +1505,15 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Relationship to Applicant <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Relationship to Applicant <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('parent_relationship')}
+                      </div>
                       <select
                         {...register('parent_relationship')}
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.parent_relationship ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) cursor-pointer`}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('parent_relationship')}`}
                       >
                         <option value="Father">Father</option>
                         <option value="Mother">Mother</option>
@@ -1254,57 +1527,40 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                     {watchedParentRelationship === 'Other' && (
                       <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Relationship <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        {...register('emergency_contact_relationship')}
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.emergency_contact_relationship ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary) cursor-pointer text-slate-900 dark:text-white`}
-                      >
-                        <option value="">Select Relationship *</option>
-                        
-                        <optgroup label="Immediate Family">
-                          <option value="Mother">Mother</option>
-                          <option value="Father">Father</option>
-                          <option value="Spouse / Partner">Spouse / Partner</option>
-                          <option value="Husband">Husband</option>
-                          <option value="Wife">Wife</option>
-                          <option value="Brother">Brother</option>
-                          <option value="Sister">Sister</option>
-                          <option value="Son">Son</option>
-                          <option value="Daughter">Daughter</option>
-                        </optgroup>
-
-                        <optgroup label="Extended Family">
-                          <option value="Grandmother">Grandmother</option>
-                          <option value="Grandfather">Grandfather</option>
-                          <option value="Aunt">Aunt</option>
-                          <option value="Uncle">Uncle</option>
-                          <option value="Cousin">Cousin</option>
-                          <option value="Relative">Other Relative</option>
-                        </optgroup>
-
-                        <optgroup label="Guardian & Other">
-                          <option value="Legal Guardian">Legal Guardian</option>
-                          <option value="Friend / Colleague">Friend / Colleague</option>
-                          <option value="Other">Other</option>
-                        </optgroup>
-                      </select>
-                      {errors.emergency_contact_relationship && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_relationship.message}</p>
-                      )}
-                    </div>
+                        <div className="flex justify-between items-center">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                            Specify Relationship <span className="text-red-500">*</span>
+                          </label>
+                          {renderStatusBadge('parent_relationship_other')}
+                        </div>
+                        <input
+                          type="text"
+                          {...register('parent_relationship_other')}
+                          placeholder="e.g. Aunt / Uncle / Grandparent"
+                          className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_relationship_other')}`}
+                        />
+                        {errors.parent_relationship_other && (
+                          <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_relationship_other.message}</p>
+                        )}
+                      </div>
                     )}
 
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Parent Phone Number <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Parent Phone Number <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('parent_phone')}
+                      </div>
                       <input
                         type="tel"
-                        {...register('parent_phone')}
+                        {...register('parent_phone', {
+                          onChange: (e) => {
+                            e.target.value = e.target.value.replace(/\D/g, '');
+                          }
+                        })}
                         placeholder="09170000000"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.parent_phone ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)`}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_phone')}`}
                       />
                       {errors.parent_phone && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_phone.message}</p>
@@ -1312,18 +1568,21 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Parent Email Address <span className="text-slate-400 font-normal">(optional)</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Parent Email Address <span className="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        {renderStatusBadge('parent_email')}
+                      </div>
                       <input
                         type="email"
                         {...register('parent_email')}
                         placeholder="parent@example.com"
-                        className="w-full px-4 py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)"
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_email')}`}
                       />
                     </div>
 
-                    <div className="sm:col-span-2 p-3.5 bg-(--bg-input) rounded-2xl border border-(--border-color) flex items-center justify-between">
+                    <div className="sm:col-span-2 p-3.5 bg-(--bg-input) rounded-2xl border-2 border-slate-300 dark:border-zinc-700 flex items-center justify-between">
                       <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300">
                         <input
                           type="checkbox"
@@ -1340,14 +1599,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                 {(!isMinor || !watchedSameAsParent) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Emergency Contact Name <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Emergency Contact Name <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('emergency_contact_name')}
+                      </div>
                       <input
                         type="text"
                         {...register('emergency_contact_name')}
                         placeholder="e.g. Maria Dela Cruz"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.emergency_contact_name ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)`}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_name')}`}
                       />
                       {errors.emergency_contact_name && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_name.message}</p>
@@ -1355,14 +1617,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Relationship <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Relationship <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('emergency_contact_relationship')}
+                      </div>
                       <input
                         type="text"
                         {...register('emergency_contact_relationship')}
                         placeholder="e.g. Spouse / Parent / Sibling"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border ${errors.emergency_contact_relationship ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)`}
+                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_relationship')}`}
                       />
                       {errors.emergency_contact_relationship && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_relationship.message}</p>
@@ -1370,16 +1635,23 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Emergency Contact Phone <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                          Emergency Contact Phone <span className="text-red-500">*</span>
+                        </label>
+                        {renderStatusBadge('emergency_contact_phone')}
+                      </div>
                       <div className="relative">
                         <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                         <input
                           type="tel"
-                          {...register('emergency_contact_phone')}
+                          {...register('emergency_contact_phone', {
+                            onChange: (e) => {
+                              e.target.value = e.target.value.replace(/\D/g, '');
+                            }
+                          })}
                           placeholder="09189876543"
-                          className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border ${errors.emergency_contact_phone ? 'border-red-500' : 'border-(--border-color)'} rounded-xl text-xs font-semibold focus:outline-none focus:border-(--color-primary)`}
+                          className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_phone')}`}
                         />
                       </div>
                       {errors.emergency_contact_phone && (
@@ -1406,8 +1678,8 @@ export const OnlineRegistrationPage: React.FC = () => {
                     onClick={() => setValue('preferred_plan', 'Monthly Membership', { shouldValidate: true })}
                     className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
                       selectedPlan === 'Monthly Membership'
-                        ? 'bg-blue-500/5 dark:bg-red-500/10 border-[#123c73] dark:border-[#bf0202] shadow-md'
-                        : 'bg-(--bg-input) border-(--border-color) opacity-80 hover:opacity-100'
+                        ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
+                        : 'bg-(--bg-input) border-slate-300 dark:border-zinc-700 hover:border-amber-400'
                     }`}
                   >
                     <div className="flex justify-between items-start">
@@ -1420,8 +1692,8 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </span>
                       </div>
                       {selectedPlan === 'Monthly Membership' && (
-                        <span className="w-5 h-5 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center">
-                          <Check className="w-3 h-3" />
+                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 stroke-3" />
                         </span>
                       )}
                     </div>
@@ -1440,8 +1712,8 @@ export const OnlineRegistrationPage: React.FC = () => {
                     onClick={() => setValue('preferred_plan', 'Yearly Membership', { shouldValidate: true })}
                     className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
                       selectedPlan === 'Yearly Membership'
-                        ? 'bg-blue-500/5 dark:bg-red-500/10 border-[#123c73] dark:border-[#bf0202] shadow-md'
-                        : 'bg-(--bg-input) border-(--border-color) opacity-80 hover:opacity-100'
+                        ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
+                        : 'bg-(--bg-input) border-slate-300 dark:border-zinc-700 hover:border-amber-400'
                     }`}
                   >
                     <div className="flex justify-between items-start">
@@ -1454,8 +1726,8 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </span>
                       </div>
                       {selectedPlan === 'Yearly Membership' && (
-                        <span className="w-5 h-5 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center">
-                          <Check className="w-3 h-3" />
+                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 stroke-3" />
                         </span>
                       )}
                     </div>
@@ -1514,7 +1786,13 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </>
                   )}
 
-                  <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20">
+                  <div className={`p-4 rounded-2xl border-2 transition-all ${
+                    errors.agreement
+                      ? 'bg-red-500/5 border-red-500'
+                      : isAgreed
+                      ? 'bg-emerald-500/10 border-emerald-500'
+                      : 'bg-amber-500/5 border-amber-400'
+                  }`}>
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1570,9 +1848,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  disabled={isRestrictedUnder12}
+                  disabled={isRestrictedUnder12 || isTicketLimitReached}
                   className={`py-3 px-6 rounded-xl font-heading text-[10px] tracking-wider uppercase font-black transition-all flex items-center gap-1.5 border-none shadow-md ${
-                    !isRestrictedUnder12
+                    !isRestrictedUnder12 && !isTicketLimitReached
                       ? 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer shadow-blue-500/10 dark:shadow-red-500/10'
                       : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed'
                   }`}

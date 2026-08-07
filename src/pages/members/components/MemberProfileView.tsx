@@ -6,18 +6,20 @@ import { motion } from 'framer-motion';
 import { 
   X, ShieldAlert, UserCheck, UserX, Trash2, Lock, Pencil, Save,
   ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
-  User
+  User, Clock, QrCode, CalendarCheck
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
-import { memberService, subscriptionService, cardService } from '../memberService';
-import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord } from '../../../types/members';
+import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from '../memberService';
+import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord, MembershipSettings } from '../../../types/members';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { OfficialReceipt, type ReceiptData } from '../../../components/ui/OfficialReceipt';
 import { DigitalQRCardModal } from './DigitalQRCardModal';
+import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
 import { useAuthStore } from '../../../stores/authStore';
 import { isSuperAdmin } from '../../../constants/auth';
 import { supabase } from '../../../lib/supabase/client';
+import { Table, type Column } from '../../../components/ui/Table';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -40,7 +42,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const isAdmin = role === 'admin';
 
-  // Local state to keep UI updated dynamically without needing to reopen panel
+  // Local state to keep UI updated dynamically
   const [localMember, setLocalMember] = useState<Member>(member);
 
   const [activeTab, setActiveTab] = useState<'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'>('Overview');
@@ -56,6 +58,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   // Void Subscription Modal & Verification State
   const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
+  const [targetVoidSub, setTargetVoidSub] = useState<Subscription | null>(null);
   const [voidReason, setVoidReason] = useState('Wrong membership selected');
   const [voidNotes, setVoidNotes] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -81,6 +84,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
+  const [selectedCardFormat, setSelectedCardFormat] = useState<'QR' | 'Manual'>('QR');
 
   const loadProfileCollections = async () => {
     try {
@@ -91,7 +95,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         supabase.from('attendance').select('*').eq('member_id', localMember.member_id).order('check_in_time', { ascending: false })
       ]);
 
-      setSubscriptions(subsData || []);
+      const loadedSubs = subsData || [];
+      setSubscriptions(loadedSubs);
       setCards((cardsData || []).filter((c: MemberCard) => c.member_id === localMember.member_id));
       setReceipts((rcptsData || []) as Receipt[]);
       setAttendance((attData || []) as AttendanceRecord[]);
@@ -100,9 +105,31 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
+const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+
+useEffect(() => {
+  settingsService.load().then(setSettings).catch(console.warn);
+}, []);
+
   useEffect(() => {
     loadProfileCollections();
   }, [localMember.member_id, refreshKey]);
+
+  // Real-time Supabase postgres_changes listener
+  useEffect(() => {
+    if (!localMember.member_id) return;
+
+    const channel = supabase
+      .channel(`realtime-member-profile-${localMember.member_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => loadProfileCollections())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => loadProfileCollections())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => loadProfileCollections())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [localMember.member_id]);
 
   useEffect(() => {
     setLocalMember(member);
@@ -119,11 +146,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     setIsEditing(false);
   }, [member]);
 
-  // Auto-refresh profile collections when subscriptions/receipts change
   useEffect(() => {
-    const handleSync = () => {
-      setRefreshKey(prev => prev + 1);
-    };
+    const handleSync = () => setRefreshKey(prev => prev + 1);
     window.addEventListener('palomar_logbook_updated', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
@@ -132,15 +156,57 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     };
   }, []);
 
+  // Resolves the currently active subscription where start_date <= now <= end_date
+  const activeContract = useMemo(() => {
+    const now = Date.now();
+    return subscriptions.find((s: Subscription) => {
+      if (s.member_id !== localMember.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      const endMs = new Date(s.end_date).getTime();
+      return startMs <= now && endMs >= now;
+    });
+  }, [subscriptions, localMember.member_id]);
+
+  // Resolves any scheduled renewal plan that starts in the future
+  const queuedContract = useMemo(() => {
+    const now = Date.now();
+    return subscriptions.find((s: Subscription) => {
+      if (s.member_id !== localMember.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      return startMs > now;
+    });
+  }, [subscriptions, localMember.member_id]);
+
+  // Gets the latest subscription (active, scheduled, or expired) for fallback display
+  const latestContract = useMemo(() => {
+    const validSubs = subscriptions
+      .filter((s: Subscription) => s.member_id === localMember.member_id && s.status !== 'Voided')
+      .sort((a, b) => new Date(b.created_at || b.start_date).getTime() - new Date(a.created_at || a.start_date).getTime());
+    return validSubs[0];
+  }, [subscriptions, localMember.member_id]);
+
+  // Effective status calculation for active/latest contract
+  const targetSubForDisplay = activeContract || latestContract;
+
+  // Expiration days calculation for expired plans
+  const expiredDaysText = useMemo(() => {
+    if (!targetSubForDisplay) return null;
+    const endMs = new Date(targetSubForDisplay.end_date).getTime();
+    const now = Date.now();
+    if (isNaN(endMs) || endMs >= now) return null;
+
+    const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+    return daysExpired === 0 ? '-1 day ago' : `-${daysExpired} days ago`;
+  }, [targetSubForDisplay]);
+
   const stats = useMemo(() => {
     return {
-      totalContracts: subscriptions.length,
-      totalSpent: receipts.reduce((acc: number, curr: Receipt) => acc + curr.amount, 0),
+      totalSpent: receipts.reduce((acc: number, curr: Receipt) => acc + Number(curr.amount || 0), 0),
       totalVisits: attendance.length,
       cardReplacements: cards.filter((c: MemberCard) => !!c.replaced_at).length,
-      activeContract: subscriptions.find((s: Subscription) => s.status === 'Active')
+      activeContract
     };
-  }, [subscriptions, receipts, attendance, cards]);
+  }, [receipts, attendance, cards, activeContract]);
 
   const attendanceLogs = useMemo(() => {
     return [...attendance].sort((a: AttendanceRecord, b: AttendanceRecord) => 
@@ -148,17 +214,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     );
   }, [attendance]);
 
+  const totalAttendanceValue = useMemo(() => {
+    return attendance.reduce((acc, curr) => acc + (Number(curr.entry_fee) || 0), 0);
+  }, [attendance]);
+
   // Reissue Confirmation Modal State
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
 
-  // Confirmed Reissue Execution Handler
-  const handleConfirmReissueToken = () => {
+  const handleConfirmReissueToken = async () => {
     try {
       if (currentCard) {
-        cardService.replace(localMember.member_id, 'Card Reissued / Replacement', 'Admin Staff');
+        await cardService.replace(localMember.member_id, 'Card Reissued / Replacement', 'Admin Staff');
         toast.success('Access card re-issued with fresh security token.');
       } else {
-        cardService.issue(localMember.member_id, 'QR', 'Admin Staff');
+        await cardService.issue(localMember.member_id, 'QR', 'Admin Staff');
         toast.success('New digital QR credential token issued.');
       }
       setIsReissueModalOpen(false);
@@ -169,20 +238,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  const voidEligibility = useMemo(() => {
-    const activeSub = stats.activeContract;
-    if (!activeSub) {
-      return { eligible: false, reason: 'No active subscription contract found.' };
+  // Void eligibility calculation for a given subscription
+  const getVoidEligibility = (sub?: Subscription | null) => {
+    if (!sub) {
+      return { eligible: false, reason: 'No subscription record selected for voiding.' };
     }
 
-    const createdTime = new Date(activeSub.created_at || activeSub.start_date).getTime();
-    const nowTime = new Date().getTime();
+    const createdTime = new Date(sub.created_at || sub.start_date).getTime();
+    const nowTime = Date.now();
     const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
 
     if (hoursDiff > 24) {
       return {
         eligible: false,
-        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve membership and financial records.'
+        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
       };
     }
 
@@ -200,10 +269,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
 
     return { eligible: true, reason: '' };
-  }, [stats.activeContract, attendanceLogs]);
+  };
 
-  // Lock rule: Edit and Delete are locked when an active subscription contract exists
-  const hasActiveSubscription = !!stats.activeContract;
+  // Lock rule: Edit and Delete are locked ONLY when a TRULY ACTIVE subscription contract exists
+  const hasActiveSubscription = !!activeContract;
 
   useEffect(() => {
     if (hasActiveSubscription) {
@@ -227,10 +296,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const isMinor = useMemo(() => calculatedAge >= 12 && calculatedAge < 18, [calculatedAge]);
 
-  const handleUpdateNotes = () => {
+  const handleUpdateNotes = async () => {
     try {
       const trimmedNotes = notes.trim();
-      memberService.update(localMember.id, { notes: trimmedNotes }, 'Admin Staff');
+      await memberService.update(localMember.id, { notes: trimmedNotes }, 'Admin Staff');
       setLocalMember(prev => ({ ...prev, notes: trimmedNotes }));
       toast.success('Internal notes saved.');
       onMutationSuccess();
@@ -239,7 +308,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  const handleSaveProfileChanges = () => {
+  const handleSaveProfileChanges = async () => {
     if (hasActiveSubscription) {
       toast.error('Cannot edit profile while an active subscription exists.');
       return;
@@ -263,7 +332,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         emergency_contact_phone: editEmergencyPhone.trim(),
       };
 
-      memberService.update(localMember.id, updatedFields, 'Admin Staff');
+      await memberService.update(localMember.id, updatedFields, 'Admin Staff');
       setLocalMember(prev => ({ ...prev, ...updatedFields }));
       toast.success('Member profile details updated successfully.');
       setIsEditing(false);
@@ -273,11 +342,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  const handleStatusToggleConfirm = () => {
+  const handleStatusToggleConfirm = async () => {
     const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
 
     try {
-      memberService.update(localMember.id, { status: nextStatus }, 'Admin Staff');
+      await memberService.update(localMember.id, { status: nextStatus }, 'Admin Staff');
       setLocalMember(prev => ({ ...prev, status: nextStatus }));
       toast.success(`Member status set to ${nextStatus}.`);
       onMutationSuccess();
@@ -287,14 +356,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  const handleDeleteMemberConfirm = () => {
+  const handleDeleteMemberConfirm = async () => {
     if (hasActiveSubscription) {
       toast.error('Cannot delete member while an active subscription exists.');
       return;
     }
 
     try {
-      memberService.archive(localMember.id, 'Profile archived by staff', 'Admin Staff');
+      await memberService.archive(localMember.id, 'Profile archived by staff', 'Admin Staff');
       toast.success(`Profile for ${localMember.full_name} moved to Recycle Bin.`);
       setIsDeleteModalOpen(false);
       onMutationSuccess();
@@ -306,7 +375,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   // Void Subscription Execution with Admin Password Verification
   const handleConfirmVoidSubscription = async () => {
-    if (!stats.activeContract || !isAdmin) return;
+    if (!targetVoidSub || !isAdmin) return;
     if (!voidReason) {
       toast.warning('Please select a reason for voiding.');
       return;
@@ -330,8 +399,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         }
       }
 
-      subscriptionService.void(
-        stats.activeContract.id,
+      await subscriptionService.void(
+        targetVoidSub.id,
         voidReason,
         voidNotes.trim(),
         user?.email || profile?.full_name || 'Administrator'
@@ -339,8 +408,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
       toast.success('Subscription successfully voided.');
       setIsVoidModalOpen(false);
+      setTargetVoidSub(null);
       setAdminPassword('');
       setVoidNotes('');
+
+      await loadProfileCollections();
+
+      window.dispatchEvent(new Event('palomar_logbook_updated'));
       setRefreshKey(prev => prev + 1);
       onMutationSuccess();
     } catch (err: any) {
@@ -397,8 +471,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return cards.find((c: MemberCard) => c.status === 'Active');
   }, [cards]);
 
-  const subHistory = subscriptions;
-  const invoices = receipts;
+  useEffect(() => {
+  if (currentCard?.card_type === 'Manual') {
+    setSelectedCardFormat('Manual');
+  } else {
+    setSelectedCardFormat('QR');
+  }
+}, [currentCard]);
 
   const extMember = localMember as any;
 
@@ -408,25 +487,162 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString();
   }, [localMember.created_at]);
 
+  // Invoices & Receipts Table Columns Configuration
+  const receiptColumns = useMemo<Column<Receipt>[]>(() => [
+    {
+      key: 'id',
+      header: 'Receipt #',
+      sortable: true,
+      render: (r) => (
+        <span className="font-mono font-bold text-xs text-(--color-text)">
+          {r.id}
+        </span>
+      )
+    },
+    {
+      key: 'item_description',
+      header: 'Item / Plan',
+      sortable: true,
+      render: (r) => (
+        <span className="font-bold text-xs text-(--color-text)">
+          {r.item_description}
+        </span>
+      )
+    },
+    {
+      key: 'payment_method',
+      header: 'Payment',
+      sortable: true,
+      render: (r) => (
+        <div className="flex flex-col text-[10px]">
+          <span className="font-semibold text-slate-600 dark:text-slate-300">
+            {r.payment_method}
+          </span>
+          {r.gcash_ref_no && (
+            <span className="font-mono text-slate-400 text-[9px]">
+              Ref: {r.gcash_ref_no}
+            </span>
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      sortable: true,
+      render: (r) => (
+        <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
+          ₱{Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'created_at',
+      header: 'Date',
+      sortable: true,
+      render: (r) => (
+        <span className="font-mono text-[10px] text-slate-400">
+          {new Date(r.created_at || Date.now()).toLocaleDateString()}
+        </span>
+      )
+    },
+    {
+      key: 'actions',
+      header: 'Action',
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenReceipt(r);
+          }}
+          className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1"
+          title="View Official Receipt"
+        >
+          <Eye className="w-3 h-3" />
+          <span>View</span>
+        </button>
+      )
+    }
+  ], []);
+
+  // Attendance Table Columns Configuration
+  const attendanceColumns = useMemo<Column<AttendanceRecord>[]>(() => [
+    {
+      key: 'check_in_time',
+      header: 'Check-In Time',
+      sortable: true,
+      render: (att) => (
+        <span className="font-mono font-bold text-xs text-(--color-text)">
+          {new Date(att.check_in_time).toLocaleString()}
+        </span>
+      )
+    },
+    {
+      key: 'plan_name',
+      header: 'Pass / Plan',
+      sortable: true,
+      render: (att) => (
+        <span className="font-bold text-xs text-(--color-text)">
+          {att.plan_name || 'Standard Pass'}
+        </span>
+      )
+    },
+    {
+      key: 'payment_method',
+      header: 'Payment',
+      sortable: true,
+      render: (att) => (
+        <span className="font-semibold text-slate-600 dark:text-slate-300 text-xs">
+          {att.payment_method || 'Cash'}
+        </span>
+      )
+    },
+    {
+      key: 'entry_fee',
+      header: 'Entry Fee',
+      sortable: true,
+      render: (att) => (
+        <span className={`font-mono font-black text-xs ${
+          att.entry_fee > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+        }`}>
+          {att.entry_fee > 0 ? `₱${Number(att.entry_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'FREE (₱0)'}
+        </span>
+      )
+    },
+    {
+      key: 'staff_name',
+      header: 'Staff',
+      sortable: true,
+      render: (att) => (
+        <span className="font-mono text-xs text-slate-400">
+          {att.staff_name || 'System'}
+        </span>
+      )
+    }
+  ], []);
+
   return createPortal(
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-9999 flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
+      className="fixed inset-0 z-40 flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
       onClick={onClose}
     >
       <motion.div 
-        initial={{ y: '100%', x: 0 }}
-        animate={{ y: 0, x: 0 }}
-        exit={{ y: '100%', x: 0 }}
+        initial={{ x: '100%', y: 0 }}
+        animate={{ x: 0, y: 0 }}
+        exit={{ x: '100%', y: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-(--bg-card) border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         
-        {/* COMPACT HEADER (NO BACK BUTTON) */}
+        {/* COMPACT HEADER */}
         <div className="p-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest">
@@ -472,7 +688,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
           </div>
 
-          {/* SWIPEABLE HORIZONTAL STATS CAROUSEL ON MOBILE */}
+          {/* STATS CAROUSEL */}
           <div className="flex sm:grid sm:grid-cols-4 gap-2.5 overflow-x-auto scrollbar-none pt-1">
             <div className="min-w-32.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Total Spent</span>
@@ -486,12 +702,23 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               <span className="text-xs font-bold text-(--color-text) block mt-1">{stats.totalVisits} visits</span>
             </div>
 
-            <div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 truncate block mt-1">
-                {stats.activeContract ? stats.activeContract.plan_name : 'Profile Only'}
-              </span>
-            </div>
+           {/* STATS CAROUSEL - Active Plan Box */}
+<div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+  <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
+  <span className={`text-xs font-bold truncate block mt-1 ${
+    activeContract 
+      ? 'text-emerald-600 dark:text-emerald-400' 
+      : targetSubForDisplay?.status === 'Voided'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-rose-600 dark:text-rose-400'
+  }`}>
+    {activeContract 
+      ? 'Active' 
+      : targetSubForDisplay?.status === 'Voided' 
+      ? 'Voided' 
+      : 'Expired'}
+  </span>
+</div>
 
             <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Reissued</span>
@@ -519,33 +746,49 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           ))}
         </div>
 
-        {/* TAB CONTENTS CONTAINER WITH GENERATED SAFE-AREA BOTTOM PADDING */}
+        {/* TAB CONTENTS CONTAINER */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 pb-28 sm:pb-8">
           
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
               
-              {/* SUBSCRIBE BANNER FOR PROFILE ONLY MEMBERS */}
-              {!stats.activeContract && (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs">
+              {/* RENEW / SUBSCRIBE BANNER */}
+              {(!activeContract || queuedContract) && (
+                <div className={`p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs border ${
+                  expiredDaysText 
+                    ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400' 
+                    : queuedContract 
+                    ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400' 
+                    : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+                }`}>
                   <div className="space-y-0.5">
-                    <span className="font-heading font-bold text-amber-500 text-xs block">
-                      No Active Subscription (Profile Only)
+                    <span className="font-heading font-bold text-xs block">
+                      {expiredDaysText 
+                        ? `Subscription Expired (${expiredDaysText})` 
+                        : queuedContract 
+                        ? `Renewal Scheduled: ${queuedContract.plan_name}` 
+                        : 'No Active Subscription (Profile Only)'}
                     </span>
                     <span className="text-xs text-slate-400 font-medium block">
-                      Enroll this member to grant gym facility check-in access.
+                      {expiredDaysText 
+                        ? 'This contract expired. Renew to grant gym check-in access.'
+                        : queuedContract 
+                        ? `Scheduled to activate on ${new Date(queuedContract.start_date).toLocaleDateString()}.`
+                        : 'Enroll this member to grant gym facility check-in access.'}
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsWizardOpen(true)}
-                    className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Subscribe Plan</span>
-                  </button>
+                  {!queuedContract && (
+                    <button
+                      type="button"
+                      onClick={() => setIsWizardOpen(true)}
+                      className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>{expiredDaysText ? 'Renew Subscription' : 'Subscribe Plan'}</span>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -701,7 +944,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           className="w-full p-2.5 border border-(--border-color) bg-(--bg-card) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
                         >
                           <option value="">Select Relationship *</option>
-                          
                           <optgroup label="Immediate Family">
                             <option value="Mother">Mother</option>
                             <option value="Father">Father</option>
@@ -713,7 +955,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             <option value="Son">Son</option>
                             <option value="Daughter">Daughter</option>
                           </optgroup>
-
                           <optgroup label="Extended Family">
                             <option value="Grandmother">Grandmother</option>
                             <option value="Grandfather">Grandfather</option>
@@ -722,7 +963,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             <option value="Cousin">Cousin</option>
                             <option value="Relative">Other Relative</option>
                           </optgroup>
-
                           <optgroup label="Guardian & Other">
                             <option value="Legal Guardian">Legal Guardian</option>
                             <option value="Friend / Colleague">Friend / Colleague</option>
@@ -803,7 +1043,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     )}
                   </div>
 
-                  {/* TOGGLE SIGNATURES SHOW/HIDE BUTTON */}
                   {(extMember.applicant_signature || extMember.parent_signature) && (
                     <div className="pt-2 border-t border-(--border-color) space-y-2">
                       <div className="flex items-center justify-between">
@@ -860,49 +1099,190 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
           )}
 
-          {/* TAB 2: COMBINED CONTRACTS & BILLING */}
+          {/* TAB 2: CONTRACTS & BILLING */}
           {activeTab === 'Contracts & Billing' && (
-            <div className="space-y-4 text-left animate-fade-in">
+            <div className="space-y-6 text-left animate-fade-in">
+              
+              {/* SECTION 1: STATUS SUBSCRIPTION */}
               <div className="space-y-3">
-                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block">
-                  SUBSCRIPTION CONTRACTS
-                </span>
-                {subHistory.length === 0 ? (
-                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
-                    No subscription agreements recorded for this client.
+                <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
+                  <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-blue-500" />
+                    STATUS SUBSCRIPTION
+                  </span>
+                  {targetSubForDisplay && (
+                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                      activeContract 
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                        : expiredDaysText
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                    }`}>
+                      {activeContract ? 'ACTIVE' : expiredDaysText ? `EXPIRED (${expiredDaysText})` : 'INACTIVE'}
+                    </span>
+                  )}
+                </div>
+
+                {!targetSubForDisplay ? (
+                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center space-y-2">
+                    <p className="text-xs text-slate-400">No subscription contract found for this member.</p>
+                    <button
+                      type="button"
+                      onClick={() => setIsWizardOpen(true)}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-heading font-bold uppercase rounded-xl border-none cursor-pointer transition-colors"
+                    >
+                      Enroll Subscription
+                    </button>
                   </div>
                 ) : (
-                  subHistory.map((sub: Subscription) => (
-                    <div key={sub.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <h5 className="font-bold text-sm text-(--color-text)">{sub.plan_name}</h5>
-                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-mono font-bold uppercase border ${
-                          sub.status === 'Active' 
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
-                            : sub.status === 'Voided'
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 border-slate-300 dark:border-zinc-700'
-                        }`}>{sub.status}</span>
-                      </div>
-
-                      <div className="text-xs text-slate-400 font-mono space-y-0.5">
-                        <p>ID: {sub.id}</p>
-                        <p>Validity: {new Date(sub.start_date).toLocaleDateString()} to {new Date(sub.end_date).toLocaleDateString()}</p>
-                      </div>
-
-                      {sub.status === 'Voided' && sub.void_reason && (
-                        <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/20 text-[10px] text-rose-400 font-mono">
-                          Void Reason: {sub.void_reason} ({sub.voided_by || 'Admin'})
+                  <div className="space-y-3">
+                    
+                    {/* CURRENT OR LATEST SUBSCRIPTION CARD */}
+                    <div className={`p-4 rounded-2xl space-y-2.5 shadow-xs relative overflow-hidden border ${
+                      activeContract
+                        ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/30'
+                        : expiredDaysText
+                        ? 'bg-rose-500/5 dark:bg-rose-500/10 border-rose-500/30'
+                        : 'bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/30'
+                    }`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
+                        <div className="flex items-center gap-2">
+                          {activeContract ? (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-rose-500 shrink-0" />
+                          )}
+                          <h5 className="font-bold text-sm text-(--color-text)">
+                            {targetSubForDisplay.plan_name || (targetSubForDisplay.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')}
+                          </h5>
                         </div>
-                      )}
+
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider border ${
+                          activeContract
+                            ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                        }`}>
+                          {activeContract ? 'Active Contract' : `Expired (${expiredDaysText})`}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Contract ID</span>
+                          <span className="font-mono text-xs font-bold text-(--color-text) block">{targetSubForDisplay.id}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Receipt #</span>
+                          <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
+                            {targetSubForDisplay.receipt_number || 'N/A'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Price Paid</span>
+                          <span className="font-mono text-xs font-black text-(--color-text) block">
+                            ₱{Number(targetSubForDisplay.price || 0).toLocaleString()}.00 ({targetSubForDisplay.payment_method})
+                          </span>
+                        </div>
+                        <div className="col-span-2 sm:col-span-3 pt-1 border-t border-(--border-color) flex flex-wrap justify-between items-center text-[11px]">
+                          <span className="text-slate-400 font-mono">
+                            Validity: <strong>{new Date(targetSubForDisplay.start_date).toLocaleDateString()}</strong> to <strong>{new Date(targetSubForDisplay.end_date).toLocaleDateString()}</strong>
+                          </span>
+                          {activeContract ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                              {Math.max(0, Math.ceil((new Date(targetSubForDisplay.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} Days Remaining
+                            </span>
+                          ) : (
+                            <span className="font-bold text-rose-500 font-mono">
+                              Expired {expiredDaysText}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Benefit Fee Note */}
+                      <div className="p-2 bg-slate-500/10 rounded-xl text-[10px] font-mono flex items-center justify-between text-slate-400">
+  <span>Check-In Entry Benefit:</span>
+  <strong className="text-(--color-text) font-bold">
+    {targetSubForDisplay.plan_type === 'yearly' 
+      ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
+      : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
+  </strong>
+</div>
                     </div>
-                  ))
+
+                    {/* QUEUED RENEWAL CONTRACT CARD */}
+                    {queuedContract && (
+                      <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/30 space-y-2.5 shadow-xs relative overflow-hidden">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-500/20 pb-2">
+                          <div className="flex items-center gap-2">
+                            <CalendarCheck className="w-4 h-4 text-blue-500 shrink-0" />
+                            <h5 className="font-bold text-sm text-(--color-text)">
+                              Upcoming Queued Renewal: {queuedContract.plan_name || (queuedContract.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')}
+                            </h5>
+                          </div>
+
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                            Queued Plan
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Start</span>
+                            <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 block">
+                              {new Date(queuedContract.start_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Receipt #</span>
+                            <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
+                              {queuedContract.receipt_number || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Amount Paid</span>
+                            <span className="font-mono text-xs font-black text-(--color-text) block">
+                              ₱{Number(queuedContract.price || 0).toLocaleString()}.00
+                            </span>
+                          </div>
+                          <div className="col-span-2 sm:col-span-3 pt-1 border-t border-(--border-color) flex justify-between items-center text-[11px] font-mono text-slate-400">
+                            <span>Scheduled Validity: <strong>{new Date(queuedContract.start_date).toLocaleDateString()}</strong> to <strong>{new Date(queuedContract.end_date).toLocaleDateString()}</strong></span>
+                            <span className="font-bold text-blue-500">Will activate automatically</span>
+                          </div>
+                        </div>
+
+                        <div className="p-2 bg-blue-500/10 rounded-xl text-[10px] font-mono flex items-center justify-between text-blue-600 dark:text-blue-400">
+                          <span>Upcoming Entry Benefit:</span>
+                          <strong className="font-bold">
+                            {queuedContract.plan_type === 'yearly' 
+                              ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
+                              : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
+                          </strong>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* RENEW / EXTEND PLAN BUTTON */}
+                    {!queuedContract && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsWizardOpen(true)}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center gap-2 transition-colors"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          <span>{activeContract ? 'Schedule Plan Renewal / Extension' : 'Renew Subscription'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                  </div>
                 )}
               </div>
 
               {/* DANGER ZONE: VOID SUBSCRIPTION (ADMINISTRATOR ONLY) */}
-              {isAdmin && stats.activeContract && (
-                <div className="pt-4 border-t border-(--border-color) space-y-3 select-none">
+              {isAdmin && (activeContract || queuedContract) && (
+                <div className="pt-2 border-t border-(--border-color) space-y-3 select-none">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-heading font-bold tracking-wider text-rose-500 uppercase">
                       DANGER ZONE
@@ -910,202 +1290,288 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="h-px flex-1 bg-rose-500/20" />
                   </div>
 
-                  {!voidEligibility.eligible ? (
-                    <div className="p-3.5 bg-zinc-900/80 border border-zinc-800 rounded-2xl text-left space-y-1">
-                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs uppercase">
-                        <Lock className="w-4 h-4 text-slate-400" />
-                        <span>Void Subscription Unavailable</span>
+                  {(() => {
+                    const subToVoid = queuedContract || activeContract;
+                    const eligibility = getVoidEligibility(subToVoid);
+
+                    if (!eligibility.eligible) {
+                      return (
+                        <div className="p-3.5 bg-zinc-900/80 border border-zinc-800 rounded-2xl text-left space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs uppercase">
+                            <Lock className="w-4 h-4 text-slate-400" />
+                            <span>Void Subscription Unavailable</span>
+                          </div>
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            🔒 {eligibility.reason}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl gap-3">
+                        <div className="text-left space-y-0.5">
+                          <span className="font-bold text-xs text-rose-400 block">
+                            Void {queuedContract ? 'Queued Renewal' : 'Active Subscription'}
+                          </span>
+                          <span className="text-xs text-slate-400 block">
+                            Cancel contract ({subToVoid?.id}) and purge its specific receipt while keeping historical receipts safe.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetVoidSub(subToVoid || null);
+                            setIsVoidModalOpen(true);
+                          }}
+                          className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
+                        >
+                          <span>Void Contract</span>
+                        </button>
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed">
-                        🔒 {voidEligibility.reason}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl gap-3">
-                      <div className="text-left space-y-0.5">
-                        <span className="font-bold text-xs text-rose-400 block">Void Active Subscription</span>
-                        <span className="text-xs text-slate-400 block">
-                          Cancel agreement while preserving financial audit records.
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsVoidModalOpen(true)}
-                        className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
-                      >
-                        <span>Void Subscription</span>
-                      </button>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
 
-              {/* INVOICES LIST */}
-              <div className="space-y-3 pt-3 border-t border-(--border-color)">
-                <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5">
-                  <ReceiptIcon className="w-4 h-4 text-emerald-500" /> Invoices & Receipts
-                </span>
-                {invoices.length === 0 ? (
-                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
+              {/* SECTION 2: INVOICES & RECEIPTS TABLE */}
+              <div className="space-y-3 pt-4 border-t border-(--border-color)">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
+                    <ReceiptIcon className="w-4 h-4 text-emerald-500" />
+                    INVOICES & RECEIPTS
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {receipts.length} {receipts.length === 1 ? 'Record' : 'Records'}
+                  </span>
+                </div>
+
+                {receipts.length === 0 ? (
+                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 text-xs">
                     No official receipt invoices stored for this client.
                   </div>
                 ) : (
-                  invoices.map((r: Receipt) => (
-                    <div key={r.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                      <div className="space-y-1">
-                        <h5 className="font-bold text-sm text-(--color-text)">{r.item_description}</h5>
-                        <p className="font-mono text-xs text-slate-400">
-                          {r.id} • {r.payment_method} • {new Date(r.created_at || Date.now()).toLocaleDateString()}
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
-                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                          ₱{r.amount.toLocaleString()}.00
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReceipt(r)}
-                          className="min-h-9.5 px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
-                          title="View Official Receipt"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Receipt</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                  <Table<Receipt>
+                    data={receipts}
+                    columns={receiptColumns}
+                    itemsPerPage={5}
+                    searchKeys={['id', 'item_description', 'payment_method']}
+                    searchPlaceholder="Search receipt # or description..."
+                  />
                 )}
               </div>
+
             </div>
           )}
 
-          {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
+       {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
           {activeTab === 'Cards' && (() => {
-            const expDateStr = stats.activeContract?.end_date 
-              ? new Date(stats.activeContract.end_date).toLocaleDateString() 
-              : 'NO ACTIVE PLAN';
-            const isExp = stats.activeContract?.end_date 
-              ? new Date(stats.activeContract.end_date) < new Date() 
-              : false;
+            const cardExpIso = currentCard?.expires_at 
+              || (currentCard?.issued_at 
+                ? new Date(new Date(currentCard.issued_at).setFullYear(new Date(currentCard.issued_at).getFullYear() + 3)).toISOString()
+                : null);
+
+            const cardExpDateStr = cardExpIso 
+              ? new Date(cardExpIso).toLocaleDateString() 
+              : '3 YEARS FROM ISSUE';
+
+            const cardExpDateOnly = cardExpIso ? cardExpIso.split('T')[0] : '2029-08-07';
+
+            const isCardExpired = cardExpIso ? new Date(cardExpIso) < new Date() : false;
+
             const issueDateStr = currentCard?.issued_at 
               ? new Date(currentCard.issued_at).toLocaleDateString() 
               : new Date().toLocaleDateString();
 
-            const qrPayload = `${localMember.member_id}:${stats.activeContract?.end_date || 'NO_PLAN'}:${currentCard ? new Date(currentCard.issued_at).getTime() : Date.now()}`;
+            const qrPayload = currentCard?.card_number || `${localMember.member_id}:${cardExpDateOnly}`;
             const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
+            const handleSwitchCardTypeInDb = async (type: 'QR' | 'Manual') => {
+              try {
+                await cardService.issue(localMember.member_id, type, 'Admin Staff');
+                toast.success(`Member security card format set to ${type}.`);
+                setSelectedCardFormat(type);
+                setRefreshKey(prev => prev + 1);
+                onMutationSuccess();
+              } catch (err: any) {
+                toast.error(err.message || 'Failed to update card format.');
+              }
+            };
 
             return (
               <div className="space-y-4 text-left animate-fade-in">
+                
+                {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
+                <div className="grid grid-cols-2 gap-2 bg-(--bg-page) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCardFormat('QR')}
+                    className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      selectedCardFormat === 'QR'
+                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md'
+                        : 'text-slate-400 hover:text-(--color-text)'
+                    }`}
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Digital QR Badge</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCardFormat('Manual')}
+                    className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      selectedCardFormat === 'Manual'
+                        ? 'bg-amber-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-(--color-text)'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Manual Physical Badge</span>
+                  </button>
+                </div>
+
                 {currentCard ? (
                   <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4 shadow-xs">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
                       <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">ACTIVE CREDENTIAL BADGE</span>
-                        <h5 className="text-sm font-bold text-(--color-text) font-mono">{currentCard.card_number}</h5>
+                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">
+                          REGISTERED CREDENTIAL TOKEN
+                        </span>
+                        <h5 className="text-xs sm:text-sm font-bold text-(--color-text) font-mono break-all">
+                          {qrPayload}
+                        </h5>
                         <p className="text-xs text-slate-400 font-mono">
-                          Hardware Type: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0
+                          Registered Format: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setIsDigitalQrModalOpen(true)}
-                        className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span>Print Digital Badge</span>
-                      </button>
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        {currentCard.card_type !== selectedCardFormat && (
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
+                            className="flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none"
+                            title="Update registered card type in database"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Set as Registered</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setIsDigitalQrModalOpen(true)}
+                          className="flex-1 sm:flex-initial min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>Print Card</span>
+                        </button>
+                      </div>
                     </div>
 
-                    {/* RESPONSIVE GYM CREDENTIAL CARD DISPLAY */}
-                    <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
-                      
-                      {/* BRANDING HEADER */}
-                      <div className="text-center space-y-0.5">
-                        <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
-                          WOLF PALOMAR GYM
-                        </h4>
-                        <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
-                        <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
-                          MUAYTHAI BOXING
+                    {/* DYNAMIC DISPLAY: DIGITAL QR BADGE VS MANUAL TEMPLATE ASSET */}
+                    {selectedCardFormat === 'QR' ? (
+                      <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
+                        {/* BRANDING HEADER */}
+                        <div className="text-center space-y-0.5">
+                          <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
+                            WOLF PALOMAR GYM
+                          </h4>
+                          <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
+                          <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
+                            MUAYTHAI BOXING
+                          </div>
+                          <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
+                            6B Judge A. Roldan St., Navotas City, Metro Manila
+                          </p>
                         </div>
-                        <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
-                          6B Judge A. Roldan St., Navotas City, Metro Manila
-                        </p>
-                      </div>
 
-                      {/* CARD BODY: QR CODE + MEMBER DETAILS */}
-                      <div className="flex items-center gap-3 pt-1">
-                        
-                        {/* QR CODE BOX */}
-                        <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
-                          <img
-                            src={qrImg} 
-                            alt="Member QR" 
-                            className="w-full h-full object-contain"
-                            style={{ opacity: isExp ? 0.2 : 1 }}
+                        {/* CARD BODY */}
+                        <div className="flex items-center gap-3 pt-1">
+                          <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
+                            <img
+                              src={qrImg} 
+                              alt="Member QR Payload" 
+                              className="w-full h-full object-contain"
+                              style={{ opacity: isCardExpired ? 0.2 : 1 }}
+                            />
+                            {isCardExpired && (
+                              <div className="absolute inset-0 bg-red-600/90 rounded-xl flex flex-col items-center justify-center text-white text-[9px] font-black uppercase text-center leading-tight">
+                                <span>EXPIRED</span>
+                                <span>BADGE</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 space-y-1.5 min-w-0">
+                            <div>
+                              <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                                FULL NAME
+                              </span>
+                              <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate uppercase">
+                                {localMember.full_name}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                                CONTACT
+                              </span>
+                              <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate font-mono">
+                                {localMember.phone || 'N/A'}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                              <div>
+                                <span className="text-[8px] font-black text-zinc-400 uppercase block">ISSUED</span>
+                                <div className="bg-white text-black font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate">
+                                  {issueDateStr}
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-[8px] font-black text-zinc-400 uppercase block">EXPIRATION</span>
+                                <div className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
+                                  isCardExpired ? 'text-red-600' : 'text-black'
+                                }`}>
+                                  {cardExpDateStr}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* MANUAL TEMPLATE CARD DISPLAY */
+                      <div className="flex flex-col items-center gap-3 pt-2">
+                        <div className="w-full max-w-sm sm:max-w-md aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-black p-1.5 flex items-center justify-center">
+                          <img 
+                            src={cardTemplateImg} 
+                            alt="Manual Physical Member Card Template Asset" 
+                            className="w-full h-full object-contain block"
                           />
-                          {isExp && (
-                            <div className="absolute inset-0 bg-red-600/90 rounded-xl flex flex-col items-center justify-center text-white text-[9px] font-black uppercase text-center leading-tight">
-                              <span>EXPIRED</span>
-                            </div>
-                          )}
                         </div>
-
-                        {/* MEMBER DETAILS */}
-                        <div className="flex-1 space-y-1.5 min-w-0">
-                          <div>
-                            <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
-                              FULL NAME
-                            </span>
-                            <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate uppercase">
-                              {localMember.full_name}
-                            </div>
-                          </div>
-
-                          <div>
-                            <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
-                              CONTACT
-                            </span>
-                            <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate font-mono">
-                              {localMember.phone || 'N/A'}
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                            <div>
-                              <span className="text-[8px] font-black text-zinc-400 uppercase block">ISSUED</span>
-                              <div className="bg-white text-black font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate">
-                                {issueDateStr}
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-[8px] font-black text-zinc-400 uppercase block">EXPIRATION</span>
-                              <div className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
-                                isExp ? 'text-red-600' : 'text-black'
-                              }`}>
-                                {expDateStr}
-                              </div>
-                            </div>
-                          </div>
-
-                        </div>
-
+                        <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
+                          Manual Physical Pass Template Asset • Official Gym Print Layout
+                        </span>
                       </div>
-
-                    </div>
+                    )}
 
                   </div>
                 ) : (
-                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
-                    No active physical security card assigned to this client.
+                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 space-y-3">
+                    <p>No active security card assigned to this client yet.</p>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                    >
+                      Issue {selectedCardFormat} Security Card
+                    </button>
                   </div>
                 )}
 
-                {/* REISSUE CARD TOKEN BUTTON */}
                 <div className="pt-2">
                   <button 
                     type="button"
@@ -1122,37 +1588,35 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
           {/* TAB 4: ATTENDANCE */}
           {activeTab === 'Attendance' && (
-            <div className="space-y-3 text-left animate-fade-in">
-              <span className="text-xs font-heading font-bold tracking-wider text-slate-400 uppercase block">
-                FACILITY CHECK-IN LOGS
-              </span>
+            <div className="space-y-4 text-left animate-fade-in">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
+                <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  FACILITY CHECK-IN LOGS
+                </span>
 
-              {attendanceLogs.length === 0 ? (
-                <div className="p-8 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400">
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="px-2.5 py-1 rounded-xl bg-slate-500/10 text-slate-400 border border-slate-500/20 font-bold">
+                    Visits: {attendance.length}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">
+                    Total: ₱{totalAttendanceValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {attendance.length === 0 ? (
+                <div className="p-8 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 text-xs">
                   No check-in visits recorded for this member.
                 </div>
               ) : (
-                attendanceLogs.map((att: AttendanceRecord) => (
-                  <div key={att.id} className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-(--color-text)">{att.plan_name || 'Standard Pass'}</span>
-                        <span className="text-xs font-mono text-slate-400">({att.payment_method})</span>
-                      </div>
-                      <span className="font-mono text-xs text-slate-400 block">
-                        Checked in: {new Date(att.check_in_time).toLocaleString()} • Staff: {att.staff_name}
-                      </span>
-                    </div>
-
-                    <div className="text-left sm:text-right">
-                      <span className={`font-mono text-xs font-black ${
-                        att.entry_fee > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-                      }`}>
-                        {att.entry_fee > 0 ? `₱${att.entry_fee.toFixed(2)}` : 'FREE (₱0)'}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                <Table<AttendanceRecord>
+                  data={attendanceLogs}
+                  columns={attendanceColumns}
+                  itemsPerPage={5}
+                  searchKeys={['plan_name', 'payment_method', 'staff_name', 'receipt_number', 'check_in_time']}
+                  searchPlaceholder="Search visits by plan, staff, payment..."
+                />
               )}
             </div>
           )}
@@ -1181,10 +1645,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
         </div>
 
-        {/* FOOTER ACTIONS - ELEVATED CLEAR OF SYSTEM NAVBAR */}
+        {/* FOOTER ACTIONS */}
         <div className="p-3.5 sm:p-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl pb-20 sm:pb-4">
           
-          {/* STATUS & SUSPEND/ACTIVATE ACTION BUTTON */}
           <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-400 font-mono">Status:</span>
@@ -1220,9 +1683,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </button>
           </div>
 
-          {/* EDIT & DELETE BUTTONS ROW */}
           <div className="flex items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
-            {/* EDIT DETAILS BUTTON */}
             <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
@@ -1250,7 +1711,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               )}
             </div>
 
-            {/* DELETE BUTTON */}
             <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
@@ -1276,240 +1736,244 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
         </div>
 
-      </motion.div>
+        {/* DIGITAL QR BADGE MODAL */}
+        {isDigitalQrModalOpen && (
+          <DigitalQRCardModal
+            member={localMember}
+            subscription={activeContract}
+            card={currentCard}
+            onClose={() => setIsDigitalQrModalOpen(false)}
+          />
+        )}
 
-      {/* ─── DIGITAL QR BADGE MODAL ─── */}
-      {isDigitalQrModalOpen && (
-        <DigitalQRCardModal
-          member={localMember}
-          subscription={stats.activeContract}
-          card={currentCard}
-          onClose={() => setIsDigitalQrModalOpen(false)}
-        />
-      )}
+        {/* OFFICIAL RECEIPT MODAL */}
+        {selectedReceiptData && (
+          <OfficialReceipt
+            isOpen={!!selectedReceiptData}
+            onClose={() => setSelectedReceiptData(null)}
+            data={selectedReceiptData}
+            showPrintButton={true}
+            showDownloadButton={true}
+          />
+        )}
 
-      {/* ─── OFFICIAL RECEIPT MODAL ─── */}
-      {selectedReceiptData && (
-        <OfficialReceipt
-          isOpen={!!selectedReceiptData}
-          onClose={() => setSelectedReceiptData(null)}
-          data={selectedReceiptData}
-          showPrintButton={true}
-          showDownloadButton={true}
-        />
-      )}
-
-      {/* ─── STATUS CHANGE CONFIRMATION MODAL ─── */}
-      <Modal
-        isOpen={isStatusModalOpen}
-        onClose={() => setIsStatusModalOpen(false)}
-        title={localMember.status === 'Active' ? 'SUSPEND MEMBER' : 'ACTIVATE MEMBER'}
-      >
-        <div className="space-y-4 text-left font-body">
-          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-            Are you sure you want to {localMember.status === 'Active' ? 'suspend' : 'activate'} membership profile for{' '}
-            <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
-          </p>
-
-          <div className="flex gap-3 justify-end pt-2">
-            <button
-              type="button"
-              onClick={() => setIsStatusModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleStatusToggleConfirm}
-              className={`px-5 py-2.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
-                localMember.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
-              }`}
-            >
-              Confirm {localMember.status === 'Active' ? 'Suspension' : 'Activation'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ─── DELETE MEMBER CONFIRMATION MODAL ─── */}
-      <Modal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        title="DELETE MEMBER PROFILE"
-      >
-        <div className="space-y-4 text-left font-body">
-          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-            Are you sure you want to delete profile for{' '}
-            <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
-          </p>
-          <p className="text-xs text-slate-400 font-mono">
-            This record will be moved to the Member Recycle Bin.
-          </p>
-
-          <div className="flex gap-3 justify-end pt-2">
-            <button
-              type="button"
-              onClick={() => setIsDeleteModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteMemberConfirm}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md"
-            >
-              Confirm Delete
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ─── REISSUE CARD TOKEN CONFIRMATION MODAL ─── */}
-      <Modal
-        isOpen={isReissueModalOpen}
-        onClose={() => setIsReissueModalOpen(false)}
-        title="REISSUE SECURITY CARD TOKEN"
-      >
-        <div className="space-y-4 text-left font-body">
-          <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-xs space-y-1">
-            <p className="font-bold flex items-center gap-1.5">
-              <AlertOctagon className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Warning: Active Card Deactivation</span>
+        {/* STATUS CHANGE CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isStatusModalOpen}
+          onClose={() => setIsStatusModalOpen(false)}
+          title={localMember.status === 'Active' ? 'SUSPEND MEMBER' : 'ACTIVATE MEMBER'}
+        >
+          <div className="space-y-4 text-left font-body">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+              Are you sure you want to {localMember.status === 'Active' ? 'suspend' : 'activate'} membership profile for{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
             </p>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Generating a fresh token will immediately <strong>deactivate {localMember.full_name}'s current card ({currentCard?.card_number || 'N/A'})</strong>.
-            </p>
-          </div>
 
-          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-            Are you sure you want to proceed with issuing a replacement card token for <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
-          </p>
-
-          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
-            <button
-              type="button"
-              onClick={() => setIsReissueModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirmReissueToken}
-              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Confirm Reissue Token</span>
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ─── VOID SUBSCRIPTION CONFIRMATION MODAL (ADMIN ONLY) ─── */}
-      <Modal
-        isOpen={isVoidModalOpen}
-        onClose={() => setIsVoidModalOpen(false)}
-        title="VOID SUBSCRIPTION"
-      >
-        <div className="space-y-4 text-left font-body">
-          <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs space-y-1">
-            <p className="font-bold flex items-center gap-1.5">
-              <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>This will cancel the current subscription while keeping it in audit history.</span>
-            </p>
-            <p className="text-rose-400/80 font-mono text-[10px]">
-              This action cannot be undone.
-            </p>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 block">
-              Reason for Voiding *
-            </label>
-            <select
-              value={voidReason}
-              onChange={(e) => setVoidReason(e.target.value)}
-              className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
-            >
-              <option value="Wrong membership selected">Wrong membership selected</option>
-              <option value="Wrong member">Wrong member</option>
-              <option value="Duplicate registration">Duplicate registration</option>
-              <option value="Incorrect payment">Incorrect payment</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 block">
-              Additional Notes (Optional)
-            </label>
-            <textarea
-              value={voidNotes}
-              onChange={(e) => setVoidNotes(e.target.value)}
-              rows={2}
-              placeholder="Enter internal explanation for audit trail..."
-              className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-400 block">
-              Admin Password Verification *
-            </label>
-            <div className="relative">
-              <input
-                type={showAdminPassword ? 'text' : 'password'}
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Re-enter your account password"
-                className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
-              />
+            <div className="flex gap-3 justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setShowAdminPassword(!showAdminPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                onClick={() => setIsStatusModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
               >
-                <Eye className="w-4 h-4" />
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleStatusToggleConfirm}
+                className={`px-5 py-2.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
+                  localMember.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                }`}
+              >
+                Confirm {localMember.status === 'Active' ? 'Suspension' : 'Activation'}
               </button>
             </div>
           </div>
+        </Modal>
 
-          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
-            <button
-              type="button"
-              onClick={() => setIsVoidModalOpen(false)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!voidReason || !adminPassword.trim() || isVerifyingVoid}
-              onClick={handleConfirmVoidSubscription}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
-            >
-              {isVerifyingVoid ? 'Verifying...' : 'Void Subscription'}
-            </button>
+        {/* DELETE MEMBER CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          title="DELETE MEMBER PROFILE"
+        >
+          <div className="space-y-4 text-left font-body">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+              Are you sure you want to delete profile for{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+            </p>
+            <p className="text-xs text-slate-400 font-mono">
+              This record will be moved to the Member Recycle Bin.
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteMemberConfirm}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md"
+              >
+                Confirm Delete
+              </button>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
 
-      {/* ─── INTAKE SUBSCRIPTION WIZARD MODAL ─── */}
-      {isWizardOpen && (
-        <IntakeWizardModal
-          isOpen={isWizardOpen}
-          initialIntakeMode="Manual"
-          prefillMember={localMember}
-          onClose={() => setIsWizardOpen(false)}
-          onComplete={() => {
-            setIsWizardOpen(false);
-            setRefreshKey(prev => prev + 1);
-            onMutationSuccess();
+        {/* REISSUE CARD TOKEN CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isReissueModalOpen}
+          onClose={() => setIsReissueModalOpen(false)}
+          title="REISSUE SECURITY CARD TOKEN"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertOctagon className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>Warning: Active Card Deactivation</span>
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Generating a fresh token will immediately <strong>deactivate {localMember.full_name}'s current card ({currentCard?.card_number || 'N/A'})</strong>.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Are you sure you want to proceed with issuing a replacement card token for <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsReissueModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReissueToken}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Confirm Reissue Token</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* VOID SUBSCRIPTION CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isVoidModalOpen}
+          onClose={() => {
+            setIsVoidModalOpen(false);
+            setTargetVoidSub(null);
           }}
-        />
-      )}
+          title="VOID SUBSCRIPTION CONTRACT"
+        >
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (voidReason && adminPassword.trim() && !isVerifyingVoid) {
+                handleConfirmVoidSubscription();
+              }
+            }}
+            className="space-y-4 text-left font-body"
+          >
+            <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>This will cancel contract {targetVoidSub?.id} and purge its receipt ({targetVoidSub?.receipt_number || 'N/A'}). Past receipts will not be affected.</span>
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 block">Reason for Voiding *</label>
+              <select
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
+              >
+                <option value="Wrong membership selected">Wrong membership selected</option>
+                <option value="Wrong member">Wrong member</option>
+                <option value="Duplicate registration">Duplicate registration</option>
+                <option value="Incorrect payment">Incorrect payment</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 block">Additional Notes (Optional)</label>
+              <textarea
+                value={voidNotes}
+                onChange={(e) => setVoidNotes(e.target.value)}
+                rows={2}
+                placeholder="Enter internal explanation..."
+                className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 block">Admin Password Verification *</label>
+              <div className="relative">
+                <input
+                  type={showAdminPassword ? 'text' : 'password'}
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Re-enter your account password"
+                  className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPassword(!showAdminPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVoidModalOpen(false);
+                  setTargetVoidSub(null);
+                }}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!voidReason || !adminPassword.trim() || isVerifyingVoid}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
+              >
+                {isVerifyingVoid ? 'Verifying...' : 'Void Subscription'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* INTAKE SUBSCRIPTION WIZARD MODAL */}
+        {isWizardOpen && (
+          <IntakeWizardModal
+            isOpen={isWizardOpen}
+            initialIntakeMode="Manual"
+            prefillMember={localMember}
+            onClose={() => setIsWizardOpen(false)}
+            onComplete={() => {
+              setIsWizardOpen(false);
+              setRefreshKey(prev => prev + 1);
+              onMutationSuccess();
+            }}
+          />
+        )}
+
+      </motion.div>
     </motion.div>,
     document.body
   );

@@ -3,6 +3,19 @@
 
 BEGIN;
 
+-- Type Guard Enforcers (Ensures enums exist before table creation)
+DO $do$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'customer_type_enum') THEN
+        CREATE TYPE public.customer_type_enum AS ENUM ('Walk-In', 'Member');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_method_enum') THEN
+        CREATE TYPE public.payment_method_enum AS ENUM ('Cash', 'GCash', 'Card', 'Bank Transfer', 'Other');
+    END IF;
+END $do$;
+
+-- Create Receipts Table
 CREATE TABLE IF NOT EXISTS public.receipts (
     id VARCHAR(30) PRIMARY KEY DEFAULT public.generate_rec_receipt_no(),
     member_id VARCHAR(20) DEFAULT NULL REFERENCES public.members(member_id) ON DELETE SET NULL,
@@ -22,10 +35,31 @@ CREATE TABLE IF NOT EXISTS public.receipts (
 -- Row Level Security (RLS)
 ALTER TABLE public.receipts ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if present before recreating
+DROP POLICY IF EXISTS "Allow authenticated users to view receipts" ON public.receipts;
 CREATE POLICY "Allow authenticated users to view receipts" ON public.receipts
     FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to insert receipts" ON public.receipts;
 CREATE POLICY "Allow authenticated users to insert receipts" ON public.receipts
     FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated users to update receipts" ON public.receipts;
+CREATE POLICY "Allow authenticated users to update receipts" ON public.receipts
+    FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated users to delete receipts" ON public.receipts;
+CREATE POLICY "Allow authenticated users to delete receipts" ON public.receipts
+    FOR DELETE TO authenticated USING (true);
+
+-- Realtime Publication
+DO $do$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'receipts') THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.receipts;
+        END IF;
+    END IF;
+END $do$;
 
 COMMIT;

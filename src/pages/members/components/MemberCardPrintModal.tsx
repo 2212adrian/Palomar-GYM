@@ -128,9 +128,10 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   // Expiration Configuration Override - DEFAULT +3 YEARS (1095 Days)
   const [customExpireDate, setCustomExpireDate] = useState<string>(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1095); // Default +3 years
+    d.setFullYear(d.getFullYear() + 3); // Exact +3 years (2026-08-07 -> 2029-08-07)
     return d.toISOString().split('T')[0];
   });
+
   const [overrideDates, setOverrideDates] = useState<boolean>(true);
 
   // Validation Flag: Expiration date cannot be earlier than issue date
@@ -226,7 +227,13 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   const applyPresetDays = (days: number) => {
     setOverrideDates(true);
     const d = new Date(issueDate);
-    d.setDate(d.getDate() + days);
+    if (days === 1095 || days === 3) {
+      d.setFullYear(d.getFullYear() + 3); // Exact +3 Years
+    } else if (days === 365 || days === 1) {
+      d.setFullYear(d.getFullYear() + 1); // Exact +1 Year
+    } else {
+      d.setDate(d.getDate() + days);
+    }
     const newExpDate = d.toISOString().split('T')[0];
     if (newExpDate < issueDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -328,7 +335,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
           const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
           const isExp = new Date(finalExpDate) < new Date();
-          const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+          const qrPayload = `${m.member_id}:${finalExpDate}`;
           const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
           const qrImgObj = await loadBase64Image(qrRawUrl);
 

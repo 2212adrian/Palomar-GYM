@@ -16,7 +16,9 @@ import {
   Ticket,
   Users,
   Eye,
-  ShieldCheck
+  ShieldCheck,
+  Camera as CameraIcon, 
+  SwitchCamera 
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -90,7 +92,9 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [photoModal, setPhotoModal] = useState<{ name: string; memberId?: string; url: string | null } | null>(null);
   const [isScanningLoading, setIsScanningLoading] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  
   // Selected entry type
   const [selectedEntry, setSelectedEntry] = useState<'walkin_regular' | 'walkin_student' | 'member_entry' | null>(null);
 
@@ -128,7 +132,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         setWalkinRegularFee(Number(ratesData.regular_walk_in) || 100);
         setWalkinStudentFee(Number(ratesData.student_walk_in) || 80);
         setYearlyMemberFee(Number(ratesData.yearly_walk_in) || 50);
-        // 🚨 Dynamic GCash extra charge straight from Supabase!
         setGcashFeeRate(Number(ratesData.gcash_fee) ?? 10);
       } else {
         const activeSettings = await settingsService.load();
@@ -205,8 +208,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           email: m.email || '',
           address: m.address || '',
           regDate: m.created_at 
-  ? new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
-  : 'N/A',
+            ? new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+            : 'N/A',
           expDate: expDateStr,
           lastVisit: lastVisitStr,
           todayVisits,
@@ -278,6 +281,31 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
 
+  // Load available camera devices when scanner becomes active
+  useEffect(() => {
+    if (showLiveScanner) {
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          if (devices && devices.length > 0) {
+            setCameras(devices);
+            if (!selectedCameraId) {
+              setSelectedCameraId(devices[0].id);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not list cameras:', err);
+        });
+    }
+  }, [showLiveScanner]);
+
+  const handleCycleCamera = () => {
+    if (cameras.length <= 1) return;
+    const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    setSelectedCameraId(cameras[nextIndex].id);
+  };
+
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
 
@@ -285,9 +313,11 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       const element = document.getElementById('live-qr-reader');
       if (element) {
         html5QrCode = new Html5Qrcode('live-qr-reader');
+        const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: 'environment' };
+
         html5QrCode
           .start(
-            { facingMode: 'environment' },
+            cameraConfig,
             { fps: 10, qrbox: { width: 220, height: 220 } },
             (decodedText) => {
               handleMemberSearchChange(decodedText);
@@ -298,8 +328,22 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           )
           .catch((err) => {
             console.error('Live camera start failed:', err);
-            toast.error('Unable to access camera feed.');
-            setShowLiveScanner(false);
+            
+            // Auto-fallback: switch to the next available camera if multiple exist
+            if (cameras.length > 1) {
+              const currentIndex = selectedCameraId
+                ? cameras.findIndex((c) => c.id === selectedCameraId)
+                : -1;
+              const nextIndex = (currentIndex + 1) % cameras.length;
+              const nextCamera = cameras[nextIndex];
+
+              try { html5QrCode?.clear(); } catch (e) {}
+              setSelectedCameraId(nextCamera.id);
+              toast.info(`Camera unavailable. Switching to ${nextCamera.label || 'next camera'}...`);
+            } else {
+              toast.error('Unable to access camera feed.');
+              setShowLiveScanner(false);
+            }
           });
       }
     }
@@ -318,7 +362,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         }
       }
     };
-  }, [showLiveScanner]);
+  }, [showLiveScanner, selectedCameraId]);
 
   const resetForm = () => {
     setMemberSearch('');
@@ -462,11 +506,10 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   };
 
- const derivedBilling = useMemo(() => {
+  const derivedBilling = useMemo(() => {
     let subtotal = 0;
     let title = 'None Selected';
 
-    // 1. Determine subtotal based on selected entry
     if (selectedEntry === 'walkin_regular') {
       subtotal = Number(walkinRegularFee) || 0;
       title = 'Walk-In Regular Pass';
@@ -484,13 +527,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       }
     }
 
-    // 2. Calculate GCash convenience fee
     const convenienceFee = paymentMethod === 'GCash' && subtotal > 0 ? Number(gcashFeeRate) || 0 : 0;
-
-    // 3. Calculate exact total due (subtotal + convenienceFee)
     const totalDue = Math.max(0, subtotal + convenienceFee);
-
-    // 4. Calculate change for cash payments
     const calculatedChange = Math.max(0, (Number(amountReceived) || 0) - totalDue);
 
     return {
@@ -594,7 +632,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
 
   const isFormValid = useMemo(() => {
     if (!selectedClient || !selectedEntry) return false;
-    
     if (duplicateLog && !adminOverride) return false;
 
     if (selectedEntry === 'member_entry' && selectedClient.status) {
@@ -719,6 +756,37 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                       </div>
                     </div>
                   </div>
+
+                  {/* CAMERA SWITCHER CONTROLS */}
+                  {cameras.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 pt-1 max-w-55 mx-auto">
+                      <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1.5 w-full">
+                        <CameraIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <select
+                          value={selectedCameraId}
+                          onChange={(e) => setSelectedCameraId(e.target.value)}
+                          className="w-full bg-transparent text-[10px] font-bold text-slate-200 outline-none cursor-pointer truncate"
+                        >
+                          {cameras.map((cam, idx) => (
+                            <option key={cam.id} value={cam.id} className="bg-zinc-900 text-white">
+                              {cam.label || `Camera ${idx + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {cameras.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleCycleCamera}
+                          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded-xl transition-colors cursor-pointer border border-zinc-700 shrink-0"
+                          title="Switch Camera"
+                        >
+                          <SwitchCamera className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {Capacitor.isNativePlatform() && (
                     <button
@@ -1136,11 +1204,11 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                       <span className="font-bold text-slate-900 dark:text-white">₱{derivedBilling.subtotal.toFixed(2)}</span>
                     </div>
                     {paymentMethod === 'GCash' && derivedBilling.convenienceFee > 0 && (
-    <div className="flex justify-between">
-      <span>Gcacsh Fee:</span>
-      <span className="text-rose-500 font-bold">+₱{derivedBilling.convenienceFee.toFixed(2)}</span>
-    </div>
-  )}
+                      <div className="flex justify-between">
+                        <span>GCash Fee:</span>
+                        <span className="text-rose-500 font-bold">+₱{derivedBilling.convenienceFee.toFixed(2)}</span>
+                      </div>
+                    )}
                     {amountReceived && paymentMethod === 'Cash' && derivedBilling.totalDue > 0 && (
                       <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
                         <span>Calculated Change:</span>

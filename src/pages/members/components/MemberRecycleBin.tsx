@@ -214,14 +214,14 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
-      <div className="relative bg-slate-550 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+      <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
           <h3 className="font-heading tracking-widest uppercase">Member Recycle Bin</h3>
           <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-1 rounded bg-slate-100 dark:bg-neutral-900 border text-slate-400 hover:text-slate-200 cursor-pointer border-none"
-          >
+  type="button" 
+  onClick={onClose} 
+  className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer"
+>
             <X className="w-4.5 h-4.5" />
           </button>
         </div>
@@ -332,10 +332,10 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                     <div
                       onClick={() => !loading && handleRowSelect(item.id)}
                       className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                        isSelected 
-                          ? 'bg-blue-500/10 border-blue-500' 
-                          : 'bg-slate-555 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-(--border-color)'
-                      } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+  isSelected 
+    ? 'bg-blue-500/10 border-blue-500' 
+    : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
+} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="shrink-0" onClick={(e) => e.stopPropagation()}>

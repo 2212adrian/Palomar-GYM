@@ -464,16 +464,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0' 
                       : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
                   } ${
-                    (isExpanded || isChildActive)
-                      ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-md border-transparent font-black' 
-                      : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
+                   (isExpanded || isChildActive)
+  ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+  : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
                   }`}
                   title={collapsed ? item.name : undefined}
                 >
                   <div className="flex items-center gap-3 shrink-0 min-w-0">
-                    <span className={(isExpanded || isChildActive) ? 'text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}>
-                      {item.icon}
-                    </span>
+                    <span className={(isExpanded || isChildActive) ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}>
+  {item.icon}
+</span>
                     {!collapsed && (
                       <span className="whitespace-nowrap font-bold truncate">
                         {item.name}
@@ -501,21 +501,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               to={child.path}
                               className={`block p-3 rounded-xl transition-all duration-200 border ${
                                 isActive 
-                                  ? 'bg-[#123c73]/15 dark:bg-red-500/20 border-[#123c73]/30 dark:border-red-500/50 shadow-xs' 
-                                  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
+  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2.5">
                                   <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
                                     isActive 
-                                      ? 'bg-[#123c73] dark:bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-125' 
-                                      : 'bg-slate-300 dark:bg-slate-600'
+  ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
+  : 'bg-slate-300 dark:bg-slate-600'
                                   }`} />
                                   <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
                                     isActive 
-                                      ? 'text-[#123c73] dark:text-red-400 font-black' 
-                                      : 'text-slate-700 dark:text-slate-300 font-bold'
+  ? 'text-[#123c73] dark:text-white font-black' 
+  : 'text-slate-700 dark:text-slate-300 font-bold'
                                   }`}>
                                     {child.name}
                                   </span>
@@ -530,7 +530,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                               {child.description && (
                                 <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
-                                  isActive ? 'text-[#123c73]/80 dark:text-red-200/80' : 'text-slate-400 dark:text-slate-500'
+                                  isActive ? 'text-[#123c73]/80 dark:text-white/80' : 'text-slate-400 dark:text-slate-500'
                                 }`}>
                                   {child.description}
                                 </p>
@@ -755,12 +755,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => handleParentMenuClick(item, true)}
                         className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
                           isMobileExpanded 
-                            ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-md border-transparent' 
-                            : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
+  ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+  : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className={isMobileExpanded ? 'text-white' : 'text-slate-400'}>
+                          <span className={isMobileExpanded ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400'}>
                             {item.icon}
                           </span>
                           <span className="font-bold">{item.name}</span>
@@ -784,21 +784,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   onClick={() => setMobileOpen(false)}
                                   className={`block p-3 rounded-xl transition-all duration-200 border ${
                                     isActive 
-                                      ? 'bg-[#123c73]/15 dark:bg-red-500/20 border-[#123c73]/30 dark:border-red-500/50 shadow-xs' 
-                                      : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
+  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2.5">
                                       <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
                                         isActive 
-                                          ? 'bg-[#123c73] dark:bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-125' 
-                                          : 'bg-slate-300 dark:bg-slate-600'
+  ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
+  : 'bg-slate-300 dark:bg-slate-600'
                                       }`} />
                                       <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
-                                        isActive 
-                                          ? 'text-[#123c73] dark:text-red-400 font-black' 
-                                          : 'text-slate-700 dark:text-slate-300 font-bold'
+                                       isActive 
+  ? 'text-[#123c73] dark:text-white font-black' 
+  : 'text-slate-700 dark:text-slate-300 font-bold'
                                       }`}>
                                         {child.name}
                                       </span>
@@ -813,7 +813,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                                   {child.description && (
                                     <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
-                                      isActive ? 'text-[#123c73]/80 dark:text-red-200/80' : 'text-slate-400 dark:text-slate-500'
+                                      isActive ? 'text-[#123c73]/80 dark:text-white/80' : 'text-slate-400 dark:text-slate-500'
                                     }`}>
                                       {child.description}
                                     </p>

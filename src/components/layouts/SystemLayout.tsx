@@ -214,7 +214,7 @@ export const SystemLayout: React.FC = () => {
                 : (slideOut ? "translate-x-[250%] scale-x-100" : "translate-x-0 scale-x-100")
             }`}
           >
-            <div className="relative w-full h-full bg-(--bg-page)">
+            <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
               <div 
                 className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-1300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                   (isLoggingOut ? logoutResting : !slideOut) 

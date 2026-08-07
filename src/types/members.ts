@@ -81,8 +81,11 @@ export interface MemberCard {
   status: CardStatus;
   version: number;
   issued_at: string;
+  expires_at?: string;
   replaced_at?: string;
   replacement_reason?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Receipt {

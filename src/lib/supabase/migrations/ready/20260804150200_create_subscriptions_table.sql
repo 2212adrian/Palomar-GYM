@@ -60,12 +60,6 @@ DROP POLICY IF EXISTS "Allow authorized users to update subscriptions" ON public
 CREATE POLICY "Allow authorized users to update subscriptions" ON public.subscriptions
     FOR UPDATE TO authenticated USING (true);
 
-DROP POLICY IF EXISTS "Allow authorized users to delete subscriptions" ON public.subscriptions;
-CREATE POLICY "Allow authorized users to delete subscriptions" ON public.subscriptions
-    FOR DELETE TO authenticated USING (
-        lower(public.get_user_role()) = 'admin' OR auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
-    );
-
 -- Realtime
 DO $$
 BEGIN

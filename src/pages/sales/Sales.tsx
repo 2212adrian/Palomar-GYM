@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
-
+import { Html5Qrcode } from 'html5-qrcode';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 // Supabase & Authentication Stores
@@ -204,6 +204,23 @@ export const Sales: React.FC = () => {
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
+
+  const [showLiveScanner, ] = useState(false);
+  const [, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+
+  useEffect(() => {
+  if (showLiveScanner) {
+    Html5Qrcode.getCameras().then((devices) => {
+      if (devices && devices.length > 0) {
+        setCameras(devices);
+        if (!selectedCameraId) {
+          setSelectedCameraId(devices[0].id);
+        }
+      }
+    }).catch(console.warn);
+  }
+}, [showLiveScanner]);
 
   useEffect(() => {
     if (role !== 'admin') return;

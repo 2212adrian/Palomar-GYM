@@ -35,10 +35,7 @@ import googleIcon from '../../assets/Google_Icon.webp';
 
 const CAROUSEL_IMAGES = [carousel1, carousel2, carousel3, carousel4, carousel5, carousel6];
 const TYPEWRITER_PHRASES = ['SECURE.', 'RELIABLE.', 'STRENGTH.', 'LIMITS.', 'ENDURANCE.', 'CAPACITY.'];
-const APP_VERSION = pkg.version || '0.11.0';
-
-// ─── Hexagon Pattern SVG ─────────────────────────────────────────────────────
-const HEXAGON_PATTERN_URL = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='0.15'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`;
+const APP_VERSION = pkg.version;
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -63,6 +60,47 @@ function getInitialTheme(): 'dark' | 'light' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+// ─── Memoized Typewriter Component ──────────────────────────────────────────
+const TypewriterText: React.FC<{ phrases: string[] }> = React.memo(({ phrases }) => {
+  const [typewriterText, setTypewriterText] = useState<string>('');
+  const [phraseIndex, setPhraseIndex] = useState<number>(0);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  useEffect(() => {
+    const current = phrases[phraseIndex] || phrases[0];
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = () => {
+      if (!isDeleting) {
+        setTypewriterText(current.substring(0, typewriterText.length + 1));
+        if (typewriterText === current) {
+          timer = setTimeout(() => setIsDeleting(true), 2500);
+        } else {
+          timer = setTimeout(tick, 50);
+        }
+      } else {
+        setTypewriterText(current.substring(0, typewriterText.length - 1));
+        if (typewriterText === '') {
+          setIsDeleting(false);
+          setPhraseIndex((p) => (p + 1) % phrases.length);
+        } else {
+          timer = setTimeout(tick, 25);
+        }
+      }
+    };
+
+    timer = setTimeout(tick, isDeleting ? 20 : 50);
+    return () => clearTimeout(timer);
+  }, [typewriterText, isDeleting, phraseIndex, phrases]);
+
+  return (
+    <>
+      <span className="text-blue-500 dark:text-red-600">{typewriterText}</span>
+      <span className="text-blue-500 dark:text-red-600 animate-[blink_0.8s_infinite]">|</span>
+    </>
+  );
+});
+
 export const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,7 +111,6 @@ export const Login: React.FC = () => {
 
   const isPreview = new URLSearchParams(location.search).get('preview') === 'true';
   const [gymConfig, setGymConfig] = useState<any>(null);
-  const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
 
   const activeGymAddress = gymConfig?.gymAddress || '123 Sample Street, Barangay Central, Quezon City, Metro Manila';
   const activeContactName1 = gymConfig?.contactName1 || 'Staff Ryan';
@@ -111,7 +148,7 @@ export const Login: React.FC = () => {
   }, [gymConfig?.carouselImages]);
 
   const activeGymDescription = gymConfig?.gymDescription || 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
-  
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleResize = () => setIsMobile(window.innerWidth < 640);
@@ -195,9 +232,6 @@ export const Login: React.FC = () => {
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
   const [activeSlide, setActiveSlide] = useState<number>(0);
-  const [typewriterText, setTypewriterText] = useState<string>('');
-  const [phraseIndex, setPhraseIndex] = useState<number>(0);
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const carouselBgRef = useRef<HTMLDivElement>(null);
   const mouseCoordinates = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -315,50 +349,29 @@ export const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [location.search, location.state, navigate, isPreview]);
 
+  // Carousel slide timer
   useEffect(() => {
-    if (!isAssetPreloaded) return;
+    if (!isAssetPreloaded || isLoggingIn) return;
     const interval = setInterval(() => {
       setActiveSlide((p) => (p + 1) % activeCarouselImages.length);
     }, 5000);
     return () => clearInterval(interval);
-  }, [gymConfig, activeCarouselImages.length, isAssetPreloaded]);
+  }, [gymConfig, activeCarouselImages.length, isAssetPreloaded, isLoggingIn]);
 
+  // Parallax Effect - Robust multi-mount / refresh fix
   useEffect(() => {
-    if (!isAssetPreloaded) return;
-    const current = TYPEWRITER_PHRASES[phraseIndex];
-    let timer: ReturnType<typeof setTimeout>;
+    if (!initialized || !isReady || !isAssetPreloaded) return;
 
-    const tick = () => {
-      if (!isDeleting) {
-        setTypewriterText(current.substring(0, typewriterText.length + 1));
-        if (typewriterText === current) {
-          timer = setTimeout(() => setIsDeleting(true), 2500);
-        } else {
-          timer = setTimeout(tick, 50);
-        }
-      } else {
-        setTypewriterText(current.substring(0, typewriterText.length - 1));
-        if (typewriterText === '') {
-          setIsDeleting(false);
-          setPhraseIndex((p) => (p + 1) % TYPEWRITER_PHRASES.length);
-        } else {
-          timer = setTimeout(tick, 25);
-        }
-      }
-    };
-
-    timer = setTimeout(tick, isDeleting ? 20 : 50);
-    return () => clearTimeout(timer);
-  }, [typewriterText, isDeleting, phraseIndex, isAssetPreloaded]);
-
-  useEffect(() => {
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
     if (isTouch) return;
 
-    const bg = carouselBgRef.current;
-    if (!bg) return;
-
     const tick = () => {
+      const bg = carouselBgRef.current;
+      if (!bg) {
+        rafId.current = requestAnimationFrame(tick);
+        return;
+      }
+
       const targetX = isHovering.current ? mouseCoordinates.current.x : 0;
       const targetY = isHovering.current ? mouseCoordinates.current.y : 0;
 
@@ -388,33 +401,35 @@ export const Login: React.FC = () => {
       }
     };
 
+    const startAnimation = () => {
+      if (!rafId.current) {
+        rafId.current = requestAnimationFrame(tick);
+      }
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       const x = e.clientX / window.innerWidth - 0.5;
       const y = e.clientY / window.innerHeight - 0.5;
       mouseCoordinates.current = { x, y };
-
-      if (!rafId.current) {
-        rafId.current = requestAnimationFrame(tick);
-      }
+      startAnimation();
     };
 
     const handleMouseEnter = () => {
       isHovering.current = true;
-      if (!rafId.current) {
-        rafId.current = requestAnimationFrame(tick);
-      }
+      startAnimation();
     };
 
     const handleMouseLeave = () => {
       isHovering.current = false;
-      if (!rafId.current) {
-        rafId.current = requestAnimationFrame(tick);
-      }
+      startAnimation();
     };
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     document.addEventListener('mouseenter', handleMouseEnter, { passive: true });
     document.addEventListener('mouseleave', handleMouseLeave, { passive: true });
+
+    // Kick-off animation loop on mount / refresh
+    startAnimation();
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
@@ -422,9 +437,10 @@ export const Login: React.FC = () => {
       document.removeEventListener('mouseleave', handleMouseLeave);
       if (rafId.current) {
         cancelAnimationFrame(rafId.current);
+        rafId.current = null;
       }
     };
-  }, []);
+  }, [initialized, isReady, isAssetPreloaded]);
 
   const triggerShake = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(true);
@@ -809,7 +825,7 @@ export const Login: React.FC = () => {
     </div>
   );
 
-  // ─── CRITICAL FIX: EXCLUDE `user` WHEN `isLoggingIn` IS TRUE ───────────────
+  // Exclude `user` when `isLoggingIn` is true to prevent quick unmount before curtain outro
   if (!isPreview && (!initialized || (user && !isLoggingIn))) {
     return (
       <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
@@ -943,10 +959,6 @@ export const Login: React.FC = () => {
         >
           <div 
             className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7"
-            style={{ 
-              backgroundImage: HEXAGON_PATTERN_URL,
-              backgroundRepeat: 'repeat',
-            }}
           />
 
           {!isMobile ? (
@@ -969,7 +981,7 @@ export const Login: React.FC = () => {
 
         {/* SIBLING 2: RIGHT PANEL (Carousel & Gym Details) */}
         <div 
-          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none ${
+          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
             isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
           } ${isFlipped ? 'carousel-flipped' : ''}`}
           style={{ 
@@ -987,25 +999,16 @@ export const Login: React.FC = () => {
               transform: 'scale(1.12)'
             }}
           >
-            {isAssetPreloaded && activeCarouselImages.map((image: string, index: number) => {
-              const isCurrent = activeSlide === index;
-              const isImgLoaded = loadedImages[image];
-              return (
-                <img
-                  key={index}
-                  src={image}
-                  alt={`Gym view ${index + 1}`}
-                  onLoad={() => setLoadedImages(prev => ({ ...prev, [image]: true }))}
-                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1500 ease-in-out ${
-                    isCurrent && isImgLoaded ? 'opacity-100' : 'opacity-0'
-                  }`}
-                  style={{
-                    willChange: 'opacity',
-                    transitionProperty: 'opacity',
-                  }}
-                />
-              );
-            })}
+            {isAssetPreloaded && activeCarouselImages.map((image: string, index: number) => (
+              <img
+                key={index}
+                src={image}
+                alt={`Gym view ${index + 1}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                  activeSlide === index ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            ))}
           </div>
 
           <div className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2 pointer-events-none" />
@@ -1013,8 +1016,7 @@ export const Login: React.FC = () => {
           <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
             <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
               BEYOND <br />
-              <span className="text-blue-500 dark:text-red-600">{typewriterText}</span>
-              <span className="text-blue-500 dark:text-red-600 animate-[blink_0.8s_infinite]">|</span>
+              <TypewriterText phrases={TYPEWRITER_PHRASES} />
             </h2>
             
             <Card expandable={true} variant="glass" className="max-w-lg h-auto">
@@ -1063,16 +1065,10 @@ export const Login: React.FC = () => {
               isFlipped
                 ? 'translateX(0) scale(1)'
                 : 'translateX(100%) scale(0.95)',
-            transition:
-              'transform 1.2s cubic-bezier(0.77,0,0.175,1), opacity 1.2s cubic-bezier(0.77,0,0.175,1), visibility 1.2s',
           }}
         >
           <div 
             className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.18] dark:opacity-[0.1] dark:invert transition-opacity duration-300 sm:-top-14 sm:left-4 sm:w-[110%] sm:h-[110%] sm:-rotate-7"
-            style={{ 
-              backgroundImage: HEXAGON_PATTERN_URL,
-              backgroundRepeat: 'repeat',
-            }}
           />
 
           {!isMobile ? (
@@ -1095,18 +1091,19 @@ export const Login: React.FC = () => {
       </div>
 
       {/* LOGIN SUCCESS OUTRO CURTAIN */}
-      {isLoggingIn && (
-        <div
-          className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1400ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
-            curtainClosing ? 'translate-x-0' : '-translate-x-[250%]'
-          }`}
-        >
-          <div className="relative w-full h-full bg-[var(--bg-page,#0c0e12)] bg-slate-900 dark:bg-[#0c0e12]">
-            <div className="absolute top-0 right-full h-full w-16 sm:w-32 bg-gradient-to-r from-transparent to-blue-600 dark:to-red-600 opacity-80 blur-xl sm:blur-2xl pointer-events-none" />
-            <div className="absolute top-0 right-0 h-full w-[2px] sm:w-[3px] bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)]" />
-          </div>
-        </div>
-      )}
+{isLoggingIn && (
+  <div
+    className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1400ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+      curtainClosing ? 'translate-x-8' : '-translate-x-[250%]'
+    }`}
+  >
+    <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
+      
+      {/* Leading white/red line that sweeps off-screen */}
+      <div className="absolute top-0 -right-8 h-full w-[2px] sm:w-[3px] bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)]" />
+    </div>
+  </div>
+)}
 
       {/* MODALS */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">

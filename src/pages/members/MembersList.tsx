@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } 
 import { useLocation } from 'react-router-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer
+  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -15,6 +15,7 @@ import type { Column } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { HeaderActionsContext } from '../../routes';
+import { supabase } from '../../lib/supabase/client';
 
 // Import Shared Types
 import type { 
@@ -113,6 +114,19 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   }, []);
 
   useEffect(() => {
+    const channel = supabase
+      .channel('realtime-members-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => fetchMembers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => fetchMembers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => fetchMembers())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchMembers]);
+
+  useEffect(() => {
     fetchMembers();
   }, [fetchMembers, activeTab]);
 
@@ -176,77 +190,176 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     setMobilePage(1);
   }, [searchQuery, activeChip]);
 
-  // Helper getters
+  /**
+   * Resolves currently active subscription for a member where start_date <= now <= end_date
+   */
   const getActiveSubscription = useCallback((memberId: string): Subscription | undefined => {
-    return subscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
+    const now = Date.now();
+    return subscriptions.find((s: Subscription) => {
+      if (s.member_id !== memberId || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      const endMs = new Date(s.end_date).getTime();
+      return startMs <= now && endMs >= now;
+    });
+  }, [subscriptions]);
+
+  /**
+   * Finds any queued/scheduled renewal subscription for a member that starts in the future
+   */
+  const getQueuedSubscription = useCallback((memberId: string): Subscription | undefined => {
+    const now = Date.now();
+    return subscriptions.find((s: Subscription) => {
+      if (s.member_id !== memberId || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      return startMs > now;
+    });
+  }, [subscriptions]);
+
+  /**
+   * Gets the most recent subscription record (active, expired, or scheduled) for details display
+   */
+  const getLatestSubscriptionRecord = useCallback((memberId: string): Subscription | undefined => {
+    const memberSubs = subscriptions
+      .filter((s: Subscription) => s.member_id === memberId && s.status !== 'Voided')
+      .sort((a, b) => new Date(b.created_at || b.start_date).getTime() - new Date(a.created_at || a.start_date).getTime());
+    
+    return memberSubs[0];
   }, [subscriptions]);
 
   const getActiveCard = useCallback((memberId: string): MemberCard | undefined => {
     return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active');
   }, [cards]);
 
-  // Subscription Info Helper for formatting badges consistently
+  // Latest Member Subscription Info Calculation
+  const latestSubscriptionInfo = useMemo(() => {
+    if (!subscriptions.length || !members.length) return null;
+
+    const validSubs = subscriptions.filter(s => s.status !== 'Voided');
+    if (!validSubs.length) return null;
+
+    const sorted = [...validSubs].sort((a, b) => {
+      const timeA = new Date(a.created_at || a.start_date).getTime();
+      const timeB = new Date(b.created_at || b.start_date).getTime();
+      return timeB - timeA;
+    });
+
+    const latestSub = sorted[0];
+    if (!latestSub) return null;
+
+    const member = members.find(m => m.member_id === latestSub.member_id);
+    if (!member) return null;
+
+    const subDate = new Date(latestSub.created_at || latestSub.start_date);
+    const isValidDate = !isNaN(subDate.getTime());
+
+    const dateStr = isValidDate
+      ? subDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : 'N/A';
+    const timeStr = isValidDate
+      ? subDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      : 'N/A';
+
+    return {
+      subscription: latestSub,
+      member,
+      dateStr,
+      timeStr,
+      planName: latestSub.plan_name || (latestSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
+      price: latestSub.price,
+      paymentMethod: latestSub.payment_method
+    };
+  }, [subscriptions, members]);
+
+  // Subscription Details Formatter
   const getSubscriptionDetails = useCallback((memberId: string) => {
-    const sub = getActiveSubscription(memberId);
-    if (!sub) {
+    const activeSub = getActiveSubscription(memberId);
+    const queuedSub = getQueuedSubscription(memberId);
+    const latestSub = getLatestSubscriptionRecord(memberId);
+
+    if (!activeSub && !latestSub) {
       return {
         hasSub: false,
+        canRenew: true,
         planName: 'Profile Only',
-        statusLabel: 'No active contract',
+        statusLabel: 'No Active Contract',
         badgeStyle: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
-        dotColor: 'bg-slate-400'
+        dotColor: 'bg-slate-400',
+        subscribedAt: null,
+        queuedPlan: null
       };
     }
-    
-    const end = new Date(sub.end_date);
-    const now = new Date();
-    const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    const targetSub = activeSub || latestSub!;
+    const endMs = new Date(targetSub.end_date).getTime();
+    const now = Date.now();
+    const isPast = !isNaN(endMs) && endMs < now;
+
+    // 1. EXPIRED CONTRACT STATE
+    if (isPast) {
+  return {
+    hasSub: false,
+    canRenew: true,
+    planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
+    statusLabel: 'Expired',
+    badgeStyle: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 font-bold',
+    dotColor: 'bg-rose-500',
+    subscribedAt: targetSub.start_date ? new Date(targetSub.start_date).toLocaleDateString() : null,
+    queuedPlan: null
+  };
+}
+
+    // 2. TRULY ACTIVE CONTRACT STATE
+    const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
     
     let badgeStyle = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-    let statusLabel = `${diffDays} Days left`;
+    let statusLabel = `${diffDays} Days remaining`;
     let dotColor = 'bg-emerald-500';
 
-    if (diffDays <= 0) {
-      badgeStyle = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
-      statusLabel = 'Expires Today';
-      dotColor = 'bg-rose-500';
-    } else if (diffDays <= 3) {
+    if (diffDays <= 3) {
       badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
       statusLabel = `${diffDays} Days Left (Renew)`;
       dotColor = 'bg-amber-500';
     } else if (diffDays <= 7) {
       badgeStyle = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-      statusLabel = '7 Days Left';
+      statusLabel = `${diffDays} Days Left`;
       dotColor = 'bg-amber-500';
-    } else if (diffDays > 30) {
-      const months = Math.floor(diffDays / 30);
-      const remDays = diffDays % 30;
-      statusLabel = remDays === 0 ? `${months} Mon left` : `${months}m ${remDays}d left`;
     }
+
+    const subDate = new Date(targetSub.created_at || targetSub.start_date);
+    const dateFormatted = !isNaN(subDate.getTime())
+      ? `${subDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : null;
 
     return {
       hasSub: true,
-      planName: sub.plan_name,
+      canRenew: diffDays <= 30 && !queuedSub, // Can renew if <= 30 days left and no queued plan yet
+      planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
       statusLabel,
       badgeStyle,
-      dotColor
+      dotColor,
+      subscribedAt: dateFormatted,
+      queuedPlan: queuedSub ? (queuedSub.plan_name || (queuedSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')) : null
     };
-  }, [getActiveSubscription]);
+  }, [getActiveSubscription, getQueuedSubscription, getLatestSubscriptionRecord]);
 
   // Metric Calculations
   const stats = useMemo(() => {
-    const now = new Date();
+    const now = Date.now();
     
     let activeSubsCount = 0;
     let expiringSoonCount = 0;
 
     subscriptions.forEach((s: Subscription) => {
-      if (s.status === 'Active') {
-        activeSubsCount++;
-        const end = new Date(s.end_date);
-        const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays >= 0 && diffDays <= 7) {
-          expiringSoonCount++;
+      if (s.status !== 'Voided') {
+        const startMs = new Date(s.start_date).getTime();
+        const endMs = new Date(s.end_date).getTime();
+
+        if (startMs <= now && endMs >= now) {
+          activeSubsCount++;
+          const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0 && diffDays <= 7) {
+            expiringSoonCount++;
+          }
         }
       }
     });
@@ -261,7 +374,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   // Chip Filter Counts
   const chipCounts = useMemo(() => {
-    const now = new Date();
+    const now = Date.now();
+
     return {
       all: members.length,
       suspended: members.filter(m => m.status === 'Suspended').length,
@@ -269,13 +383,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       expiring: members.filter(m => {
         const sub = getActiveSubscription(m.member_id);
         if (!sub) return false;
-        const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24));
         return diffDays >= 0 && diffDays <= 7;
       }).length,
       expired: members.filter(m => {
-        const hasActive = !!getActiveSubscription(m.member_id);
-        const hasExpiredSub = subscriptions.some((s: Subscription) => s.member_id === m.member_id && s.status === 'Expired');
-        return !hasActive && hasExpiredSub;
+        const activeSub = getActiveSubscription(m.member_id);
+        if (activeSub) return false; // If has active sub, not expired
+        const latestSub = getLatestSubscriptionRecord(m.member_id);
+        if (!latestSub) return false;
+        return new Date(latestSub.end_date).getTime() < now;
       }).length,
       has_card: members.filter(m => {
         const card = getActiveCard(m.member_id);
@@ -286,12 +402,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         return !card || card.card_type === 'None';
       }).length,
     };
-  }, [members, subscriptions, getActiveSubscription, getActiveCard]);
+  }, [members, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
 
   // Filtered Members
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const now = new Date();
+    const now = Date.now();
 
     return members.filter((m: Member) => {
       const fullName = (m.full_name || '').toLowerCase();
@@ -315,13 +431,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         case 'expiring': {
           const sub = getActiveSubscription(m.member_id);
           if (!sub) return false;
-          const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24));
           return diffDays >= 0 && diffDays <= 7;
         }
         case 'expired': {
-          const hasActive = !!getActiveSubscription(m.member_id);
-          const hasExpiredSub = subscriptions.some((s: Subscription) => s.member_id === m.member_id && s.status === 'Expired');
-          return !hasActive && hasExpiredSub;
+          const activeSub = getActiveSubscription(m.member_id);
+          if (activeSub) return false;
+          const latestSub = getLatestSubscriptionRecord(m.member_id);
+          if (!latestSub) return false;
+          return new Date(latestSub.end_date).getTime() < now;
         }
         case 'has_card': {
           const card = getActiveCard(m.member_id);
@@ -336,7 +454,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           return true;
       }
     });
-  }, [members, searchQuery, activeChip, subscriptions, getActiveSubscription, getActiveCard]);
+  }, [members, searchQuery, activeChip, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
 
   // Mobile Paginated Slice
   const totalMobilePages = Math.ceil(filteredMembers.length / itemsPerPage) || 1;
@@ -448,12 +566,29 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       },
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
+        const isLatest = latestSubscriptionInfo?.member.id === item.id;
+
         return (
           <div className="text-left leading-tight space-y-1">
-            <span className="font-sans font-bold text-xs block text-(--color-text)">{subInfo.planName}</span>
-            <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
-              {subInfo.statusLabel}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-sans font-bold text-xs block text-(--color-text)">{subInfo.planName}</span>
+              {isLatest && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
+                  <Sparkles className="w-2.5 h-2.5 text-emerald-500" /> Latest
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
+                {subInfo.statusLabel}
+              </span>
+              {subInfo.queuedPlan && (
+                <span className="inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" title="Queued renewal after current plan expires">
+                  Queued: {subInfo.queuedPlan}
+                </span>
+              )}
+            </div>
           </div>
         );
       }
@@ -520,14 +655,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       header: 'Actions',
       cellClassName: 'text-right min-w-[180px]',
       render: (item) => {
-        const hasActiveSub = !!getActiveSubscription(item.member_id);
+        const subInfo = getSubscriptionDetails(item.member_id);
 
         return (
           <div 
             className="opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 flex items-center justify-end gap-1.5 select-none relative"
             onClick={(e) => e.stopPropagation()}
           >
-            {!hasActiveSub && (
+            {subInfo.canRenew && (
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
@@ -535,9 +670,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   setIsWizardOpen(true);
                 }}
                 className="p-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg cursor-pointer border border-emerald-500/20 inline-flex items-center gap-1 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-                title="Enroll member into a subscription contract"
+                title="Enroll or renew member subscription contract"
               >
-                <CreditCard className="w-3.5 h-3.5" /> Subscribe
+                <CreditCard className="w-3.5 h-3.5" /> {subInfo.hasSub ? 'Renew' : 'Subscribe'}
               </button>
             )}
             
@@ -547,7 +682,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 setSelectedProfileMember(item);
               }}
               className="p-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg cursor-pointer border border-blue-500/20 inline-flex items-center gap-1 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-              title="See more details"
+              title="See profile details"
             >
               <Eye className="w-3.5 h-3.5" /> Profile
             </button>
@@ -821,6 +956,70 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   </div>
                 </div>
 
+                {/* 🌟 MOST RECENT SUBSCRIBER HIGHLIGHT CARD */}
+                {latestSubscriptionInfo && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-gradient-to-r from-blue-900/15 via-(--bg-card) to-emerald-900/10 border border-blue-500/20 dark:border-blue-500/30 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 select-none group"
+                  >
+                    <div className="absolute -right-10 -bottom-10 w-36 h-36 bg-blue-500/10 dark:bg-red-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500" />
+
+                    <div className="flex items-center gap-3.5 min-w-0 relative z-10">
+                      {/* Pulsing Avatar */}
+                      <div className="relative shrink-0">
+                        <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-gradient-to-br from-[#123c73] to-blue-600 dark:from-[#bf0202] dark:to-red-700 text-white flex items-center justify-center font-heading text-base font-black shadow-md">
+                          {(latestSubscriptionInfo.member.full_name || 'M')[0]}
+                        </div>
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-(--bg-card)"></span>
+                        </span>
+                      </div>
+
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            <Sparkles className="w-3 h-3 text-emerald-500" /> MOST RECENT SUBSCRIBER
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {latestSubscriptionInfo.member.member_id}
+                          </span>
+                        </div>
+
+                        <h3 className="font-heading font-bold text-sm md:text-base text-(--color-text) truncate">
+                          {latestSubscriptionInfo.member.full_name}
+                        </h3>
+
+                        <div className="flex items-center gap-2.5 text-[11px] font-medium text-slate-400 flex-wrap">
+                          <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            <Award className="w-3.5 h-3.5" />
+                            {latestSubscriptionInfo.planName}
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            ₱{latestSubscriptionInfo.price?.toLocaleString()}
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono flex items-center gap-1 text-(--color-text)">
+                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                            {latestSubscriptionInfo.dateStr} at <strong className="text-amber-600 dark:text-amber-400 font-bold">{latestSubscriptionInfo.timeStr}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProfileMember(latestSubscriptionInfo.member)}
+                      className="w-full md:w-auto px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border border-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 relative z-10 active:scale-95"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>View Member</span>
+                    </button>
+                  </motion.div>
+                )}
+
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
                 <div className="space-y-3 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
                   
@@ -993,7 +1192,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         const isSelected = selectedMemberIds.includes(member.id);
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
-                        const hasActiveSub = subInfo.hasSub;
+                        const isLatest = latestSubscriptionInfo?.member.id === member.id;
 
                         return (
                           <div
@@ -1025,9 +1224,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                 </div>
 
                                 <div className="min-w-0">
-                                  <h3 className="font-heading font-bold text-sm text-(--color-text) truncate leading-tight">
-                                    {member.full_name}
-                                  </h3>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h3 className="font-heading font-bold text-sm text-(--color-text) truncate leading-tight">
+                                      {member.full_name}
+                                    </h3>
+                                    {isLatest && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-500" /> Latest Sub
+                                      </span>
+                                    )}
+                                  </div>
                                   <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate">
                                     {member.member_id}
                                   </span>
@@ -1050,9 +1256,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                               <div className="space-y-1">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">PLAN</span>
                                 <span className="font-bold text-xs text-(--color-text) block truncate">{subInfo.planName}</span>
-                                <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
-                                  {subInfo.statusLabel}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
+                                    {subInfo.statusLabel}
+                                  </span>
+                                  {subInfo.queuedPlan && (
+                                    <span className="inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                                      Queued: {subInfo.queuedPlan}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
                               <div className="space-y-1 text-right">
@@ -1104,7 +1317,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                 <span>Profile</span>
                               </button>
 
-                              {!hasActiveSub && (
+                              {subInfo.canRenew && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1115,7 +1328,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                   className="flex-1 min-h-[44px] px-3 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-emerald-500/20 transition-colors"
                                 >
                                   <CreditCard className="w-4 h-4" />
-                                  <span>Subscribe</span>
+                                  <span>{subInfo.hasSub ? 'Renew' : 'Subscribe'}</span>
                                 </button>
                               )}
 
@@ -1181,38 +1394,38 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       )}
 
     {/* 1. DESKTOP / TABLET FLOATING MULTI-SELECT BAR */}
-{isSelectionActive && (
-  <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
-    <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
-            <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
-              {selectedMemberIds.length}
-            </span>
-            <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
-              Selected
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowBatchCardModal(true)}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Member Cards</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedMemberIds([])}
-              className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
-              title="Clear selection"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+    {isSelectionActive && (
+      <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
+        <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
+          <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
+            {selectedMemberIds.length}
+          </span>
+          <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
+            Selected
+          </span>
         </div>
-      )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowBatchCardModal(true)}
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print Member Cards</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedMemberIds([])}
+            className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+            title="Clear selection"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    )}
 
       {/* 2. MOBILE MULTI-SELECT BOTTOM ACTION SHEET (< MD) */}
       <AnimatePresence>
@@ -1322,30 +1535,30 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             </AnimatePresence>
           </div>
 
-          {/* Floating Mobile Bottom Directory Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
-<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
-  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-    <div className="flex items-center gap-1.5">
-      <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
-      <span>{stats.total} Members</span>
-    </div>
-    <span className="text-slate-300 dark:text-zinc-700">•</span>
-    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-      <UserCheck className="w-4 h-4" />
-      <span>{stats.activeSubscriptions} Active</span>
-    </div>
-  </div>
+          {/* Floating Mobile Bottom Directory Bar */}
+          <div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+              <div className="flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
+                <span>{stats.total} Members</span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <UserCheck className="w-4 h-4" />
+                <span>{stats.activeSubscriptions} Active</span>
+              </div>
+            </div>
 
-  <motion.button
-    type="button"
-    whileTap={{ scale: 0.9 }}
-    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-    title="Quick Actions"
-  >
-    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-  </motion.button>
-</div>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+              title="Quick Actions"
+            >
+              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+            </motion.button>
+          </div>
         </>
       )}
 
@@ -1413,21 +1626,19 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   <span>Digital QR Security Badge</span>
                 </button>
 
-                {!getActiveSubscription(mobileActionSheetMember.member_id) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = mobileActionSheetMember;
-                      setMobileActionSheetMember(null);
-                      setWizardPrefillMember(target);
-                      setIsWizardOpen(true);
-                    }}
-                    className="w-full p-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Enroll In Subscription Contract</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = mobileActionSheetMember;
+                    setMobileActionSheetMember(null);
+                    setWizardPrefillMember(target);
+                    setIsWizardOpen(true);
+                  }}
+                  className="w-full p-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Enroll or Renew Subscription</span>
+                </button>
 
                 <button
                   type="button"

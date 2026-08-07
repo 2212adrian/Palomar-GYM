@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
-  Download, Printer, ChevronDown, ChevronUp, Info
+  Download, Printer, ChevronDown, ChevronUp, Info, Loader2, Camera, SwitchCamera
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -133,7 +133,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     onChange(null);
   };
 
-  // READ-ONLY DISPLAY with On-Demand Image Loading (0 Egress by Default)
+  // READ-ONLY DISPLAY
   if (readOnly) {
     const [showImage, setShowImage] = useState(false);
 
@@ -171,7 +171,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     );
   }
 
-  // INTERACTIVE DRAWING CANVAS (Used for Manual Entry)
+  // INTERACTIVE DRAWING CANVAS
   return (
     <div className="space-y-1 select-none text-left">
       <div className="flex justify-between items-center">
@@ -243,8 +243,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillData,
   prefillMember
 }) => {
-  // Directly default to Step 2 when prefillData (Queue Approval) is provided
   const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : (prefillData ? 2 : 1));
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [, setShowSignatures] = useState<boolean>(false);
   const [showClientDetails, setShowClientDetails] = useState<boolean>(true);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
@@ -310,6 +310,34 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   // SCAN DEBOUNCE REFS
   const lastScanTimeRef = useRef<number>(0);
   const lastScannedIdRef = useRef<string>('');
+  
+  // Camera Device States
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+
+  // Fetch available video input devices
+  useEffect(() => {
+    if (isOpen && intakeMode === 'Import' && isScanning) {
+      Html5Qrcode.getCameras().then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+          if (!selectedCameraId) {
+            setSelectedCameraId(devices[0].id);
+          }
+        }
+      }).catch((err) => {
+        console.warn("Could not retrieve camera list:", err);
+      });
+    }
+  }, [isOpen, intakeMode, isScanning]);
+
+  const handleCycleCamera = () => {
+    if (cameras.length <= 1) return;
+    const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    forceStopCamera();
+    setSelectedCameraId(cameras[nextIndex].id);
+  };
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [gcashReference, setGcashReference] = useState('');
@@ -327,9 +355,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const isBirthdayLocked = Boolean(activeMember?.birthday?.trim());
   const isAddressLocked = Boolean(activeMember?.address?.trim());
   const isEmergencyNameLocked = Boolean(activeMember?.emergency_contact_name?.trim());
+  const isRelationshipLocked = Boolean(activeMember?.relationship?.trim());
   const isEmergencyPhoneLocked = Boolean(activeMember?.emergency_contact_phone && activeMember.emergency_contact_phone.trim() && activeMember.emergency_contact_phone.toLowerCase() !== 'no phone');
 
-  // Check if a field is currently empty for an attached member
   const isMissing = (val: string) => Boolean(activeMember) && (!val || !val.trim() || val.trim().toLowerCase() === 'no phone');
 
   // Search results for member lookup input
@@ -342,10 +370,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       (m.phone && m.phone.includes(q))
     );
   }, [memberSearchQuery, allMembers]);
-
-  const getActiveSubscriptionForMember = (memberId: string): Subscription | undefined => {
-    return allSubscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
-  };
 
   const getCombinedFullName = () => {
     const mi = middleInitials.trim() ? ` ${middleInitials.trim()}.` : '';
@@ -503,10 +527,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }) || null;
   }, [phone, selectedExistingMember, prefillMember, allMembers]);
 
+  // Retrieve currently active subscription for target member
   const matchActiveSub = useMemo(() => {
     const target = selectedExistingMember || prefillMember || existingMemberMatch;
     if (!target) return undefined;
-    return getActiveSubscriptionForMember(target.member_id);
+    const now = Date.now();
+    return allSubscriptions.find((s: Subscription) => {
+      if (s.member_id !== target.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      const endMs = new Date(s.end_date).getTime();
+      return startMs <= now && endMs >= now;
+    });
+  }, [selectedExistingMember, prefillMember, existingMemberMatch, allSubscriptions]);
+
+  // Retrieve any queued renewal subscription for target member
+  const matchQueuedSub = useMemo(() => {
+    const target = selectedExistingMember || prefillMember || existingMemberMatch;
+    if (!target) return undefined;
+    const now = Date.now();
+    return allSubscriptions.find((s: Subscription) => {
+      if (s.member_id !== target.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      return startMs > now;
+    });
   }, [selectedExistingMember, prefillMember, existingMemberMatch, allSubscriptions]);
 
   const calculatedAge = useMemo(() => {
@@ -528,6 +571,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const clean = gcashReference.trim();
     return clean.length >= 10 && /^\d+$/.test(clean);
   }, [gcashReference]);
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (step === 1 && intakeMode === 'Manual') {
+      handleStep1Next();
+    } else if (step === 2 && !isConfirmDisabled && !isSubmitting) {
+      handleExecuteCheckout();
+    }
+  };
 
   // STEP 1: APPLICANT VALIDATION STATUS SUMMARY
   const applicantStatusSummary = useMemo(() => {
@@ -585,7 +637,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     };
   }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember]);
 
-  // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY
+  // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY (WITH 30-DAY EXTENSION QUEUE LOGIC)
   const membershipStatusSummary = useMemo(() => {
     if (selectedPlan === 'No Subscription') {
       return {
@@ -596,16 +648,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       };
     }
 
-    if (matchActiveSub) {
-      const expDate = matchActiveSub.end_date 
-        ? new Date(matchActiveSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    // 1. Check if a renewal contract is ALREADY queued for the future
+    if (matchQueuedSub) {
+      const queueStartDate = matchQueuedSub.start_date 
+        ? new Date(matchQueuedSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : 'N/A';
 
       return {
         level: 'red' as const,
         isBlocked: true,
-        title: 'Registration Cannot Continue',
-        description: `This member already has an active ${matchActiveSub.plan_name} contract (Expires: ${expDate}). A member cannot have two active memberships at the same time.`
+        title: 'Renewal Already Queued',
+        description: `This member already has a renewal plan (${matchQueuedSub.plan_name}) scheduled to start on ${queueStartDate}. Multiple queued renewals are not allowed.`
+      };
+    }
+
+    // 2. Check if member currently has an ACTIVE subscription
+    if (matchActiveSub) {
+      const expDate = matchActiveSub.end_date 
+        ? new Date(matchActiveSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'N/A';
+
+      const now = Date.now();
+      const endMs = new Date(matchActiveSub.end_date).getTime();
+      const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
+
+      // RED BLOCKING ERROR: Active subscription has MORE than 30 days left
+      if (diffDays > 30) {
+        return {
+          level: 'red' as const,
+          isBlocked: true,
+          title: 'Registration Cannot Continue',
+          description: `This member currently has an active ${matchActiveSub.plan_name} contract expiring on ${expDate} (${diffDays} days remaining). Subscription renewal or plan change is permitted only within 30 days of expiration.`
+        };
+      }
+
+      // YELLOW WARNING: Active subscription has 30 DAYS OR LESS left -> ALLOW EXTENSION QUEUE!
+      const isSamePlan = selectedPlan === matchActiveSub.plan_name;
+      const actionText = isSamePlan ? 'extend' : 'queue';
+
+      return {
+        level: 'amber' as const,
+        isBlocked: false,
+        title: 'Subscription Extension Notice',
+        description: `Member currently has an active ${matchActiveSub.plan_name} contract expiring on ${expDate} (${diffDays} days left). Confirming checkout will ${actionText} the new ${selectedPlan} to activate automatically on ${expDate}.`
       };
     }
 
@@ -615,7 +700,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       title: 'Membership Ready',
       description: `${selectedPlan} selected. This member is eligible for registration.`
     };
-  }, [selectedPlan, matchActiveSub]);
+  }, [selectedPlan, matchActiveSub, matchQueuedSub]);
 
   const populateRegistrationData = (reg: OnlineRegistration) => {
     setImportedQueueReg(reg);
@@ -647,7 +732,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Direct to Step 2 if prefilled from Queue Approval
       const startingStep = initialStep !== undefined ? initialStep : (prefillData ? 2 : 1);
       setStep(startingStep);
       setShowClientDetails(true);
@@ -746,6 +830,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         const parsed = JSON.parse(cleanId);
         if (parsed.registrationId) {
           cleanId = parsed.registrationId;
+        } else if (parsed.memberId || parsed.member_id) {
+          cleanId = parsed.memberId || parsed.member_id;
         }
       }
     } catch {
@@ -754,7 +840,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     cleanId = cleanId.toUpperCase().trim();
 
-    // 2.5 second cooldown & deduplication check
     const now = Date.now();
     if (lastScannedIdRef.current === cleanId && (now - lastScanTimeRef.current) < 2500) {
       return;
@@ -763,33 +848,65 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     lastScannedIdRef.current = cleanId;
     lastScanTimeRef.current = now;
 
+    // 1. CHECK Online Pre-Registration Queue
     const list = await registrationService.getQueue();
-    const found = list.find((q: OnlineRegistration) => q.id.toUpperCase() === cleanId);
+    const foundReg = list.find((q: OnlineRegistration) => q.id.toUpperCase() === cleanId);
 
-    if (!found) {
-      toast.error(`Registration ID ${cleanId} not found.`, {
-        toastId: `scan-not-found-${cleanId}`
-      });
+    if (foundReg) {
+      if (foundReg.status !== 'Pending') {
+        toast.warning(`Registration ID ${cleanId} has already been ${foundReg.status.toLowerCase()}.`, {
+          toastId: `scan-status-${cleanId}`
+        });
+        return;
+      }
+
+      forceStopCamera();
+      setIsScanning(false);
+      populateRegistrationData(foundReg);
+      toast.success(`Validated Profile: ${foundReg.full_name}`, { toastId: `scan-success-${cleanId}` });
+      setIntakeMethod('Manual');
+      setStep(2);
       return;
     }
 
-    if (found.status !== 'Pending') {
-      toast.warning(`Registration ID ${cleanId} has already been ${found.status.toLowerCase()}.`, {
-        toastId: `scan-status-${cleanId}`
-      });
+    // 2. CHECK Existing Database Members
+    const foundMember = allMembers.find(
+      (m: Member) => m.member_id.toUpperCase() === cleanId || m.id.toUpperCase() === cleanId
+    );
+
+    if (foundMember) {
+      forceStopCamera();
+      setIsScanning(false);
+      handleSelectExistingMember(foundMember);
+      toast.success(`Attached Existing Member: ${foundMember.full_name}`, { toastId: `scan-member-success-${cleanId}` });
+      setIntakeMethod('Manual');
+      setStep(2);
       return;
     }
 
-    // Stop scanning immediately upon valid ID
-    forceStopCamera();
-    setIsScanning(false);
-
-    populateRegistrationData(found);
-    toast.success(`Validated Profile: ${found.full_name}`, {
-      toastId: `scan-success-${cleanId}`
+    // 3. FALLBACK
+    toast.error(`ID "${cleanId}" not found in pre-registrations or existing member profiles.`, {
+      toastId: `scan-not-found-${cleanId}`
     });
-    setIntakeMethod('Manual');
-    setStep(2);
+  };
+
+  const getCameraErrorMessage = (err: any): string => {
+    const msg = typeof err === 'string' ? err : err?.message || String(err || '');
+    const lower = msg.toLowerCase();
+
+    if (lower.includes('notallowederror') || lower.includes('permission denied') || lower.includes('permission')) {
+      return 'Permission denied by browser settings';
+    }
+    if (lower.includes('notreadableerror') || lower.includes('in use') || lower.includes('busy') || lower.includes('trackstart')) {
+      return 'Camera is busy or used by another app';
+    }
+    if (lower.includes('notfounderror') || lower.includes('no camera') || lower.includes('device missing')) {
+      return 'Camera hardware not found';
+    }
+    if (lower.includes('overconstrainederror') || lower.includes('constraint')) {
+      return 'Camera resolution or format unsupported';
+    }
+    return msg || 'Camera initialization failed';
   };
 
   useEffect(() => {
@@ -805,8 +922,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           html5QrCode = new Html5Qrcode(qrRegionId);
           scannerRef.current = html5QrCode;
 
+          const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: "environment" };
+
           html5QrCode.start(
-            { facingMode: "environment" },
+            cameraConfig,
             { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
             (decodedText) => {
               handleValidateId(decodedText.trim());
@@ -814,17 +933,30 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             () => {}
           )
           .then(() => {
-            if (isCancelled) {
-              forceStopCamera();
-            }
+            if (isCancelled) forceStopCamera();
           })
           .catch((err) => {
             if (!isCancelled) {
               console.error("Camera access failed", err);
-              toast.error("Camera access denied or device is busy.", {
-                toastId: "camera-denied"
-              });
-              setIsScanning(false);
+              const reason = getCameraErrorMessage(err);
+
+              if (cameras.length > 1) {
+                const currentIndex = selectedCameraId 
+                  ? cameras.findIndex(c => c.id === selectedCameraId) 
+                  : -1;
+                const nextIndex = (currentIndex + 1) % cameras.length;
+                const nextCamera = cameras[nextIndex];
+
+                forceStopCamera();
+                setSelectedCameraId(nextCamera.id);
+                
+                toast.info(`Camera unavailable (${reason}). Switching to ${nextCamera.label || 'next camera'}...`, {
+                  toastId: "camera-switch-auto"
+                });
+              } else {
+                toast.error(`Camera Error: ${reason}`, { toastId: "camera-denied" });
+                setIsScanning(false);
+              }
             }
           });
         } catch (e) {
@@ -838,7 +970,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         forceStopCamera();
       };
     }
-  }, [isOpen, isScanning, step, intakeMode]);
+  }, [isOpen, isScanning, step, intakeMode, selectedCameraId, cameras]);
 
   const validateStep1 = () => {
     const newErrors: Record<string, string> = {};
@@ -849,7 +981,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
 
     if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required.';
-    if (!relationship.trim()) newErrors.relationship = 'Relationship is required.';
+    if (!relationship.trim() || relationship === 'Select Relationship *') {
+      newErrors.relationship = 'Relationship is required.';
+    }
     if (!emergencyPhone.trim()) newErrors.emergencyPhone = 'Emergency phone is required.';
 
     if (isMinor) {
@@ -886,6 +1020,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   };
 
   const handleExecuteCheckout = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       if (membershipStatusSummary.isBlocked) {
         toast.error(membershipStatusSummary.description);
@@ -976,6 +1113,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setStep(3);
     } catch (err: any) {
       toast.error(err.message || 'System error during wizard checkout.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1008,7 +1147,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-120 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
-      <div className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col">
+      <form onSubmit={handleFormSubmit} className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col">
         
         {/* Progress Bar Header */}
         <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-800 relative select-none shrink-0">
@@ -1030,6 +1169,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             </h3>
           </div>
           <button 
+            type="button"
             onClick={handleModalClose} 
             className="p-1.5 rounded-xl bg-slate-200 dark:bg-neutral-800 hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer border border-slate-300 dark:border-neutral-700"
           >
@@ -1088,6 +1228,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3 flex flex-col items-center">
+                  
+                  {/* CAMERA FRAME */}
                   <div className="relative w-full aspect-square max-w-65 rounded-2xl overflow-hidden bg-black border border-white/10 flex items-center justify-center">
                     <div id={qrRegionId} className="w-full h-full" />
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -1099,6 +1241,40 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* CAMERA CONTROLS */}
+                  {cameras.length > 0 && (
+                    <div className="w-full max-w-65 flex items-center justify-between gap-2">
+                      <div className="hidden sm:flex items-center gap-1.5 w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl px-2.5 py-1.5 shadow-xs">
+                        <Camera className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <select
+                          value={selectedCameraId}
+                          onChange={(e) => {
+                            forceStopCamera();
+                            setSelectedCameraId(e.target.value);
+                          }}
+                          className="w-full bg-transparent text-[10px] font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer truncate"
+                        >
+                          {cameras.map((cam, idx) => (
+                            <option key={cam.id} value={cam.id} className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-white">
+                              {cam.label || `Camera ${idx + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleCycleCamera}
+                        disabled={cameras.length <= 1}
+                        className="flex sm:hidden w-full py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-zinc-700 cursor-pointer"
+                      >
+                        <SwitchCamera className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Switch Camera ({cameras.length})</span>
+                      </button>
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-slate-600 dark:text-slate-400 text-center font-semibold animate-pulse leading-none">
                     Position the lobby QR badge within camera frame
                   </p>
@@ -1169,27 +1345,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-48 overflow-y-auto space-y-1 z-30 relative">
                       {matchingSearchMembers.length > 0 ? (
                         matchingSearchMembers.map((m: Member) => {
-                          const activeSub = getActiveSubscriptionForMember(m.member_id);
-                          const isSubscribed = !!activeSub;
-
                           return (
                             <div
                               key={m.id}
                               onClick={() => {
-                                if (isSubscribed) {
-                                  toast.warning(`"${m.full_name}" already has an active ${activeSub.plan_name} contract.`, {
-                                    toastId: `sub-exists-${m.id}`
-                                  });
-                                  return;
-                                }
                                 handleSelectExistingMember(m);
                                 setMemberSearchQuery('');
                               }}
-                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
-                                isSubscribed 
-                                  ? 'bg-slate-100/50 dark:bg-zinc-950/50 border-slate-200 dark:border-zinc-800/60 opacity-60 cursor-not-allowed' 
-                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 cursor-pointer'
-                              }`}
+                              className="p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 cursor-pointer"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-xs shrink-0">
@@ -1204,15 +1367,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               </div>
 
                               <div className="shrink-0">
-                                {isSubscribed ? (
-                                  <span className="text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
-                                    ACTIVE: {activeSub.plan_name}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                                    Select Profile
-                                  </span>
-                                )}
+                                <span className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                                  Select Profile
+                                </span>
                               </div>
                             </div>
                           );
@@ -1383,7 +1540,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               </div>
 
-              {/* Phone with Contextual Helper Notice */}
+              {/* Phone */}
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                   <span>Contact Phone <span className="text-red-500">*</span></span>
@@ -1410,7 +1567,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   placeholder="0917XXXXXXX" 
                 />
                 
-                {/* Field-level Notice for Shared Phone */}
                 {phoneMatchMember && !selectedExistingMember && (
                   <div className="flex items-center justify-between text-[9px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
                     <span className="flex items-center gap-1">
@@ -1449,7 +1605,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </select>
               </div>
 
-              {/* Birthday & Age Policy */}
+              {/* Birthday */}
               <div className="grid grid-cols-2 gap-2 col-span-1">
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
@@ -1542,15 +1698,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Relationship *</label>
                 <select 
                   value={relationship} 
-                  disabled={isEmergencyNameLocked}
+                  disabled={isRelationshipLocked}
                   onChange={e => {
                     setRelationship(e.target.value);
                     if (errors.relationship) setErrors(prev => ({ ...prev, relationship: '' }));
                   }} 
-                  className="w-full p-2.5 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-xl text-xs text-slate-900 dark:text-white outline-none cursor-pointer font-medium"
+                  className={`w-full p-2.5 rounded-xl text-xs outline-none font-medium transition-colors ${
+                    !relationship || errors.relationship 
+                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 cursor-pointer' 
+                      : isRelationshipLocked
+                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
+                  }`}
                 >
                   <option value="">Select Relationship *</option>
-                  
                   <optgroup label="Immediate Family">
                     <option value="Mother">Mother</option>
                     <option value="Father">Father</option>
@@ -1562,7 +1723,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     <option value="Son">Son</option>
                     <option value="Daughter">Daughter</option>
                   </optgroup>
-
                   <optgroup label="Extended Family">
                     <option value="Grandmother">Grandmother</option>
                     <option value="Grandfather">Grandfather</option>
@@ -1571,7 +1731,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     <option value="Cousin">Cousin</option>
                     <option value="Relative">Other Relative</option>
                   </optgroup>
-
                   <optgroup label="Guardian & Other">
                     <option value="Legal Guardian">Legal Guardian</option>
                     <option value="Friend / Colleague">Friend / Colleague</option>
@@ -1603,7 +1762,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
               </div>
 
-              {/* Digital Signatures (Completely Standalone) */}
+              {/* Digital Signatures */}
               {Boolean(applicantSig || parentSig) && (
                 <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
                   <div className="flex items-center justify-between">
@@ -1926,8 +2085,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   
                   <input 
                     type="text" 
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={13}
                     value={gcashReference} 
-                    onChange={e => setGcashReference(e.target.value)} 
+                    onChange={e => setGcashReference(e.target.value.replace(/\D/g, ''))} 
                     placeholder="Enter 10 to 13-digit Reference Code" 
                     className={`w-full p-2.5 border rounded-xl outline-none font-mono text-xs ${
                       isGcashValid ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300' : 'border-slate-300 dark:border-rose-500/50 bg-white dark:bg-zinc-950 text-slate-900 dark:text-white'
@@ -1994,7 +2156,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </p>
               </div>
 
-              {/* COMPACT RECEIPT WRAPPER CONTAINER */}
               <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 max-h-90 overflow-y-auto shadow-inner">
                 <OfficialReceipt
                   ref={receiptRef}
@@ -2025,7 +2186,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {step < 3 ? (
             <>
               <button 
-                disabled={step === 1} 
+                disabled={step === 1 || isSubmitting} 
                 onClick={handleBack} 
                 className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
               >
@@ -2041,14 +2202,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               
               {step === 2 ? (
                 <button 
+                  type="button"
                   onClick={handleExecuteCheckout} 
-                  disabled={isConfirmDisabled}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md shadow-emerald-500/10 transition-all"
+                  disabled={isConfirmDisabled || isSubmitting}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md shadow-emerald-500/10 transition-all flex items-center gap-2 justify-center"
                 >
-                  Confirm Checkout
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Checkout</span>
+                  )}
                 </button>
               ) : step === 1 && intakeMode === 'Manual' ? (
                 <button 
+                  type="button"
                   onClick={handleStep1Next} 
                   className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md transition-all"
                 >
@@ -2081,11 +2251,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               </div>
 
               <button 
+                type="button"
                 onClick={() => {
                   handleModalClose();
                   onComplete?.();
                 }} 
-                className="px-6 py-2 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md transition-all"
+                className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md transition-all"
               >
                 Close
               </button>
@@ -2093,7 +2264,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
         </div>
 
-      </div>
+      </form>
     </div>,
     document.body
   );

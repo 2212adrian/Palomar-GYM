@@ -1,6 +1,6 @@
 BEGIN;
 
--- 1. Create Table safely IF NOT EXISTS (Preserves all existing attendance records)
+-- 1. Create Table safely IF NOT EXISTS
 CREATE TABLE IF NOT EXISTS public.attendance (
     id VARCHAR(30) PRIMARY KEY DEFAULT public.generate_checkin_id(),
     member_id VARCHAR(20) DEFAULT NULL REFERENCES public.members(member_id) ON DELETE SET NULL,
@@ -17,19 +17,21 @@ CREATE TABLE IF NOT EXISTS public.attendance (
     receipt_number VARCHAR(30) DEFAULT NULL,
     staff_name TEXT NOT NULL DEFAULT 'Counter Staff',
 
-    -- Soft Delete Metadata
+    -- Soft Delete Metadata (Used exclusively for standard attendance check-ins)
     deleted_at TIMESTAMPTZ DEFAULT NULL,
     deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Ensure Soft Delete Metadata columns exist if table was created previously without them
+-- Ensure Soft Delete Metadata columns exist
 ALTER TABLE public.attendance 
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL;
 
 -- 2. Soft Delete Interceptor Function
+-- Standard check-in logs are soft-deleted.
+-- Voided Subscriptions / New Memberships bypass soft-delete and are PERMANENTLY REMOVED from the DB.
 CREATE OR REPLACE FUNCTION public.handle_attendance_soft_delete()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -38,13 +40,23 @@ BEGIN
         RETURN OLD;
     END IF;
 
-    -- Intercept physical DELETE and convert into a soft-delete UPDATE
+    -- HARD DELETE BYPASS: New Memberships & Subscription transactions bypass soft-delete.
+    -- They are physically purged from the database and NEVER enter the Recycle Bin.
+    IF OLD.customer_type::text = 'New Membership' 
+       OR OLD.plan_name ILIKE '%Membership%' 
+       OR OLD.plan_name ILIKE '%Subscription%' 
+       OR OLD.plan_name ILIKE '%Monthly%' 
+       OR OLD.plan_name ILIKE '%Yearly%' THEN
+        RETURN OLD; -- Proceed with physical hard row removal
+    END IF;
+
+    -- Intercept physical DELETE ONLY for standard walk-in / member daily attendance check-ins
     UPDATE public.attendance
     SET deleted_at = now(),
         deleted_by = auth.uid()
     WHERE id = OLD.id;
 
-    RETURN NULL; -- Cancel physical row deletion
+    RETURN NULL; -- Cancel physical row deletion for standard attendance
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -55,7 +67,7 @@ CREATE TRIGGER tr_attendance_soft_delete
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_attendance_soft_delete();
 
--- 3. Purge Function for soft-deleted items (ONLY purges items where deleted_at IS NOT NULL)
+-- 3. Purge Function for soft-deleted items (ONLY purges standard check-in items where deleted_at IS NOT NULL)
 CREATE OR REPLACE FUNCTION public.purge_soft_deleted_attendance()
 RETURNS void AS $$
 BEGIN
@@ -126,7 +138,7 @@ CREATE POLICY "Allow authorized users to delete attendance" ON public.attendance
         )
     );
 
--- Realtime
+-- Enable Realtime
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
