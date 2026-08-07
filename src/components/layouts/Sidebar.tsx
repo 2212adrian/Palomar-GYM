@@ -277,11 +277,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (currentUser) {
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('full_name')
+          .select('username')
           .eq('id', currentUser.id)
           .maybeSingle();
 
-        const goalName = profileData?.full_name || currentUser.email || 'Unknown User';
+        const goalName = profileData?.username || currentUser.email || 'Unknown User';
 
         await logAudit(
           'USER_LOGOUT',
