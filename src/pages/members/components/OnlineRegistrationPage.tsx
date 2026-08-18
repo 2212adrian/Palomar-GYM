@@ -67,12 +67,18 @@ const registrationSchema = z.object({
   address: z.string().optional().or(z.literal('')),
   
   same_as_parent: z.boolean().optional(),
-  emergency_contact_name: z.string().min(2, 'Emergency contact name is required'),
-  emergency_contact_relationship: z.string().min(2, 'Relationship is required'),
+  emergency_contact_name: z.string().optional().or(z.literal('')),
+  emergency_contact_relationship: z.string().optional().or(z.literal('')),
   emergency_contact_phone: z
     .string()
-    .min(7, 'Emergency contact phone is required')
-    .regex(/^[0-9]+$/, 'Emergency phone must contain numbers only'),
+    .optional()
+    .or(z.literal(''))
+    .refine((val) => !val || /^[0-9]+$/.test(val), {
+      message: 'Emergency phone must contain numbers only',
+    })
+    .refine((val) => !val || val.length >= 7, {
+      message: 'Emergency contact phone must be at least 7 digits',
+    }),
   
   preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
     message: 'Please select a membership plan',
@@ -173,6 +179,32 @@ const registrationSchema = z.object({
         message: 'Parent / Legal Guardian phone number is required',
         path: ['parent_phone'],
       });
+    }
+
+    if (!data.same_as_parent) {
+      if (!data.emergency_contact_name || data.emergency_contact_name.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Emergency contact name is required',
+          path: ['emergency_contact_name'],
+        });
+      }
+
+      if (!data.emergency_contact_relationship || data.emergency_contact_relationship.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Relationship is required',
+          path: ['emergency_contact_relationship'],
+        });
+      }
+
+      if (!data.emergency_contact_phone || data.emergency_contact_phone.trim().length < 7) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Emergency contact phone is required',
+          path: ['emergency_contact_phone'],
+        });
+      }
     }
 
     if (!data.applicant_signature) {
@@ -736,9 +768,9 @@ export const OnlineRegistrationPage: React.FC = () => {
         gender: data.gender,
         birthday: data.birthday,
         address: data.address || '',
-        emergency_contact_name: data.emergency_contact_name,
-        emergency_contact_phone: data.emergency_contact_phone,
-        relationship: data.emergency_contact_relationship,
+        emergency_contact_name: data.emergency_contact_name || '',
+        emergency_contact_phone: data.emergency_contact_phone || '',
+        relationship: data.emergency_contact_relationship || '',
         preferred_plan: data.preferred_plan,
         status: 'Pending',
         submitted_at: new Date().toISOString(),
@@ -1601,7 +1633,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Emergency Contact Name <span className="text-red-500">*</span>
+                          Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
                         </label>
                         {renderStatusBadge('emergency_contact_name')}
                       </div>
@@ -1619,7 +1651,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Relationship <span className="text-red-500">*</span>
+                          Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
                         </label>
                         {renderStatusBadge('emergency_contact_relationship')}
                       </div>
@@ -1637,7 +1669,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Emergency Contact Phone <span className="text-red-500">*</span>
+                          Emergency Contact Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
                         </label>
                         {renderStatusBadge('emergency_contact_phone')}
                       </div>

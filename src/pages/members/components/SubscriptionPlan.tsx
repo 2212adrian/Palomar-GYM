@@ -657,7 +657,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       return {
         level: 'red' as const,
         isBlocked: true,
-        title: 'Renewal Already Queued',
+        title: 'On-going Renewal Detected',
         description: `This member already has a renewal plan (${matchQueuedSub.plan_name}) scheduled to start on ${queueStartDate}. Multiple queued renewals are not allowed.`
       };
     }
@@ -980,18 +980,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     if (!phone.trim() || phone.trim().toLowerCase() === 'no phone') newErrors.phone = 'Phone number is required.';
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
 
-    if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required.';
-    if (!relationship.trim() || relationship === 'Select Relationship *') {
-      newErrors.relationship = 'Relationship is required.';
-    }
-    if (!emergencyPhone.trim()) newErrors.emergencyPhone = 'Emergency phone is required.';
-
+    // Emergency Contact details are required ONLY for Minors (ages 12-17), and optional for adults (18+)
     if (isMinor) {
       if (!parentName.trim()) newErrors.parentName = 'Parent / Guardian full name is required for minor applicants.';
       if (!parentRelationship.trim()) newErrors.parentRelationship = 'Parent relationship is required.';
       if (!parentPhone.trim()) newErrors.parentPhone = 'Parent contact phone is required.';
       if (!applicantSig) newErrors.applicantSig = 'Applicant digital signature is required.';
       if (!parentSig) newErrors.parentSig = 'Parent / Guardian digital signature is required.';
+
+      if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required for minors.';
+      if (!relationship.trim() || relationship.includes('Select Relationship')) {
+        newErrors.relationship = 'Relationship is required for minors.';
+      }
+      if (!emergencyPhone.trim()) newErrors.emergencyPhone = 'Emergency phone is required for minors.';
     }
 
     if (!waiverAgreed) {
@@ -1669,11 +1670,16 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
               {/* Emergency Contact */}
               <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
-                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Emergency Contact</span>
+                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                  Emergency Contact {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional for 18+)</span>}
+                </span>
               </div>
 
+              {/* Emergency Contact Name */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Emergency Contact Name *</label>
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                  Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
                 <input 
                   type="text" 
                   value={emergencyName} 
@@ -1683,19 +1689,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     if (errors.emergencyName) setErrors(prev => ({ ...prev, emergencyName: '' }));
                   }} 
                   className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(emergencyName) || errors.emergencyName 
+                    (isMinor && isMissing(emergencyName)) || errors.emergencyName 
                       ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
                       : isEmergencyNameLocked
                       ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
                       : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
                   }`} 
-                  placeholder="Contact person's full name" 
+                  placeholder="Contact person's full name (optional)" 
                 />
                 {errors.emergencyName && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyName}</span>}
               </div>
 
+              {/* Relationship */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Relationship *</label>
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                  Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
                 <select 
                   value={relationship} 
                   disabled={isRelationshipLocked}
@@ -1704,14 +1713,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     if (errors.relationship) setErrors(prev => ({ ...prev, relationship: '' }));
                   }} 
                   className={`w-full p-2.5 rounded-xl text-xs outline-none font-medium transition-colors ${
-                    !relationship || errors.relationship 
+                    errors.relationship 
                       ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 cursor-pointer' 
                       : isRelationshipLocked
                       ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
                       : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
                   }`}
                 >
-                  <option value="">Select Relationship *</option>
+                  <option value="">Select Relationship {isMinor ? '*' : '(optional)'}</option>
                   <optgroup label="Immediate Family">
                     <option value="Mother">Mother</option>
                     <option value="Father">Father</option>
@@ -1740,8 +1749,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 {errors.relationship && <span className="text-[9px] text-red-500 font-bold block">{errors.relationship}</span>}
               </div>
 
+              {/* Emergency Phone */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Emergency Phone *</label>
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                  Emergency Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
                 <input 
                   type="text" 
                   value={emergencyPhone} 
@@ -1751,13 +1763,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
                   }}
                   className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(emergencyPhone) || errors.emergencyPhone 
+                    (isMinor && isMissing(emergencyPhone)) || errors.emergencyPhone 
                       ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
                       : isEmergencyPhoneLocked
                       ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
                       : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
                   }`} 
-                  placeholder="0918XXXXXXX" 
+                  placeholder="0918XXXXXXX (optional)" 
                 />
                 {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
               </div>
