@@ -486,7 +486,7 @@ export const LogbookPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+ useEffect(() => {
     if (activePage === 'logbook') {
       setActions(
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
@@ -495,7 +495,7 @@ export const LogbookPage: React.FC = () => {
               <Button
                 onClick={() => setIsRecycleBinOpen(true)}
                 variant="secondary"
-                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+                className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
               >
                 <RotateCcw className="w-4 h-4 text-amber-500" />
                 <span>RECYCLE BIN</span>
@@ -504,7 +504,7 @@ export const LogbookPage: React.FC = () => {
               <Button
                 onClick={() => setIsReportModalOpen(true)}
                 variant="secondary"
-                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+                className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
               >
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>GENERATE REPORT</span>
@@ -515,7 +515,7 @@ export const LogbookPage: React.FC = () => {
           <Button
             onClick={() => setIsCreateModalOpen(true)}
             variant="primary"
-            className="hidden md:flex py-2 px-3.5 w-auto! text-xs items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
+            className="hidden md:flex py-2 px-3.5 !w-auto text-xs items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
           >
             <Plus className="w-4 h-4" />
             <span>NEW CHECK-IN</span>
@@ -528,7 +528,7 @@ export const LogbookPage: React.FC = () => {
           <Button
             onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-print'))}
             variant="secondary"
-            className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+            className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
             title="Open full member credential card print workspace"
           >
             <Printer className="w-4 h-4 text-red-500" />
@@ -539,7 +539,7 @@ export const LogbookPage: React.FC = () => {
             <Button
               onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-recycle'))}
               variant="secondary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
             >
               <RotateCcw className="w-4 h-4 text-amber-500" />
               <span>RECYCLE BIN</span>
@@ -549,7 +549,7 @@ export const LogbookPage: React.FC = () => {
           <Button
             onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-wizard'))}
             variant="primary"
-            className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
+            className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
           >
             <Plus className="w-4 h-4" />
             <span>ENROLL MEMBER</span>

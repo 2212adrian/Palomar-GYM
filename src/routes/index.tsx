@@ -1,5 +1,5 @@
 // src/routes/index.tsx
-import React, { useState, useEffect, createContext, useRef } from 'react';
+import React, { useState, createContext } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
@@ -67,12 +67,13 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
 const HeaderLayout: React.FC = () => {
   const location = useLocation();
   const [actions, setActions] = useState<React.ReactNode>(null);
-  const prevPathRef = useRef(location.pathname);
+  const [prevPath, setPrevPath] = useState(location.pathname);
 
-  // Clear slots upon routing ONLY if the user is leaving the main section entirely
-  useEffect(() => {
+  // Synchronously reset actions during render phase when switching sections, BEFORE child useEffects execute
+  if (prevPath !== location.pathname) {
+    setPrevPath(location.pathname);
     const getBaseSegment = (p: string) => '/' + p.split('/').filter(Boolean)[0];
-    const oldBase = getBaseSegment(prevPathRef.current);
+    const oldBase = getBaseSegment(prevPath);
     const newBase = getBaseSegment(location.pathname);
 
     // Treat logbook and members as the same continuous section to preserve sliding header actions
@@ -81,8 +82,7 @@ const HeaderLayout: React.FC = () => {
     if (oldBase !== newBase && !(isLogbookOrMember(oldBase) && isLogbookOrMember(newBase))) {
       setActions(null);
     }
-    prevPathRef.current = location.pathname;
-  }, [location.pathname]);
+  }
 
   const headerInfo = ROUTE_HEADERS[location.pathname] || 
                      Object.entries(ROUTE_HEADERS).find(([k]) => location.pathname.startsWith(k))?.[1];
