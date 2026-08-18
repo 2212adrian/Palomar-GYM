@@ -18,75 +18,59 @@ export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
   onBulkDelete,
 }) => {
   return (
-    <>
-      <style>{`
-        @keyframes slideUpCenter {
-          from {
-            opacity: 0;
-            transform: translate(-50%, 8px);
-          }
-          to {
-            opacity: 1;
-            transform: translate(-50%, 0);
-          }
-        }
-        .animate-slide-up-center {
-          animation: slideUpCenter 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-      `}</style>
-
-      {/* 
-        Adjusted bottom-offsets to bottom-[88px] on mobile and sm:bottom-[96px] on tablet 
-        to sit cleanly and strictly above the bottom navigation bar.
-      */}
-      <div className={`fixed bottom-[88px] sm:bottom-[96px] xl:bottom-10 left-1/2 z-[200] items-center gap-2 px-4 py-2.5 bg-(--bg-card)/95 backdrop-blur-md border border-(--border-color) rounded-full shadow-2xl animate-slide-up-center shrink-0 text-xs select-none ${
-        selectedCount === 1 ? 'hidden md:flex' : 'flex'
-      }`}>
-        
-        {/* Selected Indicator & Cancel / Clear Controls */}
-        <div className="flex items-center gap-1.5 pr-2.5 border-r border-(--border-color) mr-1 select-none">
-          <button
-            onClick={onClear}
-            className="p-1 rounded-full text-slate-400 hover:text-slate-655 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-            title="Clear Selection"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-          <span className="font-mono font-black text-xs text-blue-600 dark:text-blue-400">
-            {selectedCount}
-          </span>
-          <span className="text-[9px] font-heading font-black tracking-widest text-slate-450 uppercase hidden sm:inline">
-            Selected
-          </span>
-        </div>
-
-        {/* Action Controls List matching Settings Pill Buttons styling */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onPrint}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-slate-200 text-[10px] font-heading tracking-widest uppercase rounded-full shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer border border-slate-200 dark:border-white/5 font-extrabold"
-          >
-            <Printer className="w-3.5 h-3.5 text-blue-500" />
-            <span>Print<span className="hidden sm:inline"> Labels</span></span>
-          </button>
-
-          <button
-            onClick={onBulkEdit}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-slate-200 text-[10px] font-heading tracking-widest uppercase rounded-full shadow-xs transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer border border-slate-200 dark:border-white/5 font-extrabold"
-          >
-            <Pencil className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Edit<span className="hidden sm:inline"> Items</span></span>
-          </button>
-
-          <button
-            onClick={onBulkDelete}
-            className="inline-flex items-center gap-2.5 px-4.5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-heading tracking-widest uppercase rounded-full shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer border border-red-500/20 font-extrabold"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete<span className="hidden sm:inline"> Selected</span></span>
-          </button>
-        </div>
+    <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:bottom-8 left-1/2 -translate-x-1/2 z-[210] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-3 py-2 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 sm:gap-4 max-w-[calc(100vw-20px)] w-auto animate-slide-up select-none">
+      
+      {/* Selected Counter Badge */}
+      <div className="flex items-center gap-1.5 pr-2 border-r border-(--border-color) shrink-0">
+        <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+          {selectedCount}
+        </span>
+        <span className="font-heading text-[10px] sm:text-xs font-bold uppercase tracking-wider text-(--color-text) hidden xs:inline">
+          Selected
+        </span>
       </div>
-    </>
+
+      {/* Action Buttons WITH Visible Names on Mobile */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={onPrint}
+          className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors border border-blue-500/20 active:scale-95"
+          title="Print Labels"
+        >
+          <Printer className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-bold">Print</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onBulkEdit}
+          className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors border border-emerald-500/20 active:scale-95"
+          title="Edit Items"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-bold">Edit</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onBulkDelete}
+          className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors border border-rose-500/20 active:scale-95"
+          title="Remove Selected Items"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-bold">Remove</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onClear}
+          className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors active:scale-95"
+          title="Clear selection"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   );
 };

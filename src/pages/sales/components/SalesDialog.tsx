@@ -1,5 +1,6 @@
 // src/pages/sales/components/SalesDialog.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { 
   Search, 
@@ -227,7 +228,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     } catch (err) {
       console.warn('Scan file failed:', err);
       toast.error('No valid barcode or QR code detected in image.');
-    } fontout: {
+    } finally {
       if (html5QrCode) {
         try { html5QrCode.clear(); } catch (e) {}
       }
@@ -429,7 +430,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }, 1500);
   };
 
-  return (
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -805,6 +806,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-    </Modal>
+    </Modal>,
+    document.body
   );
 };

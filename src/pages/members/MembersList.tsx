@@ -5,7 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Sparkles
+  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Sparkles, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -87,9 +87,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   // Action Menu state (Desktop)
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
-  // Mobile Bottom Bar / FAB State
-  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
-
   // Mobile Pagination State
   const [mobilePage, setMobilePage] = useState(1);
 
@@ -136,6 +133,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       setActiveTab('Directory');
     }
   }, [isPlansPath]);
+
+  
 
   // Launch Print Modal pre-selecting all "No Card Issued" members if no checkboxes selected
   const handleOpenPrintModal = useCallback(() => {
@@ -457,6 +456,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     });
   }, [members, searchQuery, activeChip, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
 
+const isAllSelected = filteredMembers.length > 0 && filteredMembers.every(m => selectedMemberIds.includes(m.id));
+const isSomeSelected = selectedMemberIds.length > 0 && !isAllSelected;
+
+const handleToggleSelectAll = () => {
+  if (isAllSelected) {
+    setSelectedMemberIds([]);
+  } else {
+    setSelectedMemberIds(filteredMembers.map(m => m.id));
+  }
+};
+
   // Mobile Paginated Slice
   const totalMobilePages = Math.ceil(filteredMembers.length / itemsPerPage) || 1;
   const paginatedMobileMembers = useMemo(() => {
@@ -504,20 +514,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       header: isSelectionActive ? (
         <div className="flex items-center justify-center h-full w-full py-1">
           <input
-            type="checkbox"
-            checked={filteredMembers.length > 0 && filteredMembers.every(m => selectedMemberIds.includes(m.id))}
-            onChange={(e) => {
-              if (e.target.checked) {
-                const currentIds = filteredMembers.map(m => m.id);
-                setSelectedMemberIds(prev => Array.from(new Set([...prev, ...currentIds])));
-              } else {
-                const currentIds = filteredMembers.map(m => m.id);
-                setSelectedMemberIds(prev => prev.filter(id => !currentIds.includes(id)));
-              }
-            }}
-            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
-            title="Toggle Select All"
-          />
+  type="checkbox"
+  ref={(el) => {
+    if (el) el.indeterminate = isSomeSelected;
+  }}
+  checked={isAllSelected}
+  onChange={handleToggleSelectAll}
+  className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
+  title="Toggle Select All"
+/>
         </div>
       ) : null,
       headerClassName: 'w-12 text-center',
@@ -1159,33 +1164,36 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   ) : (
                     <>
                       {/* Select All Row on Mobile when Multi-Select Active */}
-                      {isSelectionActive && (
-                        <div className="flex items-center justify-between px-3 py-2 bg-slate-500/10 border border-(--border-color) rounded-xl select-none">
-                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-(--color-text)">
-                            <input
-                              type="checkbox"
-                              checked={filteredMembers.every(m => selectedMemberIds.includes(m.id))}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedMemberIds(filteredMembers.map(m => m.id));
-                                } else {
-                                  setSelectedMemberIds([]);
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 accent-[#123c73]"
-                            />
-                            <span>Select All Loaded ({filteredMembers.length})</span>
-                          </label>
+{isSelectionActive && (
+  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
+    {/* Expanded Hitbox Wrapper for Easy Tapping */}
+    <label 
+      className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
+      onClick={handleToggleSelectAll}
+    >
+      <input
+        type="checkbox"
+        ref={(el) => {
+          if (el) el.indeterminate = isSomeSelected;
+        }}
+        checked={isAllSelected}
+        onChange={() => {}} // Handled by label click for better mobile touch support
+        className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
+      />
+      <span className="text-xs font-bold text-(--color-text)">
+        Selected Members <span className="font-mono text-slate-400 font-normal">({selectedMemberIds.length}/{filteredMembers.length})</span>
+      </span>
+    </label>
 
-                          <button
-                            type="button"
-                            onClick={() => setSelectedMemberIds([])}
-                            className="text-[10px] font-bold text-rose-500 uppercase tracking-wider"
-                          >
-                            Deselect All
-                          </button>
-                        </div>
-                      )}
+    <button
+      type="button"
+      onClick={() => setSelectedMemberIds([])}
+      className="text-[11px] font-bold text-rose-500 uppercase tracking-wider px-3 py-2 hover:bg-rose-500/10 rounded-lg active:scale-95 transition-all shrink-0 min-h-[44px] flex items-center"
+    >
+      Deselect All
+    </button>
+  </div>
+)}
 
                       {/* Mobile Cards Map */}
                       {paginatedMobileMembers.map((member) => {
@@ -1429,7 +1437,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       </div>
     )}
 
-      {/* 2. MOBILE MULTI-SELECT BOTTOM ACTION SHEET (< MD) */}
+      {/* 2. MOBILE MULTI-SELECT BOTTOM BAR */}
       <AnimatePresence>
         {isSelectionActive && (
           <motion.div
@@ -1437,7 +1445,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className="md:hidden fixed bottom-20 left-3 right-3 z-50 bg-(--bg-card) text-(--color-text) p-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-3 select-none"
+            className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 z-[210] bg-(--bg-card) text-(--color-text) p-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-3 select-none"
           >
             <div className="flex items-center gap-2.5">
               <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
@@ -1445,7 +1453,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
               </span>
               <div>
                 <span className="font-heading text-xs font-bold uppercase tracking-wider block text-(--color-text) leading-none">
-                  Members Selected
+                  Selected
                 </span>
                 <button
                   type="button"
@@ -1460,7 +1468,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             <button
               type="button"
               onClick={() => setShowBatchCardModal(true)}
-              className="px-4 py-2.5 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-md active:scale-95 transition-transform"
+              className="px-4 py-2 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-md active:scale-95 transition-transform"
             >
               <Printer className="w-4 h-4" />
               <span>Print Cards</span>
@@ -1469,96 +1477,57 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         )}
       </AnimatePresence>
 
-       {/* 3. MOBILE COMPACT BOTTOM DIRECTORY BAR & EXPANDABLE FAB (< MD) */}
-      {activeTab === 'Directory' && createPortal(
-        <>
-          <AnimatePresence>
-            {isMobileActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-2.5 select-none">
-            <AnimatePresence>
-              {isMobileActionsOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
-                  className="flex flex-col items-end gap-2 mb-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      setIsRecycleOpen(true);
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-3 bg-(--bg-card) text-(--color-text) border border-(--border-color) text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
-                  >
-                    <RotateCcw className="w-4 h-4 text-amber-500" />
-                    <span>Recycle Bin</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      handleOpenPrintModal();
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-3 bg-(--bg-card) text-(--color-text) border border-(--border-color) text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
-                  >
-                    <Printer className="w-4 h-4 text-red-500" />
-                    <span>Print Cards</span>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      setWizardPrefillMember(undefined);
-                      setWizardPrefill(undefined);
-                      setIsWizardOpen(true);
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-3 bg-[#123c73] dark:bg-[#bf0202] text-white text-xs font-heading tracking-widest uppercase rounded-2xl shadow-xl active:scale-95 transition-transform"
-                  >
-                    <Plus className="w-4 h-4 text-emerald-400" />
-                    <span>Enroll Member</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[190] shadow-2xl">
-            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-              <div className="flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
-                <span>{stats.total} Members</span>
-              </div>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
-              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <UserCheck className="w-4 h-4" />
-                <span>{stats.activeSubscriptions} Active</span>
-              </div>
+      {/* 3. MOBILE DIRECT ACTION BOTTOM BAR FOR MEMBERS DIRECTORY */}
+      {activeTab === 'Directory' && !isSelectionActive && createPortal(
+        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+          {/* Summary stats on the left */}
+          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+            <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
+              <Users className="w-3.5 h-3.5" />
+              <span className="text-[11px]">{stats.total} Members</span>
             </div>
-
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-              title="Quick Actions"
-            >
-              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-            </motion.button>
+            <span className="text-slate-300 dark:text-zinc-700">•</span>
+            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
+              <UserCheck className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[11px] truncate">{stats.activeSubscriptions} Active</span>
+            </div>
           </div>
-        </>,
+
+          {/* Direct 1-Tap Action Buttons on the right */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsRecycleOpen(true)}
+              className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+              title="Recycle Bin"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenPrintModal}
+              className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+              title="Print Cards"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setWizardPrefillMember(undefined);
+                setWizardPrefill(undefined);
+                setIsWizardOpen(true);
+              }}
+              className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+              title="Enroll Member"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="text-[10px] hidden xs:inline">Enroll</span>
+            </button>
+          </div>
+        </div>,
         document.body
       )}
 

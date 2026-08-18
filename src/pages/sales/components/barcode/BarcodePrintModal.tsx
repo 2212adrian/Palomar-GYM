@@ -24,7 +24,7 @@ interface BarcodePrintModalProps {
 }
 
 const DEFAULT_SETTINGS: BarcodeSettingsState = {
-  templateId: '32_labels',
+  templateId: '65_labels',
   copies: 1,
   showProductName: true,
   showPrice: true,
@@ -70,6 +70,12 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   // Accordion Expand States: Both default strictly to collapsed (false) on all viewports
   const [isLayoutPresetOpen, setIsLayoutPresetOpen] = useState(false);
   const [isDisplayParamsOpen, setIsDisplayParamsOpen] = useState(false);
+
+  // Unselect all items upon closing modal
+  const handleCloseModal = () => {
+    setSelectedIds([]);
+    onClose();
+  };
 
   const filteredProducts = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
@@ -139,13 +145,14 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           recursive: true,
         });
 
+        toast.success('PDF ready! Opening save/share options...');
+
         await Share.share({
           title: 'Store Barcode Labels PDF',
           text: 'Save or share official store barcode labels PDF',
           files: [file.uri],
           dialogTitle: 'Save / Share Barcode PDF',
         });
-        toast.success('Barcode labels PDF ready for sharing/saving!');
         return;
       }
 
@@ -166,7 +173,14 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
         toast.success('Barcode PDF downloaded successfully!');
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
+      const errMsg = String(err?.message || err || '').toLowerCase();
+      const isUserCancel = 
+        err?.name === 'AbortError' || 
+        errMsg.includes('cancel') || 
+        errMsg.includes('dismiss') ||
+        errMsg.includes('user canceled');
+
+      if (!isUserCancel) {
         console.error('PDF Generation error:', err);
         toast.error('Could not compile PDF document.');
       }
@@ -197,6 +211,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           recursive: true,
         });
 
+        toast.success('Print document ready! Opening print menu...');
+
         await Share.share({
           title: 'Print Store Barcode Labels',
           text: 'Select your printer or print service to print store barcode labels.',
@@ -204,7 +220,14 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           dialogTitle: 'Print Barcode Labels',
         });
       } catch (err: any) {
-        if (err?.name !== 'AbortError') {
+        const errMsg = String(err?.message || err || '').toLowerCase();
+        const isUserCancel = 
+          err?.name === 'AbortError' || 
+          errMsg.includes('cancel') || 
+          errMsg.includes('dismiss') ||
+          errMsg.includes('user canceled');
+
+        if (!isUserCancel) {
           console.error('Native print share error:', err);
           toast.error('Could not open print sheet on mobile device.');
         }
@@ -228,14 +251,14 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             <Printer className="w-5 h-5 animate-pulse" />
           </div>
           <div className="text-left">
-            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT STORE LABELS</h2>
+            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT BARCODE PRODUCT LABELS</h2>
             <p className="text-[10px] text-slate-400 font-bold block mt-0.5">
-              Select catalog items, customize sizing sheets, and download vectors.
+              Printable barcode labels for containers, shelves, and stock inventory.
             </p>
           </div>
         </div>
         <button 
-          onClick={onClose}
+          onClick={handleCloseModal}
           className="p-1.5 bg-slate-100/5 hover:bg-slate-100/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer border border-(--border-color)"
           title="Close print portal"
           aria-label="Close print portal"
@@ -250,7 +273,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           type="button"
           onClick={() => setActiveMobileTab('configure')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'configure' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'configure' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'
           }`}
         >
           Configure
@@ -259,7 +282,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           type="button"
           onClick={() => setActiveMobileTab('preview')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'preview' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'preview' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'
           }`}
         >
           Layout Preview
@@ -270,29 +293,45 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
         
         {/* LEFT CONTROL SIDEBAR PANEL */}
-        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-[180px] md:pb-6 ${
+        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-28 md:pb-6 ${
           activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
         }`}>
-          <div className="flex flex-col gap-4 overflow-y-hidden flex-1">
+          <div className="flex flex-col gap-4 flex-1">
             
             {/* Selection Drawer */}
-            <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-[240px] flex-1">
-              <div className="flex items-center justify-between shrink-0">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Items to Print</h4>
-                <div className="flex gap-2">
+            <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col shrink-0">
+              
+              {/* SELECT ITEMS TOOLBAR HEADER */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Select Items to Print
+                  </h4>
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300">
+                    {selectedIds.length}/{products.length}
+                  </span>
+                </div>
+
+                {/* REDESIGNED ACTION BUTTONS */}
+                <div className="flex items-center gap-1 flex-wrap">
                   <button
                     type="button"
                     onClick={() => setSelectedIds(products.map(p => p.id))}
-                    className="text-[9px] font-bold uppercase text-blue-500 hover:underline cursor-pointer"
+                    className="px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 border border-blue-500/20 text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                    title="Select all products"
                   >
-                    All
+                    <CheckSquare className="w-3 h-3" />
+                    <span>Select All</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setSelectedIds([])}
-                    className="text-[9px] font-bold uppercase text-slate-500 dark:text-slate-400 hover:underline cursor-pointer"
+                    className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-zinc-700 text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                    title="Clear all selections"
                   >
-                    None
+                    <X className="w-3 h-3" />
+                    <span>Clear</span>
                   </button>
                 </div>
               </div>
@@ -308,7 +347,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 />
               </div>
 
-              <div className="overflow-y-auto no-scrollbar space-y-1.5 pt-1 flex-1">
+              {/* PRODUCT SELECTION LIST WITH CUTOFF PADDING FIX */}
+              <div className="overflow-y-auto no-scrollbar space-y-1.5 p-1 max-h-52 sm:max-h-60 flex-1 min-w-0">
                 {filteredProducts.map(product => {
                   const isSelected = selectedIds.includes(product.id);
                   return (
@@ -317,13 +357,13 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       onClick={() => setSelectedIds(prev => 
                         prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
                       )}
-                      className={`p-2 rounded-xl flex items-center justify-between cursor-pointer border transition-colors ${
+                      className={`w-full p-2.5 rounded-xl flex items-center justify-between gap-2.5 cursor-pointer border transition-all box-border ${
                         isSelected 
-                          ? 'bg-blue-500/10 border-blue-500 text-[var(--color-text)]' 
+                          ? 'bg-blue-500/10 border-blue-500 text-[var(--color-text)] shadow-xs' 
                           : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900/40 border-transparent text-slate-700 dark:text-slate-300'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {isSelected ? (
                           <CheckSquare className="w-4 h-4 shrink-0 text-blue-500" />
                         ) : (
@@ -334,7 +374,9 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                           <span className="font-mono text-[9px] text-slate-400">{product.barcode_id}</span>
                         </div>
                       </div>
-                      <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">₱{product.selling_price.toFixed(2)}</span>
+                      <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                        ₱{product.selling_price.toFixed(2)}
+                      </span>
                     </div>
                   );
                 })}
@@ -449,8 +491,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
           </div>
 
-          {/* Action Row Panel */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 border-t border-(--border-color) z-[201] md:relative md:p-0 md:bg-transparent md:border-t-0 md:z-auto shrink-0 shadow-lg md:shadow-none space-y-2 mt-4">
+          {/* Desktop Action Row Panel */}
+          <div className="hidden md:block pt-4 mt-auto border-t border-(--border-color) shrink-0">
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -485,7 +527,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
         </div>
 
         {/* RIGHT PREVIEW PANEL */}
-        <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative ${
+        <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative pb-28 md:pb-6 ${
           activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
         }`}>
           
@@ -632,6 +674,40 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
         </div>
 
+      </div>
+
+      {/* MOBILE PERSISTENT BOTTOM ACTION BAR (VISIPLE IN BOTH CONFIGURE & LAYOUT PREVIEW TABS) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 backdrop-blur-md border-t border-(--border-color) z-[200] shadow-2xl">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handlePrint}
+            disabled={printableItemsList.length === 0 || generating}
+            className="py-3 px-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border-none cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Print ({expandedItemsList.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={printableItemsList.length === 0 || generating}
+            className="py-3 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border border-slate-700 cursor-pointer"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Download PDF</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
     </div>,

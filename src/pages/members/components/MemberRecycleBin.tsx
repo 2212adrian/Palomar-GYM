@@ -213,7 +213,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
+    <div className="fixed inset-0 z-2000 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
           <h3 className="font-heading tracking-widest uppercase">Member Recycle Bin</h3>

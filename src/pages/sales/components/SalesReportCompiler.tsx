@@ -1,5 +1,6 @@
 // src/pages/sales/components/SalesReportCompiler.tsx
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   format, startOfDay, endOfDay, 
   startOfWeek, endOfWeek, 
@@ -224,7 +225,7 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -325,6 +326,7 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
           )}
         </Button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body
   );
 };

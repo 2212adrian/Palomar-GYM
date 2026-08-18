@@ -1,5 +1,6 @@
 // src/pages/logbook/components/LogbookReportCompiler.tsx
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   format, startOfDay, endOfDay, 
   startOfWeek, endOfWeek, 
@@ -142,7 +143,7 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -196,7 +197,7 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
         </div>
 
         <div className="grid gap-1.5">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category Category</label>
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category Filter</label>
           <div className="grid grid-cols-2 gap-2">
             {(['all', 'Walk-In', 'Existing Member', 'New Membership'] as const).map((method) => (
               <button
@@ -242,6 +243,7 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
           )}
         </Button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body
   );
 };

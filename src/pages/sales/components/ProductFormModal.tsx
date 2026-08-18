@@ -349,7 +349,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   }, [isMultiAddMode, stagedItems.length, formName, formPrice]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in text-xs text-(--color-text)">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in text-xs text-(--color-text)">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up relative">
         
         {/* --- CUSTOM BEAUTIFUL INLINE CONFIRMATION OVERLAY --- */}
@@ -388,7 +388,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         {/* MODAL HEADER */}
         <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between">
           <h3 className="font-heading text-xs tracking-widest uppercase text-(--color-text) flex items-center gap-2">
-            <span>{isEditing ? 'Edit Store Product' : 'Add New Store Product'}</span>
+            <span>{isEditing ? 'Edit Store Product' : 'Add New Product'}</span>
           </h3>
           <button 
             type="button"

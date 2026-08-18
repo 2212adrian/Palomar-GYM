@@ -27,8 +27,8 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
-import { isSuperAdmin } from '../../../constants/auth';
 import { supabase } from '../../../lib/supabase/client';
+import { createPortal } from 'react-dom';
 
 // Dynamic Members Engine Integration
 import { memberService, subscriptionService, cardService, settingsService } from '../../members/memberService';
@@ -69,12 +69,31 @@ interface SelectedClient {
   avatarUrl?: string | null;
 }
 
+// Helper to auto-suffix walk-in names when duplicates occur (e.g. JOHN -> JOHN (2))
+const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
+  const cleanBase = baseName.replace(/\s*\(\d+\)$/, '').trim().toUpperCase();
+
+  const matchingWalkIns = existingLogs.filter((log: any) => {
+    if (log.customer_type !== 'Walk-In') return false;
+    const name = (log.customer_name || '').toUpperCase().trim();
+    const logCleanBase = name.replace(/\s*\(\d+\)$/, '').trim();
+    return logCleanBase === cleanBase;
+  });
+
+  if (matchingWalkIns.length === 0) {
+    return cleanBase;
+  }
+
+  const nextNumber = matchingWalkIns.length + 1;
+  return `${cleanBase} (${nextNumber})`;
+};
+
 export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = ({
   isOpen,
   onClose,
   onCheckInSuccess,
 }) => {
-  const { user, profile } = useAuthStore() as any;
+  const { user } = useAuthStore() as any;
   const isSubmittingRef = useRef(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,7 +122,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
 
-  // Admin override toggles
+  // Override toggle (Allowed for Staff & Admin)
   const [adminOverride, setAdminOverride] = useState(false);
 
   // Dynamic Rates State
@@ -111,11 +130,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [walkinStudentFee, setWalkinStudentFee] = useState(80);
   const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
   const [gcashFeeRate, setGcashFeeRate] = useState(10);
-
-  const isAdmin = useMemo(() => {
-    if (isSuperAdmin(user?.email)) return true;
-    return profile?.role?.toLowerCase() === 'admin';
-  }, [user, profile]);
 
   // Load active rates configuration directly from Supabase rates_config table
   const loadRates = useCallback(async () => {
@@ -244,7 +258,9 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     if (!selectedClient) return null;
     return todayLogs.find((log: any) => {
       if (selectedClient.isWalkIn) {
-        return log.customer_name?.toLowerCase() === selectedClient.name.toLowerCase() && log.customer_type === 'Walk-In';
+        const cleanSelected = selectedClient.name.replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
+        const cleanLogName = (log.customer_name || '').replace(/\s*\(\d+\)$/, '').trim().toLowerCase();
+        return cleanLogName === cleanSelected && log.customer_type === 'Walk-In';
       } else {
         return log.member_id === selectedClient.memberId;
       }
@@ -329,7 +345,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           .catch((err) => {
             console.error('Live camera start failed:', err);
             
-            // Auto-fallback: switch to the next available camera if multiple exist
             if (cameras.length > 1) {
               const currentIndex = selectedCameraId
                 ? cameras.findIndex((c) => c.id === selectedCameraId)
@@ -561,7 +576,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
 
     if (duplicateLog && !adminOverride) {
-      toast.error('Duplicate attendance requires administrator override.');
+      toast.error('Duplicate attendance requires override confirmation.');
       return;
     }
 
@@ -571,12 +586,18 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     const gcashFeeVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? derivedBilling.convenienceFee : 0;
     const gcashRefVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber.trim() : undefined;
 
+    // Auto-generate unique walk-in name if walk-in duplicates exist today (e.g. JOHN -> JOHN (2))
+    let finalCustomerName = selectedClient.name;
+    if (selectedClient.isWalkIn) {
+      finalCustomerName = generateUniqueWalkInName(selectedClient.name, todayLogs);
+    }
+
     try {
       const { data: inserted, error } = await supabase
         .from('attendance')
         .insert([{
           member_id: selectedClient.isWalkIn ? null : selectedClient.memberId || null,
-          customer_name: selectedClient.name,
+          customer_name: finalCustomerName,
           customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
           check_in_time: new Date().toISOString(),
           plan_name: derivedBilling.title,
@@ -594,10 +615,10 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       if (error) throw error;
 
       const checkInRecord = {
-        id: inserted.id,
+        id: String(inserted.id),
         timestamp: inserted.check_in_time,
         memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
-        customerName: selectedClient.name,
+        customerName: finalCustomerName,
         customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
         categoryOrPlan: derivedBilling.title,
         paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Free',
@@ -651,7 +672,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -932,7 +953,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             </div>
           )}
 
-          {/* DUPLICATE CHECK-IN ALERT */}
+          {/* DUPLICATE CHECK-IN ALERT (OVERRIDE OPEN FOR ALL STAFF & ADMIN) */}
           {duplicateLog && (
             <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
               <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
@@ -940,23 +961,17 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 <span>Customer already checked in today.</span>
               </div>
 
-              {isAdmin ? (
-                <label className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-xl cursor-pointer transition-all shadow-xs">
-                  <input
-                    type="checkbox"
-                    checked={adminOverride}
-                    onChange={(e) => setAdminOverride(e.target.checked)}
-                    className="w-4 h-4 rounded border-amber-500 text-blue-600 focus:ring-amber-500 accent-blue-600"
-                  />
-                  <span className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-                    PROCEED ANYWAY
-                  </span>
-                </label>
-              ) : (
-                <span className="text-[11px] text-rose-500 font-black uppercase tracking-wider">
-                  Requires Admin Override To Proceed
+              <label className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-xl cursor-pointer transition-all shadow-xs">
+                <input
+                  type="checkbox"
+                  checked={adminOverride}
+                  onChange={(e) => setAdminOverride(e.target.checked)}
+                  className="w-4 h-4 rounded border-amber-500 text-blue-600 focus:ring-amber-500 accent-blue-600"
+                />
+                <span className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                  PROCEED ANYWAY (OVERRIDE)
                 </span>
-              )}
+              </label>
             </div>
           )}
 
@@ -1309,6 +1324,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           </div>
         </Modal>
       )}
-    </Modal>
+    </Modal>, document.body
   );
 };

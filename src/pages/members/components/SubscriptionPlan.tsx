@@ -1146,7 +1146,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-120 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-2000 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
       <form onSubmit={handleFormSubmit} className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col">
         
         {/* Progress Bar Header */}

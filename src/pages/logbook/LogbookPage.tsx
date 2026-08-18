@@ -5,7 +5,8 @@ import {
   startOfWeek, 
   addDays, 
   getDay,
-  parseISO 
+  parseISO,
+  isToday 
 } from 'date-fns';
 import { 
   Plus, 
@@ -18,7 +19,8 @@ import {
   UserPlus,
   CircleDollarSign,
   Search,
-  Printer
+  Printer,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -180,10 +182,17 @@ export const LogbookPage: React.FC = () => {
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(true);
 
+  // Animation states for green add glow & red delete glow
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
+
   // Fetch both Attendance (check-ins) and Receipts (subscriptions) tables
-  const fetchAttendanceFromSupabase = useCallback(async () => {
+  const fetchAttendanceFromSupabase = useCallback(async (isBackground: boolean = false) => {
     try {
-      setLoadingLogs(true);
+      if (!isBackground && logs.length === 0) {
+        setLoadingLogs(true);
+      }
+
       const [attRes, rcptRes] = await Promise.all([
         supabase
           .from('attendance')
@@ -201,7 +210,7 @@ export const LogbookPage: React.FC = () => {
       }
 
       const mappedAttLogs: LogRecord[] = (attRes.data || []).map((att: any) => ({
-        id: att.id,
+        id: String(att.id), // Strictly stringify ID
         timestamp: att.check_in_time,
         memberId: att.member_id || null,
         customerName: att.customer_name,
@@ -250,21 +259,53 @@ export const LogbookPage: React.FC = () => {
         return timeB - timeA;
       });
 
-      setLogs(combinedLogs);
+      // Deduplicate using a Map guard to strictly prevent double cards
+      setLogs(prev => {
+        const logMap = new Map<string, LogRecord>();
+
+        // 1. Put fetched logs into map
+        combinedLogs.forEach(item => logMap.set(String(item.id), item));
+
+        // 2. Preserve any optimistic records if not yet fetched
+        prev.forEach(item => {
+          const strId = String(item.id);
+          if (!logMap.has(strId)) {
+            logMap.set(strId, item);
+          }
+        });
+
+        const deduplicated = Array.from(logMap.values()).sort((a, b) => {
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          return timeB - timeA;
+        });
+
+        if (
+          prev.length === deduplicated.length &&
+          prev.length > 0 &&
+          String(prev[0]?.id) === String(deduplicated[0]?.id) &&
+          String(prev[prev.length - 1]?.id) === String(deduplicated[deduplicated.length - 1]?.id)
+        ) {
+          return prev;
+        }
+        return deduplicated;
+      });
     } catch (err) {
       console.error('Logbook fetch error:', err);
     } finally {
-      setLoadingLogs(false);
+      if (!isBackground) {
+        setLoadingLogs(false);
+      }
     }
-  }, []);
+  }, [logs.length]);
 
   useEffect(() => {
-    fetchAttendanceFromSupabase();
+    fetchAttendanceFromSupabase(logs.length > 0);
 
     const channel = supabase
       .channel('logbook_realtime_channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, fetchAttendanceFromSupabase)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, fetchAttendanceFromSupabase)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => fetchAttendanceFromSupabase(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => fetchAttendanceFromSupabase(true))
       .subscribe();
 
     return () => {
@@ -288,8 +329,6 @@ export const LogbookPage: React.FC = () => {
   const [selectedReceiptLog, setSelectedReceiptLog] = useState<LogRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<LogRecord | null>(null);
   const [showUndoToast, setShowUndoToast] = useState(false);
-
-  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
 
   const itemsPerPage = useResponsiveItemsPerPage();
   const [currentPage, setCurrentPage] = useState(1);
@@ -396,14 +435,40 @@ export const LogbookPage: React.FC = () => {
   }, [dayLogs]);
 
   const handleCheckInSuccess = (newLog: LogRecord) => {
-    setLogs(prev => [newLog, ...prev]);
+    const normalizedLog: LogRecord = {
+      ...newLog,
+      id: String(newLog.id)
+    };
+
+    // Trigger green glow animation on newly added row
+    setNewlyAddedId(normalizedLog.id);
+    setTimeout(() => setNewlyAddedId(null), 2500);
+
+    // Optimistically update list smoothly without duplicates
+    setLogs(prev => {
+      if (prev.some(item => String(item.id) === normalizedLog.id)) {
+        return prev;
+      }
+      return [normalizedLog, ...prev];
+    });
+
     toast.success('Attendance check-in success.');
 
-    const today = new Date();
-    setCurrentWeekStart(startOfWeek(today, { weekStartsOn: 0 }));
-    setSelectedDayIndex(getDay(today));
+    // Reset filters
+    setLedgerSearch('');
+    setCustomerFilter('All');
+    setPaymentFilter('All');
 
-    fetchAttendanceFromSupabase();
+    // Update date state ONLY if different to prevent re-triggering useEffect
+    const today = new Date();
+    const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
+    const todayIndex = getDay(today);
+
+    setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
+    setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
+    setCurrentPage(1);
+
+    fetchAttendanceFromSupabase(true);
   };
 
   const handleTriggerCollectPayment = (log: LogRecord) => {
@@ -426,6 +491,7 @@ export const LogbookPage: React.FC = () => {
     toast.info(`Undone payment. Set back to Unpaid.`);
   };
 
+  // Smooth deletion animation with red glow before removing from state
   const handleDeleteLog = async (log: LogRecord) => {
     if (!isLogDeletable(log)) {
       if (
@@ -440,21 +506,32 @@ export const LogbookPage: React.FC = () => {
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('attendance')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', log.id);
+    const strId = String(log.id);
+    if (deletingIds.includes(strId)) return;
 
-      if (error) throw error;
+    // 1. Mark item as deleting (triggers red glow & smooth scale/fade animation)
+    setDeletingIds(prev => [...prev, strId]);
 
-      setPendingDelete(log);
-      setLogs(prev => prev.filter(item => item.id !== log.id));
-      setShowUndoToast(true);
-      toast.success('Check-in log moved to Recycle Bin.');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete check-in log.');
-    }
+    // 2. Wait 380ms for red glow fade animation to finish before updating database & state
+    setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from('attendance')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', log.id);
+
+        if (error) throw error;
+
+        setPendingDelete(log);
+        setLogs(prev => prev.filter(item => String(item.id) !== strId));
+        setDeletingIds(prev => prev.filter(id => id !== strId));
+        setShowUndoToast(true);
+        toast.success('Check-in log moved to Recycle Bin.');
+      } catch (err: any) {
+        setDeletingIds(prev => prev.filter(id => id !== strId));
+        toast.error(err.message || 'Failed to delete check-in log.');
+      }
+    }, 380);
   };
 
   const confirmDelete = () => {
@@ -473,6 +550,8 @@ export const LogbookPage: React.FC = () => {
 
       if (error) throw error;
 
+      const strId = String(pendingDelete.id);
+      setDeletingIds(prev => prev.filter(id => id !== strId));
       setLogs(prev => [pendingDelete, ...prev].sort((a, b) => {
         const dateA = a.timestamp || '';
         const dateB = b.timestamp || '';
@@ -481,13 +560,13 @@ export const LogbookPage: React.FC = () => {
       setPendingDelete(null);
       setShowUndoToast(false);
       toast.success('Check-in record restored.');
-      fetchAttendanceFromSupabase();
+      fetchAttendanceFromSupabase(true);
     } catch (err: any) {
       toast.error(err.message || 'Failed to restore record.');
     }
   };
 
- useEffect(() => {
+  useEffect(() => {
     if (activePage === 'logbook') {
       setActions(
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
@@ -775,7 +854,7 @@ export const LogbookPage: React.FC = () => {
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
               {(() => {
-                if (loadingLogs) {
+                if (loadingLogs && logs.length === 0) {
                   return (
                     <div className="space-y-3">
                       {Array.from({ length: 3 }).map((_, idx) => (
@@ -807,6 +886,7 @@ export const LogbookPage: React.FC = () => {
 
                 if (totalItems === 0) {
                   const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All' || paymentFilter !== 'All';
+                  const isSelectedDayToday = isToday(selectedDate);
 
                   return (
                     <motion.div
@@ -824,9 +904,12 @@ export const LogbookPage: React.FC = () => {
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
                         {hasFilter
                           ? 'Try modifying your search keywords or reset category filters.'
+                          : isSelectedDayToday
+                          ? 'No check-ins recorded today. Click below to register attendance.'
                           : 'Attendance records and subscription log sheets are empty for this date.'}
                       </p>
-                      {hasFilter && (
+
+                      {hasFilter ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -838,7 +921,16 @@ export const LogbookPage: React.FC = () => {
                         >
                           Clear Filters
                         </button>
-                      )}
+                      ) : isSelectedDayToday ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsCreateModalOpen(true)}
+                          className="mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider cursor-pointer shadow-md hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>RECORD NEW CHECK-IN</span>
+                        </button>
+                      ) : null}
                     </motion.div>
                   );
                 }
@@ -853,22 +945,66 @@ export const LogbookPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-2.5">
-                      {group.records.map(log => (
-                        <TimelineCard
-                          key={log.id}
-                          mode="attendance"
-                          data={log}
-                          canDelete={isLogDeletable(log)}
-                          onSelectReceipt={(rec) => {
-                            setSelectedReceiptLog(rec);
-                            setIsReceiptModalOpen(true);
-                          }}
-                          onTriggerDelete={handleDeleteLog}
-                          onTriggerCollectPayment={handleTriggerCollectPayment}
-                          onTriggerUndoPayment={handleTriggerUndoPayment}
-                          onDragEnd={handleDragEnd}
-                        />
-                      ))}
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        {group.records.map((log) => {
+                          const strId = String(log.id);
+                          const isNew = strId === newlyAddedId;
+                          const isDeleting = deletingIds.includes(strId);
+
+                          return (
+                            <motion.div
+                              key={strId}
+                              layout
+                              initial={{ 
+                                opacity: 0, 
+                                y: -15, 
+                                scale: 0.96,
+                                boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
+                              }}
+                              animate={isDeleting ? {
+                                opacity: 0,
+                                scale: 0.92,
+                                y: -5,
+                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
+                                filter: "brightness(0.9)"
+                              } : {
+                                opacity: 1, 
+                                y: 0, 
+                                scale: 1,
+                                boxShadow: isNew 
+                                  ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
+                                  : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
+                              }}
+                              exit={{ 
+                                opacity: 0, 
+                                scale: 0.9,
+                                y: -10,
+                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
+                              }}
+                              transition={{ 
+                                layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                                boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
+                                opacity: { duration: isDeleting ? 0.38 : 0.3 }
+                              }}
+                              className="rounded-2xl transition-all overflow-hidden"
+                            >
+                              <TimelineCard
+                                mode="attendance"
+                                data={log}
+                                canDelete={isLogDeletable(log) && !isDeleting}
+                                onSelectReceipt={(rec) => {
+                                  setSelectedReceiptLog(rec);
+                                  setIsReceiptModalOpen(true);
+                                }}
+                                onTriggerDelete={handleDeleteLog}
+                                onTriggerCollectPayment={handleTriggerCollectPayment}
+                                onTriggerUndoPayment={handleTriggerUndoPayment}
+                                onDragEnd={handleDragEnd}
+                              />
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
                     </div>
                   </div>
                 ));
@@ -995,7 +1131,7 @@ export const LogbookPage: React.FC = () => {
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
           onRestoreSuccess={() => {
-            fetchAttendanceFromSupabase();
+            fetchAttendanceFromSupabase(true);
           }}
         />
       )}
@@ -1024,92 +1160,57 @@ export const LogbookPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-        {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
+      {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
       {activePage === 'logbook' && createPortal(
-        <>
-          <AnimatePresence>
-            {isMobileActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
-            <AnimatePresence>
-              {isMobileActionsOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
-                  className="flex flex-col items-end gap-2.5 mb-1 animate-fade-in"
-                >
-                  {role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                    >
-                      <RotateCcw className="w-4 h-4 text-amber-500" />
-                      <div className="text-right">
-                        <span className="block">Recycle Bin</span>
-                        <span className="block text-[7px] text-slate-400 font-sans font-bold capitalize">Clears At End Of Day</span>
-                      </div>
-                    </button>
-                  )}
-
-                  {role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                    >
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                      <span>Generate Report</span>
-                    </button>
-                  )}
-                  
-                  <button
-                    type="button"
-                    onClick={() => { setIsMobileActionsOpen(false); setIsCreateModalOpen(true); }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-blue-500" />
-                    <span>New Check-In</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-190 shadow-2xl">
-            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <CircleDollarSign className="w-4 h-4" />
-                <span><AnimatedCurrency value={totalCollectedToday} /></span>
-              </div>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
-              <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                <Users className="w-4 h-4 text-blue-500" />
-                <span>{dayLogs.length} Check-ins</span>
-              </div>
+        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+          {/* Summary stats on the left */}
+          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <CircleDollarSign className="w-3.5 h-3.5" />
+              <span className="text-[11px]"><AnimatedCurrency value={totalCollectedToday} /></span>
             </div>
-
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-              title="Attendance Actions"
-            >
-              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-            </motion.button>
+            <span className="text-slate-300 dark:text-zinc-700">•</span>
+            <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
+              <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="text-[11px] truncate">{dayLogs.length} Check-ins</span>
+            </div>
           </div>
-        </>,
+
+          {/* Direct 1-Tap Action Buttons on the right */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {role === 'admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsRecycleBinOpen(true)}
+                  className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Recycle Bin"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(true)}
+                  className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Generate Report"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+              title="New Check-In"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="text-[10px] hidden xs:inline">Check-In</span>
+            </button>
+          </div>
+        </div>,
         document.body
       )}
     </div>

@@ -134,7 +134,7 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in font-body text-xs text-slate-500">
+    <div className="fixed inset-0 z-2000 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in font-body text-xs text-slate-500">
       <div className="bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-lg shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3 text-slate-900 dark:text-white">
           <h3 className="font-heading tracking-widest uppercase flex items-center gap-1.5">

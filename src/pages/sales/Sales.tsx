@@ -21,7 +21,8 @@ import {
   Printer,
   CircleDollarSign,
   Package,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -190,7 +191,7 @@ export const Sales: React.FC = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [ratesConfig, setRatesConfig] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   const itemsPerPage = useResponsiveItemsPerPage();
@@ -201,27 +202,30 @@ export const Sales: React.FC = () => {
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
 
-  const [showLiveScanner, ] = useState(false);
+  const [showLiveScanner] = useState(false);
   const [, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
+  // Animation states for green add glow & red delete glow
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
+
   useEffect(() => {
-  if (showLiveScanner) {
-    Html5Qrcode.getCameras().then((devices) => {
-      if (devices && devices.length > 0) {
-        setCameras(devices);
-        if (!selectedCameraId) {
-          setSelectedCameraId(devices[0].id);
+    if (showLiveScanner) {
+      Html5Qrcode.getCameras().then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+          if (!selectedCameraId) {
+            setSelectedCameraId(devices[0].id);
+          }
         }
-      }
-    }).catch(console.warn);
-  }
-}, [showLiveScanner]);
+      }).catch(console.warn);
+    }
+  }, [showLiveScanner]);
 
   useEffect(() => {
     if (role !== 'admin') return;
@@ -264,9 +268,12 @@ export const Sales: React.FC = () => {
     }
   };
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (isBackground: boolean = false) => {
     try {
-      setLoadingTransactions(true);
+      if (!isBackground && transactions.length === 0) {
+        setLoadingTransactions(true);
+      }
+
       let query = supabase
         .from('sales')
         .select('*')
@@ -285,11 +292,26 @@ export const Sales: React.FC = () => {
 
       const { data, error } = await query;
       if (error) throw error;
-      setTransactions(data || []);
+
+      const freshTransactions = data || [];
+
+      setTransactions(prev => {
+        if (
+          prev.length === freshTransactions.length &&
+          prev.length > 0 &&
+          prev[0]?.id === freshTransactions[0]?.id &&
+          prev[prev.length - 1]?.id === freshTransactions[freshTransactions.length - 1]?.id
+        ) {
+          return prev;
+        }
+        return freshTransactions;
+      });
     } catch (err) {
       console.error('Error loading sales ledger:', err);
     } finally {
-      setLoadingTransactions(false);
+      if (!isBackground) {
+        setLoadingTransactions(false);
+      }
     }
   };
 
@@ -310,12 +332,12 @@ export const Sales: React.FC = () => {
   useEffect(() => {
     fetchRatesConfig();
     fetchProducts();
-    fetchTransactions();
+    fetchTransactions(transactions.length > 0);
 
     const salesChannel = supabase
       .channel('sales-realtime-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        fetchTransactions();
+        fetchTransactions(true);
       })
       .subscribe();
 
@@ -404,7 +426,6 @@ export const Sales: React.FC = () => {
     return dayTransactions.reduce((acc, t) => acc + (Number(t.total_amount) || 0), 0);
   }, [dayTransactions]);
 
-  // Revenue dynamic scaling & color effect state
   const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
   const prevRevenueRef = useRef<number>(dailyRevenue);
 
@@ -441,11 +462,10 @@ export const Sales: React.FC = () => {
   }, [dayTransactions]);
 
   const handleSaleSuccess = async (newTx: any) => {
-    setLoading(true);
     try {
       const calculatedGcashFee = newTx.paymentMethod === 'GCash' ? (ratesConfig?.gcash_fee || 10.00) : 0.00;
 
-      const { error } = await supabase
+      const { data: insertedSale, error } = await supabase
         .from('sales')
         .insert([{
           items: newTx.items,
@@ -462,66 +482,83 @@ export const Sales: React.FC = () => {
 
       if (error) throw error;
 
-      if (newTx.items && Array.isArray(newTx.items)) {
-        for (const item of newTx.items) {
-          const { data: currentProduct } = await supabase
-            .from('products')
-            .select('stock_quantity')
-            .eq('id', item.productId)
-            .single();
+      if (insertedSale) {
+        setNewlyAddedId(insertedSale.id);
+        setTimeout(() => setNewlyAddedId(null), 2500);
 
-          if (currentProduct) {
-            const currentStock = currentProduct.stock_quantity ?? 0;
-            const updatedStock = Math.max(0, currentStock - item.quantity);
-            
-            await supabase
-              .from('products')
-              .update({ stock_quantity: updatedStock })
-              .eq('id', item.productId);
-          }
-        }
+        setTransactions(prev => [insertedSale, ...prev]);
       }
 
-      const itemsList = newTx.items?.map((i: any) => `\t- ${i.productName} (${i.quantity}x)`).join('\n') || `\t- ${newTx.productName}`;
-      const auditDetails = `Recorded sale transaction: ${newTx.id}\n` +
+      toast.success('Sale successfully recorded!');
+
+      setLedgerSearch('');
+      setPaymentFilter('All');
+
+      const today = new Date();
+      const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
+      const todayIndex = getDay(today);
+
+      setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
+      setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
+      setCurrentPage(1);
+
+      const itemsList = newTx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${newTx.productName}`;
+      const auditDetails = `Recorded sale transaction: ${insertedSale?.id || newTx.id}\n` +
         `Payment Method: ${newTx.paymentMethod}\n` +
         `Total Amount: ₱${newTx.totalAmount.toFixed(2)}\n\n` +
         `Items Purchased:\n${itemsList}`;
 
-      await supabase.from('audit_logs').insert([{
+      const stockUpdatePromises = (newTx.items || []).map(async (item: any) => {
+        const { data: currentProduct } = await supabase
+          .from('products')
+          .select('stock_quantity')
+          .eq('id', item.productId)
+          .single();
+
+        if (currentProduct) {
+          const updatedStock = Math.max(0, (currentProduct.stock_quantity ?? 0) - item.quantity);
+          return supabase
+            .from('products')
+            .update({ stock_quantity: updatedStock })
+            .eq('id', item.productId);
+        }
+      });
+
+      const auditLogPromise = supabase.from('audit_logs').insert([{
         action: 'SALE_RECORDED',
         details: auditDetails,
         actor_username: user?.email || 'System'
       }]);
 
-      if (newTx.items && newTx.items.length === 1) {
-        const singleItem = newTx.items[0];
-        toast.success(`Success! ${singleItem.productName} (${singleItem.quantity}x) has been successfully saved to your sale.`);
-      } else if (newTx.items && newTx.items.length > 1) {
-        const summaryText = newTx.items.map((i: any) => `${i.productName} (${i.quantity}x)`).join(', ');
-        toast.success(`Success! Saved to your sale: ${summaryText}.`);
-      } else {
-        toast.success('Your sale has been successfully saved.');
-      }
+      Promise.all([...stockUpdatePromises, auditLogPromise]).then(() => {
+        fetchTransactions(true);
+        fetchProducts();
+      }).catch(console.error);
 
-      fetchTransactions();
-      fetchProducts();
     } catch (err) {
       console.error(err);
-      toast.error('There was a problem saving your transaction. Please try again.');
-    } finally {
-      setLoading(false); 
+      toast.error('Problem saving transaction.');
     }
   };
 
+  // Smooth deletion animation with red glow before removing from state
   const handleDeleteTransaction = (tx: any) => {
     if (!isTransactionDeletable(tx)) {
       toast.error('Only sales made today can be deleted.');
       return;
     }
 
-    setStagedDeletions(prev => [...prev, tx]);
-    setTransactions(prev => prev.filter(t => t.id !== tx.id));
+    if (deletingIds.includes(tx.id)) return;
+
+    // 1. Mark item as deleting (triggers red glow & smooth scale/fade animation)
+    setDeletingIds(prev => [...prev, tx.id]);
+
+    // 2. Wait 380ms for red glow fade animation to complete before removing from state
+    setTimeout(() => {
+      setStagedDeletions(prev => [...prev, tx]);
+      setTransactions(prev => prev.filter(t => t.id !== tx.id));
+      setDeletingIds(prev => prev.filter(id => id !== tx.id));
+    }, 380);
   };
 
   const handleConfirmDelete = async (stagedTx: any) => {
@@ -551,12 +588,13 @@ export const Sales: React.FC = () => {
       toast.error('There was a problem deleting this sale. Please try again.');
     } finally {
       setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
-      fetchTransactions();
+      fetchTransactions(true);
       fetchProducts();
     }
   };
 
   const handleUndoDelete = (stagedTx: any) => {
+    setDeletingIds(prev => prev.filter(id => id !== stagedTx.id));
     setTransactions(prev => [stagedTx, ...prev].sort((a, b) => {
       const dateA = a.created_at || a.createdAt || '';
       const dateB = b.created_at || b.createdAt || '';
@@ -701,11 +739,11 @@ export const Sales: React.FC = () => {
       {/* --- TIMELINE CANVAS SCROLLER --- */}
       <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
         
-       {/* VIEW 1: CASHIER REGISTER */}
+        {/* VIEW 1: CASHIER REGISTER */}
         <div 
           className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 animate-fade-in ${
-    activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-  }`}
+            activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+          }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
@@ -715,89 +753,89 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-         {/* ─── TODAY'S SALES SUMMARY (STRICT 1-ROW DESIGN) ─── */}
-<div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
-  <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
-    
-    {/* Left: Transactions */}
-    <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
-      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-        <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
-      </div>
-      <div className="min-w-0">
-        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-          Transactions
-        </span>
-        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-          <AnimatedNumber value={dailyCount} />
-        </span>
-      </div>
-    </div>
+          {/* ─── TODAY'S SALES SUMMARY ─── */}
+          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
+            <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
+              
+              {/* Left: Transactions */}
+              <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                  <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+                    Transactions
+                  </span>
+                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+                    <AnimatedNumber value={dailyCount} />
+                  </span>
+                </div>
+              </div>
 
-    {/* Center: Highlighted Total Revenue */}
-    <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
-      <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
-        Total Revenue
-      </span>
-      <motion.div
-        animate={{
-          scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
-        }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-        className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
-      >
-        <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
-          revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
-        }`} />
-        <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
-          revenueTrend === 'increasing'
-            ? 'text-emerald-500'
-            : revenueTrend === 'decreasing'
-            ? 'text-rose-500'
-            : 'text-(--color-text)'
-        }`}>
-          <AnimatedCurrency value={dailyRevenue} />
-        </span>
-      </motion.div>
-    </div>
+              {/* Center: Highlighted Total Revenue */}
+              <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
+                <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
+                  Total Revenue
+                </span>
+                <motion.div
+                  animate={{
+                    scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
+                >
+                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
+                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
+                  }`} />
+                  <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
+                    revenueTrend === 'increasing'
+                      ? 'text-emerald-500'
+                      : revenueTrend === 'decreasing'
+                      ? 'text-rose-500'
+                      : 'text-(--color-text)'
+                  }`}>
+                    <AnimatedCurrency value={dailyRevenue} />
+                  </span>
+                </motion.div>
+              </div>
 
-    {/* Right: Items Sold */}
-    <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
-      <div className="min-w-0 text-right order-1">
-        <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-          Items Sold
-        </span>
-        <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-          <AnimatedNumber value={itemsSoldToday} />
-        </span>
-      </div>
-      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
-        <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
-      </div>
-    </div>
+              {/* Right: Items Sold */}
+              <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+                <div className="min-w-0 text-right order-1">
+                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
+                    Items Sold
+                  </span>
+                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
+                    <AnimatedNumber value={itemsSoldToday} />
+                  </span>
+                </div>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
+                  <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
+                </div>
+              </div>
 
-  </div>
-</div>
+            </div>
+          </div>
 
           <TimelineBar
-  currentWeekStart={currentWeekStart}
-  onWeekStartChange={setCurrentWeekStart}
-  selectedDayIndex={selectedDayIndex}
-  onDayIndexChange={setSelectedDayIndex}
-  searchQuery={ledgerSearch}
-  onSearchQueryChange={setLedgerSearch}
-  paymentFilter={paymentFilter}
-  onPaymentFilterChange={setPaymentFilter}
-  paymentOptions={PAYMENT_FILTERS}
-  role={role}
-  searchPlaceholder="Search here (E.g. Name, Product, ID)"
-/>
+            currentWeekStart={currentWeekStart}
+            onWeekStartChange={setCurrentWeekStart}
+            selectedDayIndex={selectedDayIndex}
+            onDayIndexChange={setSelectedDayIndex}
+            searchQuery={ledgerSearch}
+            onSearchQueryChange={setLedgerSearch}
+            paymentFilter={paymentFilter}
+            onPaymentFilterChange={setPaymentFilter}
+            paymentOptions={PAYMENT_FILTERS}
+            role={role}
+            searchPlaceholder="Search here (E.g. Name, Product, ID)"
+          />
 
           {/* --- HOURLY LEDGER TIMELINE --- */}
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
               {(() => {
-                if (loadingTransactions) {
+                if (loadingTransactions && transactions.length === 0) {
                   return (
                     <div className="space-y-3">
                       {Array.from({ length: 3 }).map((_, idx) => (
@@ -831,6 +869,7 @@ export const Sales: React.FC = () => {
 
                 if (totalItems === 0) {
                   const hasFilter = ledgerSearch.trim() !== '' || paymentFilter !== 'All';
+                  const isSelectedDayToday = isToday(selectedDate);
 
                   return (
                     <motion.div
@@ -848,9 +887,12 @@ export const Sales: React.FC = () => {
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
                         {hasFilter
                           ? 'Try modifying your search keywords or clear search filter.'
-                          : 'No purchases or entries have been recorded for this specific date slot.'}
+                          : isSelectedDayToday
+                          ? 'No purchases or entries recorded today. Click below to register a new sale.'
+                          : 'No purchases or entries recorded for this date slot.'}
                       </p>
-                      {hasFilter && (
+                      
+                      {hasFilter ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -861,7 +903,16 @@ export const Sales: React.FC = () => {
                         >
                           Clear Filters
                         </button>
-                      )}
+                      ) : isSelectedDayToday ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsCreateModalOpen(true)}
+                          className="mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider cursor-pointer shadow-md hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>RECORD NEW SALE</span>
+                        </button>
+                      ) : null}
                     </motion.div>
                   );
                 }
@@ -883,23 +934,66 @@ export const Sales: React.FC = () => {
                   <div key={group.label} className="space-y-4">
                     <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
                       <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
-  {group.label}
-</div>
+                        {group.label}
+                      </div>
                       <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
                     </div>
 
                     <div className="space-y-2.5">
-                      {group.txs.map((tx) => (
-                        <TimelineCard
-                          key={tx.id}
-                          mode="sale"
-                          data={tx}
-                          canDelete={isTransactionDeletable(tx)}
-                          onSelectReceipt={setSelectedReceiptTx}
-                          onTriggerDelete={handleDeleteTransaction}
-                          onDragEnd={handleDragEnd}
-                        />
-                      ))}
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        {group.txs.map((tx) => {
+                          const isNew = tx.id === newlyAddedId;
+                          const isDeleting = deletingIds.includes(tx.id);
+
+                          return (
+                            <motion.div
+                              key={tx.id}
+                              layout
+                              initial={{ 
+                                opacity: 0, 
+                                y: -15, 
+                                scale: 0.96,
+                                boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
+                              }}
+                              animate={isDeleting ? {
+                                opacity: 0,
+                                scale: 0.92,
+                                y: -5,
+                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
+                                filter: "brightness(0.9)"
+                              } : {
+                                opacity: 1, 
+                                y: 0, 
+                                scale: 1,
+                                boxShadow: isNew 
+                                  ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
+                                  : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
+                              }}
+                              exit={{ 
+                                opacity: 0, 
+                                scale: 0.9,
+                                y: -10,
+                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
+                              }}
+                              transition={{ 
+                                layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                                boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
+                                opacity: { duration: isDeleting ? 0.38 : 0.3 }
+                              }}
+                              className="rounded-2xl transition-all overflow-hidden"
+                            >
+                              <TimelineCard
+                                mode="sale"
+                                data={tx}
+                                canDelete={isTransactionDeletable(tx) && !isDeleting}
+                                onSelectReceipt={setSelectedReceiptTx}
+                                onTriggerDelete={handleDeleteTransaction}
+                                onDragEnd={handleDragEnd}
+                              />
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
                     </div>
                   </div>
                 ));
@@ -954,12 +1048,12 @@ export const Sales: React.FC = () => {
           )}
         </div>
 
-       {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
+        {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
           <div 
-           className={`w-full pb-40 md:pb-12 max-w-full ${
-    activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
-  }`}
+            className={`w-full pb-40 md:pb-12 max-w-full ${
+              activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+            }`}
             style={{
               gridColumn: 1,
               gridRow: 1,
@@ -1027,7 +1121,7 @@ export const Sales: React.FC = () => {
           onClose={() => setIsRecycleBinOpen(false)}
           products={products}
           onRestoreSuccess={() => {
-            fetchTransactions();
+            fetchTransactions(true);
             fetchProducts();
           }}
         />
@@ -1054,272 +1148,55 @@ export const Sales: React.FC = () => {
 
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
       {activeView === 'register' && createPortal(
-        <>
-          <AnimatePresence>
-            {isMobileActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
-            <AnimatePresence>
-              {isMobileActionsOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
-                  className="flex flex-col items-end gap-2.5 mb-1"
-                >
-                  {role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                    >
-                      <RotateCcw className="w-4 h-4 text-amber-500" />
-                      <div className="text-right">
-                        <span className="block">Recycle Bin</span>
-                        <span className="block text-[7px] text-slate-400 font-sans font-bold capitalize">Clears at end of day</span>
-                      </div>
-                    </button>
-                  )}
-
-                  {role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                    >
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                      <span>Generate Report</span>
-                    </button>
-                  )}
-                  
-                  <button
-                    type="button"
-                    onClick={() => { setIsMobileActionsOpen(false); setIsCreateModalOpen(true); }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-blue-500" />
-                    <span>New Sale</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Floating Mobile Bottom Sales Bar */}
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-190 shadow-2xl">
-            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <CircleDollarSign className="w-4 h-4" />
-                <span><AnimatedCurrency value={dailyRevenue} /></span>
-              </div>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
-              <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                <ShoppingBag className="w-4 h-4 text-blue-500" />
-                <span>{dailyCount} Sales</span>
-              </div>
+        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <CircleDollarSign className="w-3.5 h-3.5" />
+              <span className="text-[11px]"><AnimatedCurrency value={dailyRevenue} /></span>
             </div>
-
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-              title="New Sale Transaction"
-            >
-              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-            </motion.button>
-          </div>
-        </>,
-        document.body
-      )}
-
-      {/* MOBILE STICKY BOTTOM BAR FOR PRODUCTS INVENTORY */}
-      {activeView === 'inventory' && selectedProductsCount === 0 && createPortal(
-        <>
-          <AnimatePresence>
-            {isMobileActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
-            <AnimatePresence>
-              {isMobileActionsOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
-                  className="flex flex-col items-end gap-2.5 mb-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-recovery'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4 text-amber-500" />
-                    <span>Recycle Bin</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-print'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4 text-blue-500" />
-                    <span>Print Sheet Labels</span>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-create'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-emerald-500" />
-                    <span>Add New Item</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Floating Mobile Bottom Inventory Bar */}
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[190] shadow-2xl">
-            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-              <div className="flex items-center gap-1.5 text-[#123c73] dark:text-[#bf0202]">
-                <Package className="w-4 h-4" />
-                <span>{products.length} Products</span>
-              </div>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
-              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <ShoppingBag className="w-4 h-4" />
-                <span>{products.filter(p => p.status === 'Active').length} Active</span>
-              </div>
+            <span className="text-slate-300 dark:text-zinc-700">•</span>
+            <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
+              <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="text-[11px] truncate">{dailyCount} Sales</span>
             </div>
-
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-              title="Inventory Actions"
-            >
-              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-            </motion.button>
           </div>
-        </>,
-        document.body
-      )}
 
-      {/* MOBILE STICKY BOTTOM BAR FOR PRODUCTS INVENTORY */}
-      {activeView === 'inventory' && selectedProductsCount === 0 && (
-        <>
-          <AnimatePresence>
-            {isMobileActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
-            <AnimatePresence>
-              {isMobileActionsOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
-                  className="flex flex-col items-end gap-2.5 mb-1"
+          {/* Direct 1-Tap Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {role === 'admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsRecycleBinOpen(true)}
+                  className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Recycle Bin"
                 >
-                  <button
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-recovery'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4 text-amber-500" />
-                    <span>Recycle Bin</span>
-                  </button>
+                  <Trash2 className="w-4 h-4" />
+                </button>
 
-                  <button
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-print'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4 text-blue-500" />
-                    <span>Print Sheet Labels</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      setIsMobileActionsOpen(false);
-                      window.dispatchEvent(new CustomEvent('trigger-product-create'));
-                    }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-emerald-500" />
-                    <span>Add New Item</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(true)}
+                  className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Generate Report"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+              title="New Sale"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="text-[10px] hidden xs:inline">New</span>
+            </button>
           </div>
-
-          {/* Floating Mobile Bottom Inventory Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
-<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
-  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-    <div className="flex items-center gap-1.5 text-[#123c73] dark:text-[#bf0202]">
-      <Package className="w-4 h-4" />
-      <span>{products.length} Products</span>
-    </div>
-    <span className="text-slate-300 dark:text-zinc-700">•</span>
-    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-      <ShoppingBag className="w-4 h-4" />
-      <span>{products.filter(p => p.status === 'Active').length} Active</span>
-    </div>
-  </div>
-
-  <motion.button
-    type="button"
-    whileTap={{ scale: 0.9 }}
-    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-    title="Inventory Actions"
-  >
-    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-  </motion.button>
-</div>
-        </>
+        </div>,
+        document.body
       )}
 
     </div>
