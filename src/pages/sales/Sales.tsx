@@ -27,6 +27,7 @@ import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
 import 'react-loading-skeleton/dist/skeleton.css';
+import { createPortal } from 'react-dom';
 
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client'; 
@@ -1052,7 +1053,7 @@ export const Sales: React.FC = () => {
       </div>
 
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
-      {activeView === 'register' && (
+      {activeView === 'register' && createPortal(
         <>
           <AnimatePresence>
             {isMobileActionsOpen && (
@@ -1061,12 +1062,12 @@ export const Sales: React.FC = () => {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
               />
             )}
           </AnimatePresence>
 
-          <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
             <AnimatePresence>
               {isMobileActionsOpen && (
                 <motion.div 
@@ -1077,6 +1078,7 @@ export const Sales: React.FC = () => {
                 >
                   {role === 'admin' && (
                     <button
+                      type="button"
                       onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
                       className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                     >
@@ -1090,6 +1092,7 @@ export const Sales: React.FC = () => {
 
                   {role === 'admin' && (
                     <button
+                      type="button"
                       onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
                       className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                     >
@@ -1099,6 +1102,7 @@ export const Sales: React.FC = () => {
                   )}
                   
                   <button
+                    type="button"
                     onClick={() => { setIsMobileActionsOpen(false); setIsCreateModalOpen(true); }}
                     className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                   >
@@ -1110,31 +1114,124 @@ export const Sales: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          {/* Floating Mobile Bottom Sales Bar - POSITIONED AT bottom-20 ABOVE SYSTEM NAVBAR */}
-<div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
-  <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
-    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-      <CircleDollarSign className="w-4 h-4" />
-      <span><AnimatedCurrency value={dailyRevenue} /></span>
-    </div>
-    <span className="text-slate-300 dark:text-zinc-700">•</span>
-    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-      <ShoppingBag className="w-4 h-4 text-blue-500" />
-      <span>{dailyCount} Sales</span>
-    </div>
-  </div>
+          {/* Floating Mobile Bottom Sales Bar */}
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-190 shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <CircleDollarSign className="w-4 h-4" />
+                <span><AnimatedCurrency value={dailyRevenue} /></span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <ShoppingBag className="w-4 h-4 text-blue-500" />
+                <span>{dailyCount} Sales</span>
+              </div>
+            </div>
 
-  <motion.button
-    type="button"
-    whileTap={{ scale: 0.9 }}
-    onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
-    className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
-    title="New Sale Transaction"
-  >
-    <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
-  </motion.button>
-</div>
-        </>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+              title="New Sale Transaction"
+            >
+              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+            </motion.button>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* MOBILE STICKY BOTTOM BAR FOR PRODUCTS INVENTORY */}
+      {activeView === 'inventory' && selectedProductsCount === 0 && createPortal(
+        <>
+          <AnimatePresence>
+            {isMobileActionsOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileActionsOpen(false)}
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
+              />
+            )}
+          </AnimatePresence>
+
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
+            <AnimatePresence>
+              {isMobileActionsOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 15, scale: 0.9 }}
+                  className="flex flex-col items-end gap-2.5 mb-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-recovery'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-500" />
+                    <span>Recycle Bin</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-print'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-blue-500" />
+                    <span>Print Sheet Labels</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileActionsOpen(false);
+                      window.dispatchEvent(new CustomEvent('trigger-product-create'));
+                    }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-500" />
+                    <span>Add New Item</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Floating Mobile Bottom Inventory Bar */}
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[190] shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
+              <div className="flex items-center gap-1.5 text-[#123c73] dark:text-[#bf0202]">
+                <Package className="w-4 h-4" />
+                <span>{products.length} Products</span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <ShoppingBag className="w-4 h-4" />
+                <span>{products.filter(p => p.status === 'Active').length} Active</span>
+              </div>
+            </div>
+
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+              className="flex items-center justify-center w-10 h-10 text-white rounded-xl cursor-pointer bg-[#123c73] dark:bg-[#bf0202] shadow-md border border-white/10"
+              title="Inventory Actions"
+            >
+              <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
+            </motion.button>
+          </div>
+        </>,
+        document.body
       )}
 
       {/* MOBILE STICKY BOTTOM BAR FOR PRODUCTS INVENTORY */}

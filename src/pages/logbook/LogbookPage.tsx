@@ -23,6 +23,7 @@ import {
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 
 // Supabase & Authentication Stores
 import { useAuthStore } from '../../stores/authStore';
@@ -1023,8 +1024,8 @@ export const LogbookPage: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
-      {activePage === 'logbook' && (
+        {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
+      {activePage === 'logbook' && createPortal(
         <>
           <AnimatePresence>
             {isMobileActionsOpen && (
@@ -1033,12 +1034,12 @@ export const LogbookPage: React.FC = () => {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
               />
             )}
           </AnimatePresence>
 
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom))] right-6 z-[180] flex flex-col items-end gap-3.5">
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-3.5 select-none">
             <AnimatePresence>
               {isMobileActionsOpen && (
                 <motion.div 
@@ -1051,7 +1052,7 @@ export const LogbookPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => { setIsMobileActionsOpen(false); setIsRecycleBinOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                     >
                       <RotateCcw className="w-4 h-4 text-amber-500" />
                       <div className="text-right">
@@ -1065,7 +1066,7 @@ export const LogbookPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => { setIsMobileActionsOpen(false); setIsReportModalOpen(true); }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                      className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                     >
                       <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                       <span>Generate Report</span>
@@ -1075,7 +1076,7 @@ export const LogbookPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { setIsMobileActionsOpen(false); setIsCreateModalOpen(true); }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/5 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
+                    className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 dark:bg-neutral-900/95 text-slate-100 border border-white/10 text-[9px] font-heading tracking-widest uppercase rounded-2xl shadow-xl cursor-pointer"
                   >
                     <Plus className="w-4 h-4 text-blue-500" />
                     <span>New Check-In</span>
@@ -1085,7 +1086,7 @@ export const LogbookPage: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[170] shadow-2xl">
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-190 shadow-2xl">
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
               <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <CircleDollarSign className="w-4 h-4" />
@@ -1108,7 +1109,8 @@ export const LogbookPage: React.FC = () => {
               <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
             </motion.button>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

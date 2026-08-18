@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
   X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Sparkles
@@ -1468,10 +1469,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         )}
       </AnimatePresence>
 
-      {/* 3. MOBILE COMPACT BOTTOM DIRECTORY BAR & EXPANDABLE FAB (< MD) */}
-      {activeTab === 'Directory' && (
+       {/* 3. MOBILE COMPACT BOTTOM DIRECTORY BAR & EXPANDABLE FAB (< MD) */}
+      {activeTab === 'Directory' && createPortal(
         <>
-          {/* Backdrop for FAB Menu */}
           <AnimatePresence>
             {isMobileActionsOpen && (
               <motion.div
@@ -1479,13 +1479,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsMobileActionsOpen(false)}
-                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-35"
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[185]"
               />
             )}
           </AnimatePresence>
 
-          {/* Expanded FAB Menu Items */}
-          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom))] right-4 z-[180] flex flex-col items-end gap-2.5 select-none">
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] right-4 z-[190] flex flex-col items-end gap-2.5 select-none">
             <AnimatePresence>
               {isMobileActionsOpen && (
                 <motion.div 
@@ -1536,8 +1535,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             </AnimatePresence>
           </div>
 
-          {/* Floating Mobile Bottom Directory Bar */}
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[170] shadow-2xl">
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[190] shadow-2xl">
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
               <div className="flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
@@ -1560,7 +1558,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
               <Plus className={`w-5 h-5 transition-transform duration-200 ${isMobileActionsOpen ? 'rotate-45' : ''}`} />
             </motion.button>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* 4. MOBILE SLIDE-UP ACTION SHEET FOR INDIVIDUAL MEMBER (< MD) */}

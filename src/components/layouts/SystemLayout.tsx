@@ -160,7 +160,7 @@ export const SystemLayout: React.FC = () => {
 
   return (
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
-      <div className="relative h-screen overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
+      <div className="relative h-[100dvh] overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
         
         {/* TAB LOADING OVERLAY */}
         <TabLoader isVisible={isTabLoading} />
