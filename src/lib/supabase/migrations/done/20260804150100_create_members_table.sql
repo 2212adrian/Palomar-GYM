@@ -1,4 +1,4 @@
--- Migration: Create Members Table (Includes Card Fields Cleanup, Signatures, Soft Delete & Daily 16:00 UTC Auto-Purge)
+-- Migration: Create & Update Members Table
 -- File: 20260804150100_create_members_table.sql
 
 BEGIN;
@@ -20,12 +20,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'card_type_enum') THEN
         CREATE TYPE public.card_type_enum AS ENUM ('QR', 'Manual', 'None');
     END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE public.user_role AS ENUM ('admin', 'staff');
+    END IF;
 END $do$;
 
 -- ============================================================================
--- 2. TABLE CREATION
+-- 2. TABLE CREATION & SCHEMA PATCHING
 -- ============================================================================
 
+-- Create table if it doesn't exist
 CREATE TABLE IF NOT EXISTS public.members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     member_id VARCHAR(20) UNIQUE NOT NULL DEFAULT public.generate_member_id(),
@@ -47,11 +52,11 @@ CREATE TABLE IF NOT EXISTS public.members (
     parent_relationship TEXT DEFAULT NULL,
     parent_phone VARCHAR(20) DEFAULT NULL,
     parent_email TEXT DEFAULT NULL,
-    applicant_signature TEXT DEFAULT NULL, -- Applicant E-Signature
-    parent_signature TEXT DEFAULT NULL,    -- Parent / Guardian E-Signature
+    applicant_signature TEXT DEFAULT NULL,
+    parent_signature TEXT DEFAULT NULL,
     consent_date TIMESTAMPTZ DEFAULT NULL,
 
-    -- Soft Delete Recycle Bin Metadata
+    -- Soft Delete Metadata
     deleted_at TIMESTAMPTZ DEFAULT NULL,
     deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL,
     delete_reason TEXT DEFAULT NULL,
@@ -60,7 +65,35 @@ CREATE TABLE IF NOT EXISTS public.members (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Clean up any legacy embedded card columns
+-- Ensure ALL columns exist on pre-existing tables (Fixes missing columns error)
+ALTER TABLE public.members 
+  ADD COLUMN IF NOT EXISTS member_id VARCHAR(20) UNIQUE DEFAULT public.generate_member_id(),
+  ADD COLUMN IF NOT EXISTS full_name TEXT,
+  ADD COLUMN IF NOT EXISTS phone VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS email TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS gender VARCHAR(20) DEFAULT 'Male',
+  ADD COLUMN IF NOT EXISTS birthday DATE DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS address TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS relationship TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS emergency_contact_phone VARCHAR(20) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS status public.member_status_enum DEFAULT 'Active'::public.member_status_enum,
+  ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS parent_name TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS parent_relationship TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(20) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS parent_email TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS applicant_signature TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS parent_signature TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS consent_date TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS delete_reason TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- Clean up legacy embedded card columns if present
 ALTER TABLE public.members 
   DROP COLUMN IF EXISTS card_number,
   DROP COLUMN IF EXISTS card_type,
@@ -74,12 +107,12 @@ ALTER TABLE public.members
 CREATE OR REPLACE FUNCTION public.handle_members_soft_delete()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If row is already soft deleted, allow permanent deletion (used by manual hard delete in Recycle Bin or pg_cron auto-purge)
+    -- If row is already soft deleted, allow permanent deletion
     IF OLD.deleted_at IS NOT NULL THEN
         RETURN OLD;
     END IF;
 
-    -- Intercept delete and update timestamps/user metadata instead (Soft Delete)
+    -- Intercept delete and mark soft delete metadata
     UPDATE public.members
     SET deleted_at = now(),
         deleted_by = auth.uid()
@@ -101,7 +134,7 @@ CREATE TRIGGER tr_members_soft_delete
 
 ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
 
--- Drop pre-existing policies for clean migration
+-- Drop pre-existing policies for clean idempotent execution
 DROP POLICY IF EXISTS "Allow authenticated users to view active members" ON public.members;
 DROP POLICY IF EXISTS "Allow authenticated users to view members" ON public.members;
 DROP POLICY IF EXISTS "Allow authenticated users to insert members" ON public.members;
@@ -109,7 +142,7 @@ DROP POLICY IF EXISTS "Allow authenticated users to update members" ON public.me
 DROP POLICY IF EXISTS "Allow authenticated users to delete members" ON public.members;
 DROP POLICY IF EXISTS "Allow admin and superadmin to delete members" ON public.members;
 
--- A. SELECT Policy: Admins and Superadmin can view all members (including soft-deleted). Staff can only view active/non-deleted members.
+-- A. SELECT Policy
 CREATE POLICY "Allow authenticated users to view members" ON public.members
     FOR SELECT TO authenticated
     USING (
@@ -122,18 +155,18 @@ CREATE POLICY "Allow authenticated users to view members" ON public.members
         OR deleted_at IS NULL
     );
 
--- B. INSERT Policy: All authenticated users (Staff, Admin, Superadmin) can register new members
+-- B. INSERT Policy
 CREATE POLICY "Allow authenticated users to insert members" ON public.members
     FOR INSERT TO authenticated 
     WITH CHECK (deleted_at IS NULL);
 
--- C. UPDATE Policy: All authenticated users (Staff, Admin, Superadmin) can update member profiles
+-- C. UPDATE Policy
 CREATE POLICY "Allow authenticated users to update members" ON public.members
     FOR UPDATE TO authenticated 
     USING (true) 
     WITH CHECK (true);
 
--- D. DELETE Policy: Strictly restricted to Administrators and Superadmin (wolf.palomar@gmail.com). Staff CANNOT delete.
+-- D. DELETE Policy
 CREATE POLICY "Allow admin and superadmin to delete members" ON public.members
     FOR DELETE TO authenticated
     USING (
@@ -164,30 +197,25 @@ BEGIN
 END $do$;
 
 -- ============================================================================
--- 6. AUTO-PURGE CRON JOB (Every day at 16:00 UTC / 12:00 AM Manila Time)
+-- 6. AUTO-PURGE CRON JOB
 -- ============================================================================
 
--- Pure hard-delete function executed by pg_cron
 CREATE OR REPLACE FUNCTION public.purge_expired_soft_deleted_members()
 RETURNS void AS $$
 BEGIN
-    -- Permanently hard-deletes profiles soft deleted >= 30 days ago
     DELETE FROM public.members
     WHERE deleted_at IS NOT NULL 
       AND deleted_at <= (now() - INTERVAL '30 days');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Safely schedule the cron job if pg_cron is enabled
 DO $do$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-        -- Remove existing schedule if it exists to avoid duplication errors
         PERFORM cron.unschedule(jobid) 
         FROM cron.job 
         WHERE jobname = 'purge_expired_members_daily';
 
-        -- Schedule cron: '0 16 * * *' = 16:00 UTC = 00:00 Midnight Manila Time (UTC+8)
         PERFORM cron.schedule(
             'purge_expired_members_daily',
             '0 16 * * *',
@@ -195,5 +223,11 @@ BEGIN
         );
     END IF;
 END $do$;
+
+-- ============================================================================
+-- 7. FORCE POSTGREST SCHEMA CACHE RELOAD
+-- ============================================================================
+
+NOTIFY pgrst, 'reload schema';
 
 COMMIT;

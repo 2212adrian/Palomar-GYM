@@ -296,17 +296,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
     // 1. EXPIRED CONTRACT STATE
     if (isPast) {
-  return {
-    hasSub: false,
-    canRenew: true,
-    planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
-    statusLabel: 'Expired',
-    badgeStyle: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 font-bold',
-    dotColor: 'bg-rose-500',
-    subscribedAt: targetSub.start_date ? new Date(targetSub.start_date).toLocaleDateString() : null,
-    queuedPlan: null
-  };
-}
+      return {
+        hasSub: false,
+        canRenew: true,
+        planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
+        statusLabel: 'Expired',
+        badgeStyle: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 font-bold',
+        dotColor: 'bg-rose-500',
+        subscribedAt: targetSub.start_date ? new Date(targetSub.start_date).toLocaleDateString() : null,
+        queuedPlan: null
+      };
+    }
 
     // 2. TRULY ACTIVE CONTRACT STATE
     const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
@@ -332,7 +332,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
     return {
       hasSub: true,
-      canRenew: diffDays <= 30 && !queuedSub, // Can renew if <= 30 days left and no queued plan yet
+      canRenew: diffDays <= 30 && !queuedSub,
       planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
       statusLabel,
       badgeStyle,
@@ -388,7 +388,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       }).length,
       expired: members.filter(m => {
         const activeSub = getActiveSubscription(m.member_id);
-        if (activeSub) return false; // If has active sub, not expired
+        if (activeSub) return false;
         const latestSub = getLatestSubscriptionRecord(m.member_id);
         if (!latestSub) return false;
         return new Date(latestSub.end_date).getTime() < now;
@@ -543,13 +543,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       header: 'Member / ID',
       sortable: true,
       render: (item) => (
-        <div className="flex items-center gap-3 py-1 text-left">
-          <div className="w-9 h-9 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-xs font-bold shadow-xs shrink-0">
+        <div className="flex items-center gap-3.5 py-1.5 text-left">
+          <div className="w-10 h-10 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shadow-xs shrink-0">
             {(item.full_name || 'M')[0]}
           </div>
           <div className="min-w-0">
-            <span className="font-bold block text-xs text-(--color-text) truncate">{item.full_name}</span>
-            <span className="text-[10px] text-slate-400 font-mono block mt-0.5 leading-none truncate">
+            <span className="font-bold block text-sm text-(--color-text) truncate">{item.full_name}</span>
+            <span className="text-xs text-slate-400 font-mono block mt-0.5 leading-none truncate">
               {item.member_id} • {item.phone}
             </span>
           </div>
@@ -569,22 +569,22 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         const isLatest = latestSubscriptionInfo?.member.id === item.id;
 
         return (
-          <div className="text-left leading-tight space-y-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-sans font-bold text-xs block text-(--color-text)">{subInfo.planName}</span>
+          <div className="text-left leading-tight space-y-1.5 py-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-sans font-bold text-sm block text-(--color-text)">{subInfo.planName}</span>
               {isLatest && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
-                  <Sparkles className="w-2.5 h-2.5 text-emerald-500" /> Latest
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
+                  <Sparkles className="w-3 h-3 text-emerald-500" /> Latest
                 </span>
               )}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
+              <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold uppercase border ${subInfo.badgeStyle}`}>
                 {subInfo.statusLabel}
               </span>
               {subInfo.queuedPlan && (
-                <span className="inline-block px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase border bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" title="Queued renewal after current plan expires">
+                <span className="inline-block px-2.5 py-0.5 rounded text-xs font-mono font-bold uppercase border bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" title="Queued renewal after current plan expires">
                   Queued: {subInfo.queuedPlan}
                 </span>
               )}
@@ -606,7 +606,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         const cardObj = getActiveCard(item.member_id);
         if (!cardObj || cardObj.card_type === 'None') {
           return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-semibold bg-slate-500/10 text-slate-500 border border-slate-500/20">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-slate-500/10 text-slate-500 border border-slate-500/20">
               No Card Issued
             </span>
           );
@@ -623,14 +623,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 setManualModalMember(item);
               }
             }}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-bold border cursor-pointer hover:opacity-80 transition-opacity ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer hover:opacity-80 transition-opacity ${
               isQr 
                 ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' 
                 : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
             }`}
             title="Click to view & print card"
           >
-            {isQr ? <QrCode className="w-3 h-3 text-blue-500" /> : <CreditCard className="w-3 h-3 text-amber-500" />}
+            {isQr ? <QrCode className="w-3.5 h-3.5 text-blue-500" /> : <CreditCard className="w-3.5 h-3.5 text-amber-500" />}
             <span>{isQr ? 'Digital QR Badge' : 'Manual Badge'}</span>
           </button>
         );
@@ -641,11 +641,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       header: 'System Status',
       sortable: true,
       render: (item) => (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
           item.status === 'Active' 
             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
             : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
         }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${item.status === 'Active' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           {item.status}
         </span>
       )
@@ -653,13 +654,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     {
       key: 'actions',
       header: 'Actions',
-      cellClassName: 'text-right min-w-[180px]',
+      cellClassName: 'text-right min-w-[200px]',
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
 
         return (
           <div 
-            className="opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 flex items-center justify-end gap-1.5 select-none relative"
+            className="opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 flex items-center justify-end gap-2 select-none relative"
             onClick={(e) => e.stopPropagation()}
           >
             {subInfo.canRenew && (
@@ -669,7 +670,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   setWizardPrefillMember(item);
                   setIsWizardOpen(true);
                 }}
-                className="p-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg cursor-pointer border border-emerald-500/20 inline-flex items-center gap-1 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+                className="px-2.5 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-xl cursor-pointer border border-emerald-500/20 inline-flex items-center gap-1.5 text-xs font-heading tracking-wider uppercase font-bold transition-colors"
                 title="Enroll or renew member subscription contract"
               >
                 <CreditCard className="w-3.5 h-3.5" /> {subInfo.hasSub ? 'Renew' : 'Subscribe'}
@@ -681,7 +682,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 e.stopPropagation();
                 setSelectedProfileMember(item);
               }}
-              className="p-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg cursor-pointer border border-blue-500/20 inline-flex items-center gap-1 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+              className="px-2.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl cursor-pointer border border-blue-500/20 inline-flex items-center gap-1.5 text-xs font-heading tracking-wider uppercase font-bold transition-colors"
               title="See profile details"
             >
               <Eye className="w-3.5 h-3.5" /> Profile
@@ -694,15 +695,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   e.stopPropagation();
                   setOpenActionMenuId(openActionMenuId === item.id ? null : item.id);
                 }}
-                className="p-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-(--color-text) cursor-pointer"
+                className="p-2 rounded-xl border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-(--color-text) cursor-pointer transition-colors"
               >
-                <MoreVertical className="w-3.5 h-3.5" />
+                <MoreVertical className="w-4 h-4" />
               </button>
 
               {openActionMenuId === item.id && (
                 <div 
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 top-full mt-1 w-44 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl z-30 p-1.5 space-y-1 font-body text-xs text-left animate-fade-in"
+                  className="absolute right-0 top-full mt-1.5 w-48 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl z-30 p-1.5 space-y-1 font-body text-xs text-left animate-fade-in"
                 >
                   <button
                     type="button"
@@ -710,9 +711,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       setOpenActionMenuId(null);
                       setSelectedProfileMember(item);
                     }}
-                    className="w-full px-3 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2 text-[10px] font-bold text-(--color-text) cursor-pointer"
+                    className="w-full px-3.5 py-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-(--color-text) cursor-pointer"
                   >
-                    <Eye className="w-3.5 h-3.5 text-blue-500" />
+                    <Eye className="w-4 h-4 text-blue-500" />
                     <span>View Workspace</span>
                   </button>
 
@@ -722,9 +723,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       setOpenActionMenuId(null);
                       setQrModalMember(item);
                     }}
-                    className="w-full px-3 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2 text-[10px] font-bold text-(--color-text) cursor-pointer"
+                    className="w-full px-3.5 py-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-(--color-text) cursor-pointer"
                   >
-                    <QrCode className="w-3.5 h-3.5 text-blue-500" />
+                    <QrCode className="w-4 h-4 text-blue-500" />
                     <span>Digital QR Card</span>
                   </button>
 
@@ -736,9 +737,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       setOpenActionMenuId(null);
                       handleToggleSuspend(item);
                     }}
-                    className="w-full px-3 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2 text-[10px] font-bold text-amber-600 dark:text-amber-400 cursor-pointer"
+                    className="w-full px-3.5 py-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 cursor-pointer"
                   >
-                    {item.status === 'Active' ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                    {item.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
                     <span>{item.status === 'Active' ? 'Suspend Member' : 'Activate Member'}</span>
                   </button>
                 </div>
@@ -763,7 +764,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             <Button
               onClick={handleOpenPrintModal}
               variant="secondary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
               title="Open full member credential card print workspace"
             >
               <Printer className="w-4 h-4 text-red-500" />
@@ -773,7 +774,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             <Button
               onClick={() => setIsRecycleOpen(true)}
               variant="secondary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
             >
               <RotateCcw className="w-4 h-4 text-amber-500" />
               <span>RECYCLE BIN</span>
@@ -786,7 +787,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 setIsWizardOpen(true); 
               }}
               variant="primary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
+              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
             >
               <Plus className="w-4 h-4" />
               <span>ENROLL MEMBER</span>
@@ -810,7 +811,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   }, []);
 
   return (
-    <div className="relative min-h-[85vh] w-full animate-fade-in text-xs text-(--color-text)">
+    <div className="relative min-h-[85vh] w-full animate-fade-in text-xs md:text-sm text-(--color-text)">
       
       {isPlansPath ? (
         <div className="space-y-4">
@@ -833,13 +834,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
-                  className={`flex-1 py-3 px-2 font-heading text-[10px] md:text-xs tracking-wider uppercase font-black cursor-pointer flex items-center justify-center gap-1.5 transition-all ${
+                  className={`flex-1 py-3.5 px-4 font-heading text-xs md:text-sm tracking-wider uppercase font-extrabold cursor-pointer flex items-center justify-center gap-2 transition-all ${
                     activeTab === item.id 
                       ? 'border-b-2 border-[#123c73] dark:border-[#bf0202] text-slate-900 dark:text-white' 
                       : 'border-b-2 border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 md:w-4.5 md:h-4.5" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -852,55 +853,55 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 
                 {/* 1. DESKTOP STATS GRID */}
                 <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
                       <Users className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">TOTAL MEMBERS</span>
-                      <span className="text-base font-heading font-black text-(--color-text) block leading-tight">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">TOTAL MEMBERS</span>
+                      <span className="text-xl lg:text-2xl font-heading font-black text-(--color-text) block leading-tight mt-0.5">
                         {stats.total}
                       </span>
-                      <span className="text-[9px] font-mono text-slate-400 block truncate">Registered Profiles</span>
+                      <span className="text-xs font-medium text-slate-400 block truncate mt-0.5">Registered Profiles</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shrink-0">
                       <Award className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">ONGOING SUBSCRIPTION</span>
-                      <span className="text-base font-heading font-black text-emerald-600 dark:text-emerald-400 block leading-tight">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">ONGOING SUBSCRIPTION</span>
+                      <span className="text-xl lg:text-2xl font-heading font-black text-emerald-600 dark:text-emerald-400 block leading-tight mt-0.5">
                         {stats.activeSubscriptions}
                       </span>
-                      <span className="text-[9px] font-mono text-emerald-600/70 dark:text-emerald-400/70 block truncate">Active Contracts</span>
+                      <span className="text-xs font-medium text-emerald-600/80 dark:text-emerald-400/80 block truncate mt-0.5">Active Contracts</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
                       <Clock className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">EXPIRING SOON</span>
-                      <span className="text-base font-heading font-black text-amber-600 dark:text-amber-400 block leading-tight">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">EXPIRING SOON</span>
+                      <span className="text-xl lg:text-2xl font-heading font-black text-amber-600 dark:text-amber-400 block leading-tight mt-0.5">
                         {stats.expiringSoon}
                       </span>
-                      <span className="text-[9px] font-mono text-amber-600/70 dark:text-amber-400/70 block truncate">Within 7 Days</span>
+                      <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80 block truncate mt-0.5">Within 7 Days</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3.5 shadow-xs hover:-translate-y-0.5 transition-all">
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
                     <div className="p-3 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shrink-0">
                       <UserX className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">SUSPENDED</span>
-                      <span className="text-base font-heading font-black text-rose-600 dark:text-rose-400 block leading-tight">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">SUSPENDED</span>
+                      <span className="text-xl lg:text-2xl font-heading font-black text-rose-600 dark:text-rose-400 block leading-tight mt-0.5">
                         {stats.suspendedMembers}
                       </span>
-                      <span className="text-[9px] font-mono text-rose-600/70 dark:text-rose-400/70 block truncate">Locked Profiles</span>
+                      <span className="text-xs font-medium text-rose-600/80 dark:text-rose-400/80 block truncate mt-0.5">Locked Profiles</span>
                     </div>
                   </div>
                 </div>
@@ -961,14 +962,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-gradient-to-r from-blue-900/15 via-(--bg-card) to-emerald-900/10 border border-blue-500/20 dark:border-blue-500/30 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 select-none group"
+                    className="p-4 sm:p-5 bg-gradient-to-r from-blue-900/15 via-(--bg-card) to-emerald-900/10 border border-blue-500/20 dark:border-blue-500/30 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 select-none group"
                   >
                     <div className="absolute -right-10 -bottom-10 w-36 h-36 bg-blue-500/10 dark:bg-red-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500" />
 
-                    <div className="flex items-center gap-3.5 min-w-0 relative z-10">
+                    <div className="flex items-center gap-4 min-w-0 relative z-10">
                       {/* Pulsing Avatar */}
                       <div className="relative shrink-0">
-                        <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-gradient-to-br from-[#123c73] to-blue-600 dark:from-[#bf0202] dark:to-red-700 text-white flex items-center justify-center font-heading text-base font-black shadow-md">
+                        <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-[#123c73] to-blue-600 dark:from-[#bf0202] dark:to-red-700 text-white flex items-center justify-center font-heading text-lg md:text-xl font-black shadow-md">
                           {(latestSubscriptionInfo.member.full_name || 'M')[0]}
                         </div>
                         <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
@@ -977,32 +978,32 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         </span>
                       </div>
 
-                      <div className="min-w-0 space-y-0.5">
+                      <div className="min-w-0 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                            <Sparkles className="w-3 h-3 text-emerald-500" /> MOST RECENT SUBSCRIBER
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> MOST RECENT SUBSCRIBER
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400">
+                          <span className="text-xs font-mono font-bold text-slate-400">
                             {latestSubscriptionInfo.member.member_id}
                           </span>
                         </div>
 
-                        <h3 className="font-heading font-bold text-sm md:text-base text-(--color-text) truncate">
+                        <h3 className="font-heading font-bold text-base md:text-lg text-(--color-text) truncate">
                           {latestSubscriptionInfo.member.full_name}
                         </h3>
 
-                        <div className="flex items-center gap-2.5 text-[11px] font-medium text-slate-400 flex-wrap">
-                          <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                            <Award className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-3 text-xs md:text-sm font-medium text-slate-400 flex-wrap">
+                          <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                            <Award className="w-4 h-4" />
                             {latestSubscriptionInfo.planName}
                           </span>
                           <span>•</span>
-                          <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold">
                             ₱{latestSubscriptionInfo.price?.toLocaleString()}
                           </span>
                           <span>•</span>
-                          <span className="font-mono flex items-center gap-1 text-(--color-text)">
-                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                          <span className="font-mono flex items-center gap-1.5 text-(--color-text)">
+                            <Clock className="w-4 h-4 text-amber-500" />
                             {latestSubscriptionInfo.dateStr} at <strong className="text-amber-600 dark:text-amber-400 font-bold">{latestSubscriptionInfo.timeStr}</strong>
                           </span>
                         </div>
@@ -1012,7 +1013,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     <button
                       type="button"
                       onClick={() => setSelectedProfileMember(latestSubscriptionInfo.member)}
-                      className="w-full md:w-auto px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border border-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 relative z-10 active:scale-95"
+                      className="w-full md:w-auto px-5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border border-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 relative z-10 active:scale-95"
                     >
                       <Eye className="w-4 h-4" />
                       <span>View Member</span>
@@ -1021,17 +1022,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 )}
 
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
-                <div className="space-y-3 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
+                <div className="space-y-3 bg-(--bg-card) p-3.5 md:p-4 rounded-2xl border border-(--border-color) shadow-xs">
                   
                   <div className="relative w-full">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <Search className="w-4.5 h-4.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       ref={searchInputRef}
                       type="text"
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
                       placeholder="Search profiles by Name, ID, Phone, or Email..."
-                      className="w-full pl-10 pr-10 py-2.5 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-medium text-xs text-(--color-text) focus:border-blue-500 transition-all"
+                      className="w-full pl-10 pr-10 py-2.5 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-medium text-xs md:text-sm text-(--color-text) focus:border-blue-500 transition-all"
                     />
 
                     {searchQuery && (
@@ -1041,14 +1042,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
                         title="Clear search query"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-4 h-4" />
                       </button>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-none pb-1 select-none">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1 shrink-0 pr-1">
-                      <Filter className="w-3 h-3" /> Filters:
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 pr-1">
+                      <Filter className="w-3.5 h-3.5" /> Filters:
                     </span>
 
                     {[
@@ -1064,14 +1065,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         key={chip.id}
                         type="button"
                         onClick={() => setActiveChip(chip.id as FilterChip)}
-                        className={`px-3 py-1.5 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-1.5 shrink-0 ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-2 shrink-0 ${
                           activeChip === chip.id
                             ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs'
                             : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
                         }`}
                       >
                         <span>{chip.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full font-mono text-[9px] ${
+                        <span className={`px-2 py-0.5 rounded-full font-mono text-xs font-bold ${
                           activeChip === chip.id
                             ? 'bg-white/20 text-white'
                             : 'bg-slate-200 dark:bg-zinc-800 text-slate-500'
@@ -1088,7 +1089,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 <div className="hidden md:block p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
                   {loading ? (
                     <div className="p-6 space-y-3">
-                      <Skeleton height={20} count={6} baseColor="var(--border-color)" />
+                      <Skeleton height={24} count={6} baseColor="var(--border-color)" />
                     </div>
                   ) : filteredMembers.length === 0 ? (
                     <div className="p-12 text-center space-y-3">
@@ -1409,7 +1410,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           <button
             type="button"
             onClick={() => setShowBatchCardModal(true)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Print Member Cards</span>
@@ -1484,7 +1485,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           </AnimatePresence>
 
           {/* Expanded FAB Menu Items */}
-          <div className="md:hidden fixed bottom-36 right-4 z-40 flex flex-col items-end gap-2.5 select-none">
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom))] right-4 z-[180] flex flex-col items-end gap-2.5 select-none">
             <AnimatePresence>
               {isMobileActionsOpen && (
                 <motion.div 
@@ -1536,7 +1537,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           </div>
 
           {/* Floating Mobile Bottom Directory Bar */}
-          <div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[170] shadow-2xl">
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
               <div className="flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />

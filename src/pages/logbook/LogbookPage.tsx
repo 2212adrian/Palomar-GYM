@@ -1038,7 +1038,7 @@ export const LogbookPage: React.FC = () => {
             )}
           </AnimatePresence>
 
-          <div className="md:hidden fixed bottom-36 right-6 z-40 flex flex-col items-end gap-3.5">
+          <div className="md:hidden fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom))] right-6 z-[180] flex flex-col items-end gap-3.5">
             <AnimatePresence>
               {isMobileActionsOpen && (
                 <motion.div 
@@ -1085,7 +1085,7 @@ export const LogbookPage: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden fixed bottom-20 left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-40 shadow-2xl">
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-4 z-[170] shadow-2xl">
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none">
               <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <CircleDollarSign className="w-4 h-4" />

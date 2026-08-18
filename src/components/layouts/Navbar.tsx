@@ -21,7 +21,7 @@
         - Light Mode: Thin dark blue top accent line (border-[#123c73]/30) with upper glow drop shadow.
         - Dark Mode (dark:): Thin neon-red glowing top border (border-red-500/40) with upper glow drop shadow.
       */
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[var(--bg-card)]/95 border-t border-[#123c73]/30 shadow-[0_-2px_12px_rgba(18,60,115,0.12)] grid lg:hidden grid-cols-5 items-center px-4 z-[200] transition-all duration-300 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[460px] md:rounded-2xl md:border md:border-[#123c73]/40 md:shadow-2xl md:shadow-blue-900/10 dark:border-t dark:border-red-500/40 dark:shadow-[0_-2px_12px_rgba(239,68,68,0.18)] dark:md:border dark:md:border-red-500/50 dark:md:shadow-red-950/40">
+      <nav className="fixed bottom-0 left-0 right-0 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-(--bg-card)/95 border-t border-[#123c73]/30 shadow-[0_-2px_12px_rgba(18,60,115,0.12)] grid lg:hidden grid-cols-5 items-center px-4 z-200 transition-all duration-300 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-115 md:h-16 md:pb-0 md:rounded-2xl md:border md:border-[#123c73]/40 md:shadow-2xl md:shadow-blue-900/10 dark:border-t dark:border-red-500/40 dark:shadow-[0_-2px_12px_rgba(239,68,68,0.18)] dark:md:border dark:md:border-red-500/50 dark:md:shadow-red-950/40">
         
         {/* 1. Sales (Left side - occupies 1 column) */}
         <Link 
