@@ -1,5 +1,6 @@
 // src/pages/logbook/components/LogbookRecordAttendance.tsx
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
   X, 
@@ -18,7 +19,9 @@ import {
   Eye,
   ShieldCheck,
   Camera as CameraIcon, 
-  SwitchCamera 
+  SwitchCamera,
+  UserPlus,
+  ArrowRight
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -93,6 +96,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   onClose,
   onCheckInSuccess,
 }) => {
+  const navigate = useNavigate();
   const { user } = useAuthStore() as any;
   const isSubmittingRef = useRef(false);
 
@@ -102,10 +106,16 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>([]);
   const [todayLogs, setTodayLogs] = useState<any[]>([]);
 
-  // Search and Suggestions
+  // Search, View Mode and Suggestions
   const [memberSearch, setMemberSearch] = useState('');
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+  
+  // Default to Non-Members filter view
+  const [filterMode, setFilterMode] = useState<'non-member' | 'member'>('non-member');
+  
+  // Pre-selection for Walk-In pass type before processing
+  const [walkInPassType, setWalkInPassType] = useState<'walkin_regular' | 'walkin_student'>('walkin_regular');
 
   // Lightbox & Camera
   const [photoModal, setPhotoModal] = useState<{ name: string; memberId?: string; url: string | null } | null>(null);
@@ -130,6 +140,17 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [walkinStudentFee, setWalkinStudentFee] = useState(80);
   const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
   const [gcashFeeRate, setGcashFeeRate] = useState(10);
+
+  // Auto-check override for non-members (walk-ins)
+  useEffect(() => {
+    if (selectedClient) {
+      if (selectedClient.isWalkIn) {
+        setAdminOverride(true);
+      } else {
+        setAdminOverride(false);
+      }
+    }
+  }, [selectedClient]);
 
   // Load active rates configuration directly from Supabase rates_config table
   const loadRates = useCallback(async () => {
@@ -384,12 +405,14 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setSuggestions([]);
     setSelectedClient(null);
     setSelectedEntry(null);
+    setWalkInPassType('walkin_regular');
     setPaymentMethod('Cash');
     setAmountReceived('');
     setReferenceNumber('');
     setAdminOverride(false);
     setShowLiveScanner(false);
     setPhotoModal(null);
+    setFilterMode('non-member');
   };
 
   const handleMemberSearchChange = (val: string) => {
@@ -413,7 +436,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
            m.phone === query ||
            m.cardNumbers.some(c => c.toLowerCase() === query)
     );
-    if (exactMatch) {
+    if (exactMatch && filterMode === 'member') {
       handleSelectMember(exactMatch);
     }
   };
@@ -433,9 +456,12 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setSelectedClient(client);
     setMemberSearch('');
     setSuggestions([]);
+    setAdminOverride(false);
     
     if (member.status === 'Active' || member.status === 'Expires Soon') {
       setSelectedEntry('member_entry');
+    } else if (member.status === 'Expired') {
+      setSelectedEntry('walkin_regular');
     } else {
       setSelectedEntry(null);
     }
@@ -444,7 +470,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const handleContinueAsWalkIn = () => {
     const query = memberSearch.trim();
     if (query.length < 3) {
-      toast.warning('Please enter at least 3 characters for guest name.');
+      toast.warning('Guest name must be at least 3 characters.');
       return;
     }
     const client: SelectedClient = {
@@ -454,7 +480,32 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setSelectedClient(client);
     setMemberSearch('');
     setSuggestions([]);
-    setSelectedEntry('walkin_regular');
+    setAdminOverride(true); // Auto-check override for walk-in non-members
+    setSelectedEntry(walkInPassType);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!memberSearch.trim()) return;
+
+      if (filterMode === 'member') {
+        if (suggestions.length > 0) {
+          handleSelectMember(suggestions[0]);
+        }
+      } else {
+        if (memberSearch.trim().length >= 3) {
+          handleContinueAsWalkIn();
+        } else {
+          toast.warning('Guest name must be at least 3 characters.');
+        }
+      }
+    }
+  };
+
+  const handleRedirectToSubscription = () => {
+    onClose();
+    navigate('/members/plans');
   };
 
   const scanImageFile = async (file: File) => {
@@ -693,13 +744,51 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       </button>
 
       {!isSuccess ? (
-        <div className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-2.5 sm:space-y-3 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent font-sans">
+        <div className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans">
+
+          {/* FILTER MODE TOGGLE SWITCH (DEFAULT: NON-MEMBERS) */}
+          {!selectedClient && (
+            <div className="flex bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterMode('non-member');
+                  setMemberSearch('');
+                  setSuggestions([]);
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  filterMode === 'non-member'
+                    ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-(--color-text)'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Non-Members</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterMode('member');
+                  setMemberSearch('');
+                  setSuggestions([]);
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  filterMode === 'member'
+                    ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-(--color-text)'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Members Only</span>
+              </button>
+            </div>
+          )}
 
           {/* SEARCH INPUT & CAMERA TRIGGER */}
           {!selectedClient && (
             <div className="space-y-1.5">
               <label className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
-                SEARCH MEMBER OR SCAN CARD / QR CODE
+                {filterMode === 'non-member' ? 'ENTER WALK-IN GUEST NAME' : 'SEARCH MEMBER OR SCAN BADGE'}
               </label>
 
               <div className="relative group">
@@ -708,8 +797,15 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   type="text"
                   value={memberSearch}
                   onChange={(e) => handleMemberSearchChange(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
                   disabled={showLiveScanner}
-                  placeholder={showLiveScanner ? "CAMERA SCANNER ACTIVE..." : "TYPE NAME, PHONE, CARD CODE OR MEMBER ID..."}
+                  placeholder={
+                    showLiveScanner 
+                      ? "CAMERA SCANNER ACTIVE..." 
+                      : filterMode === 'non-member'
+                      ? "TYPE GUEST NAME (MIN 3 CHARS)..."
+                      : "TYPE NAME, PHONE, CARD CODE OR ID..."
+                  }
                   className={`w-full pl-10 pr-20 py-2.5 sm:py-3 bg-(--bg-page) border-2 border-(--border-color) rounded-xl text-xs sm:text-sm font-bold uppercase transition-all ${
                     showLiveScanner 
                       ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-900 text-slate-400' 
@@ -821,36 +917,39 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 </div>
               )}
 
+              {/* DEFAULT EMPTY STATE BANNER */}
               {!memberSearch.trim() && !showLiveScanner && (
                 <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-2xl text-center space-y-1.5 animate-fade-in">
                   <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
-                    <Users className="w-4.5 h-4.5" />
+                    {filterMode === 'non-member' ? <User className="w-4.5 h-4.5" /> : <Users className="w-4.5 h-4.5" />}
                   </div>
                   
                   <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white uppercase tracking-wider">
-                    SEARCH MEMBER OR SCAN BADGE
+                    {filterMode === 'non-member' ? 'PROCESS NON-MEMBER WALK-IN' : 'SEARCH MEMBER RECORD'}
                   </h4>
                   
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
-                    Type a name, phone number, or ID above, or tap the QR scanner.
+                    {filterMode === 'non-member'
+                      ? 'Type the guest name above (min 3 chars) and select pass option.'
+                      : 'Type a member name, phone number, or ID above.'}
                   </p>
                 </div>
               )}
 
-              {memberSearch.trim().length > 0 && (
-                <div className="mt-2.5 space-y-2.5 animate-fade-in">
-                  
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white block uppercase tracking-wider px-0.5">
-                      REGISTERED MEMBERS FOUND ({suggestions.length})
-                    </span>
+              {/* MEMBERS ONLY TAB SEARCH RESULTS */}
+              {filterMode === 'member' && memberSearch.trim().length > 0 && (
+                <div className="mt-3 space-y-3 animate-fade-in">
+                  {suggestions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white block uppercase tracking-wider px-0.5">
+                        REGISTERED MEMBERS FOUND ({suggestions.length})
+                      </span>
 
-                    {suggestions.length > 0 ? (
                       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                         {suggestions.map((m) => {
                           const isSuspended = m.status === 'Suspended';
                           const isExpired = m.status === 'Expired';
-                          const isLocked = isSuspended || isExpired;
+                          const isLocked = isSuspended; // Only Suspended locks selection
                           const isNonActive = m.status !== 'Active';
 
                           return (
@@ -913,47 +1012,126 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                           );
                         })}
                       </div>
-                    ) : (
-                      <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/40 border border-dashed border-(--border-color) rounded-xl text-center text-xs font-medium text-slate-500">
+                    </div>
+                  ) : (
+                    /* NO MEMBER MATCH FOUND - REDIRECT PROMPT */
+                    <div className="p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl text-center space-y-3 shadow-xs">
+                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                         NO REGISTERED MEMBERS MATCH "<strong>{memberSearch.toUpperCase()}</strong>"
                       </div>
-                    )}
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={handleRedirectToSubscription}
+                          className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <span>ENROLL NEW MEMBER IN SUBSCRIPTION PLANS</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* NON-MEMBERS TAB WALK-IN PROCESSOR CARD */}
+              {filterMode === 'non-member' && memberSearch.trim().length > 0 && (
+                <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center text-center space-y-3 shadow-sm animate-fade-in">
+                  
+                  {/* DISPLAY TYPED NAME */}
+                  <div className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-200 font-black text-sm uppercase tracking-wide">
+                    <User className="w-4 h-4 text-blue-500" />
+                    <span>NAME: <span className="text-blue-600 dark:text-blue-400 font-mono underline underline-offset-4">{memberSearch.toUpperCase()}</span></span>
                   </div>
 
-                  <div className="pt-2 border-t border-(--border-color)">
-                    <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-xl flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <User className="w-4 h-4 text-amber-500 shrink-0" />
-                        <div className="min-w-0 text-left">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate uppercase">
-                            {memberSearch.toUpperCase()}
-                          </p>
-                          {memberSearch.trim().length < 3 && (
-                            <p className="text-[10px] text-amber-500 font-medium truncate mt-0.5">
-                              Type at least 3 characters to process walk-in
-                            </p>
-                          )}
+                  {/* SELECT PASS TYPE BEFORE PROCESSING */}
+                  <div className="w-full space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                      SELECT WALK-IN PASS TYPE
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWalkInPassType('walkin_regular')}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          walkInPassType === 'walkin_regular'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                            : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            walkInPassType === 'walkin_regular' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                          }`}>
+                            <Ticket className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">Regular</div>
+                            <div className="text-[9px] text-slate-500 truncate">Standard</div>
+                          </div>
                         </div>
-                      </div>
+                        <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                          ₱{walkinRegularFee.toFixed(2)}
+                        </div>
+                      </button>
 
                       <button
                         type="button"
-                        disabled={memberSearch.trim().length < 3}
-                        onClick={handleContinueAsWalkIn}
-                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wider rounded-lg shrink-0 transition-colors cursor-pointer disabled:cursor-not-allowed flex items-center gap-1 shadow-md"
+                        onClick={() => setWalkInPassType('walkin_student')}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          walkInPassType === 'walkin_student'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                            : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                        }`}
                       >
-                        <span>Process Walk-In</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            walkInPassType === 'walkin_student' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                          }`}>
+                            <GraduationCap className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">Student</div>
+                            <div className="text-[9px] text-amber-500 font-bold truncate">ID Req.</div>
+                          </div>
+                        </div>
+                        <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                          ₱{walkinStudentFee.toFixed(2)}
+                        </div>
                       </button>
                     </div>
                   </div>
 
+                  {/* 3-CHARACTER VALIDATION WARNING */}
+                  {memberSearch.trim().length < 3 && (
+                    <div className="text-[11px] font-bold text-amber-500 uppercase tracking-wide">
+                      ⚠️ Guest name must be at least 3 characters
+                    </div>
+                  )}
+
+                  {/* BIGGER PROCESS WALK-IN BUTTON */}
+                  <button
+                    type="button"
+                    disabled={memberSearch.trim().length < 3}
+                    onClick={handleContinueAsWalkIn}
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 disabled:opacity-40 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span>PROCESS WALK-IN</span>
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+
+                  {memberSearch.trim().length >= 3 && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+                      Press <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-zinc-800 rounded font-mono text-[9px]">Enter</kbd> or click button to proceed
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* DUPLICATE CHECK-IN ALERT (OVERRIDE OPEN FOR ALL STAFF & ADMIN) */}
+          {/* DUPLICATE CHECK-IN ALERT */}
           {duplicateLog && (
             <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
               <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
@@ -1047,7 +1225,13 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   SELECT ENTRY PASS
                 </label>
 
-                {selectedClient.isWalkIn ? (
+                {!selectedClient.isWalkIn && selectedClient.status === 'Expired' && (
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase text-center mb-1">
+                    ⚠️ Membership Plan Expired — Daily Entry Required
+                  </div>
+                )}
+
+                {(selectedClient.isWalkIn || selectedClient.status === 'Expired') ? (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -1100,42 +1284,26 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     </button>
                   </div>
                 ) : (
-                  (() => {
-                    const isInactive = selectedClient.status === 'Expired' || selectedClient.status === 'Suspended';
-                    const isYearly = selectedClient.membership?.toLowerCase().includes('year');
-
-                    return (
-                      <button
-                        type="button"
-                        disabled={isInactive}
-                        onClick={() => setSelectedEntry('member_entry')}
-                        className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
-                          isInactive
-                            ? 'opacity-40 cursor-not-allowed border-(--border-color) bg-slate-100/40 dark:bg-zinc-900/40'
-                            : selectedEntry === 'member_entry'
-                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer'
-                            : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600 cursor-pointer'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            selectedEntry === 'member_entry' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
-                          }`}>
-                            <UserCheck className="w-4.5 h-4.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-slate-900 dark:text-white uppercase">Member Plan Entry</div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              {isInactive ? `Account ${selectedClient.status}` : selectedClient.membership}
-                            </div>
-                          </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEntry('member_entry')}
+                    className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                        <UserCheck className="w-4.5 h-4.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white uppercase">Member Plan Entry</div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {selectedClient.membership}
                         </div>
-                        <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
-                          {isYearly ? `₱${yearlyMemberFee.toFixed(2)}` : '₱0.00'}
-                        </div>
-                      </button>
-                    );
-                  })()
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
+                      {selectedClient.membership?.toLowerCase().includes('year') ? `₱${yearlyMemberFee.toFixed(2)}` : '₱0.00'}
+                    </div>
+                  </button>
                 )}
               </div>
 

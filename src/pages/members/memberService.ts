@@ -52,12 +52,12 @@ export const DEFAULT_SETTINGS: MembershipSettings = {
   gym_name: 'WOLF PALOMAR GYM',
   system_name: 'Wolf Management Console 2.0',
   currency: '₱',
-  monthly_plan_price: 800,
-  yearly_plan_price: 8000,
-  regular_walkin_fee: 100,
-  student_walkin_fee: 80,
+  monthly_plan_price: 0,
+  yearly_plan_price: 0,
+  regular_walkin_fee: 0,
+  student_walkin_fee: 0,
   monthly_member_checkin_fee: 0,
-  yearly_member_checkin_fee: 50,
+  yearly_member_checkin_fee: 0,
   qr_card_enabled: true,
   manual_card_enabled: true,
   card_printing_fee: 150,
@@ -969,31 +969,34 @@ export const registrationService = {
 // ==========================================
 export const settingsService = {
   load: async (): Promise<MembershipSettings> => {
-    try {
-      const [ratesRes, profileRes] = await Promise.all([
-        supabase.from('rates_config').select('*').eq('id', 1).maybeSingle(),
-        supabase.from('gym_profile').select('*').eq('id', 1).maybeSingle()
-      ]);
+    const [ratesRes, profileRes] = await Promise.all([
+      supabase.from('rates_config').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('gym_profile').select('*').eq('id', 1).maybeSingle()
+    ]);
 
-      const rData = ratesRes.data;
-      const pData = profileRes.data;
-
-      return {
-        ...DEFAULT_SETTINGS,
-        gym_name: pData?.gym_name ?? DEFAULT_SETTINGS.gym_name,
-        monthly_plan_price: Number(rData?.monthly_rate ?? DEFAULT_SETTINGS.monthly_plan_price),
-        yearly_plan_price: Number(rData?.yearly_rate ?? DEFAULT_SETTINGS.yearly_plan_price),
-        regular_walkin_fee: Number(rData?.regular_walk_in ?? DEFAULT_SETTINGS.regular_walkin_fee),
-        student_walkin_fee: Number(rData?.student_walk_in ?? DEFAULT_SETTINGS.student_walkin_fee),
-        yearly_member_checkin_fee: Number(rData?.yearly_walk_in ?? DEFAULT_SETTINGS.yearly_member_checkin_fee),
-        card_printing_fee: Number(rData?.new_card_fee ?? DEFAULT_SETTINGS.card_printing_fee),
-        card_replacement_fee: Number(rData?.new_card_fee ?? DEFAULT_SETTINGS.card_replacement_fee),
-        gcash_fee: Number(rData?.gcash_fee ?? DEFAULT_SETTINGS.gcash_fee)
-      };
-    } catch (e) {
-      console.warn('Unable to load rates_config from Supabase:', e);
+    if (ratesRes.error) {
+      throw new Error(`Rates config error: ${ratesRes.error.message}`);
     }
-    return DEFAULT_SETTINGS;
+
+    const rData = ratesRes.data;
+    const pData = profileRes.data;
+
+    if (!rData) {
+      throw new Error('No pricing configuration found in database.');
+    }
+
+    return {
+      ...DEFAULT_SETTINGS,
+      gym_name: pData?.gym_name ?? DEFAULT_SETTINGS.gym_name,
+      monthly_plan_price: Number(rData.monthly_rate ?? 0),
+      yearly_plan_price: Number(rData.yearly_rate ?? 0),
+      regular_walkin_fee: Number(rData.regular_walk_in ?? 0),
+      student_walkin_fee: Number(rData.student_walk_in ?? 0),
+      yearly_member_checkin_fee: Number(rData.yearly_walk_in ?? 0),
+      card_printing_fee: Number(rData.new_card_fee ?? 0),
+      card_replacement_fee: Number(rData.new_card_fee ?? 0),
+      gcash_fee: Number(rData.gcash_fee ?? 0)
+    };
   },
 
   save: async (data: MembershipSettings, user: string): Promise<void> => {

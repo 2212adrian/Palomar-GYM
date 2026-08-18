@@ -5,7 +5,8 @@ import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, Award, Clock, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Sparkles, Trash2
+  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2,
+  Award, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -134,8 +135,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     }
   }, [isPlansPath]);
 
-  
-
   // Launch Print Modal pre-selecting all "No Card Issued" members if no checkboxes selected
   const handleOpenPrintModal = useCallback(() => {
     if (selectedMemberIds.length === 0) {
@@ -230,46 +229,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active');
   }, [cards]);
 
-  // Latest Member Subscription Info Calculation
-  const latestSubscriptionInfo = useMemo(() => {
-    if (!subscriptions.length || !members.length) return null;
-
-    const validSubs = subscriptions.filter(s => s.status !== 'Voided');
-    if (!validSubs.length) return null;
-
-    const sorted = [...validSubs].sort((a, b) => {
-      const timeA = new Date(a.created_at || a.start_date).getTime();
-      const timeB = new Date(b.created_at || b.start_date).getTime();
-      return timeB - timeA;
-    });
-
-    const latestSub = sorted[0];
-    if (!latestSub) return null;
-
-    const member = members.find(m => m.member_id === latestSub.member_id);
-    if (!member) return null;
-
-    const subDate = new Date(latestSub.created_at || latestSub.start_date);
-    const isValidDate = !isNaN(subDate.getTime());
-
-    const dateStr = isValidDate
-      ? subDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : 'N/A';
-    const timeStr = isValidDate
-      ? subDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-      : 'N/A';
-
-    return {
-      subscription: latestSub,
-      member,
-      dateStr,
-      timeStr,
-      planName: latestSub.plan_name || (latestSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
-      price: latestSub.price,
-      paymentMethod: latestSub.payment_method
-    };
-  }, [subscriptions, members]);
-
   // Subscription Details Formatter
   const getSubscriptionDetails = useCallback((memberId: string) => {
     const activeSub = getActiveSubscription(memberId);
@@ -342,10 +301,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     };
   }, [getActiveSubscription, getQueuedSubscription, getLatestSubscriptionRecord]);
 
-  // Metric Calculations
+  // Metric Summary Calculations
   const stats = useMemo(() => {
     const now = Date.now();
-    
     let activeSubsCount = 0;
     let expiringSoonCount = 0;
 
@@ -353,7 +311,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       if (s.status !== 'Voided') {
         const startMs = new Date(s.start_date).getTime();
         const endMs = new Date(s.end_date).getTime();
-
         if (startMs <= now && endMs >= now) {
           activeSubsCount++;
           const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
@@ -456,16 +413,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     });
   }, [members, searchQuery, activeChip, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
 
-const isAllSelected = filteredMembers.length > 0 && filteredMembers.every(m => selectedMemberIds.includes(m.id));
-const isSomeSelected = selectedMemberIds.length > 0 && !isAllSelected;
+  const isAllSelected = filteredMembers.length > 0 && filteredMembers.every(m => selectedMemberIds.includes(m.id));
+  const isSomeSelected = selectedMemberIds.length > 0 && !isAllSelected;
 
-const handleToggleSelectAll = () => {
-  if (isAllSelected) {
-    setSelectedMemberIds([]);
-  } else {
-    setSelectedMemberIds(filteredMembers.map(m => m.id));
-  }
-};
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedMemberIds([]);
+    } else {
+      setSelectedMemberIds(filteredMembers.map(m => m.id));
+    }
+  };
 
   // Mobile Paginated Slice
   const totalMobilePages = Math.ceil(filteredMembers.length / itemsPerPage) || 1;
@@ -514,15 +471,15 @@ const handleToggleSelectAll = () => {
       header: isSelectionActive ? (
         <div className="flex items-center justify-center h-full w-full py-1">
           <input
-  type="checkbox"
-  ref={(el) => {
-    if (el) el.indeterminate = isSomeSelected;
-  }}
-  checked={isAllSelected}
-  onChange={handleToggleSelectAll}
-  className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
-  title="Toggle Select All"
-/>
+            type="checkbox"
+            ref={(el) => {
+              if (el) el.indeterminate = isSomeSelected;
+            }}
+            checked={isAllSelected}
+            onChange={handleToggleSelectAll}
+            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
+            title="Toggle Select All"
+          />
         </div>
       ) : null,
       headerClassName: 'w-12 text-center',
@@ -572,17 +529,11 @@ const handleToggleSelectAll = () => {
       },
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
-        const isLatest = latestSubscriptionInfo?.member.id === item.id;
 
         return (
           <div className="text-left leading-tight space-y-1.5 py-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-sans font-bold text-sm block text-(--color-text)">{subInfo.planName}</span>
-              {isLatest && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 animate-pulse">
-                  <Sparkles className="w-3 h-3 text-emerald-500" /> Latest
-                </span>
-              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
@@ -757,7 +708,7 @@ const handleToggleSelectAll = () => {
     }
   ];
 
-  // Header Actions Sync (PRINT MEMBER CARDS BUTTON)
+  // Header Actions Sync
   useEffect(() => {
     if (hideHeaderActions || isPlansPath) {
       return;
@@ -857,175 +808,56 @@ const handleToggleSelectAll = () => {
             {activeTab === 'Directory' && (
               <div className="space-y-4 md:space-y-6 pb-40 md:pb-24">
                 
-                {/* 1. DESKTOP STATS GRID */}
-                <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
-                    <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
-                      <Users className="w-6 h-6" />
+                {/* OVERVIEW 4 KPI CARDS (MATCHING PRODUCT LIST DESIGN) */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 select-none">
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500 border border-blue-500/20 shrink-0">
+                      <Users className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">TOTAL MEMBERS</span>
-                      <span className="text-xl lg:text-2xl font-heading font-black text-(--color-text) block leading-tight mt-0.5">
-                        {stats.total}
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">TOTAL MEMBERS</span>
+                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+                        {stats.total} Member/s
                       </span>
-                      <span className="text-xs font-medium text-slate-400 block truncate mt-0.5">Registered Profiles</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
-                    <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shrink-0">
-                      <Award className="w-6 h-6" />
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+                    <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20 shrink-0">
+                      <Award className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">ONGOING SUBSCRIPTION</span>
-                      <span className="text-xl lg:text-2xl font-heading font-black text-emerald-600 dark:text-emerald-400 block leading-tight mt-0.5">
-                        {stats.activeSubscriptions}
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">ACTIVE SUBSCRIPTIONS</span>
+                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+                        {stats.activeSubscriptions} Contract/s
                       </span>
-                      <span className="text-xs font-medium text-emerald-600/80 dark:text-emerald-400/80 block truncate mt-0.5">Active Contracts</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
-                    <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
-                      <Clock className="w-6 h-6" />
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+                    <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500 border border-amber-500/20 shrink-0">
+                      <Clock className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">EXPIRING SOON</span>
-                      <span className="text-xl lg:text-2xl font-heading font-black text-amber-600 dark:text-amber-400 block leading-tight mt-0.5">
-                        {stats.expiringSoon}
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">EXPIRING SOON</span>
+                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+                        {stats.expiringSoon} Member/s
                       </span>
-                      <span className="text-xs font-medium text-amber-600/80 dark:text-amber-400/80 block truncate mt-0.5">Within 7 Days</span>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 shadow-xs hover:-translate-y-0.5 transition-all">
-                    <div className="p-3 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shrink-0">
-                      <UserX className="w-6 h-6" />
+                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
+                    <div className="p-2 bg-red-500/10 rounded-lg text-red-500 border border-red-500/20 shrink-0">
+                      <UserX className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">SUSPENDED</span>
-                      <span className="text-xl lg:text-2xl font-heading font-black text-rose-600 dark:text-rose-400 block leading-tight mt-0.5">
-                        {stats.suspendedMembers}
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">SUSPENDED</span>
+                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
+                        {stats.suspendedMembers} Locked
                       </span>
-                      <span className="text-xs font-medium text-rose-600/80 dark:text-rose-400/80 block truncate mt-0.5">Locked Profiles</span>
                     </div>
                   </div>
                 </div>
-
-                {/* 2. MOBILE COMPACT 2X2 STATS GRID (< MD) */}
-                <div className="grid grid-cols-2 gap-2.5 md:hidden select-none">
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
-                    <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20 shrink-0">
-                      <Users className="w-4.5 h-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-sm font-heading font-black text-(--color-text) block leading-tight">
-                        {stats.total}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">MEMBERS</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
-                    <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shrink-0">
-                      <Award className="w-4.5 h-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-sm font-heading font-black text-emerald-600 dark:text-emerald-400 block leading-tight">
-                        {stats.activeSubscriptions}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">ACTIVE</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
-                    <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
-                      <Clock className="w-4.5 h-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-sm font-heading font-black text-amber-600 dark:text-amber-400 block leading-tight">
-                        {stats.expiringSoon}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">EXPIRING</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3 h-19">
-                    <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shrink-0">
-                      <UserX className="w-4.5 h-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-sm font-heading font-black text-rose-600 dark:text-rose-400 block leading-tight">
-                        {stats.suspendedMembers}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-tight mt-0.5">LOCKED</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 🌟 MOST RECENT SUBSCRIBER HIGHLIGHT CARD */}
-                {latestSubscriptionInfo && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 sm:p-5 bg-gradient-to-r from-blue-900/15 via-(--bg-card) to-emerald-900/10 border border-blue-500/20 dark:border-blue-500/30 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 select-none group"
-                  >
-                    <div className="absolute -right-10 -bottom-10 w-36 h-36 bg-blue-500/10 dark:bg-red-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500" />
-
-                    <div className="flex items-center gap-4 min-w-0 relative z-10">
-                      {/* Pulsing Avatar */}
-                      <div className="relative shrink-0">
-                        <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-[#123c73] to-blue-600 dark:from-[#bf0202] dark:to-red-700 text-white flex items-center justify-center font-heading text-lg md:text-xl font-black shadow-md">
-                          {(latestSubscriptionInfo.member.full_name || 'M')[0]}
-                        </div>
-                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-(--bg-card)"></span>
-                        </span>
-                      </div>
-
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> MOST RECENT SUBSCRIBER
-                          </span>
-                          <span className="text-xs font-mono font-bold text-slate-400">
-                            {latestSubscriptionInfo.member.member_id}
-                          </span>
-                        </div>
-
-                        <h3 className="font-heading font-bold text-base md:text-lg text-(--color-text) truncate">
-                          {latestSubscriptionInfo.member.full_name}
-                        </h3>
-
-                        <div className="flex items-center gap-3 text-xs md:text-sm font-medium text-slate-400 flex-wrap">
-                          <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                            <Award className="w-4 h-4" />
-                            {latestSubscriptionInfo.planName}
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold">
-                            ₱{latestSubscriptionInfo.price?.toLocaleString()}
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono flex items-center gap-1.5 text-(--color-text)">
-                            <Clock className="w-4 h-4 text-amber-500" />
-                            {latestSubscriptionInfo.dateStr} at <strong className="text-amber-600 dark:text-amber-400 font-bold">{latestSubscriptionInfo.timeStr}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedProfileMember(latestSubscriptionInfo.member)}
-                      className="w-full md:w-auto px-5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border border-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 relative z-10 active:scale-95"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>View Member</span>
-                    </button>
-                  </motion.div>
-                )}
 
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
                 <div className="space-y-3 bg-(--bg-card) p-3.5 md:p-4 rounded-2xl border border-(--border-color) shadow-xs">
@@ -1094,8 +926,42 @@ const handleToggleSelectAll = () => {
                 {/* DESKTOP TABLE VIEW (HIDDEN ON MOBILE) */}
                 <div className="hidden md:block p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
                   {loading ? (
-                    <div className="p-6 space-y-3">
-                      <Skeleton height={24} count={6} baseColor="var(--border-color)" />
+                    <div className="p-4 space-y-3">
+                      {/* Realistic Header Skeleton */}
+                      <div className="flex items-center justify-between pb-3 border-b border-(--border-color) px-3">
+                        <Skeleton height={16} width={120} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                        <Skeleton height={16} width={140} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                        <Skeleton height={16} width={110} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                        <Skeleton height={16} width={90} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                        <Skeleton height={16} width={70} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                      </div>
+                      {/* Realistic Member Rows Skeletons */}
+                      {Array.from({ length: 6 }).map((_, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-2.5 px-3 border-b border-(--border-color)/40 last:border-none">
+                          <div className="flex items-center gap-3 w-1/4">
+                            <Skeleton circle width={40} height={40} baseColor="var(--border-color)" highlightColor="var(--bg-card)" className="shrink-0" />
+                            <div className="space-y-1.5 flex-1">
+                              <Skeleton height={14} width="70%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              <Skeleton height={10} width="50%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            </div>
+                          </div>
+                          <div className="w-1/4 space-y-1.5">
+                            <Skeleton height={14} width="65%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            <Skeleton height={18} width={100} borderRadius={6} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                          <div className="w-1/6">
+                            <Skeleton height={28} width={115} borderRadius={10} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                          <div className="w-1/8">
+                            <Skeleton height={22} width={70} borderRadius={8} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <Skeleton height={32} width={75} borderRadius={10} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            <Skeleton height={32} width={70} borderRadius={10} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            <Skeleton height={32} width={34} borderRadius={10} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : filteredMembers.length === 0 ? (
                     <div className="p-12 text-center space-y-3">
@@ -1136,8 +1002,38 @@ const handleToggleSelectAll = () => {
                 {/* MOBILE CARD LIST VIEW (< MD) */}
                 <div className="block md:hidden space-y-3">
                   {loading ? (
-                    <div className="p-4 space-y-3">
-                      <Skeleton height={110} count={4} borderRadius={16} baseColor="var(--border-color)" />
+                    <div className="space-y-3">
+                      {Array.from({ length: 4 }).map((_, idx) => (
+                        <div key={idx} className="p-4 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <Skeleton circle width={42} height={42} baseColor="var(--border-color)" highlightColor="var(--bg-card)" className="shrink-0" />
+                              <div className="flex-1 space-y-1.5">
+                                <Skeleton height={14} width="65%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                                <Skeleton height={10} width="40%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              </div>
+                            </div>
+                            <Skeleton height={22} width={60} borderRadius={20} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color)">
+                            <div className="space-y-1">
+                              <Skeleton height={10} width="40%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              <Skeleton height={14} width="70%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              <Skeleton height={18} width={80} borderRadius={6} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            </div>
+                            <div className="space-y-1 text-right flex flex-col items-end">
+                              <Skeleton height={10} width="40%" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              <Skeleton height={22} width={90} borderRadius={8} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                              <Skeleton height={10} width="50%" className="mt-1" baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-(--border-color)">
+                            <Skeleton height={40} className="flex-1" borderRadius={12} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            <Skeleton height={40} className="flex-1" borderRadius={12} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                            <Skeleton height={40} width={44} borderRadius={12} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : filteredMembers.length === 0 ? (
                     <div className="p-8 text-center space-y-3 bg-(--bg-card) border border-(--border-color) rounded-2xl">
@@ -1164,36 +1060,35 @@ const handleToggleSelectAll = () => {
                   ) : (
                     <>
                       {/* Select All Row on Mobile when Multi-Select Active */}
-{isSelectionActive && (
-  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
-    {/* Expanded Hitbox Wrapper for Easy Tapping */}
-    <label 
-      className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
-      onClick={handleToggleSelectAll}
-    >
-      <input
-        type="checkbox"
-        ref={(el) => {
-          if (el) el.indeterminate = isSomeSelected;
-        }}
-        checked={isAllSelected}
-        onChange={() => {}} // Handled by label click for better mobile touch support
-        className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
-      />
-      <span className="text-xs font-bold text-(--color-text)">
-        Selected Members <span className="font-mono text-slate-400 font-normal">({selectedMemberIds.length}/{filteredMembers.length})</span>
-      </span>
-    </label>
+                      {isSelectionActive && (
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
+                          <label 
+                            className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
+                            onClick={handleToggleSelectAll}
+                          >
+                            <input
+                              type="checkbox"
+                              ref={(el) => {
+                                if (el) el.indeterminate = isSomeSelected;
+                              }}
+                              checked={isAllSelected}
+                              onChange={() => {}} 
+                              className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
+                            />
+                            <span className="text-xs font-bold text-(--color-text)">
+                              Selected Members <span className="font-mono text-slate-400 font-normal">({selectedMemberIds.length}/{filteredMembers.length})</span>
+                            </span>
+                          </label>
 
-    <button
-      type="button"
-      onClick={() => setSelectedMemberIds([])}
-      className="text-[11px] font-bold text-rose-500 uppercase tracking-wider px-3 py-2 hover:bg-rose-500/10 rounded-lg active:scale-95 transition-all shrink-0 min-h-[44px] flex items-center"
-    >
-      Deselect All
-    </button>
-  </div>
-)}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMemberIds([])}
+                            className="text-[11px] font-bold text-rose-500 uppercase tracking-wider px-3 py-2 hover:bg-rose-500/10 rounded-lg active:scale-95 transition-all shrink-0 min-h-[44px] flex items-center"
+                          >
+                            Deselect All
+                          </button>
+                        </div>
+                      )}
 
                       {/* Mobile Cards Map */}
                       {paginatedMobileMembers.map((member) => {
@@ -1202,7 +1097,6 @@ const handleToggleSelectAll = () => {
                         const isSelected = selectedMemberIds.includes(member.id);
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
-                        const isLatest = latestSubscriptionInfo?.member.id === member.id;
 
                         return (
                           <div
@@ -1238,11 +1132,6 @@ const handleToggleSelectAll = () => {
                                     <h3 className="font-heading font-bold text-sm text-(--color-text) truncate leading-tight">
                                       {member.full_name}
                                     </h3>
-                                    {isLatest && (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                                        <Sparkles className="w-2.5 h-2.5 text-emerald-500" /> Latest Sub
-                                      </span>
-                                    )}
                                   </div>
                                   <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate">
                                     {member.member_id}

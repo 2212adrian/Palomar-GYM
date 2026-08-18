@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
-  Download, Printer, ChevronDown, ChevronUp, Info, Loader2, Camera, SwitchCamera
+  Download, Printer, ChevronDown, ChevronUp, Info, Loader2, Camera, SwitchCamera,
+  RefreshCw, WifiOff
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -253,14 +254,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [selectedPlan, setSelectedPlan] = useState<'Monthly Membership' | 'Yearly Membership' | 'No Subscription'>(
     initialPlan || 'Monthly Membership'
   );
+
+  
   
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isUsingSettingsFallback, setIsUsingSettingsFallback] = useState<boolean>(false);
+
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [allSubscriptions, setAllSubscriptions] = useState<Subscription[]>([]);
+  
+  // Price validation guards
+const isMonthlyValid = 
+  !isLoadingSettings && 
+  !settingsError && 
+  typeof settings?.monthly_plan_price === 'number' && 
+  settings.monthly_plan_price > 0;
+
+  const fetchWizardSettings = async () => {
+    setIsLoadingSettings(true);
+    setSettingsError(null);
+    try {
+      const data = await settingsService.load();
+      if (data) {
+        setSettings(data);
+        setIsUsingSettingsFallback(false);
+      } else {
+        setSettings(DEFAULT_SETTINGS);
+        setIsUsingSettingsFallback(true);
+      }
+    } catch (err: any) {
+      console.warn("Failed to load settings from Supabase in IntakeWizardModal:", err);
+      setSettings(DEFAULT_SETTINGS);
+      setSettingsError("Could not fetch pricing parameters from Supabase. Default pricing applied.");
+      setIsUsingSettingsFallback(true);
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
-      settingsService.load().then(setSettings).catch(console.warn);
+      fetchWizardSettings();
       memberService.getAll().then(setAllMembers).catch(console.error);
       subscriptionService.getAll().then(setAllSubscriptions).catch(console.error);
     }
@@ -1005,6 +1041,24 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleStep1Next = () => {
     if (!validateStep1()) {
+      const missingList: string[] = [];
+      if (!lastName.trim()) missingList.push('Last Name');
+      if (!firstName.trim()) missingList.push('First Name');
+      if (!phone.trim()) missingList.push('Phone Number');
+      if (!birthday.trim()) missingList.push('Birthday');
+      
+      if (isMinor) {
+        if (!parentName.trim()) missingList.push('Parent Full Name');
+        if (!parentPhone.trim()) missingList.push('Parent Phone Number');
+        if (!applicantSig) missingList.push('Applicant Signature');
+        if (!parentSig) missingList.push('Parent/Guardian Signature');
+        if (!emergencyName.trim()) missingList.push('Emergency Contact Name');
+        if (!emergencyPhone.trim()) missingList.push('Emergency Contact Phone');
+      }
+      
+      if (!waiverAgreed) missingList.push('Waiver Agreement Checkbox');
+
+      toast.error(`Please complete missing items: ${missingList.join(', ')}`);
       return;
     }
 
@@ -1021,103 +1075,157 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   };
 
   const handleExecuteCheckout = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  if (isSubmitting) return;
+  setIsSubmitting(true);
 
-    try {
-      if (membershipStatusSummary.isBlocked) {
-        toast.error(membershipStatusSummary.description);
+  try {
+    let livePlanBasePrice = 0;
+    let liveGcashFee = 0;
+    let liveCardFee = 0;
+    let liveTotalPrice = 0;
+
+    // 1. MANDATORY LIVE RE-VALIDATION FROM SUPABASE BEFORE CHECKOUT
+    if (selectedPlan !== 'No Subscription') {
+      let liveSettings: MembershipSettings | null = null;
+      try {
+        liveSettings = await settingsService.load();
+      } catch (err) {
+        toast.error("Network connection unstable. Could not verify live pricing with database. Checkout cancelled.");
+        setIsSubmitting(false);
         return;
       }
 
-      let targetMember: Member;
-      const combinedName = getCombinedFullName();
-
-      const existingByPhone = phone.trim() 
-        ? allMembers.find((m: Member) => m.phone === phone.trim()) 
-        : null;
-
-      const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
-
-      const memberFields = {
-        full_name: combinedName,
-        email: email.trim(),
-        phone: phone.trim(),
-        gender,
-        birthday,
-        address: address.trim(),
-        emergency_contact_name: emergencyName.trim(),
-        relationship: relationship.trim(),
-        emergency_contact_phone: emergencyPhone.trim(),
-        parent_name: isMinor ? parentName.trim() : null,
-        parent_relationship: isMinor ? parentRelationship.trim() : null,
-        parent_phone: isMinor ? parentPhone.trim() : null,
-        parent_email: isMinor ? parentEmail.trim() : null,
-        applicant_signature: isMinor ? applicantSig : null,
-        parent_signature: isMinor ? parentSig : null,
-        consent_date: isMinor ? (consentDate || new Date().toISOString()) : null,
-      };
-
-      if (activeMemberToUse) {
-        targetMember = await memberService.update(activeMemberToUse.id, memberFields, 'Admin Staff');
-      } else {
-        targetMember = await memberService.create({
-          ...memberFields,
-          status: 'Active'
-        }, 'Admin Staff');
+      if (!liveSettings) {
+        toast.error("Unable to verify live rates from Supabase. Please retry once online.");
+        setIsSubmitting(false);
+        return;
       }
 
-      const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
+      // Determine price strictly from live database response
+      const livePrice = selectedPlan === 'Monthly Membership' 
+        ? liveSettings.monthly_plan_price 
+        : liveSettings.yearly_plan_price;
 
-      let createdSub: Subscription | null = null;
-      if (selectedPlan !== 'No Subscription') {
-        createdSub = await subscriptionService.create(
-          targetMember.member_id,
-          selectedPlan,
-          mappedPayment,
-          'Admin Staff',
-          totalPrice,
-          {
-            basePrice: planBasePrice,
-            gcashFee: appliedGcashFee,
-            cardFee: appliedCardFee,
-            gcashRefNo: gcashReference.trim()
-          }
-        );
+      if (typeof livePrice !== 'number' || livePrice <= 0) {
+        toast.error("Invalid live pricing returned from database. Subscription cannot be processed.");
+        setIsSubmitting(false);
+        return;
       }
 
-      if (addIdCard) {
-        await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
-      }
+      // Sync state for UI rendering
+      setSettings(liveSettings);
 
-      if (importedQueueReg) {
-        await registrationService.approve(importedQueueReg.id, 'Admin Staff');
-      }
-
-      const now = new Date();
-      const formattedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + 
-        now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-
-      const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
-
-      setFinishedIds({
-        member_id: targetMember.member_id,
-        sub_id: createdSub?.id || 'PROFILE-ONLY',
-        receipt_no: receiptNo,
-        transaction_date: formattedDate
-      });
-
-      // Sync Logbook UI
-      window.dispatchEvent(new Event('palomar_logbook_updated'));
-
-      toast.success(selectedPlan === 'No Subscription' ? 'Member Profile enrolled (No subscription).' : 'Subscription enrollment complete.');
-      setStep(3);
-    } catch (err: any) {
-      toast.error(err.message || 'System error during wizard checkout.');
-    } finally {
-      setIsSubmitting(false);
+      // Compute exact pricing in real time to avoid React state batching delay
+      livePlanBasePrice = livePrice;
+      liveGcashFee = paymentMethod === 'GCash' ? (liveSettings.gcash_fee || 10) : 0;
+      liveCardFee = addIdCard ? (liveSettings.card_printing_fee || 50) : 0;
+      liveTotalPrice = livePlanBasePrice + liveGcashFee + liveCardFee;
+    } else {
+      liveCardFee = addIdCard ? (settings.card_printing_fee || 50) : 0;
+      liveTotalPrice = liveCardFee;
     }
-  };
+
+    // 2. CHECK SUBSCRIPTION CONTRACT ELIGIBILITY
+    if (membershipStatusSummary.isBlocked) {
+      toast.error(membershipStatusSummary.description);
+      setIsSubmitting(false);
+      return;
+    }
+
+    let targetMember: Member;
+    const combinedName = getCombinedFullName();
+
+    // Look up existing member match by contact phone if needed
+    const existingByPhone = phone.trim() 
+      ? allMembers.find((m: Member) => m.phone === phone.trim()) 
+      : null;
+
+    const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
+
+    const memberFields = {
+      full_name: combinedName,
+      email: email.trim(),
+      phone: phone.trim(),
+      gender,
+      birthday,
+      address: address.trim(),
+      emergency_contact_name: emergencyName.trim(),
+      relationship: relationship.trim(),
+      emergency_contact_phone: emergencyPhone.trim(),
+      parent_name: isMinor ? parentName.trim() : null,
+      parent_relationship: isMinor ? parentRelationship.trim() : null,
+      parent_phone: isMinor ? parentPhone.trim() : null,
+      parent_email: isMinor ? parentEmail.trim() : null,
+      applicant_signature: isMinor ? applicantSig : null,
+      parent_signature: isMinor ? parentSig : null,
+      consent_date: isMinor ? (consentDate || new Date().toISOString()) : null,
+    };
+
+    // 3. PERSIST OR UPDATE MEMBER PROFILE IN SUPABASE
+    if (activeMemberToUse) {
+      targetMember = await memberService.update(activeMemberToUse.id, memberFields, 'Admin Staff');
+    } else {
+      targetMember = await memberService.create({
+        ...memberFields,
+        status: 'Active'
+      }, 'Admin Staff');
+    }
+
+    const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
+
+    // 4. CREATE SUBSCRIPTION RECORD WITH VALIDATED PRICING
+    let createdSub: Subscription | null = null;
+    if (selectedPlan !== 'No Subscription') {
+      createdSub = await subscriptionService.create(
+        targetMember.member_id,
+        selectedPlan,
+        mappedPayment,
+        'Admin Staff',
+        liveTotalPrice,
+        {
+          basePrice: livePlanBasePrice,
+          gcashFee: liveGcashFee,
+          cardFee: liveCardFee,
+          gcashRefNo: gcashReference.trim()
+        }
+      );
+    }
+
+    // 5. ISSUE ID CARD IF OPTED IN
+    if (addIdCard) {
+      await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
+    }
+
+    // 6. APPROVE LOBBY PRE-REGISTRATION TICKET IF IMPORTED
+    if (importedQueueReg) {
+      await registrationService.approve(importedQueueReg.id, 'Admin Staff');
+    }
+
+    // 7. PREPARE RECEIPT METADATA & UI SYNC
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + 
+      now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+
+    const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+
+    setFinishedIds({
+      member_id: targetMember.member_id,
+      sub_id: createdSub?.id || 'PROFILE-ONLY',
+      receipt_no: receiptNo,
+      transaction_date: formattedDate
+    });
+
+    // Notify Logbook to refresh
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
+
+    toast.success(selectedPlan === 'No Subscription' ? 'Member Profile enrolled (No subscription).' : 'Subscription enrollment complete.');
+    setStep(3);
+  } catch (err: any) {
+    toast.error(err.message || 'System error during wizard checkout.');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleDownloadReceiptImage = () => {
     if (receiptRef.current) {
@@ -1148,7 +1256,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-2000 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
-      <form onSubmit={handleFormSubmit} className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col">
+      <form 
+  onSubmit={handleFormSubmit} 
+  className={`relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col transition-all duration-300 ${
+    step === 3 ? 'max-w-md' : 'max-w-2xl'
+  }`}
+>
         
         {/* Progress Bar Header */}
         <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-800 relative select-none shrink-0">
@@ -1850,6 +1963,32 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {step === 2 && (
             <div className="p-4 sm:p-5 bg-slate-100/90 dark:bg-zinc-900/80 rounded-2xl border border-slate-200 dark:border-zinc-800 text-left space-y-5 animate-fade-in">
               
+              {/* SUPABASE CONNECTION FALLBACK ALERT */}
+              <AnimatePresence>
+                {(settingsError || isUsingSettingsFallback) && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <WifiOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>Live rates unavailable from Supabase. Standard default pricing applied.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchWizardSettings}
+                      disabled={isLoadingSettings}
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-lg text-[9px] font-mono uppercase font-bold tracking-wider cursor-pointer flex items-center gap-1 transition-all"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingSettings ? 'animate-spin' : ''}`} />
+                      <span>Retry</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="border-b border-slate-200 dark:border-zinc-800 pb-3 space-y-3">
                 <div className="flex justify-between items-center select-none font-bold">
                   <div className="flex items-center gap-2">
@@ -2014,20 +2153,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div 
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('Monthly Membership');
-                    }}
-                    className={`p-3.5 rounded-xl border transition-all ${
-                      isPlanLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
-                    } ${
-                      selectedPlan === 'Monthly Membership' 
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-md shadow-emerald-500/5' 
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-300'
-                    }`}
-                  >
-                    <span className="block text-xs uppercase font-heading">Monthly Plan</span>
-                    <span className="font-mono text-sm font-black block mt-1">₱{settings.monthly_plan_price.toLocaleString()}</span>
-                  </div>
+  onClick={() => {
+    if (isMonthlyValid && !isPlanLocked) setSelectedPlan('Monthly Membership');
+  }}
+  className={`p-3.5 rounded-xl border transition-all ${
+    !isMonthlyValid || isPlanLocked ? 'cursor-not-allowed opacity-50 pointer-events-none' : 'cursor-pointer'
+  } ${
+    selectedPlan === 'Monthly Membership' 
+      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-md shadow-emerald-500/5' 
+      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-300'
+  }`}
+>
+  <span className="block text-xs uppercase font-heading">Monthly Plan</span>
+  <span className="font-mono text-sm font-black block mt-1">
+    {isMonthlyValid ? `₱${settings.monthly_plan_price.toLocaleString()}` : 'Unavailable'}
+  </span>
+</div>
 
                   <div 
                     onClick={() => {
@@ -2154,42 +2295,43 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
 
           {/* STEP 3: ENROLLMENT COMPLETE */}
-          {step === 3 && finishedIds && (
-            <div className="py-2 space-y-3 animate-scale-up">
-              <div className="text-center space-y-1">
-                <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-                <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
-                  Intake Successful
-                </h4>
-                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
-                  The member profile has been enrolled in the database.
-                </p>
-              </div>
+{step === 3 && finishedIds && (
+  <div className="py-2 space-y-4 animate-scale-up">
+    <div className="text-center space-y-1">
+      <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
+        <CheckCircle className="w-5 h-5" />
+      </div>
+      <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
+        Intake Successful
+      </h4>
+      <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
+        The member profile has been enrolled in the database.
+      </p>
+    </div>
 
-              <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 max-h-90 overflow-y-auto shadow-inner">
-                <OfficialReceipt
-                  ref={receiptRef}
-                  variant="inline"
-                  data={{
-                    receiptType: 'subscription',
-                    receiptNo: finishedIds.receipt_no,
-                    customerName: getCombinedFullName(),
-                    planType: selectedPlan === 'No Subscription' ? 'No Subscription (Profile Only)' : selectedPlan,
-                    basePrice: planBasePrice,
-                    gcashFee: appliedGcashFee,
-                    cardFee: appliedCardFee,
-                    paymentMethod: paymentMethod,
-                    gcashRefNo: gcashReference,
-                    transactionDate: finishedIds.transaction_date,
-                    processedBy: 'WOLF PALOMAR STAFF',
-                    qrValue: finishedIds.receipt_no
-                  }}
-                />
-              </div>
-            </div>
-          )}
+    {/* Render receipt naturally without inner scrolling portrait container */}
+    <div className="w-full flex justify-center pt-2">
+      <OfficialReceipt
+        ref={receiptRef}
+        variant="inline"
+        data={{
+          receiptType: 'subscription',
+          receiptNo: finishedIds.receipt_no,
+          customerName: getCombinedFullName(),
+          planType: selectedPlan === 'No Subscription' ? 'No Subscription (Profile Only)' : selectedPlan,
+          basePrice: planBasePrice,
+          gcashFee: appliedGcashFee,
+          cardFee: appliedCardFee,
+          paymentMethod: paymentMethod,
+          gcashRefNo: gcashReference,
+          transactionDate: finishedIds.transaction_date,
+          processedBy: 'WOLF PALOMAR STAFF',
+          qrValue: finishedIds.receipt_no
+        }}
+      />
+    </div>
+  </div>
+)}
 
         </div>
 
@@ -2295,9 +2437,48 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
   }>({ isOpen: false, mode: null, plan: null });
 
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
+
+  const fetchSettings = async () => {
+    setIsLoadingSettings(true);
+    setSettingsError(null);
+    try {
+      const data = await settingsService.load();
+      if (data) {
+        setSettings(data);
+        setIsUsingFallback(false);
+      } else {
+        setSettings(DEFAULT_SETTINGS);
+        setIsUsingFallback(true);
+      }
+    } catch (err: any) {
+      console.warn("Error fetching Supabase pricing settings:", err);
+      setSettings(DEFAULT_SETTINGS);
+      setSettingsError("Supabase pricing rates unavailable. Displaying standard fallback pricing.");
+      setIsUsingFallback(true);
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  };
+
+
+const isMonthlyValid = 
+  !isLoadingSettings && 
+  !settingsError && 
+  typeof settings?.monthly_plan_price === 'number' && 
+  settings.monthly_plan_price > 0;
+
+const isYearlyValid = 
+  !isLoadingSettings && 
+  !settingsError && 
+  typeof settings?.yearly_plan_price === 'number' && 
+  settings.yearly_plan_price > 0;
+
 
   useEffect(() => {
-    settingsService.load().then(setSettings).catch(console.warn);
+    fetchSettings();
   }, []);
 
   return (
@@ -2329,12 +2510,55 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
         </AnimatePresence>
       </div>
 
+      {/* SUPABASE CONNECTION / PRICING FALLBACK ALERT BANNER */}
+      <AnimatePresence>
+        {(settingsError || isUsingFallback) && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-300 max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg backdrop-blur-md"
+          >
+            <div className="flex items-center gap-3 text-left">
+              <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0">
+                <WifiOff className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h5 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white">
+                    Supabase Rates Offline / Fallback Active
+                  </h5>
+                  <span className="text-[8px] font-mono font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-800 dark:text-amber-300">
+                    Default Pricing
+                  </span>
+                </div>
+                <p className="text-[10px] font-semibold text-slate-700 dark:text-slate-300 mt-0.5 leading-tight">
+                  Unable to sync live subscription rates from Supabase. Default fallback pricing is active for intake operations.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={fetchSettings}
+              disabled={isLoadingSettings}
+              className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-heading text-[9px] font-bold uppercase tracking-wider rounded-xl transition-all border-none cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-xs disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSettings ? 'animate-spin' : ''}`} />
+              <span>{isLoadingSettings ? 'Syncing...' : 'Retry Sync'}</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* CHOICE 1: SCAN LOBBY QR / SEARCH PRE-REGISTRATION */}
-      <div 
+      <motion.div 
+        whileHover={{ scale: 1.01 }}
+        transition={{ duration: 0.2 }}
         onClick={() => { 
           setModalConfig({ isOpen: true, mode: 'Import', plan: 'Monthly Membership' });
         }}
-        className="p-5 rounded-3xl bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border border-blue-200 dark:border-blue-500/30 hover:border-blue-400 hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-between shadow-lg max-w-2xl mx-auto"
+        className="p-5 rounded-3xl bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border border-blue-200 dark:border-blue-500/30 hover:border-blue-400 transition-all cursor-pointer flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none"
       >
         <div className="flex items-center gap-4 text-left">
           <div className="p-3 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/30 shrink-0">
@@ -2348,61 +2572,149 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
             </p>
           </div>
         </div>
-        <button className="py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 cursor-pointer">
+        <button className="py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 cursor-pointer shadow-md">
           Scan Lobby QR
         </button>
-      </div>
+      </motion.div>
 
       {/* CHOICE 2: MANUAL PLAN CATALOG */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2 text-left">
-        <div className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color) hover:scale-[1.01] transition-transform flex flex-col justify-between h-64 shadow-md">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Standard Plan</span>
-              <Award className="w-5 h-5 text-emerald-500" />
-            </div>
-            <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Monthly Membership</h4>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-              Provides unlimited facility access with standard lobby card scanning. Daily entry fee is calculated as ₱0 per check-in visit.
-            </p>
-          </div>
-          <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-            <span className="text-2xl font-mono font-black text-emerald-600 dark:text-emerald-500">₱{settings.monthly_plan_price.toLocaleString()}</span>
-            <button 
-              onClick={() => { 
-                setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
-              }}
-              className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer hover:bg-[#0c2950] dark:hover:bg-[#9c0202]"
+      {isLoadingSettings ? (
+        /* ANIMATED SKELETON CARDS DURING SUPABASE LOADING */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2">
+          {[1, 2].map((idx) => (
+            <div 
+              key={idx} 
+              className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color) animate-pulse flex flex-col justify-between h-64 shadow-md text-left"
             >
-              Select Monthly
-            </button>
-          </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <div className="h-3 w-32 bg-slate-300 dark:bg-zinc-800 rounded-md" />
+                  <div className="h-5 w-5 bg-slate-300 dark:bg-zinc-800 rounded-full" />
+                </div>
+                <div className="h-6 w-48 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
+                <div className="space-y-1.5 pt-1">
+                  <div className="h-3 w-full bg-slate-300 dark:bg-zinc-800 rounded" />
+                  <div className="h-3 w-4/5 bg-slate-300 dark:bg-zinc-800 rounded" />
+                  <div className="h-3 w-2/3 bg-slate-300 dark:bg-zinc-800 rounded" />
+                </div>
+              </div>
+              <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+                <div className="h-8 w-24 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
+                <div className="h-9 w-28 bg-slate-300 dark:bg-zinc-800 rounded-xl" />
+              </div>
+            </div>
+          ))}
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2 text-left">
+          
+          {/* MONTHLY PLAN CARD */}
+<motion.div 
+  whileHover={isMonthlyValid ? { scale: 1.01 } : {}}
+  transition={{ duration: 0.2 }}
+  onClick={() => { 
+    if (isMonthlyValid) {
+      setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
+    }
+  }}
+  className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+    isMonthlyValid 
+      ? 'border-(--border-color) hover:border-emerald-500/40 cursor-pointer' 
+      : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+  }`}
+>
+  <div className="space-y-3">
+    <div className="flex justify-between items-center">
+      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Standard Plan</span>
+      <Award className={`w-5 h-5 ${isMonthlyValid ? 'text-emerald-500' : 'text-slate-400'}`} />
+    </div>
+    
+    <div className="flex items-center justify-between">
+      <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Monthly Membership</h4>
+      
+    </div>
 
-        <div className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color) hover:scale-[1.01] transition-transform flex flex-col justify-between h-64 shadow-md">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Discount Plan</span>
-              <Award className="w-5 h-5 text-blue-500" />
-            </div>
-            <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Yearly Membership</h4>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-              Enables discounted facility access key card. Walk-in daily rates are reduced to ₱{settings.yearly_member_checkin_fee.toLocaleString()} per visit.
-            </p>
-          </div>
-          <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-            <span className="text-2xl font-mono font-black text-blue-600 dark:text-blue-500">₱{settings.yearly_plan_price.toLocaleString()}</span>
-            <button 
-              onClick={() => { 
-                setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
-              }}
-              className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer hover:bg-[#0c2950] dark:hover:bg-[#9c0202]"
-            >
-              Select Yearly
-            </button>
-          </div>
+    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+      Provides unlimited facility access with standard lobby card scanning. Daily entry fee is calculated as ₱0 per check-in visit.
+    </p>
+  </div>
+
+  <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+    <span className={`text-2xl font-mono font-black ${isMonthlyValid ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-zinc-500'}`}>
+      {isMonthlyValid ? `₱${settings.monthly_plan_price.toLocaleString()}` : '₱ --'}
+    </span>
+    
+    {/* LOCKED / DISABLED BUTTON */}
+    <button 
+      type="button"
+      disabled={!isMonthlyValid}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isMonthlyValid) {
+          setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
+        }
+      }}
+      className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+    >
+      {isMonthlyValid ? 'Select Monthly' : 'Unavailable'}
+    </button>
+  </div>
+</motion.div>
+
+          {/* YEARLY PLAN CARD */}
+<motion.div 
+  whileHover={isYearlyValid ? { scale: 1.01 } : {}}
+  transition={{ duration: 0.2 }}
+  onClick={() => { 
+    if (isYearlyValid) {
+      setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
+    }
+  }}
+  className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+    isYearlyValid 
+      ? 'border-(--border-color) hover:border-blue-500/40 cursor-pointer' 
+      : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+  }`}
+>
+  <div className="space-y-3">
+    <div className="flex justify-between items-center">
+      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Discount Plan</span>
+      <Award className={`w-5 h-5 ${isYearlyValid ? 'text-blue-500' : 'text-slate-400'}`} />
+    </div>
+
+    <div className="flex items-center justify-between">
+      <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Yearly Membership</h4>
+    </div>
+
+    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+      Enables discounted facility access key card. Walk-in daily rates are reduced to ₱{isYearlyValid ? settings.yearly_member_checkin_fee.toLocaleString() : '--'} per visit.
+    </p>
+  </div>
+
+  <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+    <span className={`text-2xl font-mono font-black ${isYearlyValid ? 'text-blue-600 dark:text-blue-500' : 'text-slate-400 dark:text-zinc-500'}`}>
+      {isYearlyValid ? `₱${settings.yearly_plan_price.toLocaleString()}` : '₱ --'}
+    </span>
+    
+    {/* LOCKED / DISABLED BUTTON */}
+    <button 
+      type="button"
+      disabled={!isYearlyValid}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isYearlyValid) {
+          setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
+        }
+      }}
+      className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+    >
+      {isYearlyValid ? 'Select Yearly' : 'Unavailable'}
+    </button>
+  </div>
+</motion.div>
+
         </div>
-      </div>
+      )}
 
       <IntakeWizardModal
         isOpen={modalConfig.isOpen}

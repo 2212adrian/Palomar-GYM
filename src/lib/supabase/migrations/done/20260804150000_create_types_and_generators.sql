@@ -53,12 +53,60 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql VOLATILE;
 
--- Sequence Generator: Receipt Number formatted as REC-XXXXXXXXXXX (e.g., REC-10000000001)
-CREATE SEQUENCE IF NOT EXISTS public.rec_receipt_no_seq START 10000000001;
+-- Random Generator: Receipt Number formatted as REC-XXXXXXXXXXX (e.g., REC-84920193847)
 CREATE OR REPLACE FUNCTION public.generate_rec_receipt_no()
 RETURNS TEXT AS $$
+DECLARE
+    candidate TEXT;
+    exists_flag BOOLEAN := FALSE;
+    col_name TEXT := NULL;
+    target_table TEXT := NULL;
 BEGIN
-    RETURN 'REC-' || nextval('public.rec_receipt_no_seq')::text;
+    -- Dynamically check if receipts table exists and identify the exact column ('receipt_no' or 'receipt_number')
+    IF to_regclass('public.receipts') IS NOT NULL THEN
+        SELECT column_name INTO col_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'receipts'
+          AND column_name IN ('receipt_no', 'receipt_number')
+        LIMIT 1;
+
+        IF col_name IS NOT NULL THEN
+            target_table := 'public.receipts';
+        END IF;
+    END IF;
+
+    -- Fallback: check subscriptions table if receipts table/column was not found
+    IF col_name IS NULL AND to_regclass('public.subscriptions') IS NOT NULL THEN
+        SELECT column_name INTO col_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscriptions'
+          AND column_name IN ('receipt_no', 'receipt_number')
+        LIMIT 1;
+
+        IF col_name IS NOT NULL THEN
+            target_table := 'public.subscriptions';
+        END IF;
+    END IF;
+
+    LOOP
+        -- Generate random 11-digit number string (10000000000 to 99999999999)
+        candidate := 'REC-' || (floor(random() * 90000000000 + 10000000000)::bigint)::text;
+
+        -- Check uniqueness against database using the detected column name
+        IF target_table IS NOT NULL AND col_name IS NOT NULL THEN
+            EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I = $1)', target_table, col_name)
+            INTO exists_flag
+            USING candidate;
+        ELSE
+            exists_flag := FALSE;
+        END IF;
+
+        IF NOT exists_flag THEN
+            RETURN candidate;
+        END IF;
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql VOLATILE;
 

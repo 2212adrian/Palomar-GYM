@@ -238,38 +238,54 @@ useEffect(() => {
     }
   };
 
-  // Void eligibility calculation for a given subscription
-  const getVoidEligibility = (sub?: Subscription | null) => {
-    if (!sub) {
-      return { eligible: false, reason: 'No subscription record selected for voiding.' };
-    }
+  // Helper to accurately parse subscription creation timestamp
+const getSubscriptionCreationTime = (sub: Subscription): number => {
+  if (sub.created_at) {
+    const isoStr = typeof sub.created_at === 'string' ? sub.created_at.replace(' ', 'T') : sub.created_at;
+    const t = new Date(isoStr).getTime();
+    if (!isNaN(t)) return t;
+  }
+  if (sub.start_date) {
+    const t = new Date(sub.start_date).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return Date.now();
+};
 
-    const createdTime = new Date(sub.created_at || sub.start_date).getTime();
-    const nowTime = Date.now();
-    const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
+// Void eligibility calculation
+const getVoidEligibility = (sub?: Subscription | null) => {
+  if (!sub) {
+    return { eligible: false, reason: 'No subscription record selected for voiding.' };
+  }
 
-    if (hoursDiff > 24) {
-      return {
-        eligible: false,
-        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
-      };
-    }
+  const createdTime = getSubscriptionCreationTime(sub);
+  const nowTime = Date.now();
+  const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
 
-    const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
-      if (att.customer_type === 'New Membership') return false;
-      const checkInTime = new Date(att.check_in_time).getTime();
-      return checkInTime > createdTime;
-    });
+  // Allow voiding if created within 24 hours
+  if (hoursDiff > 24) {
+    return {
+      eligible: false,
+      reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
+    };
+  }
 
-    if (hasFacilityVisitsAfterSub) {
-      return {
-        eligible: false,
-        reason: 'This subscription has already been used for facility visits and can no longer be voided.'
-      };
-    }
+  // Ignore 'Walk-In' or 'New Membership' entries prior to subscription creation
+  const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
+    if (att.customer_type === 'New Membership' || att.customer_type === 'Walk-In') return false;
+    const checkInTime = new Date(att.check_in_time).getTime();
+    return checkInTime > (createdTime + 60000); // 1-minute grace period
+  });
 
-    return { eligible: true, reason: '' };
-  };
+  if (hasFacilityVisitsAfterSub) {
+    return {
+      eligible: false,
+      reason: 'This subscription has already been used for facility visits and can no longer be voided.'
+    };
+  }
+
+  return { eligible: true, reason: '' };
+};
 
   // Lock rule: Edit and Delete are locked ONLY when a TRULY ACTIVE subscription contract exists
   const hasActiveSubscription = !!activeContract;

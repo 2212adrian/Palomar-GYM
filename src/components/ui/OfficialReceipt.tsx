@@ -101,6 +101,16 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
   return new Blob([u8arr], { type: mime });
 };
 
+const loadQrImage = (url: string): Promise<HTMLImageElement | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+};
+
 export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptProps>(({
   data,
   variant = 'modal',
@@ -179,6 +189,14 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
   const isGCash = paymentMethod.includes('GCASH');
 
+  // Sanitize plan description string (e.g. "SUBSCRIBED UNDER MONTHLY MEMBERSHIP" -> "MONTHLY MEMBERSHIP")
+  const formattedPlanType = useMemo(() => {
+    if (!data.planType) return '';
+    let str = data.planType.trim();
+    str = str.replace(/^subscribed\s+under\s+/i, '').trim();
+    return str.toUpperCase();
+  }, [data.planType]);
+
   const gcashFee = useMemo(() => {
     if (data.gcashFee !== undefined && data.gcashFee > 0) return data.gcashFee;
     return isGCash ? (ratesConfig?.gcash_fee ?? 10) : 0;
@@ -228,7 +246,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const qrPayload = data.qrValue || receiptNo;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
 
-  const generateReceiptCanvasDataUrl = (): string | null => {
+  const generateReceiptCanvasDataUrl = async (): Promise<string | null> => {
     try {
       const canvas = document.createElement('canvas');
       const width = 400;
@@ -243,7 +261,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       if (isGCash || data.gcashRefNo) extraRows++;
       if (vatEnabled) extraRows += 2;
 
-      const height = 480 + (extraRows * 20) + (itemCount * 18) + 60;
+      const height = 490 + (extraRows * 20) + (itemCount * 18) + 60;
 
       canvas.width = width * scale;
       canvas.height = height * scale;
@@ -300,21 +318,36 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       y += 18;
 
       if (receiptType === 'subscription' || receiptType === 'attendance') {
+        const qrImg = await loadQrImage(qrImageUrl);
+
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(20, y, width - 40, 44);
+        ctx.fillRect(20, y, width - 40, 52);
         ctx.strokeStyle = '#cbd5e1';
-        ctx.strokeRect(20, y, width - 40, 44);
+        ctx.strokeRect(20, y, width - 40, 52);
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'bold 8px monospace';
-        ctx.fillText('CHECK-IN ENTRY CODE', width / 2, y + 16);
+        if (qrImg) {
+          ctx.drawImage(qrImg, 28, y + 6, 40, 40);
 
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(receiptNo, width / 2, y + 32);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 8px system-ui, sans-serif';
+          ctx.fillText('SCAN FOR CHECK-IN', 78, y + 20);
 
-        y += 56;
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText(receiptNo, 78, y + 36);
+        } else {
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 8px monospace';
+          ctx.fillText('CHECK-IN ENTRY CODE', width / 2, y + 20);
+
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText(receiptNo, width / 2, y + 36);
+        }
+
+        y += 64;
         drawDashedLine(y);
         y += 18;
       }
@@ -336,8 +369,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       if (data.paymentRef && !isGCash) renderRow('PAYMENT REF', data.paymentRef, true, '#0284c7');
       renderRow(receiptType === 'subscription' ? 'MEMBER' : 'CUSTOMER', (data.customerName || 'Walk-In Guest').toUpperCase(), true, '#0f172a');
 
-      if (data.planType) {
-        renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY', data.planType.toUpperCase(), false, '#15803d');
+      if (formattedPlanType) {
+        renderRow(receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY', formattedPlanType, false, '#15803d');
       }
 
       if (basePrice > 0) {
@@ -453,7 +486,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   const handlePrint = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
-        const dataUrl = generateReceiptCanvasDataUrl();
+        const dataUrl = await generateReceiptCanvasDataUrl();
         if (!dataUrl) throw new Error('Failed to generate receipt image.');
 
         const fileName = `Official_Receipt_${receiptNo}.png`;
@@ -597,7 +630,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
   const handleDownloadJpg = async () => {
     try {
-      const dataUrl = generateReceiptCanvasDataUrl();
+      const dataUrl = await generateReceiptCanvasDataUrl();
       if (!dataUrl) {
         toast.error('Failed to export receipt image.');
         return;
@@ -649,7 +682,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
   const handleShareReceipt = async () => {
     try {
-      const dataUrl = generateReceiptCanvasDataUrl();
+      const dataUrl = await generateReceiptCanvasDataUrl();
       if (!dataUrl) {
         toast.error('Failed to generate receipt image.');
         return;
@@ -713,7 +746,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
   const handleCopyImageToClipboard = async () => {
     try {
-      const dataUrl = generateReceiptCanvasDataUrl();
+      const dataUrl = await generateReceiptCanvasDataUrl();
       if (!dataUrl) {
         toast.error('Failed to generate receipt image.');
         return;
@@ -851,13 +884,13 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
           </span>
         </div>
 
-        {data.planType && (
+        {formattedPlanType && (
           <div className="flex justify-between">
             <span className="text-slate-500">
               {receiptType === 'subscription' ? 'PLAN TYPE' : 'LOGBOOK ENTRY'}
             </span>
-            <span className="font-semibold text-[var(--color-text)] uppercase text-right max-w-32">
-              {data.planType}
+            <span className="font-semibold text-[var(--color-text)] uppercase text-right max-w-36">
+              {formattedPlanType}
             </span>
           </div>
         )}
@@ -970,24 +1003,24 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         </>
       )}
 
-      {/* Manual Recipient Information Section */}
+      {/* Recipient Acknowledgement Section */}
       <div className="border-b border-dashed border-[var(--border-color)] my-1.5" />
       
       <div className="pt-1 pb-1 space-y-2">
         <span className="text-[7.5px] font-bold text-slate-500 uppercase tracking-wider block text-center">
-          Recipient Details
+          RECIPIENT ACKNOWLEDGEMENT
         </span>
         <div className="grid grid-cols-2 gap-3 text-[7.5px]">
           <div>
             <div className="manual-signature-line border-b border-slate-400 dark:border-zinc-500 h-5" />
             <span className="text-slate-400 uppercase tracking-tight block text-center mt-1 font-sans">
-              Full Name
+              SIGNATURE OVER PRINTED NAME
             </span>
           </div>
           <div>
             <div className="manual-signature-line border-b border-slate-400 dark:border-zinc-500 h-5" />
             <span className="text-slate-400 uppercase tracking-tight block text-center mt-1 font-sans">
-              Contact Number
+              DATE SIGNED
             </span>
           </div>
         </div>
