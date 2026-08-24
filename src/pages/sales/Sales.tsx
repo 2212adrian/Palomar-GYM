@@ -535,9 +535,10 @@ export const Sales: React.FC = () => {
         fetchProducts();
       }).catch(console.error);
 
-    } catch (err) {
-      console.error(err);
-      toast.error('Problem saving transaction.');
+    } catch (err: any) {
+      console.error('Error saving sale transaction:', err);
+      toast.error(err.message || 'Problem saving transaction. Please check your network connection.');
+      throw err; // Re-throw to prevent SalesDialog from displaying the success screen
     }
   };
 

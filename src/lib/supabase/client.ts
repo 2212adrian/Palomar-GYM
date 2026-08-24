@@ -128,6 +128,8 @@ const SafeWebSocket = typeof window !== 'undefined' ? new Proxy(window.WebSocket
   }
 }) : undefined;
 
+const OFFLINE_STAFF_MESSAGE = 'No internet connection. Please check your Wi-Fi and try again.';
+
 export const supabase = createClient(
   supabaseUrl || '',
   supabaseAnonKey || '',
@@ -140,9 +142,16 @@ export const supabase = createClient(
     global: {
       fetch: (input, init) => {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          return Promise.reject(new TypeError('Failed to fetch (offline)'));
+          return Promise.reject(new TypeError(OFFLINE_STAFF_MESSAGE));
         }
-        return fetch(input, init);
+
+        return fetch(input, init).catch((err) => {
+          // Intercept standard browser 'Failed to fetch' errors when network is dropped
+          if (err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
+            return Promise.reject(new TypeError(OFFLINE_STAFF_MESSAGE));
+          }
+          return Promise.reject(err);
+        });
       },
     },
     realtime: {

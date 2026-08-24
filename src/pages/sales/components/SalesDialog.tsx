@@ -25,7 +25,7 @@ interface SalesDialogProps {
   isOpen: boolean;
   onClose: () => void;
   products: any[];
-  onSaleSuccess: (newTx: any, updatedProducts: any[]) => void;
+  onSaleSuccess: (newTx: any, updatedProducts: any[]) => Promise<void> | void;
 }
 
 interface CartItem {
@@ -350,7 +350,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     setCart(updatedCart);
   };
 
-  const handleCompleteSale = () => {
+  const handleCompleteSale = async () => {
     if (isSubmittingRef.current || isSuccess) {
       return;
     }
@@ -376,58 +376,69 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     isSubmittingRef.current = true;
     setIsSubmitting(true); 
 
-    // Process Stock Update for each cart item
-    const updatedProducts = products.map((p: any) => {
-      const cartItem = cart.find(item => item.product.id === p.id);
-      if (cartItem) {
-        const stock = getProductStock(p);
-        const limitActive = hasStockLimit(p);
-        if (limitActive) {
-          const newStock = Math.max(0, stock - cartItem.quantity);
-          if (p.stock_quantity !== undefined) {
-            return { ...p, stock_quantity: newStock };
-          } else {
-            return { ...p, stock: newStock };
+    try {
+      // Process Stock Update for each cart item
+      const updatedProducts = products.map((p: any) => {
+        const cartItem = cart.find(item => item.product.id === p.id);
+        if (cartItem) {
+          const stock = getProductStock(p);
+          const limitActive = hasStockLimit(p);
+          if (limitActive) {
+            const newStock = Math.max(0, stock - cartItem.quantity);
+            if (p.stock_quantity !== undefined) {
+              return { ...p, stock_quantity: newStock };
+            } else {
+              return { ...p, stock: newStock };
+            }
           }
         }
-      }
-      return p;
-    });
+        return p;
+      });
 
-    const now = new Date();
-    const newTx = {
-      id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
-      items: cart.map(item => ({
-        productId: item.product.id,
-        productName: getProductName(item.product),
-        quantity: item.quantity,
-        price: getProductPrice(item.product),
-      })),
-      productName: cart.map(item => `${item.quantity}x ${getProductName(item.product)}`).join(', '),
-      barcode: cart.map(item => getProductBarcode(item.product)).join(', '),
-      quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
-      paymentMethod,
-      amountReceived: paymentMethod === 'Cash' ? Number(amountReceived) : null,
-      changeCalculated: paymentMethod === 'Cash' ? Math.max(0, Number(amountReceived) - totalPayable) : null,
-      referenceNumber: paymentMethod === 'GCash' ? referenceNumber : null,
-      totalAmount: totalPayable,
-      createdAt: now.toISOString(),
-      date: format(now, 'yyyy-MM-dd'),
-    };
+      const now = new Date();
+      const newTx = {
+        id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
+        items: cart.map(item => ({
+          productId: item.product.id,
+          productName: getProductName(item.product),
+          quantity: item.quantity,
+          price: getProductPrice(item.product),
+        })),
+        productName: cart.map(item => `${item.quantity}x ${getProductName(item.product)}`).join(', '),
+        barcode: cart.map(item => getProductBarcode(item.product)).join(', '),
+        quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
+        paymentMethod,
+        amountReceived: paymentMethod === 'Cash' ? Number(amountReceived) : null,
+        changeCalculated: paymentMethod === 'Cash' ? Math.max(0, Number(amountReceived) - totalPayable) : null,
+        referenceNumber: paymentMethod === 'GCash' ? referenceNumber : null,
+        totalAmount: totalPayable,
+        createdAt: now.toISOString(),
+        date: format(now, 'yyyy-MM-dd'),
+      };
 
-    setIsSuccess(true);
+      // Await database insertion FIRST before displaying success modal
+      await onSaleSuccess(newTx, updatedProducts);
 
-    setTimeout(() => {
-      onSaleSuccess(newTx, updatedProducts);
-      setIsSuccess(false);
+      // Only display success modal if insertion succeeded
+      setIsSuccess(true);
+
+      setTimeout(() => {
+        setIsSuccess(false);
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        setCart([]);
+        setSearchTerm('');
+        setAmountReceived('');
+        setReferenceNumber('');
+        onClose();
+      }, 1500);
+
+    } catch (err: any) {
+      console.error('Sale execution error:', err);
+      // Reset submit state on error so user can retry
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      setCart([]);
-      setSearchTerm('');
-      setAmountReceived('');
-      setReferenceNumber('');
-      onClose();
-    }, 1500);
+    }
   };
 
   return createPortal(
