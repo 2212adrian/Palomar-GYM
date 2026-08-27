@@ -5,7 +5,6 @@ import {
   RotateCcw, 
   Calendar as CalendarIcon, 
   FileSpreadsheet,
-  Activity,
   Dumbbell
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';

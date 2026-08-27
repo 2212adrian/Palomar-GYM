@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, ArrowRight, Calendar, UserCheck, AlertCircle } from 'lucide-react';
+import { Clock, ArrowRight, Calendar, UserCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { ExpiringMemberItem, DashboardMetrics } from '../types';
 import { formatNumber } from '../dashboardService';

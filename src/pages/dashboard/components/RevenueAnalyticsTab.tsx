@@ -21,7 +21,6 @@ import {
   Layers,
   FileSpreadsheet,
   TrendingUp,
-  Activity
 } from 'lucide-react';
 import type { 
   DashboardTab, 
@@ -32,7 +31,7 @@ import type {
   BirReportItem, 
   DashboardMetrics 
 } from '../types';
-import { formatPHP, formatNumber } from '../dashboardService';
+import { formatPHP } from '../dashboardService';
 import { ReportsExportModal } from './ReportsExportModal';
 
 interface RevenueAnalyticsTabProps {
