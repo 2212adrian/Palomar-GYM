@@ -26,7 +26,7 @@ export const InventoryAlertsSection: React.FC<InventoryAlertsSectionProps> = ({
               Inventory Alerts
             </h3>
             <p className="text-xs text-slate-500">
-              Retail merchandise and supplements below safety threshold.
+              Active retail merchandise and supplements below safety threshold.
             </p>
           </div>
           <button
@@ -39,7 +39,7 @@ export const InventoryAlertsSection: React.FC<InventoryAlertsSectionProps> = ({
 
         {lowStockItems.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
-            All inventory levels are healthy and above threshold.
+            All active inventory levels are healthy and above threshold.
           </div>
         ) : (
           <div className="space-y-2.5">

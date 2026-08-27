@@ -7,6 +7,8 @@ import {
   startOfYear, endOfYear 
 } from 'date-fns';
 import { supabase } from '../lib/supabase/client';
+import { useAuthStore } from './authStore';
+import { isSuperAdmin } from '../constants/auth';
 
 export type GoalTimeframe = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
@@ -24,48 +26,15 @@ const DEFAULT_GOALS: RevenueGoalsConfig = {
   yearly: 1800000
 };
 
-const STORAGE_KEY_GOALS = 'palomar_revenue_goals_config_v1';
-const STORAGE_KEY_TIMEFRAME = 'palomar_revenue_goals_timeframe_v1';
-
-export function getStoredGoals(): RevenueGoalsConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_GOALS);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        daily: Number(parsed.daily) || DEFAULT_GOALS.daily,
-        weekly: Number(parsed.weekly) || DEFAULT_GOALS.weekly,
-        monthly: Number(parsed.monthly) || DEFAULT_GOALS.monthly,
-        yearly: Number(parsed.yearly) || DEFAULT_GOALS.yearly
-      };
-    }
-  } catch {
-    // fallback
-  }
-  return DEFAULT_GOALS;
-}
-
-export function saveStoredGoals(goals: RevenueGoalsConfig) {
-  try {
-    localStorage.setItem(STORAGE_KEY_GOALS, JSON.stringify(goals));
-    window.dispatchEvent(new Event('palomar-goals-updated'));
-  } catch (err) {
-    console.error('Failed to save goals in localStorage:', err);
-  }
-}
-
 export function useRevenueGoals() {
-  const [timeframe, setTimeframe] = useState<GoalTimeframe>(() => {
-    try {
-      const tf = localStorage.getItem(STORAGE_KEY_TIMEFRAME) as GoalTimeframe;
-      if (tf && ['daily', 'weekly', 'monthly', 'yearly'].includes(tf)) {
-        return tf;
-      }
-    } catch {}
-    return 'daily';
-  });
+  const { user, profile } = useAuthStore() as any;
 
-  const [goalsConfig, setGoalsConfig] = useState<RevenueGoalsConfig>(getStoredGoals);
+  // Determine if current active user is authorized (Admin or SuperAdmin)
+  const isSuperAdminUser = isSuperAdmin(user?.email);
+  const isAdmin = isSuperAdminUser || profile?.role === 'admin';
+
+  const [timeframe, setTimeframe] = useState<GoalTimeframe>('daily');
+  const [goalsConfig, setGoalsConfig] = useState<RevenueGoalsConfig>(DEFAULT_GOALS);
   const [logbookRevenue, setLogbookRevenue] = useState<number>(0);
   const [salesRevenue, setSalesRevenue] = useState<number>(0);
   const [totalRevenue, setTotalRevenue] = useState<number>(0);
@@ -75,16 +44,58 @@ export function useRevenueGoals() {
   const prevTotalRef = useRef<number>(0);
   const isInitialMount = useRef<boolean>(true);
 
-  const updateTimeframe = (tf: GoalTimeframe) => {
-    setTimeframe(tf);
-    try {
-      localStorage.setItem(STORAGE_KEY_TIMEFRAME, tf);
-    } catch {}
-  };
+  // Fetch Goals Configuration from Supabase (Exclusive for Admin/Superadmin)
+  const fetchGoalsConfig = useCallback(async () => {
+    if (!isAdmin) return;
 
-  const updateGoals = (newGoals: RevenueGoalsConfig) => {
+    try {
+      const { data, error } = await supabase
+        .from('revenue_goals')
+        .select('daily, weekly, monthly, yearly')
+        .eq('id', 'default_goals')
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Could not fetch revenue_goals, using baseline:', error.message);
+        return;
+      }
+
+      if (data) {
+        setGoalsConfig({
+          daily: Number(data.daily) || DEFAULT_GOALS.daily,
+          weekly: Number(data.weekly) || DEFAULT_GOALS.weekly,
+          monthly: Number(data.monthly) || DEFAULT_GOALS.monthly,
+          yearly: Number(data.yearly) || DEFAULT_GOALS.yearly
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching revenue goals config from Supabase:', err);
+    }
+  }, [isAdmin]);
+
+  // Update Goals Configuration in Supabase
+  const updateGoals = async (newGoals: RevenueGoalsConfig) => {
+    if (!isAdmin) {
+      throw new Error('Unauthorized: Only administrators can update revenue goals.');
+    }
+
     setGoalsConfig(newGoals);
-    saveStoredGoals(newGoals);
+
+    const { error } = await supabase
+      .from('revenue_goals')
+      .upsert({
+        id: 'default_goals',
+        daily: newGoals.daily,
+        weekly: newGoals.weekly,
+        monthly: newGoals.monthly,
+        yearly: newGoals.yearly,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+
+    if (error) {
+      console.error('Failed to update revenue_goals in Supabase:', error);
+      throw error;
+    }
   };
 
   // Calculate Date Boundaries
@@ -104,6 +115,15 @@ export function useRevenueGoals() {
 
   // Fetch live revenue for active timeframe
   const fetchRevenue = useCallback(async () => {
+    // Strictly prohibit staff from querying financial aggregates
+    if (!isAdmin) {
+      setSalesRevenue(0);
+      setLogbookRevenue(0);
+      setTotalRevenue(0);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { start, end } = getDateRange(timeframe);
       const startIso = start.toISOString();
@@ -158,25 +178,23 @@ export function useRevenueGoals() {
     } finally {
       setIsLoading(false);
     }
-  }, [timeframe, getDateRange]);
+  }, [timeframe, getDateRange, isAdmin]);
 
+  // Initial Load
   useEffect(() => {
+    fetchGoalsConfig();
     fetchRevenue();
-  }, [fetchRevenue]);
+  }, [fetchGoalsConfig, fetchRevenue]);
 
-  // Sync when goals are updated from any view
+  // Realtime live subscription to sales, attendance, subscriptions, and revenue_goals
   useEffect(() => {
-    const handleGoalUpdate = () => {
-      setGoalsConfig(getStoredGoals());
-    };
-    window.addEventListener('palomar-goals-updated', handleGoalUpdate);
-    return () => window.removeEventListener('palomar-goals-updated', handleGoalUpdate);
-  }, []);
+    if (!isAdmin) return;
 
-  // Realtime live subscription to sales, attendance, subscriptions
-  useEffect(() => {
-    const channel = supabase
-      .channel('revenue-goals-live-sync')
+    // Generate an isolated channel name to prevent subscribe() collisions across instances
+    const channelId = `revenue-goals-sync-${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId);
+
+    channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
         fetchRevenue();
       })
@@ -186,21 +204,24 @@ export function useRevenueGoals() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => {
         fetchRevenue();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'revenue_goals' }, () => {
+        fetchGoalsConfig();
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchRevenue]);
+  }, [fetchRevenue, fetchGoalsConfig, isAdmin]);
 
-  const currentGoalTarget = goalsConfig[timeframe] || 5000;
+  const currentGoalTarget = goalsConfig[timeframe] || DEFAULT_GOALS[timeframe];
   const progressPercent = currentGoalTarget > 0 ? Math.min(100, Math.round((totalRevenue / currentGoalTarget) * 100)) : 0;
   const remainingAmount = Math.max(0, currentGoalTarget - totalRevenue);
   const isGoalAchieved = totalRevenue >= currentGoalTarget;
 
   return {
     timeframe,
-    setTimeframe: updateTimeframe,
+    setTimeframe,
     goalsConfig,
     updateGoals,
     logbookRevenue,
@@ -212,6 +233,7 @@ export function useRevenueGoals() {
     isGoalAchieved,
     trend,
     isLoading,
+    isAdmin,
     refreshRevenue: fetchRevenue
   };
 }

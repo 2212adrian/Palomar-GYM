@@ -1,5 +1,5 @@
 // src/pages/dashboard/components/RevenueAnalyticsTab.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -29,7 +29,7 @@ import type {
   RevenueTimelinePoint, 
   TopProductMetric, 
   AttendanceHourData, 
-  BirReportItem,
+  BirReportItem, 
   DashboardMetrics 
 } from '../types';
 import { formatPHP } from '../dashboardService';
@@ -61,14 +61,46 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] = useState<'bir' | 'sales' | 'attendance' | 'inventory' | 'subscriptions'>('bir');
 
-  // Calculate percentage comparison vs last month / previous period
+  const rangeSalesRevenue = useMemo(() => {
+    return revenueTimeline.reduce((acc, curr) => acc + curr.salesRevenue, 0);
+  }, [revenueTimeline]);
+
+  const rangeLogbookRevenue = useMemo(() => {
+    return revenueTimeline.reduce((acc, curr) => acc + curr.logbookRevenue, 0);
+  }, [revenueTimeline]);
+
+  const rangeTotalRevenue = useMemo(() => {
+    return revenueTimeline.reduce((acc, curr) => acc + curr.totalRevenue, 0);
+  }, [revenueTimeline]);
+
+  const rangeLabel = useMemo(() => {
+    switch (timeRange) {
+      case 'today': return "Today's";
+      case 'week': return 'Past 7 Days';
+      case 'year': return 'Past 12 Months';
+      case 'month':
+      default:
+        return 'Past 30 Days';
+    }
+  }, [timeRange]);
+
+  const attendanceTabTitle = useMemo(() => {
+    switch (timeRange) {
+      case 'today': return "Hourly Attendance & Busiest Times (Today)";
+      case 'week': return "Daily Attendance & Foot Traffic (Past 7 Days)";
+      case 'year': return "Monthly Attendance & Foot Traffic (Past 12 Months)";
+      case 'month':
+      default:
+        return "Daily Attendance & Foot Traffic (Past 30 Days)";
+    }
+  }, [timeRange]);
+
   const revenueGrowthPercent = metrics.lastMonthTotalRevenue > 0
     ? (((metrics.monthTotalRevenue - metrics.lastMonthTotalRevenue) / metrics.lastMonthTotalRevenue) * 100)
     : 0;
 
   const isPositiveGrowth = revenueGrowthPercent >= 0;
 
-  // Colors for charts
   const THEME_BLUE = '#123c73';
   const THEME_GREEN = '#10b981';
 
@@ -123,7 +155,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>Logbook & Busiest Hours</span>
+            <span>Logbook & Busiest Times</span>
             {activeTab === 'logbook' && (
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#123c73] dark:bg-blue-400 rounded-t-sm" />
             )}
@@ -180,10 +212,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
-                  Total Combined Revenue
+                  {rangeLabel} Total Combined
                 </span>
                 <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                  {formatPHP(metrics.monthTotalRevenue)}
+                  {formatPHP(rangeTotalRevenue)}
                 </div>
                 <div className="mt-2 flex items-center gap-1.5 text-xs">
                   {isPositiveGrowth ? (
@@ -195,16 +227,16 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       <ArrowDownRight className="w-3.5 h-3.5" /> {revenueGrowthPercent.toFixed(1)}%
                     </span>
                   )}
-                  <span className="text-slate-500">vs previous period</span>
+                  <span className="text-slate-500">monthly trend</span>
                 </div>
               </div>
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
-                  Product Sales (POS)
+                  {rangeLabel} Product Sales (POS)
                 </span>
                 <div className="text-2xl font-black text-[#123c73] dark:text-blue-400 mt-1">
-                  {formatPHP(metrics.todaySalesRevenue * 22)}
+                  {formatPHP(rangeSalesRevenue)}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
                   Inventory items, refreshments & gear
@@ -213,10 +245,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
-                  Logbook & Subscriptions
+                  {rangeLabel} Passes & Subscriptions
                 </span>
                 <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
-                  {formatPHP(metrics.todayLogbookRevenue * 24)}
+                  {formatPHP(rangeLogbookRevenue)}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
                   Walk-in guest passes & member plans
@@ -229,7 +261,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase font-heading">
-                    Revenue Velocity (Sales vs Logbook)
+                    Revenue Velocity (Sales vs Logbook) • {rangeLabel}
                   </h3>
                   <p className="text-xs text-slate-500">
                     Dual-stream telemetry tracking product receipts against gym access passes.
@@ -278,7 +310,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         formatPHP(Number(val)), 
                         name === 'salesRevenue' ? 'Product Sales' : 'Logbook / Subscriptions'
                       ]}
-                      labelFormatter={(label) => `Date: ${label}`}
+                      labelFormatter={(label) => `${label}`}
                       contentStyle={{
                         backgroundColor: '#0f172a',
                         borderColor: '#334155',
@@ -320,7 +352,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase font-heading">
-                  Most Sold Out Products & Velocity
+                  Most Sold Out Products & Velocity ({rangeLabel})
                 </h3>
                 <p className="text-xs text-slate-500">
                   Ranking top performing retail items by units sold and gross sales generation.
@@ -339,7 +371,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                      <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
                       <YAxis 
                         dataKey="product_name" 
                         type="category" 
@@ -408,21 +440,21 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
         )}
 
         {/* =========================================================
-            TAB 3: LOGBOOK & BUSIEST HOURS
+            TAB 3: LOGBOOK & BUSIEST TIMES (NO DECIMALS + DYNAMIC X-AXIS)
             ========================================================= */}
         {activeTab === 'logbook' && (
           <div className="space-y-6 animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase font-heading">
-                  Hourly Attendance & Busiest Times
+                  {attendanceTabTitle}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Gym foot-traffic distribution showing peak workout hours throughout the day.
+                  Gym foot-traffic distribution showing visitor counts throughout the selected timeframe.
                 </p>
               </div>
               <div className="bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 px-3 py-1 rounded-md text-xs font-semibold text-[#123c73] dark:text-blue-300">
-                Peak Window: {metrics.peakHourLabel}
+                {metrics.peakHourLabel}
               </div>
             </div>
 
@@ -431,12 +463,18 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 <BarChart data={attendanceHourly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  {/* allowDecimals={false} ensures only whole visitor integers (0, 1, 2, 3...) appear on the axis */}
+                  <YAxis 
+                    tick={{ fontSize: 11, fill: '#64748b' }} 
+                    allowDecimals={false} 
+                    domain={[0, 'auto']} 
+                  />
                   <Tooltip 
                     formatter={(val: any, name: any) => [
                       `${val} visits`, 
                       name === 'members' ? 'Registered Members' : 'Walk-In Guests'
                     ]}
+                    labelFormatter={(label) => `${label}`}
                     contentStyle={{
                       backgroundColor: '#0f172a',
                       borderColor: '#334155',
@@ -448,7 +486,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   <Legend 
                     verticalAlign="top" 
                     height={36}
-                    formatter={(value) => <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{value === 'members' ? 'Member Visits' : 'Walk-In Guests'}</span>}
+                    formatter={(value) => (
+                      <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        {value === 'members' ? 'Member Visits' : 'Walk-In Guests'}
+                      </span>
+                    )}
                   />
                   <Bar dataKey="members" stackId="a" fill="#123c73" radius={[0, 0, 0, 0]} name="members" />
                   <Bar dataKey="walkIns" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} name="walkIns" />
@@ -478,7 +520,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
               <button
                 id="btn-open-export-hub"
-                onClick={() => setIsExportModalOpen(true)}
+                onClick={() => {
+                  setSelectedReportType('bir');
+                  setIsExportModalOpen(true);
+                }}
                 className="bg-[#123c73] hover:bg-[#0d2e5a] text-white px-4 py-2.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-2 active:scale-95 shrink-0"
               >
                 <Download className="w-4 h-4" />
@@ -488,7 +533,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
             {/* Quick Report Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* 1. BIR OFFICIAL SALES JOURNAL */}
+              {/* 1. BIR REPORT */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#123c73] transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -509,14 +554,14 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('bir');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate BIR Report</span>
                 </button>
               </div>
 
-              {/* 2. COMBINED REVENUE & POS REGISTER */}
+              {/* 2. SALES REPORT */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#123c73] transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -537,14 +582,14 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('sales');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate Sales Report</span>
                 </button>
               </div>
 
-              {/* 3. ATTENDANCE & UTILIZATION LOG */}
+              {/* 3. LOGBOOK REPORT */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#123c73] transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -565,7 +610,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('attendance');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  className="mt-4 w-full py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#123c73] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate Logbook Report</span>

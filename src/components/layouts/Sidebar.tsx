@@ -350,56 +350,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
           style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
         />
 
-        {/* DESKTOP HEADER (EXPANDED STATE) */}
-        <div className={`transition-all duration-300 ease-in-out relative z-10 shrink-0 ${
-          collapsed ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden' : 'max-h-[380px] opacity-100'
-        }`}>
-          <div className="relative bg-white/80 dark:bg-[var(--bg-card)]/80 border-b border-slate-200/80 dark:border-white/10 p-4 shadow-xs backdrop-blur-md overflow-hidden">
-            <div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
-              <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
-                <path 
-                  d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
-                  className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
-                />
-              </svg>
-            </div>
-            <div className="relative z-10 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
-                    <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
-                  </div>
-                  <div className="flex flex-col whitespace-nowrap overflow-hidden">
-                    <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
-                      WOLF PALOMAR GYM
-                    </span>
-                    <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                      v{APP_VERSION}
-                    </span>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={() => setCollapsed(true)}
-                  aria-label="Collapse Sidebar"
-                  title="Collapse Sidebar"
-                  className="w-7 h-7 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-600 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
-                >
-                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-              </div>
-
-              <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
-
-              <SidebarProfileFlipper 
-                profile={profile} 
-                user={user} 
-                fallbackCharacter={fallbackCharacter} 
-                avatarElement={<SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />} 
-              />
-            </div>
+       {/* DESKTOP HEADER (EXPANDED STATE) */}
+<div className={`transition-all duration-300 ease-in-out relative z-10 shrink-0 ${
+  collapsed ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden' : 'opacity-100'
+}`}>
+  <div className="relative bg-white/80 dark:bg-[var(--bg-card)]/80 border-b border-slate-200/80 dark:border-white/10 p-3 shadow-xs backdrop-blur-md">
+    <div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
+      <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
+        <path 
+          d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
+          className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
+        />
+      </svg>
+    </div>
+    <div className="relative z-10 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
+            <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
+          </div>
+          <div className="flex flex-col whitespace-nowrap overflow-hidden">
+            <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
+              WOLF PALOMAR GYM
+            </span>
+            <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+              v{APP_VERSION}
+            </span>
           </div>
         </div>
+
+        <button 
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse Sidebar"
+          title="Collapse Sidebar"
+          className="w-7 h-7 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-600 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+        >
+          <X className="w-3.5 h-3.5 stroke-[2.5]" />
+        </button>
+      </div>
+
+      <SidebarProfileFlipper 
+        profile={profile} 
+        user={user} 
+        fallbackCharacter={fallbackCharacter} 
+        avatarElement={<SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />} 
+      />
+    </div>
+  </div>
+</div>
 
         {/* DESKTOP HEADER (COLLAPSED MINIRAIL) */}
         <div className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 shrink-0 transition-all duration-300 ease-in-out ${
@@ -675,7 +673,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="flex flex-col h-full relative z-10 min-h-0">
             {/* MOBILE HEADER */}
-            <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md overflow-hidden shrink-0">
+            <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md">
               <div className="absolute top-0 right-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0">
                 <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
                   <path 
@@ -685,7 +683,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </svg>
               </div>
 
-              <div className="relative z-10 space-y-3.5">
+              <div className="relative z-10 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
