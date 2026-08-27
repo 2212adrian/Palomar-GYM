@@ -20,6 +20,9 @@ import { OnlineRegistrationPage } from '../pages/members/components/OnlineRegist
 import { Sales } from '../pages/sales/Sales';
 import { LogbookPage } from '../pages/logbook/LogbookPage';
 
+// Import Smart Terminal Scanner Page
+import { ScannerPage } from '../pages/scanner/ScannerPage';
+
 // Shared context for dynamic header buttons
 export const HeaderActionsContext = createContext<{
   setActions: React.Dispatch<React.SetStateAction<React.ReactNode>>;
@@ -47,6 +50,11 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
     title: 'GYM LOGBOOK',
     description: 'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.'
   },   
+  '/scanner': {
+    subtitle: 'Terminal Station',
+    title: 'Smart Scanner',
+    description: 'Scan member access cards, QR codes, or product barcodes for instant check-in, subscription inspection, and POS inventory.'
+  },
   '/members/list': {
     subtitle: 'List of Members',
     title: 'Member List',
@@ -92,22 +100,22 @@ const HeaderLayout: React.FC = () => {
       <div className="space-y-6 h-full flex flex-col min-h-0 pt-2 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
         {headerInfo && (
           <div className="hidden md:block shrink-0">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
-                  {headerInfo.subtitle}
-                </span>
-                <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
-                  {headerInfo.title}
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                  {headerInfo.description}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {actions}
-              </div>
-            </div>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+  <div>
+    <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+      {headerInfo.subtitle}
+    </span>
+    <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
+      {headerInfo.title}
+    </h1>
+    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+      {headerInfo.description}
+    </p>
+  </div>
+  <div className="flex items-center gap-2 shrink-0">
+    {actions}
+  </div>
+</div>
           </div>
         )}
         <Outlet />
@@ -155,6 +163,7 @@ const router = createBrowserRouter([
                   { path: '/sales', element: <Sales /> },
                   { path: '/sales/:subview', element: <Sales /> },
                   { path: '/logbook', element: <LogbookPage /> },
+                  { path: '/scanner', element: <ScannerPage /> },
                   { path: '/members/list', element: <LogbookPage /> },
                   { path: '/members/plans', element: <StaffPlansConsole /> },
                   { path: '/reports', element: <IncidentReports /> }, 

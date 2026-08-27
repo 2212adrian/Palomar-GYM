@@ -54,8 +54,18 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   searchPlaceholder = 'Search records...'
 }) => {
   const dateInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Carousel direction tracking ('right' = forward in time, 'left' = backward in time)
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(Boolean(searchQuery));
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 150);
+    }
+  }, [isSearchOpen]);
+
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
   const prevWeekStartRef = useRef<Date>(currentWeekStart);
 
@@ -77,7 +87,6 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     return startOfDay(currentWeekStart).getTime() >= startOfDay(realWeekStart).getTime();
   }, [currentWeekStart]);
 
-  // Wrapped in useCallback to prevent unnecessary hook re-runs
   const isTabSelectable = useCallback((date: Date) => {
     if (role === 'staff') {
       return isToday(date);
@@ -85,12 +94,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
   }, [role]);
   
-// Automatically adjust selectedDayIndex if the currently selected day becomes unselectable
   useEffect(() => {
     const selectedDate = addDays(currentWeekStart, selectedDayIndex);
     const isPastOrToday = startOfDay(selectedDate).getTime() <= startOfDay(new Date()).getTime();
 
-    // Do not reset past date views for admins
     if (role === 'admin' && isPastOrToday) return;
 
     if (!isTabSelectable(selectedDate)) {
@@ -99,12 +106,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
       const weekStart = startOfDay(currentWeekStart).getTime();
       const weekEnd = startOfDay(addDays(currentWeekStart, 6)).getTime();
 
-      // 1. If today is within the currently selected week, default the selection to today
       if (todayStart >= weekStart && todayStart <= weekEnd) {
         const todayIdx = getDay(today);
         onDayIndexChange(todayIdx);
       } else {
-        // 2. Otherwise, scan backwards from the end of the week to find the closest selectable day
         for (let i = 6; i >= 0; i--) {
           const date = addDays(currentWeekStart, i);
           if (isTabSelectable(date)) {
@@ -116,11 +121,36 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     }
   }, [currentWeekStart, selectedDayIndex, isTabSelectable, onDayIndexChange, role]);
 
+  const handleResetToCurrent = useCallback(() => {
+    const today = new Date();
+    const currentWeek = startOfWeek(today, { weekStartsOn: 0 });
+    const todayIndex = getDay(today);
+
+    onWeekStartChange(currentWeek);
+    onDayIndexChange(todayIndex);
+  }, [onWeekStartChange, onDayIndexChange]);
+
+  const handleNextWeek = () => {
+    const nextWeek = addWeeks(currentWeekStart, 1);
+    const realWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+    if (startOfDay(nextWeek).getTime() <= startOfDay(realWeekStart).getTime()) {
+      onWeekStartChange(nextWeek);
+    }
+  };
+
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) return;
-    const pickedDate = new Date(e.target.value);
+
+    // Parse YYYY-MM-DD in local time
+    const [year, month, day] = e.target.value.split('-').map(Number);
+    const pickedDate = new Date(year, month - 1, day);
+    const today = new Date();
+
+    // Lock future dates
+    if (startOfDay(pickedDate).getTime() > startOfDay(today).getTime()) {
+      return;
+    }
     
-    // Prevent futures in staff boundaries
     if (role === 'staff' && !isToday(pickedDate)) {
       return;
     }
@@ -167,25 +197,48 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         }
       `}</style>
 
-      {/* ─── WEEKLY TIMELINE SCROLLER (UNBOXED / BORDERLESS FOR MAXIMUM MOBILE SPACE) ─── */}
-      <div className="sticky top-0 z-30 py-2.5 px-1 bg-(--bg-page)/95 backdrop-blur-md space-y-2.5 flex flex-col items-center transition-all mb-3 border-b border-(--border-color)/40">
-        <div className="flex items-center justify-between w-full">
-          {role === 'admin' ? (
-            <button
-              onClick={() => onWeekStartChange(subWeeks(currentWeekStart, 1))}
-              className="p-1.5 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95"
-              aria-label="Previous week"
-            >
-              <ChevronLeft className="w-4 h-4 text-(--color-text)" />
-            </button>
-          ) : (
-            <div className="w-7 h-7 hidden sm:block" />
-          )}
+      {/* ─── VISIBLE CONTRASTING CONTAINER ─── */}
+      <div className="bg-slate-100 dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm mb-4 space-y-3">
+        
+        {/* Top Header Row */}
+        <div className="flex items-center justify-between w-full gap-2">
+          
+          {/* Left Controls: "<" & Mobile Search Toggle */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {role === 'admin' ? (
+              <button
+                onClick={() => onWeekStartChange(subWeeks(currentWeekStart, 1))}
+                className="p-2 sm:p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-750 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
+              </button>
+            ) : (
+              <div className="w-9 h-9 hidden sm:block" />
+            )}
 
-          {/* Header Date Picker */}
+            {/* Expandable Search Toggle Button (Mobile Only: hidden on md+) */}
+            <button
+              onClick={() => setIsSearchOpen((prev) => !prev)}
+              className={`md:hidden p-2 sm:p-2.5 border rounded-xl transition-all cursor-pointer active:scale-95 shrink-0 relative shadow-xs ${
+                isSearchOpen || searchQuery
+                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202]'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+              aria-label="Toggle search bar"
+              title="Search records"
+            >
+              <Search className="w-4 h-4 sm:w-5 sm:h-5" />
+              {Boolean(searchQuery) && !isSearchOpen && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+              )}
+            </button>
+          </div>
+
+          {/* Header Date Display */}
           <div 
             onClick={() => dateInputRef.current?.showPicker()} 
-            className="text-center flex-1 cursor-pointer hover:opacity-85 transition-opacity relative"
+            className="text-center flex-1 cursor-pointer hover:opacity-80 transition-opacity relative py-0.5"
           >
             <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-slate-400 uppercase select-none block font-bold">
               SELECTED WEEK DATE
@@ -198,46 +251,50 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               )}
             </span>
 
+            {/* Native Date Picker locked to current and past dates */}
             <input 
               ref={dateInputRef}
               type="date"
+              max={format(new Date(), 'yyyy-MM-dd')}
               onChange={handleDateChange}
               className="absolute left-1/2 -translate-x-1/2 w-48 h-full opacity-0 cursor-pointer pointer-events-none"
             />
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* Right Controls: Today & Next Week */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {!isCurrentWeek && role === 'admin' && (
               <button
-                onClick={() => onWeekStartChange(startOfWeek(new Date(), { weekStartsOn: 0 }))}
-                className="p-1.5 text-xs text-(--color-primary) bg-(--color-primary)/10 font-sans tracking-wider rounded-xl flex items-center gap-1 font-bold hover:bg-(--color-primary)/20 transition-all cursor-pointer active:scale-95"
+                onClick={handleResetToCurrent}
+                className="px-2.5 py-2 sm:px-3 text-xs text-[#123c73] bg-[#123c73]/10 dark:text-blue-300 dark:bg-blue-900/30 border border-[#123c73]/20 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-[#123c73]/20 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                aria-label="Reset to current day"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline uppercase text-[9px] tracking-wider font-heading">Current</span>
+                <span className="uppercase text-[9px] sm:text-[10px] tracking-wider font-heading font-extrabold">Today</span>
               </button>
             )}
 
             {role === 'admin' ? (
               <button
-                onClick={() => onWeekStartChange(addWeeks(currentWeekStart, 1))}
+                onClick={handleNextWeek}
                 disabled={isCurrentWeek}
-                className="p-1.5 border border-(--border-color) rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors cursor-pointer active:scale-95"
+                className="p-2 sm:p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-750 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Next week"
               >
-                <ChevronRight className="w-4 h-4 text-(--color-text)" />
+                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
               </button>
             ) : (
-              <div className="w-7 h-7 hidden sm:block" />
+              <div className="w-9 h-9 hidden sm:block" />
             )}
           </div>
         </div>
 
-        {/* Weekly Day Rails Carousel Viewport */}
+        {/* Weekly Day Cards */}
         {role === 'admin' && (
-          <div className="w-full overflow-hidden px-0.5 py-0.5">
+          <div className="w-full overflow-hidden px-0.5">
             <div 
               key={currentWeekStart.toISOString()}
-              className={`grid grid-cols-7 gap-1 w-full ${
+              className={`grid grid-cols-7 gap-1.5 sm:gap-2.5 w-full ${
                 slideDirection === 'right' 
                   ? 'animate-carousel-right' 
                   : slideDirection === 'left' 
@@ -251,7 +308,6 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                 const selectable = isTabSelectable(date);
                 const isTodayDate = isToday(date);
 
-                // Slight staggered entrance calculation depending on direction
                 const staggerDelay = slideDirection === 'right' 
                   ? `${idx * 20}ms` 
                   : slideDirection === 'left' 
@@ -264,18 +320,18 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     onClick={() => selectable && onDayIndexChange(idx)}
                     disabled={!selectable}
                     style={{ animationDelay: staggerDelay }}
-                   className={`py-2 px-0.5 sm:px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
-  active 
-    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-sm scale-[1.02] z-10 font-bold' 
-    : selectable 
-      ? 'bg-(--bg-card) border-(--border-color) text-slate-700 dark:text-slate-300 hover:border-slate-350 dark:hover:border-white/10 font-bold active:scale-95' 
-      : 'bg-transparent border-transparent text-slate-350 dark:text-zinc-755 opacity-40 cursor-not-allowed'
-}`}
+                    className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
+                      active 
+                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-md scale-[1.03] z-10 font-bold' 
+                        : selectable 
+                          ? 'bg-white dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 font-bold shadow-xs active:scale-95' 
+                          : 'bg-transparent border-transparent text-slate-400 dark:text-zinc-600 opacity-40 cursor-not-allowed'
+                    }`}
                   >
-                    <span className="text-[8px] sm:text-[9px] font-heading tracking-wider">{day}</span>
-                    <span className="text-s font-sans font-extrabold">{format(date, 'd')}</span>
+                    <span className="text-[8.5px] sm:text-[9.5px] font-heading tracking-wider">{day}</span>
+                    <span className="text-sm sm:text-base font-sans font-black mt-0.5">{format(date, 'd')}</span>
                     {isTodayDate && (
-                      <span className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-(--color-primary)'}`} />
+                      <span className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-[#123c73] dark:bg-red-400'}`} />
                     )}
                   </button>
                 );
@@ -283,80 +339,90 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             </div>
           </div>
         )}
+
+        {/* Search & Filters Row: Always open on Desktop (md:), collapsible on Mobile */}
+        <div 
+          className={`grid transition-all duration-300 ease-in-out overflow-hidden md:grid-rows-[1fr] md:opacity-100 md:pointer-events-auto md:pt-1 ${
+            isSearchOpen 
+              ? 'grid-rows-[1fr] opacity-100 pt-1' 
+              : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="overflow-hidden min-h-0">
+            <div className="flex items-center gap-2 w-full pt-1 pb-0.5">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => onSearchQueryChange(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/30 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => onSearchQueryChange('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Type Filter */}
+              {filterOptions.length > 0 && onFilterChange && (
+                <div className="relative shrink-0">
+                  <select
+                    value={activeFilter || 'All'}
+                    onChange={(e) => onFilterChange(e.target.value)}
+                    style={{ 
+                      backgroundImage: 'none', 
+                      WebkitAppearance: 'none', 
+                      MozAppearance: 'none', 
+                      appearance: 'none' 
+                    }}
+                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-zinc-600 transition-colors shadow-xs"
+                  >
+                    {filterOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                        {opt.label === 'All' ? 'Type: All' : opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              )}
+
+              {/* Payment Filter */}
+              {paymentOptions && paymentOptions.length > 0 && onPaymentFilterChange && (
+                <div className="relative shrink-0">
+                  <select
+                    value={paymentFilter || 'All'}
+                    onChange={(e) => onPaymentFilterChange(e.target.value)}
+                    style={{ 
+                      backgroundImage: 'none', 
+                      WebkitAppearance: 'none', 
+                      MozAppearance: 'none', 
+                      appearance: 'none' 
+                    }}
+                    className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
+                  >
+                    {paymentOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                        {opt.label === 'All Pay' || opt.label === 'All' ? 'Pay: All' : `Pay: ${opt.label}`}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-emerald-600 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-  {/* ─── NON-SCROLLABLE 1-ROW SEARCH & DROPDOWN FILTERS TOOLBAR ─── */}
-<div className="flex items-center gap-2 w-full mb-4">
-  {/* Flexible Search Input */}
-  <div className="relative flex-1 min-w-0">
-    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 pointer-events-none" />
-    <input
-      type="text"
-      value={searchQuery}
-      onChange={(e) => onSearchQueryChange(e.target.value)}
-      placeholder={searchPlaceholder}
-      className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) transition-all shadow-xs"
-    />
-    {searchQuery && (
-      <button
-        type="button"
-        onClick={() => onSearchQueryChange('')}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-(--color-text) cursor-pointer"
-        title="Clear search"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
-    )}
-  </div>
-
-{/* Customer Type Dropdown Filter */}
-{filterOptions.length > 0 && onFilterChange && (
-  <div className="relative shrink-0">
-    <select
-      value={activeFilter || 'All'}
-      onChange={(e) => onFilterChange(e.target.value)}
-      style={{ 
-        backgroundImage: 'none', 
-        WebkitAppearance: 'none', 
-        MozAppearance: 'none', 
-        appearance: 'none' 
-      }}
-      className="bg-(--bg-card) border border-(--border-color) text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-400 dark:hover:border-zinc-600 transition-colors shadow-xs"
-    >
-      {filterOptions.map((opt) => (
-        <option key={opt.value} value={opt.value} className="bg-(--bg-card) text-(--color-text)">
-          {opt.label === 'All' ? 'Type: All' : opt.label}
-        </option>
-      ))}
-    </select>
-    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-  </div>
-)}
-
-{/* Payment Method Dropdown Filter */}
-{paymentOptions && paymentOptions.length > 0 && onPaymentFilterChange && (
-  <div className="relative shrink-0">
-    <select
-      value={paymentFilter || 'All'}
-      onChange={(e) => onPaymentFilterChange(e.target.value)}
-      style={{ 
-        backgroundImage: 'none', 
-        WebkitAppearance: 'none', 
-        MozAppearance: 'none', 
-        appearance: 'none' 
-      }}
-      className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
-    >
-      {paymentOptions.map((opt) => (
-        <option key={opt.value} value={opt.value} className="bg-(--bg-card) text-(--color-text)">
-          {opt.label === 'All Pay' || opt.label === 'All' ? 'Pay: All' : `Pay: ${opt.label}`}
-        </option>
-      ))}
-    </select>
-    <ChevronDown className="w-3.5 h-3.5 text-emerald-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-  </div>
-)}
-</div>
     </>
   );
 };

@@ -624,7 +624,7 @@ const getVoidEligibility = (sub?: Subscription | null) => {
         <span className={`font-mono font-black text-xs ${
           att.entry_fee > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
         }`}>
-          {att.entry_fee > 0 ? `₱${Number(att.entry_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'FREE (₱0)'}
+          {att.entry_fee > 0 ? `₱${Number(att.entry_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'NO CHARGE (₱0)'}
         </span>
       )
     },

@@ -227,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return current === target;
   };
 
-  // Auto-expand accordion matching active route, or collapse if route is outside menu (e.g. /settings)
+  // Auto-expand accordion matching active route
   useEffect(() => {
     const activeParent = allowedMenu.find(item => 
       item.children?.some(child => isPathActive(child.path))
@@ -246,9 +246,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const visibleChildren = item.children || [];
     const activeChild = visibleChildren.find(child => isPathActive(child.path));
 
-    // When collapsed in desktop mini rail: DO NOT EXPAND SIDEBAR! Just navigate!
     if (!isMobile && collapsed) {
-      if (activeChild) return; // already on this subpage
+      if (activeChild) return;
       if (visibleChildren[0]?.path) {
         navigate(visibleChildren[0].path);
       }
@@ -350,29 +349,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className="hidden lg:flex flex-col border-r border-slate-200/80 dark:border-white/5 bg-[#f0f4f8] dark:bg-[#0c0e12] h-full relative z-20 select-none shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.2,0,0,1)] transform-gpu will-change-[width]"
         style={{ width: collapsed ? '5.25rem' : '20rem' }}
       >
-        {/* Subsurface Texture */}
         <div 
           className="absolute inset-0 opacity-[0.02] dark:opacity-[0.03] pointer-events-none rounded-r-2xl overflow-hidden" 
           style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
         />
 
-        {/* ─── DESKTOP HEADER (EXPANDED STATE) ─── */}
-        <div className={`transition-all duration-300 ease-in-out relative z-10 ${
+        {/* DESKTOP HEADER (EXPANDED STATE) */}
+        <div className={`transition-all duration-300 ease-in-out relative z-10 shrink-0 ${
           collapsed ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden' : 'max-h-[380px] opacity-100'
         }`}>
           <div className="relative bg-white/80 dark:bg-[var(--bg-card)]/80 border-b border-slate-200/80 dark:border-white/10 p-4 shadow-xs backdrop-blur-md overflow-hidden">
-            
-            {/* SVG Gradient Wave (Responsive: Top-Right on Mobile, Top-Left on PC) */}
-<div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
-  <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
-    <path 
-      d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
-      className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
-    />
-  </svg>
-</div>
+            <div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
+              <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
+                <path 
+                  d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
+                  className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
+                />
+              </svg>
+            </div>
             <div className="relative z-10 space-y-3.5">
-              {/* Gym Branding Row */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
@@ -388,7 +383,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
 
-                {/* Desktop Collapse Button */}
                 <button 
                   onClick={() => setCollapsed(true)}
                   aria-label="Collapse Sidebar"
@@ -399,10 +393,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               </div>
 
-              {/* Gradient Line Separator */}
               <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
 
-              {/* User Profile Info */}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
                   <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
@@ -429,8 +421,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* ─── DESKTOP HEADER (COLLAPSED MINIRAIL) ─── */}
-        <div className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 transition-all duration-300 ease-in-out ${
+        {/* DESKTOP HEADER (COLLAPSED MINIRAIL) */}
+        <div className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 shrink-0 transition-all duration-300 ease-in-out ${
           collapsed ? 'p-4 max-h-36 opacity-100' : 'max-h-0 opacity-0 p-0 border-none pointer-events-none overflow-hidden'
         }`}>
           <button
@@ -447,8 +439,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* ─── ACCORDION NAVIGATION BUTTONS ─── */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-3.5 relative z-10 font-body">
+        {/* ACCORDION NAVIGATION BUTTONS */}
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 relative z-10 font-body">
           {allowedMenu.map((item, index) => {
             const visibleChildren = item.children || [];
             const isChildActive = visibleChildren.some(child => isPathActive(child.path));
@@ -456,7 +448,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             return (
               <div key={index} className="space-y-2">
-                {/* Accordion / Rail Trigger Button */}
                 <button
                   onClick={() => handleParentMenuClick(item, false)}
                   className={`flex items-center font-heading text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
@@ -464,16 +455,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0' 
                       : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
                   } ${
-                   (isExpanded || isChildActive)
-  ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
-  : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
+                    (isExpanded || isChildActive)
+                      ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+                      : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
                   }`}
                   title={collapsed ? item.name : undefined}
                 >
                   <div className="flex items-center gap-3 shrink-0 min-w-0">
                     <span className={(isExpanded || isChildActive) ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}>
-  {item.icon}
-</span>
+                      {item.icon}
+                    </span>
                     {!collapsed && (
                       <span className="whitespace-nowrap font-bold truncate">
                         {item.name}
@@ -486,7 +477,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
                 </button>
 
-                {/* Submenu Grid Height Animation (Only visible when expanded) */}
                 {!collapsed && (
                   <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
                     isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
@@ -501,21 +491,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               to={child.path}
                               className={`block p-3 rounded-xl transition-all duration-200 border ${
                                 isActive 
-  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
-  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+                                  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
+                                  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2.5">
                                   <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
                                     isActive 
-  ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
-  : 'bg-slate-300 dark:bg-slate-600'
+                                      ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
+                                      : 'bg-slate-300 dark:bg-slate-600'
                                   }`} />
                                   <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
                                     isActive 
-  ? 'text-[#123c73] dark:text-white font-black' 
-  : 'text-slate-700 dark:text-slate-300 font-bold'
+                                      ? 'text-[#123c73] dark:text-white font-black' 
+                                      : 'text-slate-700 dark:text-slate-300 font-bold'
                                   }`}>
                                     {child.name}
                                   </span>
@@ -547,13 +537,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer Action Controls */}
-        <div className={`border-t border-slate-200/80 dark:border-white/5 mt-auto relative z-20 transition-all duration-300 ${
+        {/* FOOTER ACTION CONTROLS */}
+        <div className={`border-t border-slate-200/80 dark:border-white/5 mt-auto relative z-20 shrink-0 transition-all duration-300 ${
           collapsed ? 'p-3' : 'p-4'
         }`}>
           {collapsed ? (
             <div className="space-y-3 relative">
-              {/* Collapsed Mini Rail Settings Button */}
               <Link
                 to="/settings"
                 className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
@@ -566,7 +555,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Settings className={`w-4 h-4 shrink-0 ${isSettingsActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
               </Link>
 
-              {/* Collapsed Mini Rail Logout Button & Flyout */}
               <div className="relative">
                 <button
                   onClick={triggerDesktopConfirm}
@@ -577,7 +565,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <LogOut className="w-4 h-4 shrink-0" />
                 </button>
 
-                {/* Popover Confirmation */}
                 {showLogoutConfirm && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={cancelDesktopConfirm} />
@@ -630,7 +617,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Expanded Settings Button */}
                   <Link
                     to="/settings"
                     className={`h-[52px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
@@ -643,7 +629,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span>SETTINGS</span>
                   </Link>
 
-                  {/* Distinct Danger Action Logout Button */}
                   <button
                     onClick={triggerDesktopConfirm}
                     className="h-[52px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
@@ -660,15 +645,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── MOBILE DRAWER ─── */}
       <div className={`fixed inset-0 z-[300] lg:hidden ${mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-        {/* Backdrop Overlay */}
         <div 
           onClick={() => setMobileOpen(false)}
           className={`absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
         />
 
-        {/* Mobile Drawer Sheet */}
         <aside 
-          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-[#f0f4f8] dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col justify-between transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
+          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-[#f0f4f8] dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
             mobileOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -677,161 +660,157 @@ export const Sidebar: React.FC<SidebarProps> = ({
             style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
           />
 
-          <div className="flex flex-col h-full justify-between relative z-10">
-            <div className="space-y-4">
-              
-              {/* MOBILE HEADER */}
-              <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md overflow-hidden">
-                <div className="absolute top-0 right-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0">
-                  <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
-                    <path 
-                      d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
-                      className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
-                    />
-                  </svg>
-                </div>
+          <div className="flex flex-col h-full relative z-10 min-h-0">
+            {/* MOBILE HEADER */}
+            <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md overflow-hidden shrink-0">
+              <div className="absolute top-0 right-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0">
+                <svg viewBox="0 0 160 80" className="w-full h-full" preserveAspectRatio="none">
+                  <path 
+                    d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z" 
+                    className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300" 
+                  />
+                </svg>
+              </div>
 
-                <div className="relative z-10 space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
-                        <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
-                          WOLF PALOMAR GYM
-                        </span>
-                        <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                          v{APP_VERSION}
-                        </span>
-                      </div>
+              <div className="relative z-10 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
+                      <img src="/favicon.svg" alt="Wolf Palomar Logo" className="w-full h-full object-contain" />
                     </div>
-
-                    <button 
-                      onClick={() => setMobileOpen(false)}
-                      aria-label="Close Drawer"
-                      className="w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
-                    >
-                      <X className="w-4 h-4 stroke-[2.5]" />
-                    </button>
+                    <div className="flex flex-col">
+                      <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
+                        WOLF PALOMAR GYM
+                      </span>
+                      <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                        v{APP_VERSION}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
+                  <button 
+                    onClick={() => setMobileOpen(false)}
+                    aria-label="Close Drawer"
+                    className="w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+                  >
+                    <X className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
-                      <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
+                <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
+
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
+                    <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
+                  </div>
+
+                  <div className="flex-1 min-w-0 text-left">
+                    <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
+                      {profile?.username || 'Wolf Palomar'}
+                    </h4>
+
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        {profile?.role || 'ADMIN'}
+                      </span>
                     </div>
 
-                    <div className="flex-1 min-w-0 text-left">
-                      <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
-                        {profile?.username || 'Wolf Palomar'}
-                      </h4>
-
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                          {profile?.role || 'ADMIN'}
-                        </span>
-                      </div>
-
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
-                        {user?.email || 'wolf.palomar@gmail.com'}
-                      </p>
-                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
+                      {user?.email || 'wolf.palomar@gmail.com'}
+                    </p>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Mobile Accordion Nav Stack */}
-              <nav className="space-y-3.5 p-5 pt-1 overflow-y-auto">
-                {allowedMenu.map((item, idx) => {
-                  const visibleChildren = item.children || [];
-                  const isMobileExpanded = mobileExpandedMenu === item.name;
+            {/* Mobile Accordion Nav Stack */}
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-3.5 p-5 pt-3">
+              {allowedMenu.map((item, idx) => {
+                const visibleChildren = item.children || [];
+                const isMobileExpanded = mobileExpandedMenu === item.name;
 
-                  return (
-                    <div key={idx} className="space-y-2">
-                      <button
-                        onClick={() => handleParentMenuClick(item, true)}
-                        className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
-                          isMobileExpanded 
-  ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
-  : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className={isMobileExpanded ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400'}>
-                            {item.icon}
-                          </span>
-                          <span className="font-bold">{item.name}</span>
-                        </div>
+                return (
+                  <div key={idx} className="space-y-2">
+                    <button
+                      onClick={() => handleParentMenuClick(item, true)}
+                      className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
+                        isMobileExpanded 
+                          ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+                          : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={isMobileExpanded ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400'}>
+                          {item.icon}
+                        </span>
+                        <span className="font-bold">{item.name}</span>
+                      </div>
 
-                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
-                      </button>
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                    </button>
 
-                      {/* Smooth Mobile Grid Transition */}
-                      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                        isMobileExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-                      }`}>
-                        <div className="overflow-hidden">
-                          <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
-                            {visibleChildren.map((child, cIdx) => {
-                              const isActive = isPathActive(child.path);
-                              return (
-                                <Link
-                                  key={cIdx}
-                                  to={child.path}
-                                  onClick={() => setMobileOpen(false)}
-                                  className={`block p-3 rounded-xl transition-all duration-200 border ${
-                                    isActive 
-  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
-  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2.5">
-                                      <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
-                                        isActive 
-  ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
-  : 'bg-slate-300 dark:bg-slate-600'
-                                      }`} />
-                                      <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
-                                       isActive 
-  ? 'text-[#123c73] dark:text-white font-black' 
-  : 'text-slate-700 dark:text-slate-300 font-bold'
-                                      }`}>
-                                        {child.name}
-                                      </span>
-                                    </div>
-
-                                    {child.badge && (
-                                      <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md">
-                                        {child.badge}
-                                      </span>
-                                    )}
+                    <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                      isMobileExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                    }`}>
+                      <div className="overflow-hidden">
+                        <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
+                          {visibleChildren.map((child, cIdx) => {
+                            const isActive = isPathActive(child.path);
+                            return (
+                              <Link
+                                key={cIdx}
+                                to={child.path}
+                                onClick={() => setMobileOpen(false)}
+                                className={`block p-3 rounded-xl transition-all duration-200 border ${
+                                  isActive 
+                                    ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs' 
+                                    : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
+                                      isActive 
+                                        ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
+                                        : 'bg-slate-300 dark:bg-slate-600'
+                                    }`} />
+                                    <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
+                                      isActive 
+                                        ? 'text-[#123c73] dark:text-white font-black' 
+                                        : 'text-slate-700 dark:text-slate-300 font-bold'
+                                    }`}>
+                                      {child.name}
+                                    </span>
                                   </div>
 
-                                  {child.description && (
-                                    <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
-                                      isActive ? 'text-[#123c73]/80 dark:text-white/80' : 'text-slate-400 dark:text-slate-500'
-                                    }`}>
-                                      {child.description}
-                                    </p>
+                                  {child.badge && (
+                                    <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md">
+                                      {child.badge}
+                                    </span>
                                   )}
-                                </Link>
-                              );
-                            })}
-                          </div>
+                                </div>
+
+                                {child.description && (
+                                  <p className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
+                                    isActive ? 'text-[#123c73]/80 dark:text-white/80' : 'text-slate-400 dark:text-slate-500'
+                                  }`}>
+                                    {child.description}
+                                  </p>
+                                )}
+                              </Link>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-              </nav>
-            </div>
+                  </div>
+                );
+              })}
+            </nav>
 
             {/* Mobile Footer Sticky Action Controls */}
-            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto">
+            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto shrink-0 bg-[#f0f4f8] dark:bg-[#0c0e12]">
               {showMobileLogoutConfirm ? (
                 <div className="w-full flex items-center justify-between p-2.5 rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
                   <span className="text-[9px]">{isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}</span>

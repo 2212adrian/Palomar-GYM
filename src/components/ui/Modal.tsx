@@ -33,9 +33,9 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        /* Use style instead of Tailwind class since z-index is dynamic */
+        /* Outer backdrop overlay with top/bottom safe-area padding & flex centering */
         <div 
-          className="fixed inset-0 flex items-center justify-center p-4"
+          className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 overflow-y-auto pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
           style={{ zIndex: computedZIndex }}
         >
           <motion.div
@@ -50,11 +50,14 @@ export const Modal: React.FC<ModalProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 15, scale: 0.95 }}
             transition={{ duration: 0.25 }}
-            className={`relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl space-y-4 font-body z-10 ${className}`}
+            /* Added my-auto, max-h-[85vh], sm:max-h-[90vh], and overflow-y-auto for safe viewport bounds */
+            className={`relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl space-y-4 font-body z-10 my-auto max-h-[85vh] sm:max-h-[90vh] overflow-y-auto ${className}`}
           >
-            <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">
-              {title}
-            </h3>
+            {title && (
+              <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">
+                {title}
+              </h3>
+            )}
             
             {/* 4. Provide the incremented depth to any nested Modals inside children */}
             <ModalDepthContext.Provider value={currentDepth}>

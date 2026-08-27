@@ -42,11 +42,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState('');
   
-  // Local pagination parameters (Compact size of 5 items per page for modal viewports)
+  // Local pagination parameters (5 items per page)
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  // Synchronize dbProducts whenever parentProducts prop changes
   useEffect(() => {
     setDbProducts(parentProducts);
   }, [parentProducts]);
@@ -74,8 +73,9 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
       const mapped = (data || []).map((t: any) => ({
         ...t,
+        id: String(t.id),
         productName: t.product_name,
-        totalAmount: Number(t.total_amount),
+        totalAmount: Number(t.total_amount || 0),
         archivedAt: t.deleted_at,
         items: t.items || [],
         paymentMethod: t.payment_method
@@ -109,12 +109,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
     const updateCountdown = () => {
       const now = new Date();
-      // Calculate UTC time, then convert to Manila (GMT+8) Time
       const manilaOffsetMs = 8 * 60 * 60 * 1000;
       const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
       const manilaLocalTime = new Date(utcTime + manilaOffsetMs);
       
-      // Target next midnight in Manila timezone (12:00 AM of next local calendar day)
       const manilaMidnightLocal = new Date(manilaLocalTime);
       manilaMidnightLocal.setHours(24, 0, 0, 0);
       
@@ -139,7 +137,6 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     return () => clearInterval(interval);
   }, [isOpen]);
 
-  // Evaluates transaction eligibility based on timing, catalog availability, and stock limits
   const getRestorationStatus = (tx: any) => {
     const isExpired = isOlderThan24Hours(tx.archivedAt);
     
@@ -177,11 +174,11 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     const q = searchQuery.toLowerCase().trim();
     return deletedTransactions.filter((t: any) => {
       return (
-        t.id?.toLowerCase().includes(q) ||
-        t.productName?.toLowerCase().includes(q) ||
-        t.paymentMethod?.toLowerCase().includes(q) ||
-        t.receipt_no?.toLowerCase().includes(q) ||
-        (t.reference_number && t.reference_number.toLowerCase().includes(q))
+        String(t.id || '').toLowerCase().includes(q) ||
+        String(t.productName || '').toLowerCase().includes(q) ||
+        String(t.paymentMethod || '').toLowerCase().includes(q) ||
+        String(t.receipt_no || '').toLowerCase().includes(q) ||
+        (t.reference_number && String(t.reference_number).toLowerCase().includes(q))
       );
     });
   }, [deletedTransactions, searchQuery]);
@@ -264,7 +261,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     try {
       const selectedTxIds = restorableList.map((t: any) => t.id);
       
-      // 1. Update sales record status to restore the transaction
+      // 1. Clear soft delete flags
       const { error: restoreError } = await supabase
         .from('sales')
         .update({
@@ -278,7 +275,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       const actor = user?.email || 'System';
 
-      // 2. Perform sequential inventory updates and logs
+      // 2. Re-deduct product quantities since sale is active again
       for (const tx of restorableList) {
         if (tx.items && Array.isArray(tx.items)) {
           for (const item of tx.items) {
@@ -310,7 +307,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
       setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));
       onRestoreSuccess();
-      toast.success(`Successfully restored ${restorableList.length} transactions back to the database ledger.`);
+      toast.success(`Successfully restored ${restorableList.length} transaction(s) back to the sales ledger.`);
       await fetchDeletedTransactions();
     } catch (err) {
       console.error('Error executing database restoration:', err);
@@ -373,7 +370,6 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       title="Daily Recycle Bin"
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-9999"
     >
-      {/* 24-Hour countdown timer beside X close button */}
       {countdown && (
         <span className="absolute top-6 right-13 text-[10px] font-mono font-black text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap">
           Purge in: {countdown}
@@ -390,7 +386,6 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       </button>
 
       <div className="space-y-4 pt-2">
-        {/* Warning callout banner with Red Exclamation Caution styling */}
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
           <span>

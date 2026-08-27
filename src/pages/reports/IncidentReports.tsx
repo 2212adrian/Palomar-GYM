@@ -745,7 +745,7 @@ export const IncidentReports: React.FC = () => {
 
         <div className="space-y-2 bg-slate-50/50 dark:bg-[#12141a]/50 border border-slate-200/40 dark:border-white/5 p-4 rounded-2xl">
           <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</h4>
-          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
             {report.description}
           </p>
         </div>
@@ -841,17 +841,17 @@ export const IncidentReports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
+    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-24 lg:pb-8">
 
       {/* 2. Main Dashboard Workspace (Flexbox with pure CSS transitions to eliminate column wrapping jank) */}
-      <div className="flex flex-col lg:flex-row gap-6 items-start justify-center w-full">
+      <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
         
         {/* Left Column: Directory List Section */}
         <div 
-          className={`transition-all duration-300 ease-in-out space-y-4 w-full shrink-0 ${
+          className={`transition-all duration-300 ease-in-out space-y-4 w-full ${
             selectedReport 
-              ? "lg:w-[42%]" 
-              : "lg:w-[58%] max-w-2xl"
+              ? "lg:w-[42%] shrink-0" 
+              : "w-full max-w-5xl mx-auto"
           }`}
         >
           {/* Soft Warning at >= 10 unread reports */}
@@ -878,10 +878,10 @@ export const IncidentReports: React.FC = () => {
             </div>
 
             {/* Quick Filters & Select All Checkbox */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100 dark:border-white/5 pt-3">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 dark:border-white/5 pt-3">
+              <div className="flex flex-wrap items-center gap-3 min-w-0">
                 {/* Unified Select All Toggle */}
-                <label className="flex items-center gap-2 cursor-pointer select-none">
+                <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
                   <input
                     type="checkbox"
                     checked={paginatedReports.length > 0 && paginatedReports.every(r => selectedIds.includes(r.id))}
@@ -897,7 +897,7 @@ export const IncidentReports: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Select All</span>
                 </label>
 
-                <div className="flex gap-1 overflow-x-auto no-scrollbar py-0.5">
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-0.5 min-w-0">
                   {(['All', 'Unread', 'Read', 'Archived'] as const).map((filter) => (
                     <button
                       key={filter}
@@ -914,7 +914,7 @@ export const IncidentReports: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
                 <label htmlFor="priority-filter-select" className="sr-only">Priority Filter</label>
                 <select
@@ -922,7 +922,7 @@ export const IncidentReports: React.FC = () => {
                   title="Filter reports by priority level"
                   value={priorityFilter}
                   onChange={(e) => { setPriorityFilter(e.target.value as any); setCurrentPage(1); }}
-                  className="bg-slate-100 dark:bg-[#1e232d] border-none text-[10px] text-slate-500 dark:text-slate-400 font-heading tracking-wider uppercase rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#123c73] dark:focus:ring-[#bf0202] outline-none"
+                  className="bg-slate-100 dark:bg-[#1e232d] border-none text-[10px] text-slate-500 dark:text-slate-400 font-heading tracking-wider uppercase rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#123c73] dark:focus:ring-[#bf0202] outline-none cursor-pointer"
                 >
                   <option value="All">All Priority</option>
                   <option value="Low">Low</option>
@@ -970,7 +970,7 @@ export const IncidentReports: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setSelectedIds([])}
-                  className="p-1 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors"
+                  className="p-1 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1103,11 +1103,11 @@ export const IncidentReports: React.FC = () => {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-slate-200 dark:border-white/5 pt-4 text-xs">
-              <span className="text-slate-400 font-medium text-[11px]">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 dark:border-white/5 pt-4 text-xs">
+              <span className="text-slate-400 font-medium text-[11px] text-center sm:text-left">
                 Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} reports
               </span>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 items-center">
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
@@ -1149,9 +1149,9 @@ export const IncidentReports: React.FC = () => {
 
         {/* Right Column: Desktop Inline Detail Panel */}
         <div 
-          className={`transition-all duration-300 ease-in-out hidden lg:block overflow-hidden shrink-0 ${
+          className={`transition-all duration-300 ease-in-out hidden lg:block overflow-hidden ${
             selectedReport 
-              ? "opacity-100 translate-x-0 w-[58%]" 
+              ? "opacity-100 translate-x-0 lg:w-[58%] shrink-0 h-auto" 
               : "opacity-0 translate-x-4 w-0 h-0 pointer-events-none"
           }`}
         >
@@ -1162,7 +1162,7 @@ export const IncidentReports: React.FC = () => {
 
       </div>
 
-      {/* Reusable universal 5-second countdown timer for deleted items */}
+      {/* Reusable universal countdown timer for deleted items */}
       <UndoToast
         isOpen={showUndoToast}
         message={`Incident report "${pendingDelete?.title}" deleted.`}
@@ -1220,7 +1220,7 @@ export const IncidentReports: React.FC = () => {
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-xl relative z-10 space-y-4 text-xs"
+              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-xl relative z-10 space-y-4 text-xs max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
                 <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
@@ -1279,9 +1279,9 @@ export const IncidentReports: React.FC = () => {
       {/* 4. Accessible New / Edit Modal Form */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up">
+          <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up max-h-[90vh] flex flex-col">
             
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0">
               <h3 className="font-heading text-xs tracking-widest uppercase text-slate-900 dark:text-slate-100">
                 {isEditing ? 'Modify Incident Report' : 'Draft New Incident Report'}
               </h3>
@@ -1295,7 +1295,7 @@ export const IncidentReports: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveReport} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveReport} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               
               <div className="grid gap-1.5">
                 <label htmlFor="form-incident-title" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -1322,7 +1322,7 @@ export const IncidentReports: React.FC = () => {
                   title="Select priority severity of the incident"
                   value={formPriority}
                   onChange={(e) => setFormPriority(e.target.value as any)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all cursor-pointer"
                 >
                   <option value="Low">Low (No disruption to core workflow)</option>
                   <option value="Medium">Medium (Disruptive but manageable)</option>
@@ -1404,7 +1404,7 @@ export const IncidentReports: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-4">
+              <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}

@@ -1,7 +1,7 @@
 // src/pages/members/components/SubscriptionPlan.tsx
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
@@ -21,6 +21,8 @@ import {
 } from '../memberService';
 import { OfficialReceipt, type OfficialReceiptRef } from '../../../components/ui/OfficialReceipt';
 import type { OnlineRegistration, PaymentMethod, Member, Subscription, MembershipSettings } from '../../../types/members';
+import type { HybridScanResult, HybridMemberResult, HybridProductResult } from '../../scanner/scannerService';
+export type { HybridScanResult, HybridMemberResult, HybridProductResult };
 
 // Canvas Signature Pad Component
 interface SignaturePadProps {
@@ -244,7 +246,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillData,
   prefillMember
 }) => {
-  const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : (prefillData ? 2 : 1));
+  const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : 1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [, setShowSignatures] = useState<boolean>(false);
   const [showClientDetails, setShowClientDetails] = useState<boolean>(true);
@@ -2430,11 +2432,30 @@ export interface StaffPlansConsoleProps {
 
 export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardingSuccess }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
     mode: 'Import' | 'Manual' | null;
     plan: 'Monthly Membership' | 'Yearly Membership' | 'No Subscription' | null;
+    step?: number;
+    prefillData?: OnlineRegistration;
   }>({ isOpen: false, mode: null, plan: null });
+
+  // Auto-open modal when scanner redirects with prefilled REG-XXXXXXXXX data
+  useEffect(() => {
+    if (location.state?.openWizard) {
+      setModalConfig({
+        isOpen: true,
+        mode: location.state.initialIntakeMode || 'Manual',
+        plan: location.state.initialPlan || 'Monthly Membership',
+        step: location.state.initialStep ?? 1,
+        prefillData: location.state.prefillData
+      });
+      // Clear navigation state so it doesn't reopen on browser refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
@@ -2484,17 +2505,18 @@ const isYearlyValid =
   return (
     <div className="relative space-y-6">
       
-      {/* DESKTOP LEFT SIDE ARROW */}
-      <div className="hidden xl:block">
+    {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
+      <div className="hidden lg:block">
         <AnimatePresence>
           <motion.button
             key="left-arrow-plans"
-            initial={{ opacity: 0, x: -30 }}
+            initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 0.9, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            whileHover={{ scale: 1.02 }}
+            exit={{ opacity: 0, x: -20 }}
+            whileHover={{ scale: 1.05, opacity: 1 }}
             onClick={() => navigate('/members/list')}
-            className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) pl-4 pr-5 py-6 rounded-r-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
+            title="View Member Directory"
+            className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
           >
             <motion.div 
               animate={{ x: [0, -4, 0] }} 
@@ -2502,10 +2524,9 @@ const isYearlyValid =
             >
               <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
             </motion.div>
-            <div className="text-left">
-              <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase leading-none">View Registry</span>
-              <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-1 leading-none group-hover:text-(--color-primary-light) transition-colors">DIRECTORY</span>
-            </div>
+            <span className="[writing-mode:vertical-rl] rotate-180 font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
+              MEMBERS
+            </span>
           </motion.button>
         </AnimatePresence>
       </div>
@@ -2716,10 +2737,12 @@ const isYearlyValid =
         </div>
       )}
 
-      <IntakeWizardModal
+<IntakeWizardModal
         isOpen={modalConfig.isOpen}
         initialIntakeMode={modalConfig.mode}
         initialPlan={modalConfig.plan}
+        initialStep={modalConfig.step}
+        prefillData={modalConfig.prefillData}
         onClose={() => setModalConfig({ isOpen: false, mode: null, plan: null })}
         onComplete={() => {
           setModalConfig({ isOpen: false, mode: null, plan: null });

@@ -34,25 +34,20 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         .from('attendance')
         .select('*')
         .not('deleted_at', 'is', null)
-        .neq('customer_type', 'New Membership') // Exclude New Memberships
+        .neq('customer_type', 'New Membership')
         .order('deleted_at', { ascending: false });
 
       if (error) throw error;
 
       if (data) {
-        // Filter out any subscription records on the client side as a secondary safeguard
+        // Map all soft-deleted records without over-filtering standard membership entries
         const mappedLogs = data
-          .filter((att: any) => {
-            const plan = (att.plan_name || '').toLowerCase();
-            return att.customer_type !== 'New Membership' && 
-                   !plan.includes('membership') && 
-                   !plan.includes('subscription');
-          })
+          .filter((att: any) => att.customer_type !== 'New Membership')
           .map((att: any) => ({
-            id: att.id,
+            id: String(att.id),
             timestamp: att.check_in_time,
             memberId: att.member_id || null,
-            customerName: att.customer_name,
+            customerName: att.customer_name || 'Unnamed',
             customerType: att.customer_type,
             categoryOrPlan: att.plan_name || 'Regular Pass',
             amountPaid: Number(att.entry_fee || 0),
@@ -97,10 +92,12 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
 
   const filteredLogs = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
+    if (!q) return deletedLogs;
     return deletedLogs.filter((l: any) => 
-      l.id?.toLowerCase().includes(q) || 
-      l.customerName?.toLowerCase().includes(q) || 
-      l.customerType?.toLowerCase().includes(q)
+      String(l.id || '').toLowerCase().includes(q) || 
+      String(l.customerName || '').toLowerCase().includes(q) || 
+      String(l.customerType || '').toLowerCase().includes(q) ||
+      String(l.categoryOrPlan || '').toLowerCase().includes(q)
     );
   }, [deletedLogs, searchQuery]);
 
@@ -109,23 +106,80 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     return filteredLogs.slice(startIdx, startIdx + itemsPerPage);
   }, [filteredLogs, currentPage]);
 
+  const checkDuplicateActiveAttendance = async (log: any): Promise<boolean> => {
+    if (!log.timestamp) return false;
+    const dateStr = log.timestamp.split('T')[0];
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    let query = supabase
+      .from('attendance')
+      .select('id, customer_name, check_in_time')
+      .is('deleted_at', null)
+      .gte('check_in_time', startOfDay)
+      .lte('check_in_time', endOfDay);
+
+    if (log.memberId) {
+      query = query.eq('member_id', log.memberId);
+    } else if (log.customerName) {
+      query = query.ilike('customer_name', log.customerName);
+    } else {
+      return false;
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error verifying active duplicate attendance:', error);
+      return false;
+    }
+    return !!(data && data.length > 0);
+  };
+
   const handleBulkRestore = async (selectedList: any[]) => {
     if (selectedList.length === 0) return;
     setLoading(true);
     try {
-      const selectedTxIds = selectedList.map((l: any) => l.id);
+      const duplicates: any[] = [];
+      const validToRestore: any[] = [];
+
+      for (const log of selectedList) {
+        const isDuplicate = await checkDuplicateActiveAttendance(log);
+        if (isDuplicate) {
+          duplicates.push(log);
+        } else {
+          validToRestore.push(log);
+        }
+      }
+
+      if (duplicates.length > 0) {
+        const dupNames = duplicates.map((d) => d.customerName).join(', ');
+        if (validToRestore.length === 0) {
+          toast.error(`Cannot restore: Active check-in already exists today for ${dupNames}.`);
+          setLoading(false);
+          return;
+        } else {
+          toast.warn(`Skipped ${duplicates.length} duplicate record(s) (${dupNames}) because an active check-in already exists.`);
+        }
+      }
+
+      if (validToRestore.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const restoreTxIds = validToRestore.map((l: any) => l.id);
 
       const { error } = await supabase
         .from('attendance')
         .update({ deleted_at: null, deleted_by: null })
-        .in('id', selectedTxIds);
+        .in('id', restoreTxIds);
 
       if (error) throw error;
 
-      setDeletedLogs(prev => prev.filter(l => !selectedTxIds.includes(l.id)));
-      setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));
+      setDeletedLogs((prev) => prev.filter((l) => !restoreTxIds.includes(l.id)));
+      setSelectedIds((prev) => prev.filter((id) => !restoreTxIds.includes(id)));
       onRestoreSuccess();
-      toast.success(`Restored ${selectedList.length} check-in log(s).`);
+      toast.success(`Successfully restored ${validToRestore.length} check-in log(s).`);
     } catch (err: any) {
       console.error('Restoration database error:', err);
       toast.error('Restoration database error.');

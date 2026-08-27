@@ -146,7 +146,6 @@ export const supabase = createClient(
         }
 
         return fetch(input, init).catch((err) => {
-          // Intercept standard browser 'Failed to fetch' errors when network is dropped
           if (err?.message === 'Failed to fetch' || err?.name === 'TypeError') {
             return Promise.reject(new TypeError(OFFLINE_STAFF_MESSAGE));
           }
@@ -159,3 +158,14 @@ export const supabase = createClient(
     }
   }
 );
+
+// AUTOMATIC LOGOUT CLEANUP:
+// Clears ALL sessionStorage (Logbook, Sales, etc.) on logout
+// while keeping localStorage (theme, user preferences, offline config) completely safe.
+if (typeof window !== 'undefined') {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') {
+      sessionStorage.clear();
+    }
+  });
+}

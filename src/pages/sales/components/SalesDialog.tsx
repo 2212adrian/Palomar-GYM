@@ -16,10 +16,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
+import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
 interface SalesDialogProps {
   isOpen: boolean;
@@ -56,6 +57,18 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   // Synchronous ref to instantly block spam clicks
   const isSubmittingRef = useRef(false);
+
+  const playBeepSound = () => {
+  try {
+    const audio = new Audio(beepSoundUrl);
+    audio.currentTime = 0;
+    audio.play().catch((err) => {
+      console.warn('Audio playback prevented or failed:', err);
+    });
+  } catch (err) {
+    console.warn('Audio creation error:', err);
+  }
+};
 
   // Fetch rates configurations from database
   useEffect(() => {
@@ -125,7 +138,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     if (!trimmed) return;
 
     setSearchTerm(trimmed);
-    toast.success(`Scanned: ${trimmed}`);
 
     // Exact product match lookup
     const exactMatch = products.find((p: any) => {
@@ -136,6 +148,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     });
 
     if (exactMatch) {
+      playBeepSound();
       handleAddToCart(exactMatch);
       toast.info(`Added ${getProductName(exactMatch)} to cart.`);
     }
@@ -143,61 +156,68 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   // Live Camera Scanner lifecycle effect
   useEffect(() => {
-    let html5QrCode: Html5Qrcode | null = null;
+  let html5QrCode: Html5Qrcode | null = null;
 
-    if (showLiveScanner) {
-      const element = document.getElementById('sales-qr-reader');
-      if (element) {
-        html5QrCode = new Html5Qrcode('sales-qr-reader');
-        const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: 'environment' };
+  if (showLiveScanner) {
+    const element = document.getElementById('sales-qr-reader');
+    if (element) {
+      html5QrCode = new Html5Qrcode('sales-qr-reader', {
+        verbose: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.UPC_A
+        ],
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
+      });
 
-        html5QrCode
-          .start(
-            cameraConfig,
-            { fps: 10, qrbox: { width: 220, height: 220 } },
-            (decodedText) => {
-              handleBarcodeScanned(decodedText);
-              setShowLiveScanner(false);
-            },
-            () => {}
-          )
-          .catch((err) => {
-            console.error('Live camera start failed:', err);
-            
-            // Auto-fallback: switch to the next available camera if multiple exist
-            if (cameras.length > 1) {
-              const currentIndex = selectedCameraId
-                ? cameras.findIndex((c) => c.id === selectedCameraId)
-                : -1;
-              const nextIndex = (currentIndex + 1) % cameras.length;
-              const nextCamera = cameras[nextIndex];
+      const cameraConfig = selectedCameraId
+        ? { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
 
-              try { html5QrCode?.clear(); } catch (e) {}
-              setSelectedCameraId(nextCamera.id);
-              toast.info(`Camera unavailable. Switching to ${nextCamera.label || 'next camera'}...`);
-            } else {
-              toast.error('Unable to access camera feed.');
-              setShowLiveScanner(false);
+      html5QrCode
+        .start(
+          cameraConfig,
+          {
+            fps: 15,
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+              const width = Math.floor(viewfinderWidth * 0.90);
+              const height = Math.floor(viewfinderHeight * 0.65);
+              return { width: Math.max(width, 240), height: Math.max(height, 120) };
             }
-          });
+          },
+          (decodedText) => {
+            handleBarcodeScanned(decodedText);
+            setShowLiveScanner(false);
+          },
+          () => {}
+        )
+        .catch((err) => {
+          console.error('Live camera start failed:', err);
+          setShowLiveScanner(false);
+        });
+    }
+  }
+
+  return () => {
+    if (html5QrCode) {
+      if (html5QrCode.isScanning) {
+        html5QrCode
+          .stop()
+          .then(() => {
+            try { html5QrCode?.clear(); } catch (e) {}
+          })
+          .catch(console.error);
+      } else {
+        try { html5QrCode.clear(); } catch (e) {}
       }
     }
-
-    return () => {
-      if (html5QrCode) {
-        if (html5QrCode.isScanning) {
-          html5QrCode
-            .stop()
-            .then(() => {
-              try { html5QrCode?.clear(); } catch (e) {}
-            })
-            .catch(console.error);
-        } else {
-          try { html5QrCode.clear(); } catch (e) {}
-        }
-      }
-    };
-  }, [showLiveScanner, selectedCameraId]);
+  };
+}, [showLiveScanner, selectedCameraId]);
 
   const requestCameraPermission = async (): Promise<boolean> => {
     try {

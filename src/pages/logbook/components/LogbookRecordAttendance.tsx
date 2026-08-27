@@ -39,6 +39,7 @@ import type { Member, Subscription, MemberCard } from '../../../types/members';
 
 interface LogbookRecordAttendanceProps {
   isOpen: boolean;
+  initialSearch?: string;
   onClose: () => void;
   onCheckInSuccess: (newRecord: any) => void;
 }
@@ -72,6 +73,22 @@ interface SelectedClient {
   avatarUrl?: string | null;
 }
 
+// Forcefully stop all camera tracks at browser hardware level
+const stopAllCameraTracks = () => {
+  try {
+    const videoElements = document.querySelectorAll('video');
+    videoElements.forEach((video) => {
+      if (video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        video.srcObject = null;
+      }
+    });
+  } catch (err) {
+    console.warn('Error stopping camera tracks:', err);
+  }
+};
+
 // Helper to auto-suffix walk-in names when duplicates occur (e.g. JOHN -> JOHN (2))
 const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
   const cleanBase = baseName.replace(/\s*\(\d+\)$/, '').trim().toUpperCase();
@@ -93,6 +110,7 @@ const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
 
 export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = ({
   isOpen,
+  initialSearch = '',
   onClose,
   onCheckInSuccess,
 }) => {
@@ -111,7 +129,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   
-  // Default to Non-Members filter view
+  // Default filter view
   const [filterMode, setFilterMode] = useState<'non-member' | 'member'>('non-member');
   
   // Pre-selection for Walk-In pass type before processing
@@ -140,6 +158,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [walkinStudentFee, setWalkinStudentFee] = useState(80);
   const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
   const [gcashFeeRate, setGcashFeeRate] = useState(10);
+
+  
 
   // Auto-check override for non-members (walk-ins)
   useEffect(() => {
@@ -315,8 +335,66 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       resetForm();
+    } else {
+      stopAllCameraTracks();
     }
   }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
+  
+
+  const handleSelectMember = useCallback((member: MemberProfile) => {
+    const client: SelectedClient = {
+      id: member.id,
+      name: member.name.toUpperCase(),
+      memberId: member.memberId,
+      phone: member.phone,
+      regDate: member.regDate,
+      membership: member.membership,
+      status: member.status,
+      isWalkIn: false,
+      avatarUrl: member.avatarUrl || null
+    };
+    setSelectedClient(client);
+    setMemberSearch('');
+    setSuggestions([]);
+    setAdminOverride(false);
+    
+    if (member.status === 'Active' || member.status === 'Expires Soon') {
+      setSelectedEntry('member_entry');
+    } else if (member.status === 'Expired') {
+      setSelectedEntry('walkin_regular');
+    } else {
+      setSelectedEntry(null);
+    }
+  }, []);
+
+  // Auto-select Registered Member if initialSearch matches dynamicMembers
+  useEffect(() => {
+    if (!isOpen || !initialSearch || !initialSearch.trim()) return;
+
+    const query = initialSearch.trim().toLowerCase();
+    const cleanQuery = query.includes(':') ? query.split(':')[0].trim() : query;
+
+    // Wait for dynamicMembers array to be populated from database
+    if (dynamicMembers.length > 0) {
+      const matchedMember = dynamicMembers.find(
+        (m) =>
+          m.memberId.toLowerCase() === cleanQuery ||
+          m.memberId.toLowerCase() === query ||
+          m.name.toLowerCase() === query ||
+          m.name.toLowerCase().includes(query) ||
+          m.phone === query ||
+          m.cardNumbers.some((c) => c.toLowerCase() === query || c.toLowerCase() === cleanQuery)
+      );
+
+      if (matchedMember) {
+        setFilterMode('member');
+        handleSelectMember(matchedMember);
+      } else {
+        setFilterMode('non-member');
+        setMemberSearch(initialSearch.trim().toUpperCase());
+      }
+    }
+  }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
   // Load available camera devices when scanner becomes active
   useEffect(() => {
@@ -333,6 +411,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         .catch((err) => {
           console.warn('Could not list cameras:', err);
         });
+    } else {
+      stopAllCameraTracks();
     }
   }, [showLiveScanner]);
 
@@ -360,6 +440,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
               handleMemberSearchChange(decodedText);
               toast.success(`Scanned: ${decodedText}`);
               setShowLiveScanner(false);
+              stopAllCameraTracks();
             },
             () => {}
           )
@@ -379,6 +460,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             } else {
               toast.error('Unable to access camera feed.');
               setShowLiveScanner(false);
+              stopAllCameraTracks();
             }
           });
       }
@@ -391,10 +473,12 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
             .stop()
             .then(() => {
               try { html5QrCode?.clear(); } catch (e) {}
+              stopAllCameraTracks();
             })
             .catch(console.error);
         } else {
           try { html5QrCode.clear(); } catch (e) {}
+          stopAllCameraTracks();
         }
       }
     };
@@ -413,6 +497,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setShowLiveScanner(false);
     setPhotoModal(null);
     setFilterMode('non-member');
+    stopAllCameraTracks();
   };
 
   const handleMemberSearchChange = (val: string) => {
@@ -441,32 +526,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   };
 
-  const handleSelectMember = (member: MemberProfile) => {
-    const client: SelectedClient = {
-      id: member.id,
-      name: member.name.toUpperCase(),
-      memberId: member.memberId,
-      phone: member.phone,
-      regDate: member.regDate,
-      membership: member.membership,
-      status: member.status,
-      isWalkIn: false,
-      avatarUrl: member.avatarUrl || null
-    };
-    setSelectedClient(client);
-    setMemberSearch('');
-    setSuggestions([]);
-    setAdminOverride(false);
-    
-    if (member.status === 'Active' || member.status === 'Expires Soon') {
-      setSelectedEntry('member_entry');
-    } else if (member.status === 'Expired') {
-      setSelectedEntry('walkin_regular');
-    } else {
-      setSelectedEntry(null);
-    }
-  };
-
   const handleContinueAsWalkIn = () => {
     const query = memberSearch.trim();
     if (query.length < 3) {
@@ -480,7 +539,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     setSelectedClient(client);
     setMemberSearch('');
     setSuggestions([]);
-    setAdminOverride(true); // Auto-check override for walk-in non-members
+    setAdminOverride(true);
     setSelectedEntry(walkInPassType);
   };
 
@@ -504,6 +563,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   };
 
   const handleRedirectToSubscription = () => {
+    stopAllCameraTracks();
     onClose();
     navigate('/members/plans');
   };
@@ -623,6 +683,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [paymentMethod, derivedBilling.totalDue]);
 
+  
   const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
 
@@ -637,7 +698,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     const gcashFeeVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? derivedBilling.convenienceFee : 0;
     const gcashRefVal = paymentMethod === 'GCash' && derivedBilling.totalDue > 0 ? referenceNumber.trim() : undefined;
 
-    // Auto-generate unique walk-in name if walk-in duplicates exist today (e.g. JOHN -> JOHN (2))
     let finalCustomerName = selectedClient.name;
     if (selectedClient.isWalkIn) {
       finalCustomerName = generateUniqueWalkInName(selectedClient.name, todayLogs);
@@ -672,7 +732,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         customerName: finalCustomerName,
         customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
         categoryOrPlan: derivedBilling.title,
-        paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Free',
+        paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
         amountPaid: derivedBilling.totalDue,
         basePrice: derivedBilling.subtotal,
         gcashFee: gcashFeeVal,
@@ -680,11 +740,12 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         gcashRefNo: gcashRefVal,
         referenceNumber: gcashRefVal,
         paymentRef: gcashRefVal,
-        paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Free',
+        paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
         status: selectedClient.isWalkIn ? 'Active' : (selectedClient.status || 'Active')
       };
 
       setIsSuccess(true);
+      stopAllCameraTracks();
 
       setTimeout(() => {
         onCheckInSuccess(checkInRecord);
@@ -721,14 +782,36 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [selectedClient, selectedEntry, duplicateLog, adminOverride, paymentMethod, amountReceived, referenceNumber, derivedBilling.totalDue]);
 
+   useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' && selectedClient && selectedEntry) {
+      e.preventDefault();
+      if (isFormValid && !isSubmitting) {
+        handleCompleteCheckIn();
+      }
+    }
+  };
+
+  if (isOpen) {
+    window.addEventListener('keydown', handleKeyDown);
+  }
+
+  return () => {
+    window.removeEventListener('keydown', handleKeyDown);
+  };
+}, [isOpen, selectedClient, selectedEntry, isFormValid, isSubmitting, handleCompleteCheckIn]);
+
   if (!isOpen) return null;
 
   return createPortal(
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        stopAllCameraTracks();
+        onClose();
+      }}
       title="Reception Check-In"
-      className="w-full mx-auto -mt-4 sm:-mt-8 p-4 sm:p-5 overflow-visible transition-all duration-300 relative text-left max-w-lg"
+      className="w-full mx-auto my-auto p-4 sm:p-5 overflow-visible transition-all duration-300 relative text-left max-w-lg"
     >
       <div id="qr-reader-hidden" className="hidden" aria-hidden="true" />
 
@@ -736,7 +819,10 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       <button
         type="button"
         disabled={isSubmitting}
-        onClick={onClose}
+        onClick={() => {
+          stopAllCameraTracks();
+          onClose();
+        }}
         className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
         aria-label="Close Dialog"
       >
@@ -746,7 +832,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       {!isSuccess ? (
         <div className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans">
 
-          {/* FILTER MODE TOGGLE SWITCH (DEFAULT: NON-MEMBERS) */}
+          {/* FILTER MODE TOGGLE SWITCH (NON-MEMBERS / MEMBERS ONLY) */}
           {!selectedClient && (
             <div className="flex bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
               <button
@@ -854,7 +940,10 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     </span>
                     <button
                       type="button"
-                      onClick={() => setShowLiveScanner(false)}
+                      onClick={() => {
+                        setShowLiveScanner(false);
+                        stopAllCameraTracks();
+                      }}
                       className="text-xs text-slate-400 hover:text-white p-1 rounded cursor-pointer"
                     >
                       <X className="w-4 h-4" />
@@ -949,7 +1038,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                         {suggestions.map((m) => {
                           const isSuspended = m.status === 'Suspended';
                           const isExpired = m.status === 'Expired';
-                          const isLocked = isSuspended; // Only Suspended locks selection
+                          const isLocked = isSuspended;
                           const isNonActive = m.status !== 'Active';
 
                           return (
@@ -1225,13 +1314,13 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   SELECT ENTRY PASS
                 </label>
 
-                {!selectedClient.isWalkIn && selectedClient.status === 'Expired' && (
+                {!selectedClient.isWalkIn && (selectedClient.status === 'Expired' || selectedClient.membership === 'No Active Plan') && (
                   <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase text-center mb-1">
-                    ⚠️ Membership Plan Expired — Daily Entry Required
+                    ⚠️ MEMBERSHIP PLAN EXPIRED — DAILY ENTRY REQUIRED
                   </div>
                 )}
 
-                {(selectedClient.isWalkIn || selectedClient.status === 'Expired') ? (
+                {(selectedClient.isWalkIn || selectedClient.status === 'Expired' || selectedClient.membership === 'No Active Plan') ? (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"

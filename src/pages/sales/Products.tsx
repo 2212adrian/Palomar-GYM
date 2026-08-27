@@ -1,7 +1,10 @@
+
+
 // src/pages/sales/Products.tsx
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
@@ -31,7 +34,7 @@ import { ProductRecoveryModal } from './components/ProductRecycleBin';
 import { HeaderActionsContext } from '../../routes';
 
 import { 
-  Plus, Pencil, Trash2, Layers, Package, PackageX, AlertTriangle, Search, X, Printer, Loader2, RotateCcw
+  Plus, Pencil, Trash2, Layers, Package, PackageX, Search, X, Printer, Loader2, RotateCcw
 } from 'lucide-react';
 
 interface Product {
@@ -138,6 +141,23 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       }
     }
   };
+
+  const stats = useMemo(() => ({
+    total: products.length,
+    active: products.filter(p => p.status === 'Active').length,
+    inStock: products.filter(p => !p.has_stock_limit || p.stock_quantity > 0).length,
+    outOfStock: products.filter(p => p.has_stock_limit && p.stock_quantity === 0).length,
+    lowStock: products.filter(p => p.has_stock_limit && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert && p.stock_quantity > 0).length
+  }), [products]);
+
+  // Broadcast Products Telemetry to Topbar
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('products-kpi-update', {
+        detail: stats
+      })
+    );
+  }, [stats]);
 
   useEffect(() => {
     const handleCreate = () => handleCreateClick();
@@ -330,7 +350,6 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       setSaving(true);
 
       if (bulkItems && bulkItems.length > 0) {
-        // Bulk Insertion Path
         const { error } = await supabase
           .from('products')
           .insert(bulkItems)
@@ -340,7 +359,6 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
         toast.success(`Successfully saved ${bulkItems.length} products to inventory.`);
 
-        // Upgraded formatting using newlines and list indents for the audit logs preview
         const itemsList = bulkItems.map(item => `\t- ${item.product_name} (₱${item.selling_price.toFixed(2)})`).join('\n');
         const auditDetails = `Successfully listed ${bulkItems.length} new products to your store catalog:\n\n${itemsList}`;
 
@@ -349,7 +367,6 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           auditDetails
         );
       } else {
-        // Single Item Path
         const nameClean = formName.trim();
         const priceNum = parseFloat(formPrice);
 
@@ -487,13 +504,6 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
     }
   };
 
-  const stats = {
-    total: products.length,
-    active: products.filter(p => p.status === 'Active').length,
-    outOfStock: products.filter(p => p.has_stock_limit && p.stock_quantity === 0).length,
-    lowStock: products.filter(p => p.has_stock_limit && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert && p.stock_quantity > 0).length
-  };
-
   const filteredProducts = products.filter((p) => {
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch = query === '' || 
@@ -514,17 +524,17 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
   });
 
   const isAllSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id));
-const isSomeSelected = selectedProductIds.length > 0 && !isAllSelected;
+  const isSomeSelected = selectedProductIds.length > 0 && !isAllSelected;
 
-const handleToggleSelectAll = () => {
-  if (isAllSelected) {
-    setSelectedProductIds([]);
-  } else {
-    setSelectedProductIds(filteredProducts.map(p => p.id));
-  }
-};
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(filteredProducts.map(p => p.id));
+    }
+  };
 
-const getRowStyle = (product: Product) => {
+  const getRowStyle = (product: Product) => {
     const isSelected = selectedProductIds.includes(product.id);
     const isHidden = product.status === 'Inactive';
 
@@ -548,41 +558,41 @@ const getRowStyle = (product: Product) => {
   const isSelectionActive = selectedProductIds.length > 0;
 
   const columns: Column<Product>[] = [
-   {
-  key: 'select',
-  header: isSelectionActive ? (
-    <div className="flex items-center justify-center h-full w-full py-1">
-      <input
-        type="checkbox"
-        ref={(el) => {
-          if (el) el.indeterminate = isSomeSelected;
-        }}
-        checked={isAllSelected}
-        onChange={handleToggleSelectAll}
-        className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
-        title="Toggle Select All"
-      />
-    </div>
-  ) : null,
-  headerClassName: 'w-12 text-center',
-  cellClassName: 'text-center p-0',
-  render: (item) => isSelectionActive ? (
-    <label className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none" onClick={(e) => e.stopPropagation()}>
-      <input
-        type="checkbox"
-        checked={selectedProductIds.includes(item.id)}
-        onChange={(e) => {
-          if (e.target.checked) {
-            setSelectedProductIds(prev => [...prev, item.id]);
-          } else {
-            setSelectedProductIds(prev => prev.filter(id => id !== item.id));
-          }
-        }}
-        className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
-      />
-    </label>
-  ) : null
-},
+    {
+      key: 'select',
+      header: isSelectionActive ? (
+        <div className="flex items-center justify-center h-full w-full py-1">
+          <input
+            type="checkbox"
+            ref={(el) => {
+              if (el) el.indeterminate = isSomeSelected;
+            }}
+            checked={isAllSelected}
+            onChange={handleToggleSelectAll}
+            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
+            title="Toggle Select All"
+          />
+        </div>
+      ) : null,
+      headerClassName: 'w-12 text-center',
+      cellClassName: 'text-center p-0',
+      render: (item) => isSelectionActive ? (
+        <label className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selectedProductIds.includes(item.id)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedProductIds(prev => [...prev, item.id]);
+              } else {
+                setSelectedProductIds(prev => prev.filter(id => id !== item.id));
+              }
+            }}
+            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
+          />
+        </label>
+      ) : null
+    },
     {
       key: 'barcode_id',
       header: 'Scan / Barcode',
@@ -597,9 +607,34 @@ const getRowStyle = (product: Product) => {
               MFG: {item.manufacturer_barcode}
             </span>
           )}
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tooltip:block z-50 bg-white p-2 rounded-xl border border-slate-200 shadow-xl pointer-events-none scale-95 animate-scale-up">
-            <BarcodeComponent value={item.barcode_id} />
-            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-white" />
+
+          {/* High-Visibility Downward Barcode Preview Tooltip */}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl pointer-events-none min-w-[220px] max-w-[280px] animate-scale-up">
+            
+            {/* Top Arrow Indicator */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-1px] border-[6px] border-transparent border-b-white dark:border-b-slate-900" />
+
+            {/* Crisp Barcode Canvas/SVG with Strict Integer Module Scaling & Quiet Zones */}
+            <div className="bg-white p-3 rounded-xl border border-slate-100 dark:border-slate-800 w-full flex items-center justify-center overflow-hidden">
+              <BarcodeComponent 
+                value={item.barcode_id} 
+                width={2}
+                height={50}
+                margin={0}
+                displayValue={false}
+              />
+            </div>
+
+            {/* Product Meta */}
+            <div className="mt-2 text-center w-full px-1">
+              <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate">
+                {item.product_name}
+              </p>
+              <p className="text-[10px] font-mono text-slate-400 font-semibold tracking-wider mt-0.5">
+                {item.barcode_id}
+              </p>
+            </div>
+
           </div>
         </div>
       )
@@ -705,28 +740,33 @@ const getRowStyle = (product: Product) => {
         if (!isAdmin) return <span className="text-xs text-slate-400 dark:text-slate-500 font-bold">View Only</span>;
         
         const isSelected = selectedProductIds.includes(item.id);
-        
-        // Suppress inline editing action buttons when the item is already selected
         if (isSelected) return null;
 
         return (
           <div 
-            className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all duration-150" 
+            className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150" 
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Edit Button */}
             <button
               onClick={() => handleEditClick(item)}
-              className="flex items-center justify-center h-8 w-8 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary-light) hover:text-white rounded-lg transition-all duration-200 cursor-pointer font-bold border border-(--border-primary)/20 hover:scale-110 shrink-0"
+              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 hover:scale-105 shrink-0
+                bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white hover:border-blue-600
+                dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 dark:hover:bg-blue-600 dark:hover:text-white dark:hover:border-blue-600"
               title="Edit Product"
             >
-              <Pencil className="w-4 h-4" />
+              <Pencil className="w-3.5 h-3.5" />
             </button>
+
+            {/* Delete Button */}
             <button
               onClick={() => setDeleteConfirmId(item.id)}
-              className="flex items-center justify-center h-8 w-8 bg-red-500/10 hover:bg-red-655 hover:text-white rounded-lg transition-all duration-200 cursor-pointer font-bold border border-red-500/20 hover:scale-110 shrink-0"
+              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 hover:scale-105 shrink-0
+                bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-600 hover:text-white hover:border-rose-600
+                dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20 dark:hover:bg-rose-600 dark:hover:text-white dark:hover:border-rose-600"
               title="Delete Product"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         );
@@ -758,59 +798,8 @@ const getRowStyle = (product: Product) => {
   return (
     <div className="space-y-6">
       
-      {/* Overview Cards */}
-      <div className="hidden md:grid grid-cols-4 gap-4">
-        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-          <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500 border border-blue-500/20 shrink-0">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">VISIBLE</span>
-            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-              {stats.active} / {stats.total} item/s
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-          <div className="p-2 bg-green-500/10 rounded-lg text-green-500 border border-green-500/20 shrink-0">
-            <Package className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">IN STOCK</span>
-            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-              {stats.total - stats.outOfStock} item/s
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-          <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500 border border-amber-500/20 shrink-0">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">LOW STOCK</span>
-            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-              {stats.lowStock} Item/s
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-          <div className="p-2 bg-red-500/10 rounded-lg text-red-500 border border-red-500/20 shrink-0">
-            <PackageX className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">No Stock</span>
-            <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wider mt-0.5 block">
-              {stats.outOfStock} Item/s
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Search and Status Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs mt-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           
@@ -891,7 +880,6 @@ const getRowStyle = (product: Product) => {
             {/* Select All Row on Mobile when Multi-Select Active */}
             {isSelectionActive && (
               <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
-                {/* Expanded Tap Hitbox Wrapper */}
                 <label 
                   className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
                   onClick={() => {
@@ -912,7 +900,7 @@ const getRowStyle = (product: Product) => {
                       }
                     }}
                     checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id))}
-                    onChange={() => {}} // Handled by container label tap for better mobile touch response
+                    onChange={() => {}}
                     className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
                   />
                   <span className="text-xs font-bold text-(--color-text)">
@@ -999,8 +987,14 @@ const getRowStyle = (product: Product) => {
                       </div>
 
                       {isSelected && (
-                        <div className="bg-white p-1 rounded-lg border border-slate-200 dark:border-white/10 shadow-sm shrink-0 w-full max-w-28 flex items-center justify-center animate-scale-up">
-                          <BarcodeComponent value={product.barcode_id} />
+                        <div className="bg-white p-2 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center animate-scale-up">
+                          <BarcodeComponent 
+                            value={product.barcode_id} 
+                            width={2} 
+                            height={36} 
+                            margin={8} 
+                            displayValue={false} 
+                          />
                         </div>
                       )}
                     </div>
@@ -1078,6 +1072,22 @@ const getRowStyle = (product: Product) => {
               onRowClick={handleRowClick} 
             />
           </div>
+
+          {/* ─── QUICK ACTION: ADD NEW PRODUCT BUTTON (DESKTOP & TABLET ONLY) ─── */}
+          {isAdmin && (
+            <motion.button
+              whileHover={{ scale: 1.008 }}
+              whileTap={{ scale: 0.985 }}
+              type="button"
+              onClick={handleCreateClick}
+              className="hidden sm:flex w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
+            >
+              <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
+                <Plus className="w-4 h-4 text-white" />
+              </div>
+              <span>ADD NEW PRODUCT</span>
+            </motion.button>
+          )}
         </>
       )}
 
@@ -1122,7 +1132,7 @@ const getRowStyle = (product: Product) => {
         const productToDelete = products.find(p => p.id === deleteConfirmId);
         if (!productToDelete) return null;
         return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in text-xs text-(--color-text)">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in text-xs text-(--color-text)">
             <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up">
               
               <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
@@ -1178,7 +1188,7 @@ const getRowStyle = (product: Product) => {
                 </button>
                 <button
                   onClick={() => handleDeleteProduct(productToDelete.id)}
-                  className="px-5 py-2.5 bg-red-650 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
+                  className="px-5 py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
                 >
                   Confirm Delete
                 </button>
@@ -1229,7 +1239,7 @@ const getRowStyle = (product: Product) => {
               </p>
             </div>
 
-            {/* Scrollable grid list of cards, matching Image 2 visual design */}
+            {/* Scrollable grid list of cards */}
             <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 my-4">
               {products
                 .filter(p => selectedProductIds.includes(p.id))

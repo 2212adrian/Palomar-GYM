@@ -5,8 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2,
-  Award, Clock
+  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -328,6 +327,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       suspendedMembers: members.filter(m => m.status === 'Suspended').length,
     };
   }, [members, subscriptions]);
+
+  // Broadcast Members Telemetry to Topbar
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('members-kpi-update', {
+        detail: stats
+      })
+    );
+  }, [stats]);
 
   // Chip Filter Counts
   const chipCounts = useMemo(() => {
@@ -715,25 +723,25 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     }
 
     setActions(
-      <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
+      <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
         {activeTab === 'Directory' && (
           <>
             <Button
               onClick={handleOpenPrintModal}
               variant="secondary"
-              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
               title="Open full member credential card print workspace"
             >
-              <Printer className="w-4 h-4 text-red-500" />
+              <Printer className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-red-500 shrink-0" />
               <span>PRINT MEMBER CARDS</span>
             </Button>
 
             <Button
               onClick={() => setIsRecycleOpen(true)}
               variant="secondary"
-              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
-              <RotateCcw className="w-4 h-4 text-amber-500" />
+              <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
             </Button>
 
@@ -744,9 +752,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 setIsWizardOpen(true); 
               }}
               variant="primary"
-              className="py-2 px-3.5 !w-auto text-xs flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
               <span>ENROLL MEMBER</span>
             </Button>
           </>
@@ -807,57 +815,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           <div className="mt-4 md:mt-6 space-y-4 md:space-y-6">
             {activeTab === 'Directory' && (
               <div className="space-y-4 md:space-y-6 pb-40 md:pb-24">
-                
-                {/* OVERVIEW 4 KPI CARDS (MATCHING PRODUCT LIST DESIGN) */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 select-none">
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500 border border-blue-500/20 shrink-0">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">TOTAL MEMBERS</span>
-                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-                        {stats.total} Member/s
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-                    <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20 shrink-0">
-                      <Award className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">ACTIVE SUBSCRIPTIONS</span>
-                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-                        {stats.activeSubscriptions} Contract/s
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-                    <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500 border border-amber-500/20 shrink-0">
-                      <Clock className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">EXPIRING SOON</span>
-                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-                        {stats.expiringSoon} Member/s
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-3">
-                    <div className="p-2 bg-red-500/10 rounded-lg text-red-500 border border-red-500/20 shrink-0">
-                      <UserX className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">SUSPENDED</span>
-                      <span className="text-sm font-extrabold text-(--color-text) font-heading tracking-wide truncate block">
-                        {stats.suspendedMembers} Locked
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
                 <div className="space-y-3 bg-(--bg-card) p-3.5 md:p-4 rounded-2xl border border-(--border-color) shadow-xs">
@@ -933,7 +890,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         <Skeleton height={16} width={140} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
                         <Skeleton height={16} width={110} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
                         <Skeleton height={16} width={90} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
-                        <Skeleton height={16} width={70} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
+                        <Skeleton height={70} width={70} baseColor="var(--border-color)" highlightColor="var(--bg-card)" />
                       </div>
                       {/* Realistic Member Rows Skeletons */}
                       {Array.from({ length: 6 }).map((_, idx) => (
@@ -997,6 +954,23 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       onRowClick={handleRowClick}
                     />
                   )}
+                  {/* ─── QUICK ACTION: ENROLL NEW MEMBER BUTTON (DESKTOP & TABLET) ─── */}
+<motion.button
+  whileHover={{ scale: 1.008 }}
+  whileTap={{ scale: 0.985 }}
+  type="button"
+  onClick={() => {
+    setWizardPrefillMember(undefined);
+    setWizardPrefill(undefined);
+    setIsWizardOpen(true);
+  }}
+  className="hidden sm:flex w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
+>
+  <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
+    <Plus className="w-4 h-4 text-white" />
+  </div>
+  <span>ENROLL NEW MEMBER</span>
+</motion.button>
                 </div>
 
                 {/* MOBILE CARD LIST VIEW (< MD) */}
@@ -1292,39 +1266,39 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         </>
       )}
 
-    {/* 1. DESKTOP / TABLET FLOATING MULTI-SELECT BAR */}
-    {isSelectionActive && (
-      <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
-        <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
-          <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
-            {selectedMemberIds.length}
-          </span>
-          <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
-            Selected
-          </span>
-        </div>
+      {/* 1. DESKTOP / TABLET FLOATING MULTI-SELECT BAR */}
+      {isSelectionActive && (
+        <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-3 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
+          <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
+            <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
+              {selectedMemberIds.length}
+            </span>
+            <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
+              Selected
+            </span>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowBatchCardModal(true)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print Member Cards</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBatchCardModal(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Member Cards</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setSelectedMemberIds([])}
-            className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
-            title="Clear selection"
-          >
-            <X className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMemberIds([])}
+              className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* 2. MOBILE MULTI-SELECT BOTTOM BAR */}
       <AnimatePresence>

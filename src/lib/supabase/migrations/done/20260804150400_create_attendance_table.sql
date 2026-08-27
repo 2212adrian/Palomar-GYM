@@ -30,8 +30,8 @@ ALTER TABLE public.attendance
   ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT NULL;
 
 -- 2. Soft Delete Interceptor Function
--- Standard check-in logs are soft-deleted.
--- Voided Subscriptions / New Memberships bypass soft-delete and are PERMANENTLY REMOVED from the DB.
+-- Standard check-in logs (Walk-Ins & Existing Member daily entries) are soft-deleted into the Recycle Bin.
+-- Voided New Membership enrollments bypass soft-delete and are PERMANENTLY REMOVED from the DB.
 CREATE OR REPLACE FUNCTION public.handle_attendance_soft_delete()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -40,23 +40,21 @@ BEGIN
         RETURN OLD;
     END IF;
 
-    -- HARD DELETE BYPASS: New Memberships & Subscription transactions bypass soft-delete.
+    -- HARD DELETE BYPASS: Only New Membership enrollments bypass soft-delete.
     -- They are physically purged from the database and NEVER enter the Recycle Bin.
-    IF OLD.customer_type::text = 'New Membership' 
-       OR OLD.plan_name ILIKE '%Membership%' 
-       OR OLD.plan_name ILIKE '%Subscription%' 
-       OR OLD.plan_name ILIKE '%Monthly%' 
-       OR OLD.plan_name ILIKE '%Yearly%' THEN
+    -- (Note: Broad ILIKE '%Monthly%' or '%Yearly%' checks were removed so existing member 
+    -- check-ins like "Monthly Member Entry" soft-delete properly instead of being hard-deleted).
+    IF OLD.customer_type::text = 'New Membership' OR OLD.plan_name ILIKE '%Subscription Contract%' THEN
         RETURN OLD; -- Proceed with physical hard row removal
     END IF;
 
-    -- Intercept physical DELETE ONLY for standard walk-in / member daily attendance check-ins
+    -- Intercept physical DELETE for standard walk-in / member daily attendance check-ins
     UPDATE public.attendance
     SET deleted_at = now(),
         deleted_by = auth.uid()
     WHERE id = OLD.id;
 
-    RETURN NULL; -- Cancel physical row deletion for standard attendance
+    RETURN NULL; -- Cancel physical row deletion so record moves to Recycle Bin
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

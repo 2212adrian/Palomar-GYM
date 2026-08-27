@@ -1,10 +1,9 @@
 // src/pages/sales/Sales.tsx
-import React, { useState, useEffect, useMemo, useContext, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   format, 
   startOfWeek, 
-  endOfWeek, 
   addDays, 
   isToday, 
   startOfDay, 
@@ -19,8 +18,6 @@ import {
   ShoppingBag, 
   FileSpreadsheet,
   Printer,
-  CircleDollarSign,
-  Package,
   Search,
   Trash2
 } from 'lucide-react';
@@ -53,6 +50,114 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 // Unified UI TimelineCard
 import { TimelineCard } from '../../components/ui/TimelineCard';
 
+// ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
+const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neutral' }> = ({ trend }) => {
+  return (
+    <motion.div
+      key={trend}
+      initial={
+        trend === 'increasing'
+          ? { scale: 0.4, rotate: -20, opacity: 0 }
+          : trend === 'decreasing'
+          ? { scale: 0.4, rotate: 20, opacity: 0 }
+          : { scale: 1, rotate: 0, opacity: 1 }
+      }
+      animate={
+        trend === 'increasing'
+          ? {
+              scale: [0.4, 1.55, 0.95, 1],
+              rotate: [-20, 8, -3, 0],
+              opacity: [0, 1, 1, 1],
+              filter: [
+                'drop-shadow(0 0 0px rgba(16,185,129,0))',
+                'drop-shadow(0 0 14px rgba(16,185,129,0.9))',
+                'drop-shadow(0 0 4px rgba(16,185,129,0.4))'
+              ]
+            }
+          : trend === 'decreasing'
+          ? {
+              scale: [0.4, 1.55, 0.95, 1],
+              rotate: [20, -8, 3, 0],
+              opacity: [0, 1, 1, 1],
+              filter: [
+                'drop-shadow(0 0 0px rgba(239,68,68,0))',
+                'drop-shadow(0 0 14px rgba(239,68,68,0.9))',
+                'drop-shadow(0 0 4px rgba(239,68,68,0.4))'
+              ]
+            }
+          : {
+              scale: 1,
+              rotate: 0,
+              opacity: 1,
+              filter: 'drop-shadow(0 0 0px rgba(0,0,0,0))'
+            }
+      }
+      transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+      className={`shrink-0 flex items-center justify-center ${
+        trend === 'increasing'
+          ? 'text-emerald-500 dark:text-emerald-400'
+          : trend === 'decreasing'
+          ? 'text-rose-500 dark:text-rose-400'
+          : 'text-emerald-500 dark:text-emerald-400'
+      }`}
+    >
+      {trend === 'increasing' ? (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
+          <circle cx="10" cy="12" r="2" />
+          <path d="M6 12h.01" />
+          <path d="M19 21v-8" />
+          <path d="m16 16 3-3 3 3" />
+        </svg>
+      ) : trend === 'decreasing' ? (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5" />
+          <circle cx="10" cy="12" r="2" />
+          <path d="M6 12h.01" />
+          <path d="M19 13v8" />
+          <path d="m16 18 3 3 3-3" />
+        </svg>
+      ) : (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect width="20" height="12" x="2" y="6" rx="2" />
+          <circle cx="12" cy="12" r="2" />
+          <path d="M6 12h.01M18 12h.01" />
+        </svg>
+      )}
+    </motion.div>
+  );
+};
+
 // ─── ANIMATED TICKER HELPERS ───
 const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
   const nodeRef = useRef<HTMLSpanElement>(null);
@@ -77,31 +182,6 @@ const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
   }, [value]);
 
   return <span ref={nodeRef}>₱{value.toFixed(2)}</span>;
-};
-
-const AnimatedNumber: React.FC<{ value: number }> = ({ value }) => {
-  const nodeRef = useRef<HTMLSpanElement>(null);
-  const prevValueRef = useRef(value);
-
-  useEffect(() => {
-    const node = nodeRef.current;
-    if (!node) return;
-
-    const controls = animate(prevValueRef.current, value, {
-      duration: 0.8,
-      ease: [0.16, 1, 0.3, 1],
-      onUpdate(latest) {
-        node.textContent = Math.round(latest).toString();
-      },
-      onComplete() {
-        prevValueRef.current = value;
-      }
-    });
-
-    return () => controls.stop();
-  }, [value]);
-
-  return <span ref={nodeRef}>{value}</span>;
 };
 
 const PAYMENT_FILTERS = [
@@ -185,6 +265,13 @@ export const Sales: React.FC = () => {
     startOfWeek(new Date(), { weekStartsOn: 0 })
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
+
+  const selectedDate = useMemo(() => {
+    return addDays(currentWeekStart, selectedDayIndex);
+  }, [currentWeekStart, selectedDayIndex]);
+
+  const dateStr = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash'>('All');
   
@@ -200,8 +287,10 @@ export const Sales: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const stagedDeletionsRef = useRef<any[]>([]);
+  stagedDeletionsRef.current = stagedDeletions;
 
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
@@ -210,7 +299,7 @@ export const Sales: React.FC = () => {
   const [, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
-  // Animation states for green add glow & red delete glow
+  // Animation states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
 
@@ -268,44 +357,45 @@ export const Sales: React.FC = () => {
     }
   };
 
-  const fetchTransactions = async (isBackground: boolean = false) => {
+  // ZERO-EGRESS SANITIZED FETCHING USING SESSION CACHE & POSTGRES RPC
+  const fetchTransactions = useCallback(async (isBackground: boolean = false) => {
     try {
-      if (!isBackground && transactions.length === 0) {
+      const cacheKey = `sales_sanitized_${dateStr}`;
+
+      if (!isBackground) {
+        const cachedSession = sessionStorage.getItem(cacheKey);
+        if (cachedSession) {
+          try {
+            const parsed = JSON.parse(cachedSession);
+            if (Array.isArray(parsed) && parsed.length >= 0) {
+              setTransactions(parsed);
+              setLoadingTransactions(false);
+              return;
+            }
+          } catch (e) {
+            console.error('Failed to parse cached sales session:', e);
+          }
+        }
+      }
+
+      if (!isBackground) {
         setLoadingTransactions(true);
       }
 
-      let query = supabase
-        .from('sales')
-        .select('*')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('get_sanitized_sales', {
+        target_date: dateStr
+      });
 
-      if (role === 'staff') {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        query = query.gte('created_at', todayStart.toISOString());
-      } else {
-        const weekStart = startOfWeek(currentWeekStart, { weekStartsOn: 0 }).toISOString();
-        const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 0 }).toISOString();
-        query = query.gte('created_at', weekStart).lte('created_at', weekEnd);
+      if (error) {
+        console.error('Error executing get_sanitized_sales RPC:', error);
+        return;
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
 
       const freshTransactions = data || [];
 
-      setTransactions(prev => {
-        if (
-          prev.length === freshTransactions.length &&
-          prev.length > 0 &&
-          prev[0]?.id === freshTransactions[0]?.id &&
-          prev[prev.length - 1]?.id === freshTransactions[freshTransactions.length - 1]?.id
-        ) {
-          return prev;
-        }
-        return freshTransactions;
-      });
+      setTransactions(freshTransactions);
+      sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
+
     } catch (err) {
       console.error('Error loading sales ledger:', err);
     } finally {
@@ -313,7 +403,7 @@ export const Sales: React.FC = () => {
         setLoadingTransactions(false);
       }
     }
-  };
+  }, [dateStr]);
 
   const fetchProducts = async () => {
     try {
@@ -332,11 +422,12 @@ export const Sales: React.FC = () => {
   useEffect(() => {
     fetchRatesConfig();
     fetchProducts();
-    fetchTransactions(transactions.length > 0);
+    fetchTransactions(false);
 
     const salesChannel = supabase
-      .channel('sales-realtime-changes')
+      .channel(`sales_realtime_${dateStr}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
+        sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
         fetchTransactions(true);
       })
       .subscribe();
@@ -352,7 +443,7 @@ export const Sales: React.FC = () => {
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(productsChannel);
     };
-  }, [currentWeekStart, role]);
+  }, [dateStr, fetchTransactions]);
 
   const isTabSelectable = (date: Date) => {
     const today = new Date();
@@ -378,17 +469,7 @@ export const Sales: React.FC = () => {
     setCurrentPage(1);
   }, [currentWeekStart, role]);
 
-  const selectedDate = useMemo(() => {
-    return addDays(currentWeekStart, selectedDayIndex);
-  }, [currentWeekStart, selectedDayIndex]);
-
-  const dayTransactions = useMemo(() => {
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    return transactions.filter((t: any) => {
-      const transactionDate = t.created_at ? format(new Date(t.created_at), 'yyyy-MM-dd') : '';
-      return transactionDate === dateStr;
-    });
-  }, [selectedDate, transactions]);
+  const dayTransactions = useMemo(() => transactions, [transactions]);
 
   const filteredDayTransactions = useMemo(() => {
     return dayTransactions.filter((t: any) => {
@@ -461,10 +542,25 @@ export const Sales: React.FC = () => {
     }, 0);
   }, [dayTransactions]);
 
+  // BROADCAST SALES TELEMETRY TO TOPBAR
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('sales-kpi-update', {
+        detail: {
+          revenue: dailyRevenue,
+          salesCount: dailyCount,
+          itemsSold: itemsSoldToday,
+          revenueTrend
+        }
+      })
+    );
+  }, [dailyRevenue, dailyCount, itemsSoldToday, revenueTrend]);
+
   const handleSaleSuccess = async (newTx: any) => {
     try {
       const calculatedGcashFee = newTx.paymentMethod === 'GCash' ? (ratesConfig?.gcash_fee || 10.00) : 0.00;
 
+      // Matches public.sales columns exactly (no staff_name)
       const { data: insertedSale, error } = await supabase
         .from('sales')
         .insert([{
@@ -486,7 +582,11 @@ export const Sales: React.FC = () => {
         setNewlyAddedId(insertedSale.id);
         setTimeout(() => setNewlyAddedId(null), 2500);
 
-        setTransactions(prev => [insertedSale, ...prev]);
+        setTransactions(prev => {
+          const updated = [insertedSale, ...prev];
+          sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+          return updated;
+        });
       }
 
       toast.success('Sale successfully recorded!');
@@ -531,18 +631,16 @@ export const Sales: React.FC = () => {
       }]);
 
       Promise.all([...stockUpdatePromises, auditLogPromise]).then(() => {
-        fetchTransactions(true);
         fetchProducts();
       }).catch(console.error);
 
     } catch (err: any) {
       console.error('Error saving sale transaction:', err);
       toast.error(err.message || 'Problem saving transaction. Please check your network connection.');
-      throw err; // Re-throw to prevent SalesDialog from displaying the success screen
+      throw err;
     }
   };
 
-  // Smooth deletion animation with red glow before removing from state
   const handleDeleteTransaction = (tx: any) => {
     if (!isTransactionDeletable(tx)) {
       toast.error('Only sales made today can be deleted.');
@@ -551,18 +649,21 @@ export const Sales: React.FC = () => {
 
     if (deletingIds.includes(tx.id)) return;
 
-    // 1. Mark item as deleting (triggers red glow & smooth scale/fade animation)
     setDeletingIds(prev => [...prev, tx.id]);
 
-    // 2. Wait 380ms for red glow fade animation to complete before removing from state
     setTimeout(() => {
       setStagedDeletions(prev => [...prev, tx]);
-      setTransactions(prev => prev.filter(t => t.id !== tx.id));
+      setTransactions(prev => {
+        const updated = prev.filter(t => t.id !== tx.id);
+        sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+        return updated;
+      });
       setDeletingIds(prev => prev.filter(id => id !== tx.id));
     }, 380);
   };
 
-  const handleConfirmDelete = async (stagedTx: any) => {
+  // Intercepted by Postgres trigger: restores product stock and sets deleted_at / deleted_by
+  const handleConfirmDelete = useCallback(async (stagedTx: any) => {
     try {
       const { error } = await supabase
         .from('sales')
@@ -583,49 +684,83 @@ export const Sales: React.FC = () => {
         actor_username: user?.email || 'System'
       }]);
 
-      toast.success('This sale has been deleted and moved to your Recycle Bin.');
-    } catch (err) {
-      console.error(err);
-      toast.error('There was a problem deleting this sale. Please try again.');
+      toast.success('This sale has been moved to your Recycle Bin.');
+    } catch (err: any) {
+      console.error('Failed to commit sale deletion to database:', err);
+      toast.error(err.message || 'There was a problem deleting this sale. Please try again.');
+      // Rollback to UI if server deletion fails
+      setTransactions(prev => {
+        const updated = [stagedTx, ...prev.filter(t => t.id !== stagedTx.id)].sort((a, b) => {
+          const dateA = a.created_at || a.createdAt || '';
+          const dateB = b.created_at || b.createdAt || '';
+          return dateB.localeCompare(dateA);
+        });
+        sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+        return updated;
+      });
     } finally {
       setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
-      fetchTransactions(true);
       fetchProducts();
     }
-  };
+  }, [user?.email, dateStr]);
 
   const handleUndoDelete = (stagedTx: any) => {
     setDeletingIds(prev => prev.filter(id => id !== stagedTx.id));
-    setTransactions(prev => [stagedTx, ...prev].sort((a, b) => {
-      const dateA = a.created_at || a.createdAt || '';
-      const dateB = b.created_at || b.createdAt || '';
-      return dateB.localeCompare(dateA);
-    }));
+    setTransactions(prev => {
+      const updated = [stagedTx, ...prev].sort((a, b) => {
+        const dateA = a.created_at || a.createdAt || '';
+        const dateB = b.created_at || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+      sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+      return updated;
+    });
     setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
     toast.info('Deletion canceled. The transaction has been put back.');
   };
 
+  // Commit on unmount if any staged delete is pending
+  useEffect(() => {
+    return () => {
+      if (stagedDeletionsRef.current.length > 0) {
+        stagedDeletionsRef.current.forEach(tx => {
+          supabase
+            .from('sales')
+            .delete()
+            .eq('id', tx.id)
+            .then();
+        });
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if ((activeView as string) === 'register') {
       setActions(
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
+        <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
           {role === 'admin' && (
             <>
               <Button
-                onClick={() => setIsRecycleBinOpen(true)}
+                onClick={() => {
+                  // Commit any pending deletions immediately before opening Recycle Bin
+                  if (stagedDeletionsRef.current.length > 0) {
+                    stagedDeletionsRef.current.forEach(tx => handleConfirmDelete(tx));
+                  }
+                  setIsRecycleBinOpen(true);
+                }}
                 variant="secondary"
-                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
               >
-                <RotateCcw className="w-4 h-4 text-amber-500" />
+                <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
                 <span>RECYCLE BIN</span>
               </Button>
 
               <Button
                 onClick={() => setIsReportModalOpen(true)}
                 variant="secondary"
-                className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
               >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <FileSpreadsheet className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>GENERATE REPORT</span>
               </Button>
             </>
@@ -634,9 +769,9 @@ export const Sales: React.FC = () => {
           <Button
             onClick={() => setIsCreateModalOpen(true)}
             variant="primary"
-            className="hidden md:flex py-2 px-3.5 w-auto! text-xs items-center gap-1.5 shadow-md cursor-pointer"
+            className="hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
             <span>NEW SALE</span>
           </Button>
         </div>
@@ -646,32 +781,31 @@ export const Sales: React.FC = () => {
         setActions(null);
       } else {
         setActions(
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end animate-fade-in">
+          <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
             <Button
               onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
               variant="secondary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
-              title="View and restore soft-deleted products"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
-              <RotateCcw className="w-4 h-4 text-amber-500" />
+              <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
             </Button>
 
             <Button
               onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
               variant="secondary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
-              <Printer className="w-4 h-4 text-blue-500" />
+              <Printer className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-blue-500 shrink-0" />
               <span>PRINT SHEET LABELS</span>
             </Button>
 
             <Button
               onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
               variant="primary"
-              className="py-2 px-3.5 w-auto! text-xs flex items-center gap-1.5 cursor-pointer font-bold animate-fade-in"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
               <span>ADD NEW ITEM</span>
             </Button>
           </div>
@@ -680,30 +814,30 @@ export const Sales: React.FC = () => {
     }
 
     return () => setActions(null);
-  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount, setActions]);
+  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount, setActions, handleConfirmDelete]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
       <TabLoader isVisible={loading} />
 
-      {/* --- DESKTOP NAVIGATION TABS --- */}
+      {/* --- SLIM VERTICAL DESKTOP NAVIGATION TABS --- */}
       {role === 'admin' && (
-        <div className="hidden xl:block">
+        <div className="hidden lg:block">
           <AnimatePresence>
             {activeView === 'register' ? (
               <motion.button
-                key="to-inventory-arrow"
-                initial={{ opacity: 0, x: 30 }}
+                key="to-products-vertical"
+                initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 0.9, x: 0 }}
-                exit={{ opacity: 0, x: 30 }}
-                whileHover={{ scale: 1.02 }}
+                exit={{ opacity: 0, x: 20 }}
+                whileHover={{ scale: 1.05, opacity: 1 }}
                 onClick={() => handlePcViewTransition('inventory')}
-                className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) pl-5 pr-4 py-6 rounded-l-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
+                title="View Product Inventory"
+                className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) py-6 px-3.5 rounded-l-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
               >
-                <div className="text-right">
-                  <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Store</span>
-                  <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">INVENTORY</span>
-                </div>
+                <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
+                  PRODUCTS
+                </span>
                 <motion.div 
                   animate={{ x: [0, 4, 0] }} 
                   transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
@@ -713,13 +847,14 @@ export const Sales: React.FC = () => {
               </motion.button>
             ) : (
               <motion.button
-                key="to-register-arrow"
-                initial={{ opacity: 0, x: -30 }}
+                key="to-register-vertical"
+                initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 0.9, x: 0 }}
-                exit={{ opacity: 0, x: -30 }}
-                whileHover={{ scale: 1.02 }}
+                exit={{ opacity: 0, x: -20 }}
+                whileHover={{ scale: 1.05, opacity: 1 }}
                 onClick={() => handlePcViewTransition('register')}
-                className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) pl-4 pr-5 py-6 rounded-r-3xl shadow-2xl cursor-pointer flex items-center gap-3 z-45 transition-colors hover:border-(--color-primary-light)/40 hover:bg-(--bg-card)"
+                title="View Cashier Register"
+                className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
               >
                 <motion.div 
                   animate={{ x: [0, -4, 0] }} 
@@ -727,10 +862,9 @@ export const Sales: React.FC = () => {
                 >
                   <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
                 </motion.div>
-                <div className="text-left">
-                  <span className="text-[8px] font-bold text-slate-400 block tracking-widest uppercase">View Cashier</span>
-                  <span className="font-heading text-[10px] text-(--color-text) tracking-wider uppercase block mt-0.5 group-hover:text-(--color-primary-light) transition-colors">REGISTER</span>
-                </div>
+                <span className="[writing-mode:vertical-rl] rotate-180 font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
+                  SALES
+                </span>
               </motion.button>
             )}
           </AnimatePresence>
@@ -754,70 +888,6 @@ export const Sales: React.FC = () => {
             transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
           }}
         >
-          {/* ─── TODAY'S SALES SUMMARY ─── */}
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl px-3 sm:px-6 py-3 shadow-xs animate-fade-in select-none">
-            <div className="grid grid-cols-3 items-center divide-x divide-(--border-color)/40">
-              
-              {/* Left: Transactions */}
-              <div className="flex items-center justify-start gap-2 sm:gap-3 pr-2 sm:pr-4 min-w-0">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-                  <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-                    Transactions
-                  </span>
-                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-                    <AnimatedNumber value={dailyCount} />
-                  </span>
-                </div>
-              </div>
-
-              {/* Center: Highlighted Total Revenue */}
-              <div className="flex flex-col items-center justify-center text-center px-2 sm:px-4 min-w-0">
-                <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-heading text-emerald-500 dark:text-emerald-400 block truncate font-black">
-                  Total Revenue
-                </span>
-                <motion.div
-                  animate={{
-                    scale: revenueTrend === 'increasing' ? 1.1 : revenueTrend === 'decreasing' ? 0.95 : 1,
-                  }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="my-0.5 flex items-center justify-center gap-1 sm:gap-1.5"
-                >
-                  <CircleDollarSign className={`w-4 h-4 sm:w-6 sm:h-6 shrink-0 ${
-                    revenueTrend === 'increasing' ? 'text-emerald-500' : revenueTrend === 'decreasing' ? 'text-rose-500' : 'text-emerald-500'
-                  }`} />
-                  <span className={`font-heading text-lg sm:text-3xl md:text-4xl font-black tracking-tight transition-colors duration-300 truncate ${
-                    revenueTrend === 'increasing'
-                      ? 'text-emerald-500'
-                      : revenueTrend === 'decreasing'
-                      ? 'text-rose-500'
-                      : 'text-(--color-text)'
-                  }`}>
-                    <AnimatedCurrency value={dailyRevenue} />
-                  </span>
-                </motion.div>
-              </div>
-
-              {/* Right: Items Sold */}
-              <div className="flex items-center justify-end gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
-                <div className="min-w-0 text-right order-1">
-                  <span className="text-[8px] sm:text-[9px] uppercase tracking-widest font-heading text-slate-400 block truncate font-bold">
-                    Items Sold
-                  </span>
-                  <span className="font-heading text-base sm:text-2xl font-extrabold text-(--color-text) block leading-tight mt-0.5 truncate">
-                    <AnimatedNumber value={itemsSoldToday} />
-                  </span>
-                </div>
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20 order-2">
-                  <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
-                </div>
-              </div>
-
-            </div>
-          </div>
-
           <TimelineBar
             currentWeekStart={currentWeekStart}
             onWeekStartChange={setCurrentWeekStart}
@@ -931,73 +1001,91 @@ export const Sales: React.FC = () => {
                   }
                 };
 
-                return hourlyGroups.map((group) => (
-                  <div key={group.label} className="space-y-4">
-                    <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
-                      <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
-                        {group.label}
+                return (
+                  <div className="space-y-6">
+                    {hourlyGroups.map((group) => (
+                      <div key={group.label} className="space-y-4">
+                        <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
+                          <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
+                            {group.label}
+                          </div>
+                          <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                        </div>
+
+                        <div className="space-y-2.5">
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            {group.txs.map((tx) => {
+                              const isNew = tx.id === newlyAddedId;
+                              const isDeleting = deletingIds.includes(tx.id);
+
+                              return (
+                                <motion.div
+                                  key={tx.id}
+                                  layout
+                                  initial={{ 
+                                    opacity: 0, 
+                                    y: -15, 
+                                    scale: 0.96,
+                                    boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
+                                  }}
+                                  animate={isDeleting ? {
+                                    opacity: 0,
+                                    scale: 0.92,
+                                    y: -5,
+                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
+                                    filter: "brightness(0.9)"
+                                  } : {
+                                    opacity: 1, 
+                                    y: 0, 
+                                    scale: 1,
+                                    boxShadow: isNew 
+                                      ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
+                                      : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
+                                  }}
+                                  exit={{ 
+                                    opacity: 0, 
+                                    scale: 0.9,
+                                    y: -10,
+                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
+                                  }}
+                                  transition={{ 
+                                    layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                                    boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
+                                    opacity: { duration: isDeleting ? 0.38 : 0.3 }
+                                  }}
+                                  className="rounded-2xl transition-all overflow-hidden"
+                                >
+                                  <TimelineCard
+                                    mode="sale"
+                                    data={tx}
+                                    canDelete={isTransactionDeletable(tx) && !isDeleting}
+                                    onSelectReceipt={setSelectedReceiptTx}
+                                    onTriggerDelete={handleDeleteTransaction}
+                                    onDragEnd={handleDragEnd}
+                                  />
+                                </motion.div>
+                              );
+                            })}
+                          </AnimatePresence>
+                        </div>
                       </div>
-                      <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
-                    </div>
+                    ))}
 
-                    <div className="space-y-2.5">
-                      <AnimatePresence mode="popLayout" initial={false}>
-                        {group.txs.map((tx) => {
-                          const isNew = tx.id === newlyAddedId;
-                          const isDeleting = deletingIds.includes(tx.id);
-
-                          return (
-                            <motion.div
-                              key={tx.id}
-                              layout
-                              initial={{ 
-                                opacity: 0, 
-                                y: -15, 
-                                scale: 0.96,
-                                boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
-                              }}
-                              animate={isDeleting ? {
-                                opacity: 0,
-                                scale: 0.92,
-                                y: -5,
-                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
-                                filter: "brightness(0.9)"
-                              } : {
-                                opacity: 1, 
-                                y: 0, 
-                                scale: 1,
-                                boxShadow: isNew 
-                                  ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
-                                  : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
-                              }}
-                              exit={{ 
-                                opacity: 0, 
-                                scale: 0.9,
-                                y: -10,
-                                boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
-                              }}
-                              transition={{ 
-                                layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-                                boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
-                                opacity: { duration: isDeleting ? 0.38 : 0.3 }
-                              }}
-                              className="rounded-2xl transition-all overflow-hidden"
-                            >
-                              <TimelineCard
-                                mode="sale"
-                                data={tx}
-                                canDelete={isTransactionDeletable(tx) && !isDeleting}
-                                onSelectReceipt={setSelectedReceiptTx}
-                                onTriggerDelete={handleDeleteTransaction}
-                                onDragEnd={handleDragEnd}
-                              />
-                            </motion.div>
-                          );
-                        })}
-                      </AnimatePresence>
-                    </div>
+                    {/* ─── QUICK ACTION HORIZONTAL CREATE NEW SALE BUTTON ─── */}
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.98 }}
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
+                    >
+                      <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
+                        <Plus className="w-4 h-4 text-white" />
+                      </div>
+                      <span>CREATE NEW SALE</span>
+                    </motion.button>
                   </div>
-                ));
+                );
               })()}
             </AnimatePresence>
           </div>
@@ -1122,26 +1210,25 @@ export const Sales: React.FC = () => {
           onClose={() => setIsRecycleBinOpen(false)}
           products={products}
           onRestoreSuccess={() => {
+            sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
             fetchTransactions(true);
             fetchProducts();
           }}
         />
       )}
 
-      {/* DETACHED CONFIRMATION NOTIFIER */}
+      {/* DETACHED CONFIRMATION NOTIFIER (5-SECOND UNDO WINDOW) */}
       <div className="fixed bottom-40 md:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col gap-2 w-[calc(100vw-24px)] md:w-auto items-center pointer-events-none">
         <AnimatePresence mode="popLayout">
           {stagedDeletions.map((stagedTx) => (
             <UndoToast
               key={stagedTx.id}
               isOpen={true}
-              message={`Removing transaction ${stagedTx.receipt_no || stagedTx.id} from database ledger...`}
+              message={`Removing transaction ${stagedTx.receipt_no || stagedTx.id}...`}
               duration={5}
               onConfirm={() => handleConfirmDelete(stagedTx)}
               onUndo={() => handleUndoDelete(stagedTx)}
-              onClose={() => {
-                setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
-              }}
+              onClose={() => handleConfirmDelete(stagedTx)}
             />
           ))}
         </AnimatePresence>
@@ -1149,11 +1236,13 @@ export const Sales: React.FC = () => {
 
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
       {activeView === 'register' && createPortal(
-        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
-          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
-              <CircleDollarSign className="w-3.5 h-3.5" />
-              <span className="text-[11px]"><AnimatedCurrency value={dailyRevenue} /></span>
+        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
+          <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <DynamicBanknoteIcon trend={revenueTrend} />
+              <span className="text-[11px]">
+                <AnimatedCurrency value={dailyRevenue} />
+              </span>
             </div>
             <span className="text-slate-300 dark:text-zinc-700">•</span>
             <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
@@ -1162,13 +1251,18 @@ export const Sales: React.FC = () => {
             </div>
           </div>
 
-          {/* Direct 1-Tap Action Buttons */}
+          {/* Action Buttons */}
           <div className="flex items-center gap-1.5 shrink-0">
             {role === 'admin' && (
               <>
                 <button
                   type="button"
-                  onClick={() => setIsRecycleBinOpen(true)}
+                  onClick={() => {
+                    if (stagedDeletionsRef.current.length > 0) {
+                      stagedDeletionsRef.current.forEach(tx => handleConfirmDelete(tx));
+                    }
+                    setIsRecycleBinOpen(true);
+                  }}
                   className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
                   title="Recycle Bin"
                 >
@@ -1189,11 +1283,11 @@ export const Sales: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsCreateModalOpen(true)}
-              className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
-              title="New Sale"
+              className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-all"
+              title="Create New Sale"
             >
-              <Plus className="w-4 h-4" />
-              <span className="text-[10px] hidden xs:inline">New</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>NEW SALE</span>
             </button>
           </div>
         </div>,

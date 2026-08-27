@@ -1,3 +1,5 @@
+
+// src/pages/sales/utils/barcodePdfHelper.ts
 import JsBarcode from 'jsbarcode';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
@@ -49,7 +51,7 @@ export interface PrintableItem {
 
 export const MM_TO_POINTS = 2.83465;
 
-// Hardcoded standard Letter paper dimension coordinates: 8.5" x 11" (215.9mm x 279.4mm)
+// Hardcoded standard Letter paper dimension: 8.5" x 11" (215.9mm x 279.4mm)
 export const LETTER_PAPER = { width: 215.9, height: 279.4, name: 'Letter (8.5" x 11")' };
 
 export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
@@ -159,15 +161,19 @@ export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
   },
 };
 
-export const generateBarcodeDataUrl = (value: string, options: { width: number; height: number; margin: number }): string => {
+// Generates high-resolution binary barcode images with integer module widths and standard quiet zones
+export const generateBarcodeDataUrl = (
+  value: string, 
+  options: { width?: number; height?: number; margin?: number } = {}
+): string => {
   const canvas = document.createElement('canvas');
   try {
     JsBarcode(canvas, value, {
       format: 'CODE128',
-      width: options.width,
-      height: options.height,
+      width: Math.max(2, Math.round(options.width || 2)), // Strict integer module width (min 2px)
+      height: Math.max(40, options.height || 50),
       displayValue: false,
-      margin: options.margin,
+      margin: options.margin ?? 10, // Standard 10X quiet zone (ISO/IEC 15417)
       background: '#ffffff',
       lineColor: '#000000',
     });
@@ -178,7 +184,7 @@ export const generateBarcodeDataUrl = (value: string, options: { width: number; 
   }
 };
 
-// Generates high-resolution PDF document bytes
+// Generates high-resolution PDF document bytes without horizontal distortion
 export const generatePdfFile = async (
   items: PrintableItem[],
   settings: BarcodeSettingsState
@@ -235,13 +241,13 @@ export const generatePdfFile = async (
         y,
         width,
         height,
-        borderColor: rgb(0.4, 0.45, 0.5), 
+        borderColor: rgb(0.75, 0.8, 0.85), 
         borderWidth: 0.5,
         borderDashArray: [2, 2],
       });
 
-      // 1. CALCULATE BOTTOM TEXT ZONE BOUNDS (Price & Barcode Text)
-      let yPaddingBottom = isSmallLabel ? 1.5 : 3.0;
+      // 1. Calculate Bottom Text Zone
+      let yPaddingBottom = isSmallLabel ? 2.0 : 3.0;
       let yPrice = y + yPaddingBottom;
       
       if (settings.showPrice) {
@@ -254,24 +260,24 @@ export const generatePdfFile = async (
         yPaddingBottom += barcodeTextSize + (isSmallLabel ? 1.0 : 2.0);
       }
       
-      const barcodeMinY = y + yPaddingBottom; // Bottom bounds limit for the barcode image
+      const barcodeMinY = y + yPaddingBottom;
 
-      // 2. CALCULATE TOP TEXT ZONE BOUNDS (Product Name)
-      let yPaddingTop = isSmallLabel ? 1.5 : 3.0;
+      // 2. Calculate Top Text Zone
+      let yPaddingTop = isSmallLabel ? 2.0 : 3.0;
       let yProductName = y + height - yPaddingTop - productNameSize;
       
       if (settings.showProductName) {
         yPaddingTop += productNameSize + (isSmallLabel ? 1.0 : 2.0);
       }
       
-      const barcodeMaxY = y + height - yPaddingTop; // Top bounds limit for the barcode image
+      const barcodeMaxY = y + height - yPaddingTop;
 
-      // 3. RENDER THE BARCODE IMAGE CENTRED WITHIN THE REMAINING MIDDLE SPACE
+      // 3. Render Barcode with Strict Aspect Ratio Preservation
       const availableHeight = barcodeMaxY - barcodeMinY;
       const barcodeDataUrl = generateBarcodeDataUrl(labelItem.barcode_id, {
-        width: settings.barcodeWidth,
-        height: settings.barcodeHeight,
-        margin: settings.margin,
+        width: 2, // Integer module width
+        height: 50,
+        margin: 10, // 10X quiet zone
       });
 
       if (barcodeDataUrl && availableHeight > 5) {
@@ -279,23 +285,31 @@ export const generatePdfFile = async (
         const imageBytes = await response.arrayBuffer();
         const image = await doc.embedPng(imageBytes);
         
-        // Scale the barcode image to occupy up to 60% of the middle zone height
-        const maxImgHeight = Math.min(availableHeight, height * 0.60);
-        const imgHeight = Math.max(isSmallLabel ? 6 : 10, maxImgHeight);
+        // Scale preserving aspect ratio without stretching/squishing module bars
+        const imgAspect = image.width / image.height;
+        const maxAllowedWidth = width * 0.90;
+        const maxAllowedHeight = Math.min(availableHeight, height * 0.65);
         
-        const imgWidth = width * 0.90;
-        const imgX = x + (width - imgWidth) / 2;
-        const imgY = barcodeMinY + (availableHeight - imgHeight) / 2;
+        let drawWidth = maxAllowedWidth;
+        let drawHeight = drawWidth / imgAspect;
+
+        if (drawHeight > maxAllowedHeight) {
+          drawHeight = maxAllowedHeight;
+          drawWidth = drawHeight * imgAspect;
+        }
+
+        const imgX = x + (width - drawWidth) / 2;
+        const imgY = barcodeMinY + (availableHeight - drawHeight) / 2;
 
         page.drawImage(image, {
           x: imgX,
           y: imgY,
-          width: imgWidth,
-          height: imgHeight,
+          width: drawWidth,
+          height: drawHeight,
         });
       }
 
-      // 4. DRAW TEXTS
+      // 4. Draw Texts
       if (settings.showProductName) {
         const truncatedName =
           labelItem.product_name.length > (isSmallLabel ? 20 : 25)
@@ -338,8 +352,7 @@ export const generatePdfFile = async (
     }
   }
 
-  const pdfBytes = await doc.save();
-  return pdfBytes;
+  return await doc.save();
 };
 
 export const triggerBrowserPrint = (printableElementId: string): void => {
@@ -391,7 +404,7 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
               page-break-after: always !important;
             }
             .print-label-item {
-              border: 1px dashed #64748b !important;
+              border: 1px dashed #cbd5e1 !important;
             }
           }
         </style>

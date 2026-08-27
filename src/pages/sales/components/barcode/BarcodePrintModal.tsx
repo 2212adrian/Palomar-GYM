@@ -1,3 +1,4 @@
+// src/pages/sales/components/barcode/BarcodePrintModal.tsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { 
@@ -29,15 +30,14 @@ const DEFAULT_SETTINGS: BarcodeSettingsState = {
   showProductName: true,
   showPrice: true,
   showBarcodeText: true,
-  barcodeWidth: 1.35, 
-  barcodeHeight: 35,  
+  barcodeWidth: 2,    // Integer module width (prevents 1px/2px subpixel jitter)
+  barcodeHeight: 40,  // Standard scan height
   fontSize: 10,
-  margin: 3,
+  margin: 10,         // Standard 10X quiet zone
   gapBetweenLabels: 2,
   zoom: 100,
 };
 
-// Converts Uint8Array or ArrayBuffer to Base64
 const arrayBufferToBase64 = (buffer: ArrayBuffer | Uint8Array): string => {
   let binary = '';
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -59,7 +59,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   const [generating, setGenerating] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'configure' | 'preview'>('configure');
 
-  // Toggle portal body class to hide the bottom navbar across the application while active
   useEffect(() => {
     document.body.classList.add('print-portal-open');
     return () => {
@@ -67,11 +66,9 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     };
   }, []);
 
-  // Accordion Expand States: Both default strictly to collapsed (false) on all viewports
   const [isLayoutPresetOpen, setIsLayoutPresetOpen] = useState(false);
   const [isDisplayParamsOpen, setIsDisplayParamsOpen] = useState(false);
 
-  // Unselect all items upon closing modal
   const handleCloseModal = () => {
     setSelectedIds([]);
     onClose();
@@ -102,27 +99,21 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   const template = LABEL_TEMPLATES[settings.templateId];
   const totalPagesRequired = Math.ceil(expandedItemsList.length / template.labelsPerPage) || 1;
 
-  // Proportional layout calculations
   const isSmallLabel = template.labelHeight < 22;
-
-  // Convert label height in mm directly to on-screen pixels for the preview
   const labelHeightPx = template.labelHeight * 3.78;
 
-  // Calculate dynamic space for barcode bars
   const nameSpacing = settings.showProductName ? 16 : 0;
   const bottomSpacing = (settings.showBarcodeText ? 12 : 0) + (settings.showPrice ? 14 : 0);
   const availableSvgHeight = labelHeightPx - nameSpacing - bottomSpacing - 12;
 
-  const targetHeight = Math.min(availableSvgHeight, labelHeightPx * 0.50);
-  const svgHeight = Math.max(10, Math.floor(targetHeight));
-  const svgMargin = isSmallLabel ? 2 : 3;
+  const targetHeight = Math.min(availableSvgHeight, labelHeightPx * 0.55);
+  const svgHeight = Math.max(18, Math.floor(targetHeight));
+  const svgMargin = isSmallLabel ? 6 : 10;
 
-  // Zoom factor scaling
   const zoomFactor = settings.zoom / 100;
   const scaledWidthMm = LETTER_PAPER.width * zoomFactor;
   const scaledHeightMm = (LETTER_PAPER.height * totalPagesRequired) * zoomFactor + (24 * totalPagesRequired * zoomFactor);
 
-  // PDF DOWNLOAD HANDLER (Capacitor Mobile Save/Share vs Web Browser saveAs)
   const handleDownload = async () => {
     if (printableItemsList.length === 0) {
       toast.error('Please select at least one item to print.');
@@ -156,13 +147,11 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
         return;
       }
 
-      // Web Browser download
       const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       try {
         saveAs(pdfBlob, fileName);
         toast.success('Barcode PDF downloaded successfully!');
-      } catch (saveErr) {
-        console.warn('saveAs fallback triggered:', saveErr);
+      } catch {
         const link = document.createElement('a');
         link.href = URL.createObjectURL(pdfBlob);
         link.download = fileName;
@@ -189,7 +178,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     }
   };
 
-  // PRINT HANDLER (Capacitor Native Mobile Share/Print vs Web Browser iFrame Print)
   const handlePrint = async () => {
     if (printableItemsList.length === 0) {
       toast.error('Please select at least one item to print.');
@@ -237,7 +225,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
       return;
     }
 
-    // Web Browser Desktop Print
     triggerBrowserPrint('barcode-printable-area');
   };
 
@@ -301,7 +288,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             {/* Selection Drawer */}
             <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col shrink-0">
               
-              {/* SELECT ITEMS TOOLBAR HEADER */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-1.5">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -312,7 +298,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                   </span>
                 </div>
 
-                {/* REDESIGNED ACTION BUTTONS */}
                 <div className="flex items-center gap-1 flex-wrap">
                   <button
                     type="button"
@@ -347,7 +332,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 />
               </div>
 
-              {/* PRODUCT SELECTION LIST WITH CUTOFF PADDING FIX */}
               <div className="overflow-y-auto no-scrollbar space-y-1.5 p-1 max-h-52 sm:max-h-60 flex-1 min-w-0">
                 {filteredProducts.map(product => {
                   const isSelected = selectedIds.includes(product.id);
@@ -388,7 +372,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsLayoutPresetOpen(!isLayoutPresetOpen)}
-                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
+                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left"
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <Settings className="w-3.5 h-3.5 text-blue-500" />
@@ -426,7 +410,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDisplayParamsOpen(!isDisplayParamsOpen)}
-                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left border-none"
+                className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl cursor-pointer text-left"
               >
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <Sliders className="w-3.5 h-3.5 text-blue-500" />
@@ -491,7 +475,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
           </div>
 
-          {/* Desktop Action Row Panel */}
           <div className="hidden md:block pt-4 mt-auto border-t border-(--border-color) shrink-0">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -531,7 +514,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
           activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
         }`}>
           
-          {/* Zoom floating toolbar */}
           <div className="absolute top-4 right-4 z-10 animate-fade-in">
             <div className="bg-[var(--bg-input)] border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
               <button 
@@ -562,7 +544,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             </div>
           </div>
 
-          {/* Live Page Layout Sheet */}
           <div className="flex-1 flex flex-col h-full bg-[var(--bg-card)] rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs">
             <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
               <div className="text-left">
@@ -640,8 +621,13 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                                   {item.product_name}
                                 </span>
                               )}
-                              <div className="w-full flex justify-center py-0.5 max-h-[45%] overflow-hidden shrink-0">
-                                <BarcodeComponent value={item.barcode_id} height={svgHeight} margin={svgMargin} />
+                              <div className="w-full flex justify-center py-0.5 max-h-[50%] overflow-hidden shrink-0">
+                                <BarcodeComponent 
+                                  value={item.barcode_id} 
+                                  width={2} 
+                                  height={svgHeight} 
+                                  margin={svgMargin} 
+                                />
                               </div>
                               <div className="flex flex-col items-center leading-none mt-auto">
                                 {settings.showBarcodeText && (
@@ -676,7 +662,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
       </div>
 
-      {/* MOBILE PERSISTENT BOTTOM ACTION BAR (VISIPLE IN BOTH CONFIGURE & LAYOUT PREVIEW TABS) */}
+      {/* MOBILE PERSISTENT BOTTOM ACTION BAR */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-[var(--bg-card)]/95 backdrop-blur-md border-t border-(--border-color) z-[200] shadow-2xl">
         <div className="grid grid-cols-2 gap-2">
           <button

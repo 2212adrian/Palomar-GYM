@@ -1,74 +1,115 @@
-  // src/components/layouts/Navbar.tsx
-  import React from 'react';
-  import { Link, useLocation } from 'react-router-dom';
-  import { ShoppingBag, ClipboardList, Scan, Target } from 'lucide-react';
+// src/components/layouts/Navbar.tsx
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { ShoppingBag, ClipboardList, Scan, Target } from 'lucide-react';
 
-  export const Navbar: React.FC = () => {
-    const location = useLocation();
+export const Navbar: React.FC = () => {
+  const location = useLocation();
 
-     const getActiveColor = (pathStartsWith: string, exact: boolean = false) => {
-      const isActive = exact 
-        ? location.pathname === pathStartsWith 
-        : location.pathname.startsWith(pathStartsWith);
-      return isActive 
-        ? 'text-[var(--color-primary)] font-bold' 
-        : 'text-slate-500 dark:text-slate-400';
-    };
+  const isScannerActive = location.pathname.startsWith('/scanner');
 
-    return (
-      /* 
-        Responsive Layout styling:
-        - Light Mode: Thin dark blue top accent line (border-[#123c73]/30) with upper glow drop shadow.
-        - Dark Mode (dark:): Thin neon-red glowing top border (border-red-500/40) with upper glow drop shadow.
-      */
-      <nav className="fixed bottom-0 left-0 right-0 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-(--bg-card)/95 border-t border-[#123c73]/30 shadow-[0_-2px_12px_rgba(18,60,115,0.12)] grid lg:hidden grid-cols-5 items-center px-4 z-200 transition-all duration-300 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-115 md:h-16 md:pb-0 md:rounded-2xl md:border md:border-[#123c73]/40 md:shadow-2xl md:shadow-blue-900/10 dark:border-t dark:border-red-500/40 dark:shadow-[0_-2px_12px_rgba(239,68,68,0.18)] dark:md:border dark:md:border-red-500/50 dark:md:shadow-red-950/40">
-        
-        {/* 1. Sales (Left side - occupies 1 column) */}
-        <Link 
-        to="/sales" 
-        className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/sales', true)}`}
+  const checkIsActive = (path: string, exact: boolean = false) =>
+    exact ? location.pathname === path : location.pathname.startsWith(path);
+
+  return (
+    <>
+      {/* =========================================================
+          MOBILE & TABLET NAVBAR
+          - Mobile (<768px): Full-width bottom dock
+          - Tablet (768px - 1023px): Centered floating pill
+         ========================================================= */}
+      <div className="lg:hidden fixed z-[200] transition-all duration-300
+        /* Mobile: Sticky bottom attached dock */
+        bottom-0 left-0 right-0 w-full pb-[env(safe-area-inset-bottom)] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800/80 shadow-lg
+        /* Tablet: Centered floating pill */
+        md:bottom-5 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-[440px] md:max-w-[calc(100vw-2rem)] md:pb-0 md:rounded-full md:border md:border-slate-200 dark:md:border-zinc-800 md:shadow-2xl"
       >
-        <ShoppingBag className="w-4.5 h-4.5" />
-        <span className="text-[9px] font-heading tracking-widest uppercase">Sales</span>
-      </Link>
-
-        {/* 2. Logbook (Left side - occupies 1 column) */}
-        <Link 
-          to="/logbook" 
-          className={`flex flex-col items-center gap-1 col-span-1 justify-center transition-all ${getActiveColor('/logbook')}`}
-        >
-          <ClipboardList className="w-4.5 h-4.5" />
-          <span className="text-[9px] font-heading tracking-widest uppercase">Logbook</span>
-        </Link>
-
-        {/* 3. Floating Scanner */}
-        <div className="relative -top-4 col-span-1 flex justify-center">
-          {/* Outer thin ring container adapts border and shadow to theme setting */}
-          <div className="w-15 h-15 rounded-full border border-[#123c73]/30 dark:border-red-500/40 bg-[var(--bg-card)] flex items-center justify-center p-0.5 shadow-[0_0_12px_rgba(18,60,115,0.15)] dark:shadow-[0_0_12px_rgba(239,68,68,0.22)]">
-            <Link 
-              to="/scanner" 
-              aria-label="Scan QR Code"
-              title="Scan QR Code"
-              className="w-12 h-12 bg-[#123c73] hover:bg-[#0c2950] dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-full flex items-center justify-center active:scale-95 transition-all relative group shadow-[0_0_10px_rgba(18,60,115,0.25)] dark:shadow-[0_0_10px_rgba(239,68,68,0.45)]"
+        <nav className="relative h-16 w-full flex items-center justify-between px-3">
+          
+          {/* LEFT WING (50% width): Holds Sales & Logbook evenly spaced */}
+          <div className="w-1/2 flex items-center justify-around pr-7">
+            <Link
+              to="/sales"
+              className={`flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-95 ${
+                checkIsActive('/sales', true)
+                  ? 'text-[var(--color-primary)] font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
             >
-              {/* Ambient outer pulsing shadow halo */}
-              <span className="absolute -inset-1 rounded-full bg-[#123c73] dark:bg-red-500 opacity-20 group-hover:opacity-35 blur-xs transition-opacity animate-pulse" />
-              
-              {/* Scanning icon element */}
-              <Scan className="w-5 h-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
+              <ShoppingBag className="w-5 h-5" />
+              <span className="text-[10px] font-heading tracking-wider uppercase leading-none">
+                Sales
+              </span>
+            </Link>
+
+            <Link
+              to="/logbook"
+              className={`flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-95 ${
+                checkIsActive('/logbook')
+                  ? 'text-[var(--color-primary)] font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <ClipboardList className="w-5 h-5" />
+              <span className="text-[10px] font-heading tracking-wider uppercase leading-none">
+                Logbook
+              </span>
             </Link>
           </div>
-        </div>
 
-       {/* 4. Subscription (Right side - linked to Member Directory & Subscriptions) */}
-        <Link 
-          to="/members/plans" 
-          className={`flex flex-col items-center gap-1 col-span-2 justify-center transition-all ${getActiveColor('/members/plans')}`}
+          {/* EXACT DEAD CENTER: QR Scanner Button */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-3.5 z-10">
+            <Link
+              to="/scanner"
+              aria-label="Scan QR Code"
+              title="Scan QR Code / Barcode"
+              className={`flex items-center justify-center w-13 h-13 rounded-full transition-all duration-200 active:scale-90 border-4 border-white dark:border-zinc-900 shadow-md ${
+                isScannerActive
+                  ? 'bg-blue-600 dark:bg-red-600 text-white shadow-blue-500/30 dark:shadow-red-500/30 scale-105'
+                  : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-red-600 dark:hover:bg-red-700 text-white shadow-slate-950/20'
+              }`}
+            >
+              <Scan className={`w-6 h-6 transition-transform duration-200 ${isScannerActive ? 'rotate-90 text-emerald-300' : ''}`} />
+            </Link>
+          </div>
+
+          {/* RIGHT WING (50% width): Holds Subscription centered on its own */}
+          <div className="w-1/2 flex items-center justify-center pl-7">
+            <Link
+              to="/members/plans"
+              className={`flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-95 ${
+                checkIsActive('/members/plans')
+                  ? 'text-[var(--color-primary)] font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Target className="w-5 h-5" />
+              <span className="text-[10px] font-heading tracking-wider uppercase leading-none">
+                Subscription
+              </span>
+            </Link>
+          </div>
+
+        </nav>
+      </div>
+
+      {/* =========================================================
+          DESKTOP FLOATING SCANNER BUTTON (>= 1024px)
+         ========================================================= */}
+      <div className="fixed bottom-8 right-8 z-[200] hidden lg:block">
+        <Link
+          to="/scanner"
+          aria-label="Scan QR Code"
+          title="Scan QR Code / Barcode"
+          className={`flex items-center justify-center w-14 h-14 rounded-full transition-all duration-200 active:scale-90 border-2 shadow-lg cursor-pointer ${
+            isScannerActive
+              ? 'bg-[#123c73] dark:bg-red-600 text-emerald-400 border-blue-400 dark:border-red-400 shadow-blue-900/20'
+              : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-red-600 dark:hover:bg-red-700 text-white border-white/20 hover:scale-105'
+          }`}
         >
-          <Target className="w-4.5 h-4.5" />
-          <span className="text-[9px] font-heading tracking-widest uppercase">Subscription</span>
+          <Scan className="w-6 h-6" />
         </Link>
-
-      </nav>
-    );
-  };
+      </div>
+    </>
+  );
+};

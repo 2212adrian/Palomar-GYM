@@ -11,7 +11,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_method_enum') THEN
-        CREATE TYPE public.payment_method_enum AS ENUM ('Cash', 'GCash', 'Card', 'Bank Transfer', 'Other');
+        CREATE TYPE public.payment_method_enum AS ENUM ('Cash', 'GCash', 'Promo');
     END IF;
 END $do$;
 
