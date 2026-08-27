@@ -102,6 +102,8 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
 
       try {
         const cleanCode = scannedCode.trim().toUpperCase();
+
+        // 1. Check Pre-Registration Ticket
         if (cleanCode.startsWith('REG-') || cleanCode.includes('REG-')) {
           const { data: regData } = await supabase
             .from('online_registrations')
@@ -124,6 +126,30 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             return;
           }
         }
+
+        // 2. Check Official Receipt (REC-XXXXXXXXXX)
+        let resolvedReceiptMemberId: string | null = null;
+        if (cleanCode.startsWith('REC-') || cleanCode.startsWith('REC')) {
+          const { data: subData } = await supabase
+            .from('subscriptions')
+            .select('member_id')
+            .or(`receipt_number.ilike.${cleanCode},id.ilike.${cleanCode}`)
+            .maybeSingle();
+
+          if (subData?.member_id) {
+            resolvedReceiptMemberId = subData.member_id;
+          } else {
+            const { data: recData } = await supabase
+              .from('receipts')
+              .select('member_id')
+              .eq('id', cleanCode)
+              .maybeSingle();
+
+            if (recData?.member_id) {
+              resolvedReceiptMemberId = recData.member_id;
+            }
+          }
+        }
       
         const [allCards, allMembers, allSubscriptions] = await Promise.all([
           cardService.getAll(),
@@ -138,7 +164,11 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
           c.card_number.toLowerCase() === memberIdPart.toLowerCase()
         );
 
-        const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
+        const targetMemberId = resolvedReceiptMemberId 
+          ? resolvedReceiptMemberId 
+          : cardMatch 
+          ? cardMatch.member_id 
+          : memberIdPart;
 
         const member = allMembers.find((m: Member) => 
           m.member_id.toLowerCase() === targetMemberId.toLowerCase() ||
@@ -187,7 +217,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             memberId: member.member_id,
             fullName: member.full_name,
             phone: member.phone || '',
-            avatarUrl: member.avatar_url || null,
+            avatarUrl: member.avatar_url || (member as any).image_url || null,
             status: calculatedStatus,
             membershipPlan: planName,
             alreadyCheckedInToday: Boolean(todayAtt && todayAtt.length > 0)
@@ -276,7 +306,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
       {isLoading ? (
         <div className="py-8 text-center space-y-2">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Verifying Member Card...</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Verifying Receipt / Card...</p>
         </div>
       ) : memberData ? (
         <div className="space-y-4 pt-1">
@@ -406,7 +436,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-sm text-(--color-text) uppercase">
-              MEMBER CARD NOT FOUND
+              RECEIPT / MEMBER NOT FOUND
             </h3>
             <p className="text-xs text-slate-500 font-mono mt-1">"{scannedCode}"</p>
           </div>

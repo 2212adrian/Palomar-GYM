@@ -30,7 +30,8 @@ import {
   Camera,
   Check,
   Flashlight,
-  FlashlightOff
+  FlashlightOff,
+  Barcode as BarcodeIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
@@ -95,6 +96,9 @@ export const ScannerPage: React.FC = () => {
 
   // Overlay Visibility State
   const [isOpen, setIsOpen] = useState(true);
+
+  // Scan Mode: 'qr' (square reticle) vs 'barcode' (rectangle reticle)
+  const [scanMode, setScanMode] = useState<'qr' | 'barcode'>('qr');
 
   // Scanner State & Scan FX Animation State ('idle' | 'scanning' | 'success')
   const [manualCode, setManualCode] = useState('');
@@ -274,7 +278,7 @@ export const ScannerPage: React.FC = () => {
         }
       }
     } catch (err) {
-      toast.warn('Flashlight not supported on this device.');
+      toast.warn('Flashlight not supported on this device/camera.');
     }
   };
 
@@ -357,7 +361,6 @@ export const ScannerPage: React.FC = () => {
           toastId: `cart-scan-${scannedProduct.id}`
         });
       } else if (result.type === 'member' || result.type === 'registration') {
-        // Double check alreadyCheckedInToday strictly ignoring soft-deleted rows
         if (result.type === 'member' && result.member) {
           const todayDateStr = new Date().toISOString().split('T')[0];
           const { data: todayAtt } = await supabase
@@ -406,18 +409,21 @@ export const ScannerPage: React.FC = () => {
         return;
       }
 
+      const nativeFormats = scanMode === 'qr'
+        ? [BarcodeFormat.QrCode]
+        : [
+            BarcodeFormat.Code128,
+            BarcodeFormat.Code39,
+            BarcodeFormat.Code93,
+            BarcodeFormat.Ean13,
+            BarcodeFormat.Ean8,
+            BarcodeFormat.UpcA,
+            BarcodeFormat.UpcE,
+            BarcodeFormat.Itf
+          ];
+
       const { barcodes } = await BarcodeScanner.scan({
-        formats: [
-          BarcodeFormat.QrCode,
-          BarcodeFormat.Code128,
-          BarcodeFormat.Code39,
-          BarcodeFormat.Code93,
-          BarcodeFormat.Ean13,
-          BarcodeFormat.Ean8,
-          BarcodeFormat.UpcA,
-          BarcodeFormat.UpcE,
-          BarcodeFormat.Itf
-        ]
+        formats: nativeFormats
       });
 
       if (barcodes && barcodes.length > 0) {
@@ -434,7 +440,7 @@ export const ScannerPage: React.FC = () => {
     }
   };
 
-  // Web Camera Lifecycle
+  // Web Camera Lifecycle (restarts when camera or scanMode changes)
   useEffect(() => {
     if (Capacitor.isNativePlatform() || (scanResult && (scanResult.type === 'member' || scanResult.type === 'registration'))) {
       return;
@@ -461,21 +467,24 @@ export const ScannerPage: React.FC = () => {
       if (!readerElement) return;
 
       try {
+        const formatsToSupport = scanMode === 'qr'
+          ? [Html5QrcodeSupportedFormats.QR_CODE]
+          : [
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.CODE_93,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E,
+              Html5QrcodeSupportedFormats.ITF,
+            ];
+
         const scanner = new Html5Qrcode('hybrid-qr-reader', {
           verbose: false,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.CODE_93,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.ITF,
-          ],
+          formatsToSupport,
           experimentalFeatures: {
-            useBarCodeDetectorIfSupported: false
+            useBarCodeDetectorIfSupported: true // Dramatically increases mobile scan responsiveness
           }
         });
         qrScannerRef.current = scanner;
@@ -484,14 +493,29 @@ export const ScannerPage: React.FC = () => {
           ? { deviceId: { exact: selectedCameraId } }
           : { facingMode: 'environment' };
 
+        // Dynamic ROI / QrBox sizing based on mode
+        const qrboxFunction = (viewfinderWidth: number, viewfinderHeight: number) => {
+          if (scanMode === 'qr') {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const edgeSize = Math.floor(minEdge * 0.72);
+            return { width: edgeSize, height: edgeSize };
+          } else {
+            const width = Math.min(Math.floor(viewfinderWidth * 0.88), 380);
+            const height = Math.min(Math.floor(viewfinderHeight * 0.38), 160);
+            return { width, height };
+          }
+        };
+
         await scanner.start(
           cameraConfig,
           {
-            fps: 20,
+            fps: 25,
+            qrbox: qrboxFunction,
             videoConstraints: {
               ...cameraConfig,
-              width: { min: 640, ideal: 1280, max: 1920 },
-              height: { min: 480, ideal: 720, max: 1080 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'environment'
             }
           },
           async (decodedText) => {
@@ -532,7 +556,7 @@ export const ScannerPage: React.FC = () => {
       isMounted = false;
       stopCameraHardware();
     };
-  }, [selectedCameraId, scanResult?.type]);
+  }, [selectedCameraId, scanResult?.type, scanMode]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -698,7 +722,6 @@ export const ScannerPage: React.FC = () => {
 
     setIsSubmittingCheckIn(true);
     try {
-      // 1. Verify against active records (ignoring soft-deleted rows)
       const todayDateStr = new Date().toISOString().split('T')[0];
       const { data: existingActive } = await supabase
         .from('attendance')
@@ -715,7 +738,6 @@ export const ScannerPage: React.FC = () => {
         return;
       }
 
-      // 2. Insert into attendance table directly
       const { error: insertErr } = await supabase
         .from('attendance')
         .insert([{
@@ -735,7 +757,6 @@ export const ScannerPage: React.FC = () => {
 
       if (insertErr) throw insertErr;
 
-      // 3. Invalidate cached logbook sessions
       Object.keys(sessionStorage).forEach((key) => {
         if (key.startsWith('logbook_sanitized_')) {
           sessionStorage.removeItem(key);
@@ -804,7 +825,7 @@ export const ScannerPage: React.FC = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed inset-0 z-300 bg-slate-950/90 dark:bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
+            className="fixed inset-0 z-300 bg-slate-950/95 dark:bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
           >
             <div id="scanner-hidden-file-reader" className="hidden" aria-hidden="true" />
 
@@ -853,24 +874,38 @@ export const ScannerPage: React.FC = () => {
               initial={{ opacity: 0, y: -16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="w-full max-w-lg flex items-center justify-between px-3.5 py-2.5 bg-slate-900/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shrink-0 z-10"
+              className="w-full max-w-lg flex items-center justify-between px-3.5 py-2 bg-slate-900/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shrink-0 z-10"
             >
               <div className="flex items-center gap-2.5">
                 <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${
                   isCartMode 
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]' 
+                    : scanMode === 'barcode'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
                     : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
                 }`}>
-                  {isCartMode ? <ShoppingBag className="w-5 h-5" /> : <QrCode className="w-5 h-5" />}
+                  {isCartMode ? (
+                    <ShoppingBag className="w-5 h-5" />
+                  ) : scanMode === 'barcode' ? (
+                    <BarcodeIcon className="w-5 h-5" />
+                  ) : (
+                    <QrCode className="w-5 h-5" />
+                  )}
                 </div>
                 <div>
                   <h2 className="font-heading text-xs sm:text-sm text-white uppercase tracking-wider flex items-center gap-1.5 font-bold">
-                    {isCartMode ? 'PRODUCT CART SCANNER' : 'HYBRID SCANNER'}
+                    {isCartMode 
+                      ? 'PRODUCT CART SCANNER' 
+                      : scanMode === 'barcode' 
+                      ? 'BARCODE LASER SCANNER' 
+                      : 'QR CODE SCANNER'}
                   </h2>
-                  <p className="text-[10px] text-slate-400 font-medium">
+                  <p className="text-[10px] text-slate-400 font-medium truncate max-w-[200px] sm:max-w-[280px]">
                     {isCartMode
-                      ? `Cart Active (${productCart.reduce((s, i) => s + i.quantity, 0)} Items) • PR-XXXX & MFG Barcodes`
-                      : 'Scan Member QR, Pre-Reg, or Product Barcodes'}
+                      ? `Cart Active (${productCart.reduce((s, i) => s + i.quantity, 0)} Items) • PR-XXXX & MFG`
+                      : scanMode === 'barcode'
+                      ? 'Target 1D product barcodes in rectangular box'
+                      : 'Target Member QR or Pre-Reg in square box'}
                   </p>
                 </div>
               </div>
@@ -902,8 +937,37 @@ export const ScannerPage: React.FC = () => {
               </div>
             </motion.div>
 
+            {/* SCAN MODE TOGGLE BAR: QR vs. BARCODE */}
+            <div className="w-full max-w-xs mt-2 mb-1 flex items-center p-1 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-lg z-10">
+              <button
+                type="button"
+                onClick={() => setScanMode('qr')}
+                className={`flex-1 py-1.5 px-3 rounded-xl text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  scanMode === 'qr'
+                    ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>QR CODE</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScanMode('barcode')}
+                className={`flex-1 py-1.5 px-3 rounded-xl text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  scanMode === 'barcode'
+                    ? 'bg-amber-400 text-black shadow-md shadow-amber-400/30'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <BarcodeIcon className="w-3.5 h-3.5" />
+                <span>BARCODE</span>
+              </button>
+            </div>
+
             {/* CENTER VIEWPORT */}
-            <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-2 gap-3">
+            <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-1 gap-3">
               <motion.div 
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -912,8 +976,8 @@ export const ScannerPage: React.FC = () => {
                   scale: 1,
                   boxShadow: scanFeedback === 'success' 
                     ? '0 0 50px rgba(16, 185, 129, 0.5)' 
-                    : isCartMode 
-                    ? '0 0 40px rgba(16, 185, 129, 0.25)' 
+                    : scanMode === 'barcode'
+                    ? '0 0 40px rgba(245, 158, 11, 0.25)'
                     : '0 0 40px rgba(6, 182, 212, 0.25)'
                 }}
                 transition={{ 
@@ -927,8 +991,8 @@ export const ScannerPage: React.FC = () => {
                 } ${
                   scanFeedback === 'success'
                     ? 'border-emerald-400 ring-4 ring-emerald-500/30'
-                    : isCartMode 
-                    ? 'border-emerald-500/60' 
+                    : scanMode === 'barcode'
+                    ? 'border-amber-500/60'
                     : 'border-cyan-500/60'
                 }`}
               >
@@ -939,10 +1003,10 @@ export const ScannerPage: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                        ML Kit Laser Scanner
+                        {scanMode === 'barcode' ? 'ML Kit Barcode Laser' : 'ML Kit QR Scanner'}
                       </h3>
                       <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
-                        Instant hardware barcode & QR scan.
+                        Instant hardware barcode & QR detection.
                       </p>
                     </div>
                     <Button
@@ -952,59 +1016,82 @@ export const ScannerPage: React.FC = () => {
                       className="px-5 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center gap-1.5 cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl"
                     >
                       <Zap className="w-4 h-4" />
-                      <span>Scan Code</span>
+                      <span>Scan {scanMode === 'barcode' ? 'Barcode' : 'QR Code'}</span>
                     </Button>
                   </div>
                 ) : (
                   <>
                     <div id="hybrid-qr-reader" className="w-full h-full" />
 
-                    {/* Reticle HUD Overlay */}
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-                      <div className="w-full h-[75%] relative rounded-2xl flex items-center justify-center border border-white/10">
-                        <div className={`absolute -top-1 -left-1 w-7 h-7 border-t-[3.5px] border-l-[3.5px] rounded-tl-xl transition-colors duration-300 ${
-                          scanFeedback === 'success' ? 'border-emerald-400' : isCartMode ? 'border-emerald-400' : 'border-cyan-400'
+                    {/* DYNAMIC RETICLE HUD OVERLAY: SQUARE (QR) vs. RECTANGLE (BARCODE) */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                      <motion.div 
+                        layout
+                        initial={false}
+                        animate={{
+                          width: scanMode === 'qr' ? '220px' : '90%',
+                          height: scanMode === 'qr' ? '220px' : '110px',
+                          borderRadius: scanMode === 'qr' ? '24px' : '16px'
+                        }}
+                        transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                        className="relative flex items-center justify-center border border-white/15"
+                      >
+                        {/* 4 Corners */}
+                        <div className={`absolute -top-1 -left-1 w-6 h-6 border-t-[3.5px] border-l-[3.5px] rounded-tl-xl transition-colors duration-300 ${
+                          scanFeedback === 'success' ? 'border-emerald-400' : scanMode === 'barcode' ? 'border-amber-400' : 'border-cyan-400'
                         }`} />
-                        <div className={`absolute -top-1 -right-1 w-7 h-7 border-t-[3.5px] border-r-[3.5px] rounded-tr-xl transition-colors duration-300 ${
-                          scanFeedback === 'success' ? 'border-emerald-400' : isCartMode ? 'border-emerald-400' : 'border-cyan-400'
+                        <div className={`absolute -top-1 -right-1 w-6 h-6 border-t-[3.5px] border-r-[3.5px] rounded-tr-xl transition-colors duration-300 ${
+                          scanFeedback === 'success' ? 'border-emerald-400' : scanMode === 'barcode' ? 'border-amber-400' : 'border-cyan-400'
                         }`} />
-                        <div className={`absolute -bottom-1 -left-1 w-7 h-7 border-b-[3.5px] border-l-[3.5px] rounded-bl-xl transition-colors duration-300 ${
-                          scanFeedback === 'success' ? 'border-emerald-400' : isCartMode ? 'border-emerald-400' : 'border-cyan-400'
+                        <div className={`absolute -bottom-1 -left-1 w-6 h-6 border-b-[3.5px] border-l-[3.5px] rounded-bl-xl transition-colors duration-300 ${
+                          scanFeedback === 'success' ? 'border-emerald-400' : scanMode === 'barcode' ? 'border-amber-400' : 'border-cyan-400'
                         }`} />
-                        <div className={`absolute -bottom-1 -right-1 w-7 h-7 border-b-[3.5px] border-r-[3.5px] rounded-br-xl transition-colors duration-300 ${
-                          scanFeedback === 'success' ? 'border-emerald-400' : isCartMode ? 'border-emerald-400' : 'border-cyan-400'
+                        <div className={`absolute -bottom-1 -right-1 w-6 h-6 border-b-[3.5px] border-r-[3.5px] rounded-br-xl transition-colors duration-300 ${
+                          scanFeedback === 'success' ? 'border-emerald-400' : scanMode === 'barcode' ? 'border-amber-400' : 'border-cyan-400'
                         }`} />
 
-                        <div className="w-8 h-8 relative opacity-30 flex items-center justify-center">
-                          <div className="w-full h-[1px] bg-white absolute" />
-                          <div className="h-full w-[1px] bg-white absolute" />
-                        </div>
+                        {/* Center Target Indicator */}
+                        {scanMode === 'qr' ? (
+                          <div className="w-8 h-8 relative opacity-35 flex items-center justify-center">
+                            <div className="w-full h-[1.5px] bg-cyan-300 absolute" />
+                            <div className="h-full w-[1.5px] bg-cyan-300 absolute" />
+                          </div>
+                        ) : (
+                          <div className="w-full h-[1px] bg-amber-400/25 absolute" />
+                        )}
 
+                        {/* Animated Laser Scanning Line */}
                         {scanFeedback !== 'success' && (
                           <motion.div 
                             animate={{ y: ['-110%', '110%'] }}
                             transition={{ 
                               repeat: Infinity, 
                               repeatType: 'reverse',
-                              duration: 1.5, 
+                              duration: scanMode === 'barcode' ? 1.0 : 1.6, 
                               ease: 'easeInOut' 
                             }}
                             className={`absolute left-2 right-2 h-0.5 rounded-full ${
-                              isCartMode 
-                                ? 'bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#34d399]' 
-                                : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_#22d3ee]'
+                              scanMode === 'barcode'
+                                ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_18px_#f59e0b]'
+                                : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_18px_#22d3ee]'
                             }`}
                           />
                         )}
-                      </div>
+                      </motion.div>
                     </div>
 
-                    {/* Camera Switcher */}
+                    {/* Camera Control Badges */}
                     {cameras.length > 0 && !isCartExpanded && (
                       <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
                         <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0">
-                          <span className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-amber-400 animate-ping' : isCartMode ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400 animate-pulse'}`} />
-                          <span>{isProcessing ? 'Processing...' : 'Ready'}</span>
+                          <span className={`w-2 h-2 rounded-full ${
+                            isProcessing 
+                              ? 'bg-amber-400 animate-ping' 
+                              : scanMode === 'barcode' 
+                              ? 'bg-amber-400 animate-pulse' 
+                              : 'bg-cyan-400 animate-pulse'
+                          }`} />
+                          <span>{isProcessing ? 'Processing...' : `${scanMode.toUpperCase()} Active`}</span>
                         </div>
 
                         <div className="pointer-events-auto flex items-center gap-1.5">
@@ -1158,7 +1245,13 @@ export const ScannerPage: React.FC = () => {
                   autoCapitalize="off"
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
-                  placeholder={isCartMode ? "ENTER PRODUCT BARCODE (PR-XXXX / MFG)..." : "ENTER REG-ID, MEMBER ID, PHONE, OR BARCODE..."}
+                  placeholder={
+                    isCartMode 
+                      ? "ENTER PRODUCT BARCODE (PR-XXXX / MFG)..." 
+                      : scanMode === 'barcode'
+                      ? "ENTER PRODUCT BARCODE / MFG ID..."
+                      : "ENTER REG-ID, MEMBER ID, OR PHONE..."
+                  }
                   className="w-full pl-10 pr-24 py-2.5 bg-zinc-900/90 backdrop-blur-xl border border-zinc-700/80 rounded-2xl text-[11px] sm:text-xs font-bold uppercase transition-all outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 text-white placeholder-zinc-400 shadow-xl"
                 />
                 <button

@@ -17,6 +17,7 @@ export interface HybridMemberResult {
   remainingDays: number;
   alreadyCheckedInToday: boolean;
   todayCheckInTime?: string;
+  receiptNumber?: string | null;
 }
 
 export interface HybridProductResult {
@@ -66,6 +67,11 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
     try {
       const parsed = JSON.parse(fullCode);
       fullCode = 
+        parsed.receipt_no ||
+        parsed.receiptNumber ||
+        parsed.receipt_number ||
+        parsed.receiptId ||
+        parsed.rec ||
         parsed.token ||
         parsed.security_token ||
         parsed.securityToken ||
@@ -83,11 +89,18 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
     }
   }
 
-  // 2. Unwrap URL if present (e.g. https://.../members/MEM-000015 or ?id=MEM-000015)
+  // 2. Unwrap URL if present (e.g. https://.../?rec=REC-10000000025 or /receipt/REC-10000000025)
   if (fullCode.startsWith('http://') || fullCode.startsWith('https://')) {
     try {
       const url = new URL(fullCode);
-      const queryId = url.searchParams.get('id') || url.searchParams.get('memberId') || url.searchParams.get('token');
+      const queryId = 
+        url.searchParams.get('rec') || 
+        url.searchParams.get('receipt') || 
+        url.searchParams.get('receipt_no') || 
+        url.searchParams.get('id') || 
+        url.searchParams.get('memberId') || 
+        url.searchParams.get('token');
+
       if (queryId) {
         fullCode = queryId;
       } else {
@@ -101,8 +114,12 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
 
   let memberIdPart = fullCode.trim();
 
-  // 3. Extract actual ID when prefixed (e.g., "MEMBER:MEM-000015" -> "MEM-000015")
-  if (fullCode.toUpperCase().startsWith('MFG:')) {
+  // 3. Extract actual ID when prefixed
+  if (fullCode.toUpperCase().startsWith('REC:')) {
+    memberIdPart = fullCode.substring(4).trim();
+  } else if (fullCode.toUpperCase().startsWith('RECEIPT:')) {
+    memberIdPart = fullCode.substring(8).trim();
+  } else if (fullCode.toUpperCase().startsWith('MFG:')) {
     memberIdPart = fullCode.substring(4).trim();
   } else if (fullCode.toUpperCase().startsWith('MFG-')) {
     memberIdPart = fullCode.substring(4).trim();
@@ -116,7 +133,6 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
     memberIdPart = fullCode.substring(4).trim();
   } else if (fullCode.includes(':')) {
     const parts = fullCode.split(':');
-    // Grab the value on the right of the colon, NOT the prefix
     memberIdPart = parts[parts.length - 1].trim();
   }
 
@@ -131,7 +147,47 @@ export const scannerService = {
     const searchIdUpper = memberIdPart.toUpperCase();
     const fullCodeUpper = fullCode.toUpperCase();
 
-    // 1. LOOKUP ONLINE LOBBY PRE-REGISTRATION TICKET (REG-XXXXXXXXX)
+    // 1. LOOKUP OFFICIAL SUBSCRIPTION RECEIPT / INVOICE (REC-XXXXXXXXXX)
+    let receiptMatchedMemberId: string | null = null;
+    let receiptNumberFound: string | null = null;
+
+    if (
+      searchIdUpper.startsWith('REC-') || 
+      fullCodeUpper.startsWith('REC-') || 
+      searchIdUpper.startsWith('REC') || 
+      fullCodeUpper.startsWith('REC')
+    ) {
+      const targetRec = searchIdUpper.startsWith('REC') ? searchIdUpper : fullCodeUpper;
+      try {
+        // A. Search Subscriptions by receipt_number or subscription id
+        const { data: subWithReceipt } = await supabase
+          .from('subscriptions')
+          .select('member_id, receipt_number')
+          .or(`receipt_number.ilike.${targetRec},id.ilike.${targetRec}`)
+          .maybeSingle();
+
+        if (subWithReceipt?.member_id) {
+          receiptMatchedMemberId = subWithReceipt.member_id;
+          receiptNumberFound = subWithReceipt.receipt_number || targetRec;
+        } else {
+          // B. Search Receipts table
+          const { data: receiptData } = await supabase
+            .from('receipts')
+            .select('id, member_id')
+            .eq('id', targetRec)
+            .maybeSingle();
+
+          if (receiptData?.member_id) {
+            receiptMatchedMemberId = receiptData.member_id;
+            receiptNumberFound = receiptData.id;
+          }
+        }
+      } catch (e) {
+        console.warn('Receipt lookup warning:', e);
+      }
+    }
+
+    // 2. LOOKUP ONLINE LOBBY PRE-REGISTRATION TICKET (REG-XXXXXXXXX)
     try {
       if (searchIdUpper.startsWith('REG-') || fullCodeUpper.startsWith('REG-')) {
         const { data: regData } = await supabase
@@ -153,7 +209,7 @@ export const scannerService = {
       console.warn('Online registration lookup warning:', e);
     }
 
-    // 2. LOOKUP MEMBER, CARDS, & SUBSCRIPTIONS
+    // 3. LOOKUP MEMBER, CARDS, & SUBSCRIPTIONS (including Receipt-Resolved Member IDs)
     try {
       const [allCards, allMembers, allSubscriptions] = await Promise.all([
         cardService.getAll(),
@@ -174,7 +230,11 @@ export const scannerService = {
         );
       });
 
-      const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
+      const targetMemberId = receiptMatchedMemberId 
+        ? receiptMatchedMemberId 
+        : cardMatch 
+        ? cardMatch.member_id 
+        : memberIdPart;
 
       const member = (allMembers || []).find((m: Member) => {
         const mId = (m.member_id || '').toLowerCase();
@@ -211,7 +271,7 @@ export const scannerService = {
         if (member.status === 'Suspended') {
           calculatedStatus = 'Suspended';
         } else if (activeSub) {
-          planName = activeSub.plan_name || 'Active Membership';
+          planName = activeSub.plan_name || (activeSub as any).plan_type ? `${(activeSub as any).plan_type.toUpperCase()} MEMBERSHIP` : 'Active Membership';
           startDateStr = new Date(activeSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           expDateStr = new Date(activeSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -248,14 +308,15 @@ export const scannerService = {
             fullName: member.full_name,
             phone: member.phone || '',
             email: member.email || '',
-            avatarUrl: member.avatar_url || null,
+            avatarUrl: member.avatar_url || (member as any).image_url || null,
             status: calculatedStatus,
             membershipPlan: planName,
             startDate: startDateStr,
             expDate: expDateStr,
             remainingDays,
             alreadyCheckedInToday,
-            todayCheckInTime: todayAtt?.[0]?.check_in_time
+            todayCheckInTime: todayAtt?.[0]?.check_in_time,
+            receiptNumber: receiptNumberFound || activeSub?.receipt_number || null
           }
         };
       }
@@ -263,7 +324,7 @@ export const scannerService = {
       console.warn('Member hybrid lookup warning:', e);
     }
 
-    // 3. FALLBACK: CHECK REGISTRATION WITHOUT "REG-" PREFIX
+    // 4. FALLBACK: CHECK REGISTRATION WITHOUT "REG-" PREFIX
     try {
       const { data: fallbackReg } = await supabase
         .from('online_registrations')
@@ -283,7 +344,7 @@ export const scannerService = {
       // ignore
     }
 
-    // 4. LOOKUP PRODUCT (PR-XXXX OR MANUFACTURER / OPEN FOOD FACTS BARCODE)
+    // 5. LOOKUP PRODUCT (PR-XXXX OR MANUFACTURER / OPEN FOOD FACTS BARCODE)
     try {
       const codeRaw = fullCode.trim();
       let cleanMfg = codeRaw;
@@ -327,7 +388,7 @@ export const scannerService = {
       console.warn('Product hybrid lookup warning:', e);
     }
 
-    // 5. UNKNOWN CODE
+    // 6. UNKNOWN CODE
     return {
       type: 'unknown',
       rawCode
