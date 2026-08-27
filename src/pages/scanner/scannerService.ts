@@ -10,7 +10,7 @@ export interface HybridMemberResult {
   phone: string;
   email?: string;
   avatarUrl?: string | null;
-  status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended';
+  status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended' | 'Scheduled' | 'Voided';
   membershipPlan: string;
   startDate: string;
   expDate: string;
@@ -18,6 +18,9 @@ export interface HybridMemberResult {
   alreadyCheckedInToday: boolean;
   todayCheckInTime?: string;
   receiptNumber?: string | null;
+  receiptType?: 'subscription' | 'walk_in' | 'sale';
+  receiptValidityNote?: string;
+  isSpecificReceiptScan?: boolean;
 }
 
 export interface HybridProductResult {
@@ -89,7 +92,7 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
     }
   }
 
-  // 2. Unwrap URL if present (e.g. https://.../?rec=REC-10000000025 or /receipt/REC-10000000025)
+  // 2. Unwrap URL if present (e.g. https://.../?rec=REC-10000000025)
   if (fullCode.startsWith('http://') || fullCode.startsWith('https://')) {
     try {
       const url = new URL(fullCode);
@@ -147,10 +150,9 @@ export const scannerService = {
     const searchIdUpper = memberIdPart.toUpperCase();
     const fullCodeUpper = fullCode.toUpperCase();
 
-    // 1. LOOKUP OFFICIAL SUBSCRIPTION RECEIPT / INVOICE (REC-XXXXXXXXXX)
-    let receiptMatchedMemberId: string | null = null;
-    let receiptNumberFound: string | null = null;
-
+    // =========================================================================
+    // 1. STRICT RECEIPT VALIDATION (REC-XXXXXXXXXX)
+    // =========================================================================
     if (
       searchIdUpper.startsWith('REC-') || 
       fullCodeUpper.startsWith('REC-') || 
@@ -159,35 +161,136 @@ export const scannerService = {
     ) {
       const targetRec = searchIdUpper.startsWith('REC') ? searchIdUpper : fullCodeUpper;
       try {
-        // A. Search Subscriptions by receipt_number or subscription id
-        const { data: subWithReceipt } = await supabase
+        // A. Search the SPECIFIC subscription generated for this receipt
+        const { data: subData } = await supabase
           .from('subscriptions')
-          .select('member_id, receipt_number')
+          .select('*, members(*)')
           .or(`receipt_number.ilike.${targetRec},id.ilike.${targetRec}`)
           .maybeSingle();
 
-        if (subWithReceipt?.member_id) {
-          receiptMatchedMemberId = subWithReceipt.member_id;
-          receiptNumberFound = subWithReceipt.receipt_number || targetRec;
-        } else {
-          // B. Search Receipts table
-          const { data: receiptData } = await supabase
-            .from('receipts')
-            .select('id, member_id')
-            .eq('id', targetRec)
-            .maybeSingle();
+        if (subData && subData.members) {
+          const member = subData.members;
+          const now = new Date();
+          const startDate = new Date(subData.start_date);
+          const endDate = new Date(subData.end_date);
 
-          if (receiptData?.member_id) {
-            receiptMatchedMemberId = receiptData.member_id;
-            receiptNumberFound = receiptData.id;
+          let calculatedStatus: HybridMemberResult['status'] = 'Active';
+          let validityNote = 'Valid subscription receipt.';
+
+          if (subData.status === 'Voided' || subData.voided_at) {
+            calculatedStatus = 'Voided';
+            validityNote = 'This subscription receipt has been VOIDED.';
+          } else if (member.status === 'Suspended') {
+            calculatedStatus = 'Suspended';
+            validityNote = 'Member account is currently SUSPENDED.';
+          } else if (now < startDate) {
+            // Future / Scheduled Plan (e.g. Starts next month)
+            calculatedStatus = 'Scheduled';
+            const daysUntilStart = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            validityNote = `Future Scheduled Plan: Starts on ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (in ${daysUntilStart} days).`;
+          } else if (now > endDate || subData.status === 'Expired') {
+            // Expired Plan attached to this specific receipt
+            calculatedStatus = 'Expired';
+            validityNote = `This receipt EXPIRED on ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. It cannot be reused.`;
+          } else {
+            // Currently Active validity window
+            const remainingDays = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            if (remainingDays <= 7) {
+              calculatedStatus = 'Expires Soon';
+            } else {
+              calculatedStatus = 'Active';
+            }
           }
+
+          const todayStr = new Date().toISOString().split('T')[0];
+          const { data: todayAtt } = await supabase
+            .from('attendance')
+            .select('check_in_time')
+            .is('deleted_at', null)
+            .eq('member_id', member.member_id)
+            .gte('check_in_time', `${todayStr}T00:00:00Z`)
+            .order('check_in_time', { ascending: false })
+            .limit(1);
+
+          const remainingDays = (calculatedStatus === 'Active' || calculatedStatus === 'Expires Soon')
+            ? Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+            : 0;
+
+          const planName = subData.plan_name 
+            || (subData.plan_type ? `${subData.plan_type.toUpperCase()} MEMBERSHIP` : 'Active Membership');
+
+          return {
+            type: 'member',
+            rawCode,
+            member: {
+              id: member.id,
+              memberId: member.member_id,
+              fullName: member.full_name,
+              phone: member.phone || '',
+              email: member.email || '',
+              avatarUrl: member.avatar_url || (member as any).image_url || null,
+              status: calculatedStatus,
+              membershipPlan: planName,
+              startDate: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              expDate: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              remainingDays,
+              alreadyCheckedInToday: Boolean(todayAtt && todayAtt.length > 0),
+              todayCheckInTime: todayAtt?.[0]?.check_in_time,
+              receiptNumber: subData.receipt_number || targetRec,
+              receiptType: 'subscription',
+              receiptValidityNote: validityNote,
+              isSpecificReceiptScan: true
+            }
+          };
+        }
+
+        // B. Search Invoices / Receipts table (e.g. Walk-in daily receipts)
+        const { data: receiptData } = await supabase
+          .from('receipts')
+          .select('*, members(*)')
+          .eq('id', targetRec)
+          .maybeSingle();
+
+        if (receiptData && receiptData.members) {
+          const member = receiptData.members;
+          const createdAt = new Date(receiptData.created_at);
+          const todayStr = new Date().toISOString().split('T')[0];
+          const receiptDateStr = createdAt.toISOString().split('T')[0];
+          const isToday = todayStr === receiptDateStr;
+
+          return {
+            type: 'member',
+            rawCode,
+            member: {
+              id: member.id,
+              memberId: member.member_id,
+              fullName: member.full_name,
+              phone: member.phone || '',
+              email: member.email || '',
+              avatarUrl: member.avatar_url || (member as any).image_url || null,
+              status: isToday ? 'Active' : 'Expired',
+              membershipPlan: receiptData.item_description || 'Receipt Entry',
+              startDate: createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              expDate: createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              remainingDays: isToday ? 1 : 0,
+              alreadyCheckedInToday: false,
+              receiptNumber: receiptData.id,
+              receiptType: 'walk_in',
+              receiptValidityNote: isToday 
+                ? 'Daily pass issued today.' 
+                : `Single walk-in pass EXPIRED (Issued on ${receiptDateStr}).`,
+              isSpecificReceiptScan: true
+            }
+          };
         }
       } catch (e) {
         console.warn('Receipt lookup warning:', e);
       }
     }
 
+    // =========================================================================
     // 2. LOOKUP ONLINE LOBBY PRE-REGISTRATION TICKET (REG-XXXXXXXXX)
+    // =========================================================================
     try {
       if (searchIdUpper.startsWith('REG-') || fullCodeUpper.startsWith('REG-')) {
         const { data: regData } = await supabase
@@ -209,7 +312,9 @@ export const scannerService = {
       console.warn('Online registration lookup warning:', e);
     }
 
-    // 3. LOOKUP MEMBER, CARDS, & SUBSCRIPTIONS (including Receipt-Resolved Member IDs)
+    // =========================================================================
+    // 3. LOOKUP MEMBER CARDS & MEMBER PROFILES (Direct Member ID / QR Card)
+    // =========================================================================
     try {
       const [allCards, allMembers, allSubscriptions] = await Promise.all([
         cardService.getAll(),
@@ -217,7 +322,6 @@ export const scannerService = {
         subscriptionService.getAll(),
       ]);
 
-      // Match card by card_number, token, security_token, qr_code, or id
       const cardMatch = (allCards || []).find((c: any) => {
         const cNum = (c.card_number || '').toLowerCase();
         const cTok = (c.security_token || c.token || c.card_token || c.qr_code || c.id || '').toLowerCase();
@@ -230,11 +334,7 @@ export const scannerService = {
         );
       });
 
-      const targetMemberId = receiptMatchedMemberId 
-        ? receiptMatchedMemberId 
-        : cardMatch 
-        ? cardMatch.member_id 
-        : memberIdPart;
+      const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
 
       const member = (allMembers || []).find((m: Member) => {
         const mId = (m.member_id || '').toLowerCase();
@@ -316,7 +416,8 @@ export const scannerService = {
             remainingDays,
             alreadyCheckedInToday,
             todayCheckInTime: todayAtt?.[0]?.check_in_time,
-            receiptNumber: receiptNumberFound || activeSub?.receipt_number || null
+            receiptNumber: activeSub?.receipt_number || null,
+            isSpecificReceiptScan: false
           }
         };
       }
@@ -324,7 +425,9 @@ export const scannerService = {
       console.warn('Member hybrid lookup warning:', e);
     }
 
-    // 4. FALLBACK: CHECK REGISTRATION WITHOUT "REG-" PREFIX
+    // =========================================================================
+    // 4. FALLBACK REGISTRATION
+    // =========================================================================
     try {
       const { data: fallbackReg } = await supabase
         .from('online_registrations')
@@ -344,7 +447,9 @@ export const scannerService = {
       // ignore
     }
 
-    // 5. LOOKUP PRODUCT (PR-XXXX OR MANUFACTURER / OPEN FOOD FACTS BARCODE)
+    // =========================================================================
+    // 5. LOOKUP PRODUCT (PR-XXXX OR MFG BARCODE)
+    // =========================================================================
     try {
       const codeRaw = fullCode.trim();
       let cleanMfg = codeRaw;

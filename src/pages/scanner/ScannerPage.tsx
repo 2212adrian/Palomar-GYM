@@ -1572,6 +1572,7 @@ export const ScannerPage: React.FC = () => {
                 {scanResult.type === 'member' && scanResult.member && (
                   <div className="pt-2">
                     <div className="flex flex-col sm:flex-row items-stretch gap-4">
+                      {/* MEMBER PHOTO & IDENTITY BADGE */}
                       <div 
                         onClick={() => {
                           if (scanResult.member?.avatarUrl) {
@@ -1610,22 +1611,50 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       </div>
 
+                      {/* MEMBER & RECEIPT DETAILS */}
                       <div className="flex-1 flex flex-col justify-between space-y-3 min-w-0">
-                        <div>
-                          <h3 className="font-heading text-lg font-black text-slate-900 dark:text-white uppercase tracking-wide leading-tight truncate">
-                            {scanResult.member.fullName}
-                          </h3>
-                          <p className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 truncate">
-                            {scanResult.member.memberId} {scanResult.member.phone ? `• ${scanResult.member.phone}` : ''}
-                          </p>
+                        <div className="space-y-2">
+                          <div>
+                            <h3 className="font-heading text-lg font-black text-slate-900 dark:text-white uppercase tracking-wide leading-tight truncate">
+                              {scanResult.member.fullName}
+                            </h3>
+                            <p className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 truncate">
+                              {scanResult.member.memberId} {scanResult.member.phone ? `• ${scanResult.member.phone}` : ''}
+                            </p>
+                          </div>
 
-                          <div className="flex items-center gap-1.5 flex-wrap pt-2">
+                          {/* SPECIFIC RECEIPT BINDING SECURITY BANNER */}
+                          {scanResult.member.isSpecificReceiptScan && (
+                            <div className={`p-2.5 rounded-xl border text-xs space-y-1 ${
+                              scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon'
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                                : scanResult.member.status === 'Scheduled'
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
+                                : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+                            }`}>
+                              <div className="flex items-center justify-between font-bold text-[10px] uppercase">
+                                <span className="flex items-center gap-1">
+                                  🧾 Receipt: {scanResult.member.receiptNumber}
+                                </span>
+                                <span className="font-mono">
+                                  {scanResult.member.startDate} – {scanResult.member.expDate}
+                                </span>
+                              </div>
+                              <p className="text-[11px] font-bold">
+                                {scanResult.member.receiptValidityNote}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* STATUS & PLAN PILLS */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${
                               scanResult.member.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' :
                               scanResult.member.status === 'Expires Soon' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
+                              scanResult.member.status === 'Scheduled' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30' :
                               'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
                             }`}>
-                              {scanResult.member.status}
+                              {scanResult.member.status === 'Scheduled' ? 'Scheduled (Future)' : scanResult.member.status}
                             </span>
 
                             <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-zinc-700 uppercase truncate">
@@ -1634,26 +1663,32 @@ export const ScannerPage: React.FC = () => {
                           </div>
                         </div>
 
+                        {/* DATES GRID */}
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5">
                             <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-cyan-500" /> Valid Until
+                              <Calendar className="w-3 h-3 text-cyan-500" />
+                              {scanResult.member.status === 'Scheduled' ? 'Starts On' : 'Valid Until'}
                             </span>
                             <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs block">
-                              {scanResult.member.expDate}
+                              {scanResult.member.status === 'Scheduled' ? scanResult.member.startDate : scanResult.member.expDate}
                             </span>
                           </div>
 
                           <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5">
                             <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-emerald-500" /> Remaining
+                              <Clock className="w-3 h-3 text-emerald-500" />
+                              {scanResult.member.status === 'Scheduled' ? 'Activation' : 'Remaining'}
                             </span>
-                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs block">
-                              {scanResult.member.remainingDays} Days Left
+                            <span className={`font-mono font-bold text-xs block ${
+                              scanResult.member.status === 'Scheduled' ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {scanResult.member.status === 'Scheduled' ? 'Future Plan' : `${scanResult.member.remainingDays} Days Left`}
                             </span>
                           </div>
                         </div>
 
+                        {/* ENTRY FEE SETTLEMENT (FOR YEARLY / WALK-IN PLANS) */}
                         {entryFee > 0 ? (
                           <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-xl space-y-2 text-left">
                             <div className="flex items-center justify-between">
@@ -1718,12 +1753,15 @@ export const ScannerPage: React.FC = () => {
                             </label>
                           </div>
                         ) : (
-                          <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center gap-1.5 font-bold text-[10px] uppercase">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <span>No Fee (Monthly Plan)</span>
-                          </div>
+                          scanResult.member.status === 'Active' && (
+                            <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center gap-1.5 font-bold text-[10px] uppercase">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span>No Fee (Monthly Plan)</span>
+                            </div>
+                          )
                         )}
 
+                        {/* DUPLICATE ATTENDANCE WARNING */}
                         {scanResult.member.alreadyCheckedInToday && (
                           <div className="p-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-xl flex items-center justify-between gap-2">
                             <span className="text-[10px] font-bold uppercase truncate">
@@ -1741,6 +1779,7 @@ export const ScannerPage: React.FC = () => {
                           </div>
                         )}
 
+                        {/* ACTION BUTTONS */}
                         {scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon' ? (
                           <div className="flex items-center gap-2 pt-2 mt-auto">
                             <Button
@@ -1770,6 +1809,29 @@ export const ScannerPage: React.FC = () => {
                                   ? 'Payment Req.'
                                   : 'Confirm Entry'}
                               </span>
+                            </Button>
+                          </div>
+                        ) : scanResult.member.status === 'Scheduled' ? (
+                          <div className="flex items-center gap-2 pt-2 mt-auto">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={handleScanAgain}
+                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                              <span>Scan Again</span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="primary"
+                              onClick={handleRedirectToAttendance}
+                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer bg-blue-600 hover:bg-blue-500"
+                              title="Process single entry walk-in today because this plan hasn't started yet"
+                            >
+                              <span className="whitespace-nowrap">Daily Walk-In</span>
+                              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                             </Button>
                           </div>
                         ) : (
