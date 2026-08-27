@@ -286,6 +286,7 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // Protected auto-navigation for already authenticated visits
   useEffect(() => {
     if (isPreview) return;
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
@@ -358,9 +359,9 @@ export const Login: React.FC = () => {
     return () => clearInterval(interval);
   }, [gymConfig, activeCarouselImages.length, isAssetPreloaded, isLoggingIn]);
 
-  // Parallax Effect - Robust multi-mount / refresh fix
+  // Parallax Effect
   useEffect(() => {
-    if (!initialized || !isReady || !isAssetPreloaded) return;
+    if (!initialized || !isReady || !isAssetPreloaded || isLoggingIn) return;
 
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
     if (isTouch) return;
@@ -428,7 +429,6 @@ export const Login: React.FC = () => {
     document.addEventListener('mouseenter', handleMouseEnter, { passive: true });
     document.addEventListener('mouseleave', handleMouseLeave, { passive: true });
 
-    // Kick-off animation loop on mount / refresh
     startAnimation();
 
     return () => {
@@ -440,7 +440,7 @@ export const Login: React.FC = () => {
         rafId.current = null;
       }
     };
-  }, [initialized, isReady, isAssetPreloaded]);
+  }, [initialized, isReady, isAssetPreloaded, isLoggingIn]);
 
   const triggerShake = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(true);
@@ -493,12 +493,22 @@ export const Login: React.FC = () => {
         ? data.usernameOrEmail.trim().toLowerCase()
         : `${data.usernameOrEmail.trim().toLowerCase()}@palomargym.noemail`;
 
+      // 1. Mark outro as active BEFORE invoking signInWithPassword so reactive state changes never flash the intermediate spinner
+      sessionStorage.setItem('outroActive', 'true');
+      sessionStorage.setItem('playDashboardIntro', 'true');
+
       const { error = null } = await supabase.auth.signInWithPassword({
         email: finalEmail,
         password: data.password,
       });
 
       if (error) throw error;
+
+      // 2. Trigger closing curtain animation across screen
+      setIsLoggingIn(true);
+      setTimeout(() => {
+        setCurtainClosing(true);
+      }, 20);
       
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
@@ -511,6 +521,11 @@ export const Login: React.FC = () => {
       const targetName = dbProfile?.full_name || loggedInUser?.email || data.usernameOrEmail;
 
       if (userStatus === 'inactive') {
+        sessionStorage.removeItem('outroActive');
+        sessionStorage.removeItem('playDashboardIntro');
+        setIsLoggingIn(false);
+        setCurtainClosing(false);
+
         await logAudit(
           'USER_LOGIN_FAILED',
           `Deactivated user "${targetName}" attempted to log in.`,
@@ -532,24 +547,20 @@ export const Login: React.FC = () => {
         toastId: 'login-success-toast',
       });
 
-      sessionStorage.setItem('outroActive', 'true');
-      sessionStorage.setItem('playDashboardIntro', 'true');
-      setIsLoggingIn(true);
-
-      // Trigger closing curtain animation across screen
-      setTimeout(() => {
-        setCurtainClosing(true);
-      }, 20);
-
       await checkSession();
 
+      // 3. Navigate smoothly once the curtain has completely swept and covered the screen
       setTimeout(() => {
         sessionStorage.removeItem('outroActive');
         const userProfile = (useAuthStore.getState() as any).profile;
         const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFrom;
         navigate(targetRoute, { replace: true });
-      }, 600);
+      }, 1500);
     } catch (err: any) {
+      sessionStorage.removeItem('outroActive');
+      sessionStorage.removeItem('playDashboardIntro');
+      setIsLoggingIn(false);
+      setCurtainClosing(false);
       toast.error(err.message || 'Invalid username, email, or password.');
       setLoginValue('password', '');
       triggerShake(setShakePassword);
@@ -825,22 +836,21 @@ export const Login: React.FC = () => {
     </div>
   );
 
-  // Exclude `user` when `isLoggingIn` is true to prevent quick unmount before curtain outro
-  if (!isPreview && (!initialized || (user && !isLoggingIn))) {
+  const isOutroActive = typeof window !== 'undefined' && sessionStorage.getItem('outroActive') === 'true';
+
+  // Exclude rendering the loading screen when outro curtain is actively transitioning
+  if (!isPreview && (!initialized || (user && !isLoggingIn && !isOutroActive))) {
     return (
       <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
-        {/* Ambient Radial Glow Orb */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/10 dark:bg-red-600/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
         
         <div className="relative z-10 flex flex-col items-center max-w-sm px-6 text-center space-y-5 animate-fade-in">
-          {/* Branded Gym Logo */}
           <img 
             src={activeLogo} 
             alt="Wolf Palomar Logo" 
             className="h-16 sm:h-20 object-contain drop-shadow-xl animate-pulse" 
           />
 
-          {/* Verification Spinner & Subtitle */}
           <div className="flex flex-col items-center space-y-3 pt-2">
             <div className="relative flex items-center justify-center">
               <div className="w-9 h-9 rounded-full border-2 border-blue-600/20 dark:border-red-600/20 border-t-blue-600 dark:border-t-red-600 animate-spin" />
@@ -941,9 +951,9 @@ export const Login: React.FC = () => {
 
         {/* SIBLING 1: LEFT COLUMN / LOGIN */}
         <div 
-          className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ${
+          className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
             isLoggingIn 
-              ? 'opacity-0 pointer-events-none' 
+              ? 'opacity-0 scale-95 translate-y-2 pointer-events-none filter blur-[1px]' 
               : isFlipped 
                 ? 'opacity-0 pointer-events-none' 
                 : 'opacity-100 pointer-events-auto'
@@ -951,7 +961,7 @@ export const Login: React.FC = () => {
           style={{ 
             transformStyle: 'flat',
             transform: isLoggingIn 
-              ? 'translateX(0)' 
+              ? 'scale(0.95) translateY(8px)' 
               : isFlipped 
                 ? 'translateX(-101%)' 
                 : 'translateX(0)' 
@@ -982,11 +992,11 @@ export const Login: React.FC = () => {
         {/* SIBLING 2: RIGHT PANEL (Carousel & Gym Details) */}
         <div 
           className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
-            isLoggingIn ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            isLoggingIn ? 'opacity-90' : 'opacity-100'
           } ${isFlipped ? 'carousel-flipped' : ''}`}
           style={{ 
             transformStyle: 'flat',
-            transform: isLoggingIn ? 'translateX(0)' : isFlipped ? 'translateX(-43vw)' : 'translateX(0)' 
+            transform: isFlipped ? 'translateX(-43vw)' : 'translateX(0)' 
           }}
         >
           <div 
@@ -1013,7 +1023,9 @@ export const Login: React.FC = () => {
 
           <div className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2 pointer-events-none" />
           
-          <div className="carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none">
+          <div className={`carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none transition-all duration-700 ease-out ${
+            isLoggingIn ? 'opacity-0 scale-95 translate-y-3 filter blur-[1px]' : 'opacity-100'
+          }`}>
             <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
               BEYOND <br />
               <TypewriterText phrases={TYPEWRITER_PHRASES} />
@@ -1090,20 +1102,25 @@ export const Login: React.FC = () => {
 
       </div>
 
-      {/* LOGIN SUCCESS OUTRO CURTAIN */}
-{isLoggingIn && (
-  <div
-    className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1400ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
-      curtainClosing ? 'translate-x-8' : '-translate-x-[250%]'
-    }`}
-  >
-    <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-      
-      {/* Leading white/red line that sweeps off-screen */}
-      <div className="absolute top-0 -right-8 h-full w-[2px] sm:w-[3px] bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)]" />
-    </div>
-  </div>
-)}
+     {/* ─── LOGIN SUCCESS OUTRO FLUIDISM CURTAIN ─── */}
+      {isLoggingIn && (
+        <div
+          className={`fixed top-0 bottom-0 -left-[50vw] w-[150vw] z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+            curtainClosing ? 'translate-x-[50vw]' : '-translate-x-[150%]'
+          }`}
+        >
+          <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
+            {/* Bold Multi-Layered Glowing Fluidism Edge */}
+            <div className="absolute top-0 right-0 h-full origin-right scale-x-[2] sm:scale-x-[3.5]">
+              <div className="absolute top-0 right-16 sm:right-24 h-full w-16 sm:w-28 blur-xl opacity-90 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
+              <div className="absolute top-0 right-8 sm:right-14 h-full w-8 sm:w-14 bg-[#123c73] dark:bg-[#7a0000] opacity-95" />
+              <div className="absolute top-0 right-4 sm:right-8 h-full w-5 sm:w-8 bg-[#295c9a] dark:bg-[#a60303]" />
+              <div className="absolute top-0 right-1.5 sm:right-3 h-full w-3 sm:w-5 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_15px_rgba(83,156,255,0.9)] sm:shadow-[0_0_25px_rgba(83,156,255,0.9)] dark:shadow-[0_0_15px_rgba(230,0,0,0.9)] dark:sm:shadow-[0_0_25px_rgba(230,0,0,0.9)]" />
+              <div className="absolute top-0 right-0 h-full w-1 sm:w-1.5 bg-white dark:bg-red-100 shadow-[0_0_20px_rgba(255,255,255,1)] sm:shadow-[0_0_30px_rgba(255,255,255,1)] dark:shadow-[0_0_20px_rgba(255,120,120,1)] dark:sm:shadow-[0_0_30px_rgba(255,120,120,1)]" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODALS */}
       <Modal isOpen={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Abandon Recovery?">

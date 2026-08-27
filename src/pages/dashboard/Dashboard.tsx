@@ -1,13 +1,12 @@
-// src/pages/dashboard/Dashboard.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  format 
-} from 'date-fns';
+import { format } from 'date-fns';
 import { 
   RotateCcw, 
   Calendar as CalendarIcon, 
-  FileSpreadsheet 
+  FileSpreadsheet,
+  Activity,
+  Dumbbell
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -94,7 +93,7 @@ export const Dashboard: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Realtime Supabase Subscription for live attendance and sales
+  // Realtime Supabase Subscription
   useEffect(() => {
     const channel = supabase
       .channel('dashboard-realtime-feed')
@@ -114,7 +113,7 @@ export const Dashboard: React.FC = () => {
     };
   }, [loadData]);
 
-  // Quick Navigation Handler from Top Summary Cards
+  // Quick Navigation Handler
   const handleCardClick = (target: 'members' | 'attendance' | 'sales' | 'expiring' | 'inventory') => {
     switch (target) {
       case 'members':
@@ -138,108 +137,118 @@ export const Dashboard: React.FC = () => {
   const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto select-none animate-fade-in">
-      {/* ─── HEADER / GREETING BAR ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white uppercase font-heading">
-              Gym Operations Hub
-            </h1>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live
-            </span>
+    <div className="min-h-screen bg-[#f0f4f8] dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 transition-colors duration-300">
+      {/* Container with responsive bottom padding to clear mobile navigation bars */}
+      <div className="p-3.5 sm:p-5 lg:p-7 pb-28 sm:pb-20 lg:pb-12 space-y-4 sm:space-y-6 max-w-7xl mx-auto select-none">
+        
+        {/* ─── HEADER / GREETING BAR ─── */}
+        <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="w-8 h-8 rounded-lg bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center shadow-xs">
+                <Dumbbell className="w-4 h-4" />
+              </div>
+              <h1 className="text-lg sm:text-2xl font-black tracking-tight uppercase font-heading text-slate-900 dark:text-white truncate">
+                Gym Operations Hub
+              </h1>
+              <span className="text-[10px] sm:text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60 flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Live Telemetry
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-2 flex-wrap font-medium">
+              <span className="flex items-center gap-1">
+                <CalendarIcon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                <span>{currentDateFormatted}</span>
+              </span>
+              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
+              <span className="truncate">Staff: <span className="font-semibold text-slate-700 dark:text-slate-300">{user?.email || 'Active Staff'}</span></span>
+            </p>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
-            <CalendarIcon className="w-3.5 h-3.5" />
-            <span>{currentDateFormatted}</span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline">Logged in as {user?.email || 'Staff Member'}</span>
-          </p>
+
+          {/* Quick Toolbar */}
+          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+            <button
+              id="btn-open-bir-reports"
+              onClick={() => setIsReportsModalOpen(true)}
+              className="flex-1 sm:flex-none justify-center bg-white dark:bg-[#1e232d] hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs flex items-center gap-2 active:scale-95 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Export & BIR</span>
+            </button>
+
+            <button
+              id="btn-refresh-dashboard"
+              onClick={loadData}
+              disabled={isLoading}
+              className="p-2.5 rounded-xl bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all shadow-2xs active:scale-95 disabled:opacity-60 cursor-pointer"
+              title="Refresh Dashboard Feed"
+            >
+              <RotateCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
-        {/* Quick Toolbar */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            id="btn-open-bir-reports"
-            onClick={() => setIsReportsModalOpen(true)}
-            className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3.5 py-2 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-2"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Reports & BIR</span>
-          </button>
+        {/* ─── 1. TOP SUMMARY CARDS (5 METRICS) ─── */}
+        <TopSummaryCards metrics={metrics} onCardClick={handleCardClick} />
 
-          <button
-            id="btn-refresh-dashboard"
-            onClick={loadData}
-            disabled={isLoading}
-            className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-            title="Refresh Dashboard"
-          >
-            <RotateCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
+        {/* ─── 2. QUICK ACTIONS BAR ─── */}
+        <QuickActions
+          onScanClick={() => navigate('/scanner')}
+          onNewSaleClick={() => navigate('/sales')}
+          onAddMemberClick={() => navigate('/members/list')}
+          onNewSubscriptionClick={() => navigate('/logbook')}
+        />
+
+        {/* ─── 3. REVENUE & OPERATIONS ANALYTICS ─── */}
+        <RevenueAnalyticsTab
+          metrics={metrics}
+          revenueTimeline={revenueTimeline}
+          topProducts={topProducts}
+          attendanceHourly={attendanceHourly}
+          birReportItems={birReportItems}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          timeRange={timeRange}
+          onTimeRangeChange={setTimeRange}
+        />
+
+        {/* ─── 4. TWO-COLUMN SPLIT: MEMBERSHIPS / INVENTORY & ACTIVITY FEED ─── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Left Column (Span 2 on Desktop): Membership Overview & Inventory Alerts */}
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+            <MembershipOverviewSection
+              metrics={metrics}
+              expiringMembers={expiringSoonList}
+              onRenewMember={() => navigate('/logbook')}
+            />
+            <InventoryAlertsSection
+              lowStockItems={lowStockItems}
+              onViewInventory={() => navigate('/sales/products')}
+            />
+          </div>
+
+          {/* Right Column (Span 1 on Desktop): Real-time Chronological Activity Feed */}
+          <div className="lg:col-span-1">
+            <RecentActivityFeed
+              activities={activityItems}
+              onRefresh={loadData}
+              isLoading={isLoading}
+            />
+          </div>
         </div>
+
+        {/* Reports Export Modal Portal */}
+        <ReportsExportModal
+          isOpen={isReportsModalOpen}
+          onClose={() => setIsReportsModalOpen(false)}
+          initialType="bir"
+          birData={birReportItems}
+          topProducts={topProducts}
+          revenueTimeline={revenueTimeline}
+        />
       </div>
-
-      {/* ─── 1. TOP SUMMARY CARDS (5 METRICS) ─── */}
-      <TopSummaryCards metrics={metrics} onCardClick={handleCardClick} />
-
-      {/* ─── 2. QUICK ACTIONS BAR ─── */}
-      <QuickActions
-        onScanClick={() => navigate('/scanner')}
-        onNewSaleClick={() => navigate('/sales')}
-        onAddMemberClick={() => navigate('/members/list')}
-        onNewSubscriptionClick={() => navigate('/logbook')}
-      />
-
-      {/* ─── 3. BROWSER-TABBED REVENUE & OPERATIONS ANALYTICS ─── */}
-      <RevenueAnalyticsTab
-        metrics={metrics}
-        revenueTimeline={revenueTimeline}
-        topProducts={topProducts}
-        attendanceHourly={attendanceHourly}
-        birReportItems={birReportItems}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        timeRange={timeRange}
-        onTimeRangeChange={setTimeRange}
-      />
-
-      {/* ─── 4. TWO-COLUMN SPLIT: MEMBERSHIPS / INVENTORY & RECENT ACTIVITY ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Membership Overview & Inventory Alerts */}
-        <div className="lg:col-span-2 space-y-6">
-          <MembershipOverviewSection
-            metrics={metrics}
-            expiringMembers={expiringSoonList}
-            onRenewMember={() => navigate('/logbook')}
-          />
-          <InventoryAlertsSection
-            lowStockItems={lowStockItems}
-            onViewInventory={() => navigate('/sales/products')}
-          />
-        </div>
-
-        {/* Right 1 Column: Real-time Chronological Activity Feed */}
-        <div className="lg:col-span-1">
-          <RecentActivityFeed
-            activities={activityItems}
-            onRefresh={loadData}
-            isLoading={isLoading}
-          />
-        </div>
-      </div>
-
-      {/* Reports Export Modal */}
-      <ReportsExportModal
-        isOpen={isReportsModalOpen}
-        onClose={() => setIsReportsModalOpen(false)}
-        initialType="bir"
-        birData={birReportItems}
-        topProducts={topProducts}
-        revenueTimeline={revenueTimeline}
-      />
     </div>
   );
 };
