@@ -548,7 +548,7 @@ export const Login: React.FC = () => {
         const userProfile = (useAuthStore.getState() as any).profile;
         const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFrom;
         navigate(targetRoute, { replace: true });
-      }, 1500);
+      }, 600);
     } catch (err: any) {
       toast.error(err.message || 'Invalid username, email, or password.');
       setLoginValue('password', '');

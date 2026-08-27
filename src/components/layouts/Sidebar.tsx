@@ -17,6 +17,8 @@ import axiomTexture from '../../assets/textures/hexagons.svg';
 
 const APP_VERSION = pkg.version || '0.15.0';
 
+import { SidebarProfileFlipper } from './SidebarProfileFlipper';
+
 interface SidebarProps {
   collapsed: boolean;
   setCollapsed: (c: boolean) => void;
@@ -37,6 +39,7 @@ interface MenuItem {
   name: string;
   icon: React.ReactNode;
   roles?: ('admin' | 'staff')[];
+  path?: string;
   children?: ChildItem[];
 }
 
@@ -183,23 +186,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ]
       },
       {
-        name: 'REPORTS',
+        name: 'INCIDENT REPORTS',
         icon: <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
-        children: [
-          { 
-            name: 'Incident Reports', 
-            path: '/reports', 
-            description: 'Infraction logs and security entries',
-            roles: ['admin', 'staff']
-          },
-          { 
-            name: 'BIR Records', 
-            path: '/reports/bir', 
-            description: 'Tax export sheets and sales book compliance',
-            roles: ['admin']
-          }
-        ]
+        path: '/reports'
       }
     ];
   }, [location.pathname]);
@@ -217,7 +207,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
         return item;
       })
-      .filter(item => !item.children || item.children.length > 0);
+      .filter(item => item.path || (item.children && item.children.length > 0));
   }, [navigationMenu, profile]);
 
   // Helper for active child path matching
@@ -243,6 +233,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Parent menu click handler
   const handleParentMenuClick = (item: MenuItem, isMobile = false) => {
+    if (item.path && (!item.children || item.children.length === 0)) {
+      navigate(item.path);
+      if (isMobile) setMobileOpen(false);
+      return;
+    }
+
     const visibleChildren = item.children || [];
     const activeChild = visibleChildren.find(child => isPathActive(child.path));
 
@@ -395,28 +391,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
 
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
-                  <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
-                </div>
-
-                <div className="flex-1 min-w-0 text-left">
-                  <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
-                    {profile?.username || 'Wolf Palomar'}
-                  </h4>
-
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                      {profile?.role || 'ADMIN'}
-                    </span>
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
-                    {user?.email || 'wolf.palomar@gmail.com'}
-                  </p>
-                </div>
-              </div>
+              <SidebarProfileFlipper 
+                profile={profile} 
+                user={user} 
+                fallbackCharacter={fallbackCharacter} 
+                avatarElement={<SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />} 
+              />
             </div>
           </div>
         </div>
@@ -443,8 +423,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 relative z-10 font-body">
           {allowedMenu.map((item, index) => {
             const visibleChildren = item.children || [];
+            const isSingleItem = Boolean(item.path && visibleChildren.length === 0);
+            const isSingleActive = isSingleItem && item.path ? isPathActive(item.path) : false;
             const isChildActive = visibleChildren.some(child => isPathActive(child.path));
             const isExpanded = !collapsed && expandedMenu === item.name;
+
+            if (isSingleItem && item.path) {
+              return (
+                <div key={index} className="space-y-2">
+                  <Link
+                    to={item.path}
+                    className={`flex items-center font-heading text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
+                      collapsed 
+                        ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0' 
+                        : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
+                    } ${
+                      isSingleActive
+                        ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+                        : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
+                    }`}
+                    title={collapsed ? item.name : undefined}
+                  >
+                    <div className="flex items-center gap-3 shrink-0 min-w-0">
+                      <span className={isSingleActive ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}>
+                        {item.icon}
+                      </span>
+                      {!collapsed && (
+                        <span className="whitespace-nowrap font-bold truncate">
+                          {item.name}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </div>
+              );
+            }
 
             return (
               <div key={index} className="space-y-2">
@@ -699,28 +712,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
 
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 shrink-0 bg-slate-100 dark:bg-neutral-800 shadow-xs relative overflow-hidden">
-                    <SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />
-                  </div>
-
-                  <div className="flex-1 min-w-0 text-left">
-                    <h4 className="font-heading text-xs font-extrabold tracking-wider uppercase text-slate-900 dark:text-white truncate leading-tight">
-                      {profile?.username || 'Wolf Palomar'}
-                    </h4>
-
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#123c73]/10 dark:bg-red-500/20 text-[#123c73] dark:text-red-300 border border-[#123c73]/20 dark:border-red-500/30 text-[9px] font-heading font-black tracking-widest uppercase">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                        {profile?.role || 'ADMIN'}
-                      </span>
-                    </div>
-
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-1">
-                      {user?.email || 'wolf.palomar@gmail.com'}
-                    </p>
-                  </div>
-                </div>
+                <SidebarProfileFlipper 
+                  profile={profile} 
+                  user={user} 
+                  fallbackCharacter={fallbackCharacter} 
+                  avatarElement={<SidebarAvatar path={profile?.avatar_url || user?.user_metadata?.avatar_url} fallbackChar={fallbackCharacter} />} 
+                />
               </div>
             </div>
 
@@ -728,7 +725,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <nav className="flex-1 min-h-0 overflow-y-auto space-y-3.5 p-5 pt-3">
               {allowedMenu.map((item, idx) => {
                 const visibleChildren = item.children || [];
+                const isSingleItem = Boolean(item.path && visibleChildren.length === 0);
+                const isSingleActive = isSingleItem && item.path ? isPathActive(item.path) : false;
                 const isMobileExpanded = mobileExpandedMenu === item.name;
+
+                if (isSingleItem && item.path) {
+                  return (
+                    <div key={idx} className="space-y-2">
+                      <Link
+                        to={item.path}
+                        onClick={() => setMobileOpen(false)}
+                        className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
+                          isSingleActive 
+                            ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs' 
+                            : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={isSingleActive ? 'text-[#123c73] dark:text-white' : 'text-slate-400 dark:text-slate-400'}>
+                            {item.icon}
+                          </span>
+                          <span className="font-bold">{item.name}</span>
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                }
 
                 return (
                   <div key={idx} className="space-y-2">

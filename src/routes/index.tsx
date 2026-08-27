@@ -3,6 +3,7 @@ import React, { useState, createContext } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
+import { RevenueGoalsPage } from '../pages/dashboard/RevenueGoalsPage';
 import { IncidentReports } from '../pages/reports/IncidentReports';
 import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
@@ -34,6 +35,11 @@ const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; descripti
     subtitle: 'Console / Performance',
     title: 'System Dashboard',
     description: 'Real-time overview of active gym operations, financial metrics, and performance charts.'
+  },
+  '/dashboard/goals': {
+    subtitle: 'Console / Revenue Benchmarks',
+    title: 'Revenue Goals Tracker',
+    description: 'Set custom goal limits, analyze logbook vs sales run-rates, and monitor milestones.'
   },
   '/sales/products': {
     subtitle: 'Sales / Products',
@@ -149,7 +155,7 @@ const router = createBrowserRouter([
                 element: <ProtectedRoute allowedRoles={['admin']} />,
                 children: [
                   { path: '/dashboard', element: <Dashboard /> },
-                  { path: '/dashboard/goals', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Set Goal Revenue</div> },
+                  { path: '/dashboard/goals', element: <RevenueGoalsPage /> },
                   { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
                   { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
                   { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }

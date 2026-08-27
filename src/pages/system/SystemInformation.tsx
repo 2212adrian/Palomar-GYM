@@ -361,21 +361,23 @@ export const SystemInformation: React.FC = () => {
         </div>
         <div className="shrink-0 flex items-center gap-2">
           {!rpcSupported && (
-            <Button
+            <button
+              type="button"
               onClick={() => setShowSqlGuide(!showSqlGuide)}
-              className="text-xs py-2 px-3 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-all cursor-pointer font-bold"
+              className="text-xs py-2 px-3 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all cursor-pointer font-bold select-none"
             >
               Configure Exact Storage Sync
-            </Button>
+            </button>
           )}
-          <Button 
+          <button 
+            type="button"
             onClick={fetchSystemStats} 
             disabled={loading}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-200 text-xs py-2 px-3.5 rounded-xl border border-slate-200 dark:border-white/5 font-bold tracking-wider transition-all duration-200 cursor-pointer"
+            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-100 text-xs py-2 px-3.5 rounded-xl border border-slate-300 dark:border-zinc-700 font-bold tracking-wider transition-all duration-200 cursor-pointer shadow-xs select-none disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'SYNCING...' : 'SYNC STATUS'}
-          </Button>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600 dark:text-red-500' : 'text-slate-600 dark:text-slate-300'}`} />
+            <span>{loading ? 'SYNCING...' : 'SYNC STATUS'}</span>
+          </button>
         </div>
       </div>
 

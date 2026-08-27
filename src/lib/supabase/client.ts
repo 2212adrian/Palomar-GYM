@@ -94,6 +94,42 @@ const cookieStorage = {
   }
 };
 
+const appStorage = {
+  getItem(key: string): string | null {
+    if (typeof window !== 'undefined') {
+      try {
+        const localVal = window.localStorage.getItem(key);
+        if (localVal) return localVal;
+      } catch (e) {
+        // localStorage might be unavailable or restricted
+      }
+    }
+    return cookieStorage.getItem(key);
+  },
+
+  setItem(key: string, value: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch (e) {
+        // localStorage might be unavailable or restricted
+      }
+    }
+    cookieStorage.setItem(key, value);
+  },
+
+  removeItem(key: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(key);
+      } catch (e) {
+        // localStorage might be unavailable or restricted
+      }
+    }
+    cookieStorage.removeItem(key);
+  }
+};
+
 // WebSocket Proxy to intercept connection attempts while offline
 const SafeWebSocket = typeof window !== 'undefined' ? new Proxy(window.WebSocket, {
   construct(target, args) {
@@ -131,11 +167,11 @@ const SafeWebSocket = typeof window !== 'undefined' ? new Proxy(window.WebSocket
 const OFFLINE_STAFF_MESSAGE = 'No internet connection. Please check your Wi-Fi and try again.';
 
 export const supabase = createClient(
-  supabaseUrl || '',
-  supabaseAnonKey || '',
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key',
   {
     auth: {
-      storage: cookieStorage,
+      storage: appStorage,
       persistSession: true,
       autoRefreshToken: true,
     },

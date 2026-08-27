@@ -31,7 +31,7 @@ let activeAvatarObjectUrl: string | null = null;
 let activeProfileChannel: any = null;
 let activeProfileUserId: string | null = null; // Track currently subscribed User ID to prevent duplicate binds
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set, _get) => ({
   user: null,
   profile: null,
   loading: true,
@@ -53,40 +53,68 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const isSuperAdminUser = isSuperAdmin(session.user.email);
         let dbProfile: any = null;
 
-        // 1. Validation: Verify if their profile actually exists inside public.profiles
+        // 1. Validation: Fetch or fallback profile from public.profiles
         if (!isSuperAdminUser) {
-          const { data, error: dbError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+          try {
+            const { data, error: dbError } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
 
-          // If the profile row is missing, the account was deleted. Force immediate logout.
-          if (dbError || !data) {
-            await supabase.auth.signOut();
-            if (activeAvatarObjectUrl) {
-              URL.revokeObjectURL(activeAvatarObjectUrl);
-              activeAvatarObjectUrl = null;
+            if (!dbError && data) {
+              dbProfile = data;
+            } else if (!data && !dbError) {
+              // Auto-create missing profile row if user was registered via auth directly
+              try {
+                const autoRole = (session.user.app_metadata?.role || session.user.user_metadata?.role || 'admin').toLowerCase();
+                const { data: createdProfile } = await supabase
+                  .from('profiles')
+                  .insert({
+                    id: session.user.id,
+                    username: session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
+                    role: autoRole === 'staff' ? 'staff' : 'admin',
+                    status: 'active',
+                  })
+                  .select()
+                  .maybeSingle();
+
+                if (createdProfile) {
+                  dbProfile = createdProfile;
+                }
+              } catch {
+                // Ignore background insertion error, proceed with auth metadata fallback
+              }
             }
-            if (activeProfileChannel) {
-              supabase.removeChannel(activeProfileChannel);
-              activeProfileChannel = null;
-            }
-            activeProfileUserId = null;
-            set({ user: null, profile: null, loading: false, initialized: true });
-            return;
+          } catch (fetchErr) {
+            console.warn('Could not load profile from database, falling back to auth metadata:', fetchErr);
           }
-          dbProfile = data;
+        }
+
+        // If explicitly deactivated in DB profile, sign out
+        if (dbProfile?.status === 'inactive') {
+          await supabase.auth.signOut();
+          if (activeAvatarObjectUrl) {
+            URL.revokeObjectURL(activeAvatarObjectUrl);
+            activeAvatarObjectUrl = null;
+          }
+          if (activeProfileChannel) {
+            supabase.removeChannel(activeProfileChannel);
+            activeProfileChannel = null;
+          }
+          activeProfileUserId = null;
+          set({ user: null, profile: null, loading: false, initialized: true, error: 'Account suspended' });
+          return;
         }
 
         // 2. Resolve account attributes with Superadmin taking absolute priority
-        const rawRole = (dbProfile?.role || session.user.app_metadata?.role || 'staff').toLowerCase();
+        const rawRole = (dbProfile?.role || session.user.app_metadata?.role || session.user.user_metadata?.role || 'admin').toLowerCase();
         const userRole = isSuperAdminUser ? 'admin' : (rawRole === 'admin' ? 'admin' : 'staff');
 
-        // Superadmin status always resolves to active; other accounts load from DB with a pending fallback
+        // Superadmin status always resolves to active; other accounts default to active unless specified
         const userStatus = isSuperAdminUser 
           ? 'active' 
-          : (dbProfile?.status || session.user.user_metadata?.status || 'pending');
+          : (dbProfile?.status || session.user.user_metadata?.status || 'active');
 
         const metadataAvatarPath = dbProfile?.avatar_url || 
                                    session.user.user_metadata?.avatar_url || '';
@@ -116,7 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         }
 
-        // Only establish Realtime subscription if not superadmin (they don't have a DB profile row)
+        // Only establish Realtime subscription if not superadmin
         if (!isSuperAdminUser && activeProfileUserId !== session.user.id) {
           if (activeProfileChannel) {
             supabase.removeChannel(activeProfileChannel);
@@ -164,19 +192,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             .subscribe();
         }
 
-        // 3. Client-Side Account Activation Trigger (Bypasses background database trigger lock errors)
+        // 3. Client-Side Account Activation Trigger (Non-blocking)
         if (userStatus === 'pending' && !isSuperAdminUser) {
-          await supabase.from('profiles').update({ status: 'active' }).eq('id', session.user.id);
-          // Recursively re-run checkSession once status transitions to active
-          await get().checkSession();
-          return;
+          supabase.from('profiles').update({ status: 'active' }).eq('id', session.user.id).then(() => {});
         }
 
         set({
           user: session.user,
           profile: {
             id: session.user.id,
-            username: dbProfile?.username || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+            username: dbProfile?.username || session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
             role: userRole as 'admin' | 'staff',
             status: userStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,
@@ -253,6 +278,10 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     });
   } else if (event === 'SIGNED_OUT') {
     // Clear cached session parameters
-    useAuthStore.setState({ user: null, profile: null });
+    useAuthStore.setState({ user: null, profile: null, loading: false, initialized: true });
+  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+    if (session?.user) {
+      await useAuthStore.getState().checkSession();
+    }
   }
 });
