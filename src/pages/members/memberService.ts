@@ -83,7 +83,7 @@ const isUUID = (str?: string | null): boolean => {
 const writeAudit = async (
   action: string,
   category: ActivityLog['category'],
-  user: string,
+  _user: string,
   affectedId?: string,
   reason?: string,
   details?: string

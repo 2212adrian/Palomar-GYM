@@ -273,9 +273,6 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
       if (restoreError) throw restoreError;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      const actor = user?.email || 'System';
-
       // 2. Re-deduct product quantities since sale is active again
       for (const tx of restorableList) {
         if (tx.items && Array.isArray(tx.items)) {
