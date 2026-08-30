@@ -775,6 +775,22 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // Auto-open expiring member from notification redirection
+  useEffect(() => {
+    if (location.state?.openMemberId && members.length > 0) {
+      const targetMember = members.find(
+        (m) => m.member_id === location.state.openMemberId || m.id === location.state.openMemberId
+      );
+      if (targetMember) {
+        setActiveChip('expiring');
+        setSelectedProfileMember(targetMember);
+        setSearchQuery(targetMember.full_name);
+        toast.info(`Viewing expiring member: "${targetMember.full_name}"`, { toastId: `expiring-${targetMember.id}` });
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state, members]);
+
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in text-xs md:text-sm text-(--color-text)">
       

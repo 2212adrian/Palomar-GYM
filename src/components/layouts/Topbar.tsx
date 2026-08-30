@@ -241,7 +241,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentTimeFull, setCurrentTimeFull] = useState('');
-  const [currentTimeShort, setCurrentTimeShort] = useState('');
+  const [, setCurrentTimeShort] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
   const [timeOffset, setTimeOffset] = useState<number>(0);
 
@@ -294,15 +294,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
   // Global Notification Store
   const {
+    unreadBadgeCount,
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
     isNotificationOpen,
+    markBadgeSeen,
     toggleNotificationOpen,
     setNotificationOpen
   } = useNotificationStore();
-
-  const totalAlerts = (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
+  
+  const handleOpenNotifications = () => {
+    toggleNotificationOpen();
+    markBadgeSeen(); // Clears red bubble to 0 and saves in localStorage
+  };
 
   useEffect(() => {
     const handleLogbookKpiUpdate = (e: Event) => {
@@ -591,7 +596,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                 setIsKpiMobileOpen(prev => !prev);
               }}
               aria-label="Today's Revenue & Metrics"
-              className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 px-3 py-1.5 sm:px-4 sm:py-1.5 rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
+              className="flex items-center gap-1 sm:gap-2.5 md:gap-3 px-2.5 py-1 sm:px-4 sm:py-1.5 rounded-full rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
             >
               {isMembersPath ? (
                 <>
@@ -919,89 +924,89 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       )}
 
       {/* 3. RIGHT SECTION: TIME & ACTIONS */}
-      <div className="flex items-center gap-2 sm:gap-3 ml-auto shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 ml-auto shrink-0">
         {isLogbookPath && isAdmin && (
-          <button
-            type="button"
-            onClick={() => navigate('/members/list')}
-            className="lg:hidden h-9 sm:h-9.5 px-3 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
-            title="Slide to Member Directory"
-          >
-            <span>MEMBERS</span>
-            <ChevronRight className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-          </button>
-        )}
+  <button
+    type="button"
+    onClick={() => navigate('/members/list')}
+    className="lg:hidden h-9 sm:h-9.5 px-2.5 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
+    title="Slide to Member Directory"
+  >
+    <Users className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+    <span className="hidden sm:inline">MEMBERS</span>
+    <ChevronRight className="hidden sm:inline w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+  </button>
+)}
 
-        {isMembersPath && isAdmin && !isPlansView && (
-          <button
-            type="button"
-            onClick={() => navigate('/logbook')}
-            className="lg:hidden h-9 sm:h-9.5 px-3 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
-            title="Slide to Logbook"
-          >
-            <ChevronLeft className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-            <span>LOGBOOK</span>
-          </button>
-        )}
+{isMembersPath && isAdmin && !isPlansView && (
+  <button
+    type="button"
+    onClick={() => navigate('/logbook')}
+    className="lg:hidden h-9 sm:h-9.5 px-2.5 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
+    title="Slide to Logbook"
+  >
+    <ClipboardList className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+    <span className="hidden sm:inline">LOGBOOK</span>
+  </button>
+)}
 
-        {isSalesPath && isAdmin && (
-          <button
-            type="button"
-            onClick={handleToggleSalesView}
-            className="lg:hidden h-9 sm:h-9.5 px-3 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
-            title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
-          >
-            {salesView === 'register' ? (
-              <>
-                <span>PRODUCTS</span>
-                <ChevronRight className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-              </>
-            ) : (
-              <>
-                <ChevronLeft className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-                <span>SALES</span>
-              </>
-            )}
-          </button>
-        )}
+{isSalesPath && isAdmin && (
+  <button
+    type="button"
+    onClick={handleToggleSalesView}
+    className="lg:hidden h-9 sm:h-9.5 px-2.5 sm:px-3.5 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1.5 select-none"
+    title={salesView === 'register' ? "Slide to Inventory" : "Slide to Sales"}
+  >
+    {salesView === 'register' ? (
+      <>
+        <Package className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+        <span className="hidden sm:inline">PRODUCTS</span>
+        <ChevronRight className="hidden sm:inline w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+      </>
+    ) : (
+      <>
+        <ShoppingBag className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
+        <span className="hidden sm:inline">SALES</span>
+      </>
+    )}
+  </button>
+)}
 
-        {/* TIME TELEMETRY */}
-        <div className="hidden xl:block text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
-          {currentTimeFull}
-        </div>
-        <div className="hidden md:block xl:hidden text-[12px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
-          {currentTimeShort}
-        </div>
+        {/* TIME TELEMETRY (Desktop only: hidden on mobile and tablet) */}
+<div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
+  {currentTimeFull}
+</div>
 
-        {/* NOTIFICATION BELL & POPUP DRAWER (ADMIN/SUPERADMIN ONLY) */}
-        {isAdmin && (
-          <div className="relative">
-            <button
-              type="button"
-              id="btn-topbar-notifications"
-              onClick={toggleNotificationOpen}
-              aria-label="Toggle notifications"
-              title={`${totalAlerts} Active Notification${totalAlerts === 1 ? '' : 's'}`}
-              className={`relative h-9 sm:h-9.5 w-9 sm:w-9.5 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
-                totalAlerts > 0
-                  ? 'bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-red-400 border-red-500/30'
-                  : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
-              }`}
-            >
-              <Bell className={`w-4 h-4 sm:w-4.5 sm:h-4.5 ${totalAlerts > 0 ? 'animate-bounce' : ''}`} />
-              {totalAlerts > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
-                  {formatBadgeCount(totalAlerts)}
-                </span>
-              )}
-            </button>
+        {/* NOTIFICATION BELL BUTTON */}
+{isAdmin && (
+  <div className="relative">
+    <button
+      type="button"
+      id="btn-topbar-notifications"
+      onClick={handleOpenNotifications}
+      aria-label="Toggle notifications"
+      className={`relative h-9 sm:h-9.5 w-9 sm:w-9.5 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
+        unreadBadgeCount > 0
+          ? 'bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-red-400 border-red-500/30'
+          : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
+      }`}
+    >
+      <Bell className={`w-4 h-4 sm:w-4.5 sm:h-4.5 ${unreadBadgeCount > 0 ? 'animate-bounce' : ''}`} />
+      
+      {/* Red Bubble only renders when there are new unviewed alerts */}
+      {unreadBadgeCount > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
+          {formatBadgeCount(unreadBadgeCount)}
+        </span>
+      )}
+    </button>
 
-            <NotificationPopover 
-              isOpen={isNotificationOpen} 
-              onClose={() => setNotificationOpen(false)} 
-            />
-          </div>
-        )}
+    <NotificationPopover 
+      isOpen={isNotificationOpen} 
+      onClose={() => setNotificationOpen(false)} 
+    />
+  </div>
+)}
 
         {/* MOBILE MENU */}
         <button 

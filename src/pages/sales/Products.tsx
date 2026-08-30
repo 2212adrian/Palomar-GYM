@@ -226,6 +226,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   const location = useLocation();
 
+  
   useEffect(() => {
     if (hideHeaderActions) return;
 
@@ -272,6 +273,19 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       setActions(null);
     };
   }, [isAdmin, selectedProductIds.length, location.pathname, setActions, hideHeaderActions]);
+  
+  // Auto-highlight product from notification redirection
+  useEffect(() => {
+    if (location.state?.highlightProductId && products.length > 0) {
+      const targetId = location.state.highlightProductId;
+      const target = products.find((p) => p.id === targetId);
+      if (target) {
+        setSelectedProductIds([targetId]);
+        setSearchQuery(target.product_name);
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state, products]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

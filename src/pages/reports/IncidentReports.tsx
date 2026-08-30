@@ -1,5 +1,6 @@
 //src/pages/reports/IncidentReports.tsx
 import React, { useState, useEffect, useContext, useRef  } from 'react';
+import { useLocation } from 'react-router-dom'; 
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
@@ -72,6 +73,7 @@ const SUGGESTED_TAGS = [
 ];
 
 export const IncidentReports: React.FC = () => {
+  const location = useLocation(); 
   const { user } = useAuthStore();
   const { setActions } = useContext(HeaderActionsContext);
   
@@ -158,6 +160,18 @@ export const IncidentReports: React.FC = () => {
       </>
     );
   }, [isAdmin, reports]);
+
+   useEffect(() => {
+    if (location.state?.openIncidentId && reports.length > 0) {
+      const target = reports.find((r) => r.id === location.state.openIncidentId);
+      if (target) {
+        setSelectedReport(target);
+        setIsDetailModalOpen(true);
+        // Clear navigation state so it doesn't re-open on browser refresh
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state, reports]);
 
   // Fetch Gym Profile contacts safely without hardcoded ID constraints
   const fetchEmergencyContacts = async () => {

@@ -18,6 +18,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Card } from '../../components/ui/Card';
+import { AgreementDocumentViewer, type AgreementDocument } from '../../components/ui/AgreementDocumentViewer';
 
 // Dynamic version retrieval from package.json
 import pkg from '../../../package.json';
@@ -230,6 +231,7 @@ export const Login: React.FC = () => {
 
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
+  const [agreementDocument, setAgreementDocument] = useState<AgreementDocument | null>(null);
 
   const [activeSlide, setActiveSlide] = useState<number>(0);
 
@@ -247,7 +249,11 @@ export const Login: React.FC = () => {
     formState: { errors: loginErrors, touchedFields: touchedLogin },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { usernameOrEmail: '', password: '', agree: true },
+    defaultValues: {
+      usernameOrEmail: typeof window === 'undefined' ? '' : localStorage.getItem('palomar_remembered_login') || '',
+      password: '',
+      agree: typeof window !== 'undefined' && !!localStorage.getItem('palomar_user_agreement_accepted'),
+    },
   });
 
   const {
@@ -263,7 +269,27 @@ export const Login: React.FC = () => {
 
   const watchIdentifier = watchLogin('usernameOrEmail');
   const watchPassword = watchLogin('password');
+  const watchAgreement = watchLogin('agree');
   const watchRecoveryEmail = watchRecovery('email');
+
+  // Auto-save username or email character by character into local storage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (watchIdentifier && watchIdentifier.trim()) {
+      localStorage.setItem('palomar_remembered_login', watchIdentifier.trim());
+    } else {
+      localStorage.removeItem('palomar_remembered_login');
+    }
+  }, [watchIdentifier]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (watchAgreement) {
+      localStorage.setItem('palomar_user_agreement_accepted', JSON.stringify({ version: '2026-08-30', acceptedAt: new Date().toISOString() }));
+    } else {
+      localStorage.removeItem('palomar_user_agreement_accepted');
+    }
+  }, [watchAgreement]);
 
   const dynamicLabel = useMemo(() => {
     if (!watchIdentifier || watchIdentifier.trim().length === 0) {
@@ -464,6 +490,10 @@ export const Login: React.FC = () => {
 
   const handleGoogleLogin = async () => {
     if (isPreview) return;
+    if (!watchAgreement) {
+      toast.error('Please agree to the Terms & Conditions and Privacy Policy first.');
+      return;
+    }
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
@@ -493,7 +523,6 @@ export const Login: React.FC = () => {
         ? data.usernameOrEmail.trim().toLowerCase()
         : `${data.usernameOrEmail.trim().toLowerCase()}@palomargym.noemail`;
 
-      // 1. Mark outro as active BEFORE invoking signInWithPassword so reactive state changes never flash the intermediate spinner
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
 
@@ -504,7 +533,6 @@ export const Login: React.FC = () => {
 
       if (error) throw error;
 
-      // 2. Trigger closing curtain animation across screen
       setIsLoggingIn(true);
       setTimeout(() => {
         setCurtainClosing(true);
@@ -549,7 +577,6 @@ export const Login: React.FC = () => {
 
       await checkSession();
 
-      // 3. Navigate smoothly once the curtain has completely swept and covered the screen
       setTimeout(() => {
         sessionStorage.removeItem('outroActive');
         const userProfile = (useAuthStore.getState() as any).profile;
@@ -572,6 +599,7 @@ export const Login: React.FC = () => {
   const onInvalidLoginSubmit = () => {
     if (loginErrors.usernameOrEmail) triggerShake(setShakeEmail);
     if (loginErrors.password) triggerShake(setShakePassword);
+    if (loginErrors.agree) toast.error('Please agree to the Terms & Conditions and Privacy Policy to continue.');
   };
 
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
@@ -675,16 +703,17 @@ export const Login: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 pt-1 pb-1">
+        <div className="checkbox-group pt-1 pb-1">
           <input 
             type="checkbox" 
             id="loginAgreement" 
             {...registerLogin('agree')} 
-            className="styled-checkbox accent-blue-600 dark:accent-red-600 rounded cursor-pointer w-3.5 h-3.5 pointer-events-auto" 
+            className="styled-checkbox" 
           />
           <label htmlFor="loginAgreement" className="checkbox-label cursor-pointer select-none">
+            <span className="checkbox-ui" aria-hidden="true" />
             <span className="text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 font-medium">
-              I agree to the <a href="#" className="text-blue-600 dark:text-red-500 font-bold hover:underline">Terms &amp; Conditions</a> and <a href="#" className="text-blue-600 dark:text-red-500 font-bold hover:underline">Privacy Policy</a>.
+              I agree to the <button type="button" onClick={(e) => { e.preventDefault(); setAgreementDocument('terms'); }} className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={(e) => { e.preventDefault(); setAgreementDocument('privacy'); }} className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer">Privacy Policy</button>.
             </span>
           </label>
         </div>
@@ -746,6 +775,8 @@ export const Login: React.FC = () => {
           © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
         </div>
       </div>
+
+      <AgreementDocumentViewer isOpen={agreementDocument !== null} onClose={() => setAgreementDocument(null)} initialDocument={agreementDocument || 'terms'} />
     </div>
   );
 
@@ -838,7 +869,6 @@ export const Login: React.FC = () => {
 
   const isOutroActive = typeof window !== 'undefined' && sessionStorage.getItem('outroActive') === 'true';
 
-  // Exclude rendering the loading screen when outro curtain is actively transitioning
   if (!isPreview && (!initialized || (user && !isLoggingIn && !isOutroActive))) {
     return (
       <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
@@ -949,7 +979,7 @@ export const Login: React.FC = () => {
       {/* ─── MAIN SPLIT CONTAINER ─── */}
       <div className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}>
 
-        {/* SIBLING 1: LEFT COLUMN / LOGIN */}
+        {/* LEFT COLUMN / LOGIN */}
         <div 
           className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
             isLoggingIn 
@@ -989,7 +1019,7 @@ export const Login: React.FC = () => {
           )}
         </div>
 
-        {/* SIBLING 2: RIGHT PANEL (Carousel & Gym Details) */}
+        {/* RIGHT PANEL (Carousel & Gym Details) */}
         <div 
           className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
             isLoggingIn ? 'opacity-90' : 'opacity-100'
@@ -1065,7 +1095,7 @@ export const Login: React.FC = () => {
           <div className="auth-divider-line auth-line-right pointer-events-none" />
         </div>
 
-        {/* SIBLING 3: RECOVERY VIEW */}
+        {/* RECOVERY VIEW */}
         <div 
           className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
             isFlipped && !isLoggingIn 
@@ -1102,7 +1132,7 @@ export const Login: React.FC = () => {
 
       </div>
 
-     {/* ─── LOGIN SUCCESS OUTRO FLUIDISM CURTAIN ─── */}
+      {/* LOGIN SUCCESS OUTRO FLUIDISM CURTAIN */}
       {isLoggingIn && (
         <div
           className={`fixed top-0 bottom-0 -left-[50vw] w-[150vw] z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
@@ -1110,7 +1140,6 @@ export const Login: React.FC = () => {
           }`}
         >
           <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-            {/* Bold Multi-Layered Glowing Fluidism Edge */}
             <div className="absolute top-0 right-0 h-full origin-right scale-x-[2] sm:scale-x-[3.5]">
               <div className="absolute top-0 right-16 sm:right-24 h-full w-16 sm:w-28 blur-xl opacity-90 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
               <div className="absolute top-0 right-8 sm:right-14 h-full w-8 sm:w-14 bg-[#123c73] dark:bg-[#7a0000] opacity-95" />

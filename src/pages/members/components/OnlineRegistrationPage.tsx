@@ -8,12 +8,13 @@ import {
   CheckCircle2, Clock, Download, Copy, RefreshCw, Sparkles, 
   User, Phone, Mail, Calendar, MapPin, HeartHandshake, ShieldCheck, 
   CreditCard, Check, Sun, Moon, FileSignature, Eraser, Info, Users,
-  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, AlertCircle
+  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, AlertCircle, Trash2
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import type { OnlineRegistration, MembershipSettings } from '../../../types/members';
 import { registrationService, settingsService, DEFAULT_SETTINGS } from '../memberService';
+import { AgreementDocumentViewer, type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
 
 import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
@@ -21,6 +22,8 @@ import gymLogoFallback from '../../../assets/landscape-logo.webp';
 
 const LOCAL_STORAGE_LIST_KEY = 'palomar-online-registrations-list';
 const OLD_LOCAL_STORAGE_KEY = 'palomar-online-registration';
+const ONLINE_REGISTRATION_DRAFT_KEY = 'palomar_online_registration_draft_v1';
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 Hours Auto-Expiry
 
 // Maximum allowed active tickets per user session
 const MAX_ACTIVE_TICKETS = 3;
@@ -37,9 +40,6 @@ const calculateAge = (birthdayStr: string): number => {
   return age >= 0 ? age : 0;
 };
 
-/**
- * Calculates the exact timestamp (ms) for 12:00 AM Manila Time (Asia/Manila midnight next day)
- */
 const getNextManilaMidnightMs = (): number => {
   const now = new Date();
   const manilaDateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
@@ -236,6 +236,12 @@ interface StoredRegistration {
   expiresAt: number;
 }
 
+interface RegistrationDraftPayload {
+  data: Partial<RegistrationFormData>;
+  step: number;
+  savedAt: number;
+}
+
 // Canvas Signature Pad Component
 interface SignaturePadProps {
   label: string;
@@ -263,11 +269,20 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (!value) {
+    if (value) {
+      const img = new Image();
+      img.src = value;
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.offsetWidth, canvas.offsetHeight);
+        setHasDrawn(true);
+      };
+    } else {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      setHasDrawn(false);
     }
-  }, []);
+  }, [value]);
 
   const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -395,22 +410,55 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
 };
 
 export const OnlineRegistrationPage: React.FC = () => {
+
+  const INITIAL_FORM_VALUES: RegistrationFormData = {
+  last_name: '',
+  first_name: '',
+  middle_initial: '',
+  suffix: '',
+  phone: '',
+  email: '',
+  gender: 'Male',
+  birthday: '',
+  address: '',
+  same_as_parent: true,
+  emergency_contact_name: '',
+  emergency_contact_relationship: '',
+  emergency_contact_phone: '',
+  preferred_plan: 'Monthly Membership',
+  agreement: false,
+  parent_name: '',
+  parent_relationship: 'Father',
+  parent_relationship_other: '',
+  parent_phone: '',
+  parent_email: '',
+  applicant_signature: null,
+  parent_signature: null,
+};
+
+  const [agreementDocument, setAgreementDocument] = useState<AgreementDocument | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    return document.documentElement.classList.contains('dark');
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   });
 
   const [activeRegistrations, setActiveRegistrations] = useState<StoredRegistration[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<StoredRegistration | null>(null);
   const [viewMode, setViewMode] = useState<'form' | 'ticket' | 'list'>('form');
+  const lastDraftJsonRef = useRef<string>(JSON.stringify(INITIAL_FORM_VALUES));
 
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Draft Auto-saving states
+  const [draftState, setDraftState] = useState<'saved' | 'saving' | 'idle'>('idle');
+  const isRestoringDraft = useRef(false);
+
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
 
+  
   useEffect(() => {
     settingsService.load().then(setSettings).catch(console.warn);
   }, []);
@@ -451,13 +499,102 @@ export const OnlineRegistrationPage: React.FC = () => {
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     trigger,
     reset,
     formState: { errors, touchedFields, isSubmitted },
   } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
-    defaultValues: {
+    defaultValues: INITIAL_FORM_VALUES,
+    mode: 'onTouched',
+  });
+
+ // Character-by-character Draft Auto-Save: ONLY triggers on actual keystrokes
+useEffect(() => {
+  let saveTimer: ReturnType<typeof setTimeout>;
+
+  const subscription = watch((formValues, { type }) => {
+    // 1. Strictly ignore if this was not an actual user typing event
+    if (!type || isRestoringDraft.current || isSubmitting) return;
+
+    const currentJson = JSON.stringify(formValues);
+
+    // 2. Ignore if values haven't actually changed
+    if (currentJson === lastDraftJsonRef.current) return;
+
+    // 3. If form matches initial empty state, clear draft and stay idle
+    if (currentJson === JSON.stringify(INITIAL_FORM_VALUES)) {
+      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+      lastDraftJsonRef.current = currentJson;
+      setDraftState('idle');
+      return;
+    }
+
+    lastDraftJsonRef.current = currentJson;
+    setDraftState('saving');
+
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        const payload: RegistrationDraftPayload = {
+          data: formValues,
+          step: currentStep,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(ONLINE_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));
+        setDraftState('saved');
+      } catch (err) {
+        console.warn('Could not write draft to localStorage:', err);
+        setDraftState('idle');
+      }
+    }, 400);
+  });
+
+  return () => {
+    subscription.unsubscribe();
+    clearTimeout(saveTimer);
+  };
+}, [watch, currentStep, isSubmitting]);
+
+  // Restore Draft with 24h Auto-Expiry Check
+useEffect(() => {
+  try {
+    const rawDraft = localStorage.getItem(ONLINE_REGISTRATION_DRAFT_KEY);
+    if (!rawDraft) {
+      lastDraftJsonRef.current = JSON.stringify(getValues());
+      return;
+    }
+
+    const parsed: RegistrationDraftPayload = JSON.parse(rawDraft);
+    const isExpired = Date.now() - (parsed.savedAt || 0) > DRAFT_MAX_AGE_MS;
+
+    if (isExpired) {
+      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+      lastDraftJsonRef.current = JSON.stringify(getValues());
+    } else if (parsed.data) {
+      isRestoringDraft.current = true;
+      reset({ ...parsed.data });
+      lastDraftJsonRef.current = JSON.stringify(parsed.data);
+      if (parsed.step && parsed.step >= 1 && parsed.step <= 4) {
+        setCurrentStep(parsed.step);
+      }
+      setDraftState('saved');
+      toast.info('Registration draft restored.', { toastId: 'draft-restored' });
+      setTimeout(() => {
+        isRestoringDraft.current = false;
+      }, 100);
+    }
+  } catch {
+    localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+  }
+}, [reset, getValues]);
+
+  const watchedValues = watch();
+
+  const handleClearDraft = () => {
+    localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+    reset({
       last_name: '',
       first_name: '',
       middle_initial: '',
@@ -480,11 +617,11 @@ export const OnlineRegistrationPage: React.FC = () => {
       parent_email: '',
       applicant_signature: null,
       parent_signature: null,
-    },
-    mode: 'onTouched',
-  });
-
-  const watchedValues = watch();
+    });
+    setCurrentStep(1);
+    setDraftState('idle');
+    toast.info('Registration draft cleared.');
+  };
 
   const selectedPlan = watchedValues.preferred_plan;
   const isAgreed = watchedValues.agreement;
@@ -503,7 +640,6 @@ export const OnlineRegistrationPage: React.FC = () => {
   const isRestrictedUnder12 = useMemo(() => !!watchedBirthday && applicantAge < 12, [watchedBirthday, applicantAge]);
   const isMinor = useMemo(() => !!watchedBirthday && applicantAge >= 12 && applicantAge < 18, [watchedBirthday, applicantAge]);
   
-  // Check if maximum limit of 3 tickets is reached
   const isTicketLimitReached = useMemo(() => activeRegistrations.length >= MAX_ACTIVE_TICKETS, [activeRegistrations]);
 
   const todayFormatted = useMemo(() => {
@@ -591,7 +727,6 @@ export const OnlineRegistrationPage: React.FC = () => {
     }
   };
 
-  // Synchronize local active tickets with server pending queue
   const syncActiveTickets = useCallback(async (showToastNotice = false) => {
     const localTickets = loadRecentRegistrations();
     if (localTickets.length === 0) {
@@ -602,17 +737,14 @@ export const OnlineRegistrationPage: React.FC = () => {
 
     setIsSyncing(true);
     try {
-      // Query server queue for active pending registrations
       const serverQueue = await registrationService.getQueue();
       
-      // Valid active tickets MUST be status === 'Pending' AND NOT archived
       const serverPendingIds = new Set(
         serverQueue
           .filter((item: OnlineRegistration) => item.status === 'Pending' && !(item as any).is_archived)
           .map((item: OnlineRegistration) => item.id)
       );
 
-      // Filter out tickets that are archived, rejected, deleted, or approved by staff
       const validTickets = localTickets.filter((t) => serverPendingIds.has(t.registrationId));
 
       if (validTickets.length !== localTickets.length) {
@@ -626,7 +758,6 @@ export const OnlineRegistrationPage: React.FC = () => {
             : `${removedCount} tickets were processed, archived, or removed by staff.`
         );
 
-        // Reset selected ticket if it was archived or deleted
         setSelectedTicket((prevSelected) => {
           if (prevSelected && !validTickets.some((vt) => vt.registrationId === prevSelected.registrationId)) {
             if (validTickets.length > 0) {
@@ -662,11 +793,9 @@ export const OnlineRegistrationPage: React.FC = () => {
       setViewMode('form');
     }
 
-    // Perform initial server verification
     syncActiveTickets();
   }, [syncActiveTickets]);
 
-  // Clock Ticker + Periodic Sync
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTimeMs(Date.now());
@@ -681,7 +810,6 @@ export const OnlineRegistrationPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [viewMode]);
 
-  // Periodic Background Server Sync Every 10 Seconds
   useEffect(() => {
     const syncTimer = setInterval(() => {
       syncActiveTickets();
@@ -740,7 +868,6 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const onSubmit = async (data: RegistrationFormData) => {
-    // Check local ticket count restriction
     if (isTicketLimitReached) {
       toast.error(`Limit reached! You can only have up to ${MAX_ACTIVE_TICKETS} active pre-registration tickets at a time.`);
       return;
@@ -774,7 +901,7 @@ export const OnlineRegistrationPage: React.FC = () => {
         preferred_plan: data.preferred_plan,
         status: 'Pending',
         submitted_at: new Date().toISOString(),
-        notes: isMinor ? `Minor Applicant (${applicantAge} yrs old) - Parent Consent Verified` : '',
+        notes: `${isMinor ? `Minor Applicant (${applicantAge} yrs old) - Parent Consent Verified. ` : ''}Terms & Conditions and Privacy Policy acknowledged on ${new Date().toISOString()}.`,
 
         parent_consent_required: isMinor,
         parent_name: isMinor ? data.parent_name : null,
@@ -788,6 +915,9 @@ export const OnlineRegistrationPage: React.FC = () => {
       };
 
       await registrationService.submit(newReg);
+
+      // Immediately purge sensitive draft upon account submission
+      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
 
       const expiresAt = getNextManilaMidnightMs();
 
@@ -810,6 +940,7 @@ export const OnlineRegistrationPage: React.FC = () => {
 
       setCurrentStep(1);
       reset();
+      setDraftState('idle');
 
       toast.success('Pre-registration submitted successfully!');
     } catch (err: any) {
@@ -942,9 +1073,38 @@ export const OnlineRegistrationPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse" />
           <span className="text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">Self-Service Portal</span>
+          
+          {/* Real-time Draft Saving Status Indicator */}
+          {viewMode === 'form' && draftState !== 'idle' && (
+            <div className="hidden sm:flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-800 text-[9px] font-mono font-bold text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-zinc-700 animate-fade-in">
+              {draftState === 'saving' ? (
+                <>
+                  <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />
+                  <span>Saving draft...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500 stroke-3" />
+                  <span>Draft saved (24h)</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {viewMode === 'form' && draftState !== 'idle' && (
+            <button
+              type="button"
+              onClick={handleClearDraft}
+              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-red-400 text-slate-500 hover:text-red-500 transition-all cursor-pointer shadow-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+              title="Clear Saved Draft"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear Draft</span>
+            </button>
+          )}
+
           {/* Refresh / Sync Button */}
           <button
             type="button"
@@ -1791,16 +1951,20 @@ export const OnlineRegistrationPage: React.FC = () => {
                   
                   {isMinor && (
                     <>
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-400/40 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
+                        <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                        <span><strong>Required minor consent:</strong> both the applicant and parent or legal guardian must provide a signature before the registration can be submitted.</span>
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <SignaturePad
-                          label="Applicant Signature"
+                          label="Applicant Signature *"
                           value={watchedApplicantSignature || null}
                           onChange={(dataUrl) => setValue('applicant_signature', dataUrl, { shouldValidate: true })}
                           error={errors.applicant_signature?.message}
                         />
 
                         <SignaturePad
-                          label="Parent / Guardian Signature"
+                          label="Parent / Guardian Signature *"
                           value={watchedParentSignature || null}
                           onChange={(dataUrl) => setValue('parent_signature', dataUrl, { shouldValidate: true })}
                           error={errors.parent_signature?.message}
@@ -1813,7 +1977,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
 
                       <div className="p-3.5 rounded-xl bg-(--bg-card) border border-(--border-color) text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                        "I am the parent or legal guardian of the applicant named above. I have carefully read and fully understand the Gym Membership Waiver, Assumption of Risk & Privacy Agreement. I voluntarily give permission for the applicant to participate in activities conducted by Wolf Palomar Fitness Gym. I acknowledge the inherent risks involved and accept responsibility for the applicant's participation."
+                        "I am the parent or legal guardian of the applicant named above. I have read and understood the Terms & Conditions and Privacy Policy, including the rules for safe equipment use, prohibited conduct, membership payments, and minors. I voluntarily give permission for the applicant to participate and accept responsibility for the applicant's compliance with these rules."
                       </div>
                     </>
                   )}
@@ -1834,11 +1998,11 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-snug">
                         {isMinor ? (
                           <>
-                            I certify that I am the lawful parent/guardian of the applicant, all provided information is accurate, and I voluntarily consent to the applicant's participation under the Gym Waiver. <span className="text-red-500">*</span>
+                            I certify that I am the lawful parent/guardian, the information is accurate, and I agree to the <button type="button" onClick={() => setAgreementDocument('terms')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={() => setAgreementDocument('privacy')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button> for the applicant. <span className="text-red-500">*</span>
                           </>
                         ) : (
                           <>
-                            I certify that all information provided is accurate and true, and I agree to the Wolf Palomar Gym Membership Waiver & Terms. <span className="text-red-500">*</span>
+                            I certify that all information is accurate and I agree to the <button type="button" onClick={() => setAgreementDocument('terms')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={() => setAgreementDocument('privacy')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>. <span className="text-red-500">*</span>
                           </>
                         )}
                       </span>
@@ -1860,6 +2024,8 @@ export const OnlineRegistrationPage: React.FC = () => {
                 </div>
               </div>
             )}
+
+            <AgreementDocumentViewer isOpen={agreementDocument !== null} onClose={() => setAgreementDocument(null)} initialDocument={agreementDocument || 'terms'} />
 
             {/* WIZARD BUTTONS */}
             <div className="flex justify-between items-center pt-4 border-t border-(--border-color) select-none">

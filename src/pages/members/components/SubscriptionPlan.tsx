@@ -1,5 +1,5 @@
 // src/pages/members/components/SubscriptionPlan.tsx
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,7 +7,7 @@ import {
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
   Download, Printer, ChevronDown, ChevronUp, Info, Loader2, Camera, SwitchCamera,
-  RefreshCw, WifiOff
+  RefreshCw, WifiOff, Users, UserPlus, Trash2, Ban
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -20,9 +20,38 @@ import {
   DEFAULT_SETTINGS
 } from '../memberService';
 import { OfficialReceipt, type OfficialReceiptRef } from '../../../components/ui/OfficialReceipt';
+import { AgreementDocumentViewer, type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
 import type { OnlineRegistration, PaymentMethod, Member, Subscription, MembershipSettings } from '../../../types/members';
 import type { HybridScanResult, HybridMemberResult, HybridProductResult } from '../../scanner/scannerService';
 export type { HybridScanResult, HybridMemberResult, HybridProductResult };
+
+const INTAKE_DRAFT_STORAGE_KEY = 'palomar_frontdesk_intake_draft_v2';
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 Hours Auto-Expiry
+
+interface IntakeDraft {
+  enrollmentType: 'existing' | 'new';
+  selectedMemberId?: string;
+  lastName: string;
+  firstName: string;
+  middleInitials: string;
+  suffix: string;
+  email: string;
+  phone: string;
+  gender: string;
+  birthday: string;
+  address: string;
+  emergencyName: string;
+  relationship: string;
+  emergencyPhone: string;
+  parentName: string;
+  parentRelationship: string;
+  parentPhone: string;
+  parentEmail: string;
+  applicantSig: string | null;
+  parentSig: string | null;
+  waiverAgreed: boolean;
+  savedAt: number;
+}
 
 // Canvas Signature Pad Component
 interface SignaturePadProps {
@@ -44,7 +73,6 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(!!value);
 
-  // Load existing signature image onto canvas if interactive mode
   useEffect(() => {
     if (readOnly) return;
 
@@ -136,7 +164,6 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     onChange(null);
   };
 
-  // READ-ONLY DISPLAY
   if (readOnly) {
     const [showImage, setShowImage] = useState(false);
 
@@ -174,7 +201,6 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     );
   }
 
-  // INTERACTIVE DRAWING CANVAS
   return (
     <div className="space-y-1 select-none text-left">
       <div className="flex justify-between items-center">
@@ -248,31 +274,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 }) => {
   const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : 1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [, setShowSignatures] = useState<boolean>(false);
-  const [showClientDetails, setShowClientDetails] = useState<boolean>(true);
+  const [, setShowClientDetails] = useState<boolean>(true);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
-  const [showSignaturesInAudit, setShowSignaturesInAudit] = useState<boolean>(false);
+  const [, setShowSignaturesInAudit] = useState<boolean>(false);
   const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(initialIntakeMode || 'Manual');
   const [selectedPlan, setSelectedPlan] = useState<'Monthly Membership' | 'Yearly Membership' | 'No Subscription'>(
     initialPlan || 'Monthly Membership'
   );
 
-  
-  
+  // Step 1 Enrollment Mode: "Select Existing Member" vs "Create New Member"
+  const [enrollmentType, setEnrollmentType] = useState<'existing' | 'new'>('existing');
+
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
-  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [isUsingSettingsFallback, setIsUsingSettingsFallback] = useState<boolean>(false);
+  const [, setIsLoadingSettings] = useState<boolean>(false);
+  const [, setSettingsError] = useState<string | null>(null);
+  const [, setIsUsingSettingsFallback] = useState<boolean>(false);
 
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [allSubscriptions, setAllSubscriptions] = useState<Subscription[]>([]);
-  
-  // Price validation guards
-const isMonthlyValid = 
-  !isLoadingSettings && 
-  !settingsError && 
-  typeof settings?.monthly_plan_price === 'number' && 
-  settings.monthly_plan_price > 0;
+
+  // Draft Auto-saving State
+  const [draftState, setDraftState] = useState<'saved' | 'saving' | 'idle'>('idle');
+  const isRestoringDraftRef = useRef(false);
+  const lastDraftSnapshotRef = useRef<string>('');
 
   const fetchWizardSettings = async () => {
     setIsLoadingSettings(true);
@@ -307,11 +331,8 @@ const isMonthlyValid =
   const cardFee = settings.card_printing_fee || 50;
   const gcashFee = settings.gcash_fee || 10;
 
-  // Selected Existing Member State
   const [selectedExistingMember, setSelectedExistingMember] = useState<Member | null>(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>('');
-
-  // Validation Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Personal Fields
@@ -319,7 +340,6 @@ const isMonthlyValid =
   const [firstName, setFirstName] = useState('');
   const [middleInitials, setMiddleInitials] = useState('');
   const [suffix, setSuffix] = useState('');
-
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState('Male');
@@ -338,6 +358,8 @@ const isMonthlyValid =
   const [parentSig, setParentSig] = useState<string | null>(null);
   const [consentDate, setConsentDate] = useState<string | null>(null);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
+  const [subscriptionAgreement, setSubscriptionAgreement] = useState(false);
+  const [agreementDocument, setAgreementDocument] = useState<AgreementDocument | null>(null);
 
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
@@ -345,49 +367,35 @@ const isMonthlyValid =
   const receiptRef = useRef<OfficialReceiptRef | null>(null);
   const qrRegionId = "fast-intake-qr-reader";
 
-  // SCAN DEBOUNCE REFS
   const lastScanTimeRef = useRef<number>(0);
   const lastScannedIdRef = useRef<string>('');
   
-  // Camera Device States
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+ const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
-  // Fetch available video input devices
-  useEffect(() => {
-    if (isOpen && intakeMode === 'Import' && isScanning) {
-      Html5Qrcode.getCameras().then((devices) => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-          if (!selectedCameraId) {
-            setSelectedCameraId(devices[0].id);
-          }
+// Fetch and enumerate connected camera devices when scanner opens
+useEffect(() => {
+  if (isOpen && intakeMode === 'Import' && isScanning) {
+    Html5Qrcode.getCameras().then((devices) => {
+      if (devices && devices.length > 0) {
+        setCameras(devices);
+        if (!selectedCameraId) {
+          setSelectedCameraId(devices[0].id);
         }
-      }).catch((err) => {
-        console.warn("Could not retrieve camera list:", err);
-      });
-    }
-  }, [isOpen, intakeMode, isScanning]);
-
-  const handleCycleCamera = () => {
-    if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    forceStopCamera();
-    setSelectedCameraId(cameras[nextIndex].id);
-  };
+      }
+    }).catch((err) => {
+      console.warn("Could not retrieve camera list:", err);
+    });
+  }
+}, [isOpen, intakeMode, isScanning]);
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [gcashReference, setGcashReference] = useState('');
   const [addIdCard, setAddIdCard] = useState(false);
-
   const [importedQueueReg, setImportedQueueReg] = useState<OnlineRegistration | null>(null);
   const [finishedIds, setFinishedIds] = useState<{ member_id: string; sub_id: string; receipt_no: string; transaction_date: string } | null>(null);
 
-  // Determine attached active member from DB
   const activeMember = selectedExistingMember || prefillMember;
-
-  // Static locks checking original database state once
   const isNameLocked = Boolean(activeMember?.full_name?.trim());
   const isPhoneLocked = Boolean(activeMember?.phone && activeMember.phone.trim() && activeMember.phone.toLowerCase() !== 'no phone');
   const isBirthdayLocked = Boolean(activeMember?.birthday?.trim());
@@ -398,7 +406,6 @@ const isMonthlyValid =
 
   const isMissing = (val: string) => Boolean(activeMember) && (!val || !val.trim() || val.trim().toLowerCase() === 'no phone');
 
-  // Search results for member lookup input
   const matchingSearchMembers = useMemo(() => {
     if (!memberSearchQuery.trim()) return [];
     const q = memberSearchQuery.toLowerCase().trim();
@@ -475,7 +482,6 @@ const isMonthlyValid =
         if (parts.length > 1) {
           const lName = parts.pop() || '';
           setLastName(lName);
-          
           if (parts.length > 1) {
             const cleanMI = parts[parts.length - 1].replace('.', '');
             if (cleanMI.length <= 2) {
@@ -498,6 +504,7 @@ const isMonthlyValid =
 
   const handleSelectExistingMember = (m: Member) => {
     setSelectedExistingMember(m);
+    setEnrollmentType('existing');
     parseAndSetFullNameFields(m.full_name);
     setEmail(m.email || '');
     setPhone(m.phone || '');
@@ -514,7 +521,7 @@ const isMonthlyValid =
     setApplicantSig(m.applicant_signature || null);
     setParentSig(m.parent_signature || null);
     setConsentDate(m.consent_date || null);
-    setWaiverAgreed(true);
+    setWaiverAgreed(false);
     setErrors({});
   };
 
@@ -534,26 +541,151 @@ const isMonthlyValid =
     setRelationship('');
     setEmergencyPhone('');
     setWaiverAgreed(false);
+    setSubscriptionAgreement(false);
     setErrors({});
   };
 
-  // Detect matching existing member by name
+  const handleChooseCreateNewMember = () => {
+    setEnrollmentType('new');
+    handleClearSelectedExistingMember();
+  };
+
+  const handleChooseExistingMember = () => {
+    setEnrollmentType('existing');
+    handleClearSelectedExistingMember();
+  };
+
+  // Auto-Save Draft System with 24-Hour TTL
+  useEffect(() => {
+    if (!isOpen || prefillData || prefillMember || intakeMode === 'Import') return;
+
+    isRestoringDraftRef.current = true;
+    try {
+      const saved = localStorage.getItem(INTAKE_DRAFT_STORAGE_KEY);
+      if (saved) {
+        const draft: IntakeDraft = JSON.parse(saved);
+        const isExpired = Date.now() - (draft.savedAt || 0) > DRAFT_MAX_AGE_MS;
+
+        if (isExpired) {
+          localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+        } else {
+          setEnrollmentType(draft.enrollmentType || 'new');
+          setLastName(draft.lastName || '');
+          setFirstName(draft.firstName || '');
+          setMiddleInitials(draft.middleInitials || '');
+          setSuffix(draft.suffix || '');
+          setEmail(draft.email || '');
+          setPhone(draft.phone || '');
+          setGender(draft.gender || 'Male');
+          setBirthday(draft.birthday || '');
+          setAddress(draft.address || '');
+          setEmergencyName(draft.emergencyName || '');
+          setRelationship(draft.relationship || '');
+          setEmergencyPhone(draft.emergencyPhone || '');
+          setParentName(draft.parentName || '');
+          setParentRelationship(draft.parentRelationship || 'Father');
+          setParentPhone(draft.parentPhone || '');
+          setParentEmail(draft.parentEmail || '');
+          setApplicantSig(draft.applicantSig || null);
+          setParentSig(draft.parentSig || null);
+          setWaiverAgreed(Boolean(draft.waiverAgreed));
+          setDraftState('saved');
+          toast.info('Restored saved intake draft (valid for 24h).', { toastId: 'intake-draft-restored' });
+        }
+      }
+    } catch {
+      localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+    } finally {
+      setTimeout(() => { isRestoringDraftRef.current = false; }, 100);
+    }
+  }, [isOpen, prefillData, prefillMember, intakeMode]);
+
+  // Real-time character auto-save listener
+  useEffect(() => {
+    if (!isOpen || isRestoringDraftRef.current || isSubmitting || intakeMode !== 'Manual' || prefillData || prefillMember) return;
+
+    const draftData: IntakeDraft = {
+      enrollmentType,
+      selectedMemberId: selectedExistingMember?.id,
+      lastName, firstName, middleInitials, suffix, email, phone, gender, birthday, address,
+      emergencyName, relationship, emergencyPhone, parentName, parentRelationship, parentPhone, parentEmail,
+      applicantSig, parentSig, waiverAgreed,
+      savedAt: Date.now()
+    };
+
+    const currentSnapshot = JSON.stringify(draftData);
+    if (currentSnapshot === lastDraftSnapshotRef.current) return;
+    lastDraftSnapshotRef.current = currentSnapshot;
+
+    const hasAnyContent = [lastName, firstName, phone, email, birthday, address, emergencyName, emergencyPhone, parentName, parentPhone]
+      .some(val => val.trim() !== '');
+
+    if (!hasAnyContent && !selectedExistingMember) {
+      localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+      setDraftState('idle');
+      return;
+    }
+
+    setDraftState('saving');
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(INTAKE_DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+        setDraftState('saved');
+      } catch (e) {
+        console.warn("Could not save intake draft:", e);
+        setDraftState('idle');
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    isOpen, isSubmitting, intakeMode, prefillData, prefillMember, enrollmentType, selectedExistingMember,
+    lastName, firstName, middleInitials, suffix, email, phone, gender, birthday, address,
+    emergencyName, relationship, emergencyPhone, parentName, parentRelationship, parentPhone, parentEmail,
+    applicantSig, parentSig, waiverAgreed
+  ]);
+
+  const handleClearDraft = () => {
+    localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+    setSelectedExistingMember(null);
+    setMemberSearchQuery('');
+    setLastName('');
+    setFirstName('');
+    setMiddleInitials('');
+    setSuffix('');
+    setEmail('');
+    setPhone('');
+    setGender('Male');
+    setBirthday('');
+    setAddress('');
+    setEmergencyName('');
+    setRelationship('');
+    setEmergencyPhone('');
+    setParentName('');
+    setParentRelationship('Father');
+    setParentPhone('');
+    setParentEmail('');
+    setApplicantSig(null);
+    setParentSig(null);
+    setWaiverAgreed(false);
+    setDraftState('idle');
+    setErrors({});
+    toast.info('Intake draft cleared.', { toastId: 'draft-cleared-toast' });
+  };
+
   const existingMemberMatch = useMemo<Member | null>(() => {
     if (!firstName.trim() || !lastName.trim()) return null;
-
     const targetFirst = firstName.trim().toLowerCase();
     const targetLast = lastName.trim().toLowerCase();
 
     return allMembers.find((m: Member) => {
       if (selectedExistingMember && m.id === selectedExistingMember.id) return false;
       if (prefillMember && m.id === prefillMember.id) return false;
-
       const flatFullName = m.full_name.toLowerCase();
       return flatFullName.includes(targetFirst) && flatFullName.includes(targetLast);
     }) || null;
   }, [firstName, lastName, selectedExistingMember, prefillMember, allMembers]);
 
-  // Non-blocking helper to detect duplicate contact phone
   const phoneMatchMember = useMemo<Member | null>(() => {
     const cleanPhone = phone.trim();
     if (!cleanPhone || cleanPhone.length < 7 || cleanPhone.toLowerCase() === 'no phone') return null;
@@ -564,31 +696,6 @@ const isMonthlyValid =
       return m.phone && m.phone.trim() === cleanPhone;
     }) || null;
   }, [phone, selectedExistingMember, prefillMember, allMembers]);
-
-  // Retrieve currently active subscription for target member
-  const matchActiveSub = useMemo(() => {
-    const target = selectedExistingMember || prefillMember || existingMemberMatch;
-    if (!target) return undefined;
-    const now = Date.now();
-    return allSubscriptions.find((s: Subscription) => {
-      if (s.member_id !== target.member_id || s.status === 'Voided') return false;
-      const startMs = new Date(s.start_date).getTime();
-      const endMs = new Date(s.end_date).getTime();
-      return startMs <= now && endMs >= now;
-    });
-  }, [selectedExistingMember, prefillMember, existingMemberMatch, allSubscriptions]);
-
-  // Retrieve any queued renewal subscription for target member
-  const matchQueuedSub = useMemo(() => {
-    const target = selectedExistingMember || prefillMember || existingMemberMatch;
-    if (!target) return undefined;
-    const now = Date.now();
-    return allSubscriptions.find((s: Subscription) => {
-      if (s.member_id !== target.member_id || s.status === 'Voided') return false;
-      const startMs = new Date(s.start_date).getTime();
-      return startMs > now;
-    });
-  }, [selectedExistingMember, prefillMember, existingMemberMatch, allSubscriptions]);
 
   const calculatedAge = useMemo(() => {
     if (!birthday) return 0;
@@ -619,6 +726,51 @@ const isMonthlyValid =
     }
   };
 
+  // Helper to determine subscription/suspension details for any member
+  const getMemberSubscriptionMeta = useCallback((m: Member) => {
+    const now = Date.now();
+    const activeSub = allSubscriptions.find((s: Subscription) => {
+      if (s.member_id !== m.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      const endMs = new Date(s.end_date).getTime();
+      return startMs <= now && endMs >= now;
+    });
+
+    const queuedSub = allSubscriptions.find((s: Subscription) => {
+      if (s.member_id !== m.member_id || s.status === 'Voided') return false;
+      const startMs = new Date(s.start_date).getTime();
+      return startMs > now;
+    });
+
+    const statusStr = String(m.status || '');
+    const isSuspended = statusStr === 'Suspended' || statusStr === 'Inactive' || statusStr === 'Banned';
+
+    let remainingDays = 0;
+    let isOver30Days = false;
+    let isWithin30Days = false;
+
+    if (activeSub) {
+      const endMs = new Date(activeSub.end_date).getTime();
+      remainingDays = Math.max(0, Math.ceil((endMs - now) / (1000 * 60 * 60 * 24)));
+      isOver30Days = remainingDays > 30;
+      isWithin30Days = remainingDays <= 30;
+    }
+
+    const hasTwoSubs = Boolean(activeSub && queuedSub);
+    const isBlockedFromRenewing = isSuspended || hasTwoSubs || isOver30Days;
+
+    return {
+      activeSub,
+      queuedSub,
+      hasTwoSubs,
+      isSuspended,
+      remainingDays,
+      isOver30Days,
+      isWithin30Days,
+      isBlockedFromRenewing
+    };
+  }, [allSubscriptions]);
+
   // STEP 1: APPLICANT VALIDATION STATUS SUMMARY
   const applicantStatusSummary = useMemo(() => {
     const notices: { type: 'success' | 'info' | 'warning'; text: string }[] = [];
@@ -633,6 +785,52 @@ const isMonthlyValid =
 
     if (selectedExistingMember || prefillMember) {
       const active = selectedExistingMember || prefillMember;
+      const meta = active ? getMemberSubscriptionMeta(active) : null;
+
+      if (meta?.isSuspended) {
+        return {
+          level: 'red' as const,
+          title: 'Account Suspended',
+          description: `This member profile is currently marked as Suspended/Inactive. Membership enrollment is blocked until account status is resolved.`,
+          actionMember: null,
+          notices: [{ type: 'warning' as const, text: 'Member account is currently suspended.' }]
+        };
+      }
+
+      if (meta?.hasTwoSubs) {
+        return {
+          level: 'red' as const,
+          title: 'Maximum Subscriptions Reached',
+          description: `Member already has an active contract (${meta.activeSub?.plan_name}) and a queued renewal (${meta.queuedSub?.plan_name}). Adding more renewals is not allowed.`,
+          actionMember: null,
+          notices: [{ type: 'warning' as const, text: '2 active/queued subscriptions detected.' }]
+        };
+      }
+
+      if (meta?.isOver30Days) {
+        return {
+          level: 'red' as const,
+          title: 'Renewal Not Allowed Yet',
+          description: `Active contract (${meta.activeSub?.plan_name}) has ${meta.remainingDays} days remaining. Renewals or plan adjustments are only permitted within 30 days of expiration.`,
+          actionMember: null,
+          notices: [{ type: 'warning' as const, text: `${meta.remainingDays} days remaining on active plan.` }]
+        };
+      }
+
+      if (meta?.isWithin30Days && meta.activeSub) {
+        notices.push({
+          type: 'info',
+          text: `Active contract (${meta.activeSub.plan_name}) has ${meta.remainingDays} days left. Ready for renewal extension.`
+        });
+        return {
+          level: 'amber' as const,
+          title: 'Eligible for Renewal Extension',
+          description: `Member's active ${meta.activeSub.plan_name} contract expires in ${meta.remainingDays} days. Enrolling will queue the renewal to start upon expiration.`,
+          actionMember: null,
+          notices
+        };
+      }
+
       notices.push({
         type: 'info',
         text: `Attached to existing member profile: ${active?.full_name} (${active?.member_id}).`
@@ -644,9 +842,6 @@ const isMonthlyValid =
         type: 'warning',
         text: `This phone number is already used by ${phoneMatchMember.full_name} (${phoneMatchMember.member_id}).`
       });
-    }
-
-    if (!selectedExistingMember && phoneMatchMember) {
       return {
         level: 'amber' as const,
         title: 'Please Review',
@@ -673,7 +868,7 @@ const isMonthlyValid =
       actionMember: null,
       notices
     };
-  }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember]);
+  }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember, getMemberSubscriptionMeta]);
 
   // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY (WITH 30-DAY EXTENSION QUEUE LOGIC)
   const membershipStatusSummary = useMemo(() => {
@@ -686,50 +881,54 @@ const isMonthlyValid =
       };
     }
 
-    // 1. Check if a renewal contract is ALREADY queued for the future
-    if (matchQueuedSub) {
-      const queueStartDate = matchQueuedSub.start_date 
-        ? new Date(matchQueuedSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : 'N/A';
+    const target = selectedExistingMember || prefillMember || existingMemberMatch;
+    if (target) {
+      const meta = getMemberSubscriptionMeta(target);
 
-      return {
-        level: 'red' as const,
-        isBlocked: true,
-        title: 'On-going Renewal Detected',
-        description: `This member already has a renewal plan (${matchQueuedSub.plan_name}) scheduled to start on ${queueStartDate}. Multiple queued renewals are not allowed.`
-      };
-    }
-
-    // 2. Check if member currently has an ACTIVE subscription
-    if (matchActiveSub) {
-      const expDate = matchActiveSub.end_date 
-        ? new Date(matchActiveSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : 'N/A';
-
-      const now = Date.now();
-      const endMs = new Date(matchActiveSub.end_date).getTime();
-      const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
-
-      // RED BLOCKING ERROR: Active subscription has MORE than 30 days left
-      if (diffDays > 30) {
+      if (meta.isSuspended) {
         return {
           level: 'red' as const,
           isBlocked: true,
-          title: 'Registration Cannot Continue',
-          description: `This member currently has an active ${matchActiveSub.plan_name} contract expiring on ${expDate} (${diffDays} days remaining). Subscription renewal or plan change is permitted only within 30 days of expiration.`
+          title: 'Account Suspended',
+          description: `This member profile is suspended. Please reinstate their account before processing subscription enrollment.`
         };
       }
 
-      // YELLOW WARNING: Active subscription has 30 DAYS OR LESS left -> ALLOW EXTENSION QUEUE!
-      const isSamePlan = selectedPlan === matchActiveSub.plan_name;
-      const actionText = isSamePlan ? 'extend' : 'queue';
+      if (meta.hasTwoSubs) {
+        const queueStartDate = meta.queuedSub?.start_date 
+          ? new Date(meta.queuedSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'N/A';
 
-      return {
-        level: 'amber' as const,
-        isBlocked: false,
-        title: 'Subscription Extension Notice',
-        description: `Member currently has an active ${matchActiveSub.plan_name} contract expiring on ${expDate} (${diffDays} days left). Confirming checkout will ${actionText} the new ${selectedPlan} to activate automatically on ${expDate}.`
-      };
+        return {
+          level: 'red' as const,
+          isBlocked: true,
+          title: 'Maximum Subscriptions Queued',
+          description: `This member already has an ongoing plan (${meta.activeSub?.plan_name}) and a queued renewal (${meta.queuedSub?.plan_name}) starting on ${queueStartDate}. Multiple queued renewals are not allowed.`
+        };
+      }
+
+      if (meta.isOver30Days && meta.activeSub) {
+        const expDate = new Date(meta.activeSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return {
+          level: 'red' as const,
+          isBlocked: true,
+          title: 'Renewal Blocked (>30 Days Remaining)',
+          description: `This member currently has an active ${meta.activeSub.plan_name} contract expiring on ${expDate} (${meta.remainingDays} days remaining). Renewal or plan change is only permitted within 30 days of expiration.`
+        };
+      }
+
+      if (meta.isWithin30Days && meta.activeSub) {
+        const expDate = new Date(meta.activeSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const isSamePlan = selectedPlan === meta.activeSub.plan_name;
+        const actionText = isSamePlan ? 'extend' : 'queue';
+
+        return {
+          level: 'amber' as const,
+          isBlocked: false,
+          title: 'Subscription Extension Notice',
+          description: `Member currently has an active ${meta.activeSub.plan_name} contract expiring on ${expDate} (${meta.remainingDays} days left). Confirming checkout will ${actionText} the new ${selectedPlan} to activate automatically on ${expDate}.`
+        };
+      }
     }
 
     return {
@@ -738,7 +937,7 @@ const isMonthlyValid =
       title: 'Membership Ready',
       description: `${selectedPlan} selected. This member is eligible for registration.`
     };
-  }, [selectedPlan, matchActiveSub, matchQueuedSub]);
+  }, [selectedPlan, selectedExistingMember, prefillMember, existingMemberMatch, getMemberSubscriptionMeta]);
 
   const populateRegistrationData = (reg: OnlineRegistration) => {
     setImportedQueueReg(reg);
@@ -774,7 +973,6 @@ const isMonthlyValid =
       setStep(startingStep);
       setShowClientDetails(true);
       setShowStatusDetails(false);
-      setShowSignatures(false);
       setShowSignaturesInAudit(false);
       setErrors({});
       setMemberSearchQuery('');
@@ -791,34 +989,6 @@ const isMonthlyValid =
         setSelectedPlan('Monthly Membership');
       } else if (prefillData) {
         populateRegistrationData(prefillData);
-      } else {
-        setSelectedExistingMember(null);
-        setLastName('');
-        setFirstName('');
-        setMiddleInitials('');
-        setSuffix('');
-        setEmail('');
-        setPhone('');
-        setGender('Male');
-        setBirthday('');
-        setAddress('');
-        setEmergencyName('');
-        setRelationship('');
-        setEmergencyPhone('');
-        setParentName('');
-        setParentRelationship('Father');
-        setParentPhone('');
-        setParentEmail('');
-        setApplicantSig(null);
-        setParentSig(null);
-        setConsentDate(null);
-        setWaiverAgreed(false);
-        setPaymentMethod('Cash');
-        setGcashReference('');
-        setAddIdCard(false);
-        setImportedQueueReg(null);
-        setFinishedIds(null);
-        setManualIdInput('');
       }
     }
   }, [isOpen, prefillMember, prefillData, initialPlan, initialIntakeMode, initialStep]);
@@ -840,7 +1010,7 @@ const isMonthlyValid =
           scannerRef.current.clear();
         }
       } catch (e) {
-        // Ignore cleanup error
+        // Ignore cleanup
       }
     }
 
@@ -851,9 +1021,7 @@ const isMonthlyValid =
       if (video.srcObject) {
         const stream = video.srcObject as MediaStream;
         if (stream && stream.getTracks) {
-          stream.getTracks().forEach((track) => {
-            track.stop();
-          });
+          stream.getTracks().forEach((track) => track.stop());
         }
         video.srcObject = null;
       }
@@ -862,52 +1030,37 @@ const isMonthlyValid =
 
   const handleValidateId = async (input: string) => {
     let cleanId = input.trim();
-
     try {
       if (cleanId.startsWith('{')) {
         const parsed = JSON.parse(cleanId);
-        if (parsed.registrationId) {
-          cleanId = parsed.registrationId;
-        } else if (parsed.memberId || parsed.member_id) {
-          cleanId = parsed.memberId || parsed.member_id;
-        }
+        cleanId = parsed.registrationId || parsed.memberId || parsed.member_id || cleanId;
       }
-    } catch {
-      // Raw string fallback
-    }
+    } catch {}
 
     cleanId = cleanId.toUpperCase().trim();
-
     const now = Date.now();
-    if (lastScannedIdRef.current === cleanId && (now - lastScanTimeRef.current) < 2500) {
-      return;
-    }
+    if (lastScannedIdRef.current === cleanId && (now - lastScanTimeRef.current) < 2500) return;
 
     lastScannedIdRef.current = cleanId;
     lastScanTimeRef.current = now;
 
-    // 1. CHECK Online Pre-Registration Queue
     const list = await registrationService.getQueue();
     const foundReg = list.find((q: OnlineRegistration) => q.id.toUpperCase() === cleanId);
 
     if (foundReg) {
       if (foundReg.status !== 'Pending') {
-        toast.warning(`Registration ID ${cleanId} has already been ${foundReg.status.toLowerCase()}.`, {
-          toastId: `scan-status-${cleanId}`
-        });
+        toast.warning(`Registration ID ${cleanId} has already been ${foundReg.status.toLowerCase()}.`);
         return;
       }
-
       forceStopCamera();
       setIsScanning(false);
       populateRegistrationData(foundReg);
-      toast.success(`Validated Profile: ${foundReg.full_name}`, { toastId: `scan-success-${cleanId}` });
+      toast.success(`Validated Profile: ${foundReg.full_name}`);
       setIntakeMethod('Manual');
       setStep(2);
       return;
     }
 
-    // 2. CHECK Existing Database Members
     const foundMember = allMembers.find(
       (m: Member) => m.member_id.toUpperCase() === cleanId || m.id.toUpperCase() === cleanId
     );
@@ -916,34 +1069,21 @@ const isMonthlyValid =
       forceStopCamera();
       setIsScanning(false);
       handleSelectExistingMember(foundMember);
-      toast.success(`Attached Existing Member: ${foundMember.full_name}`, { toastId: `scan-member-success-${cleanId}` });
+      toast.success(`Attached Existing Member: ${foundMember.full_name}`);
       setIntakeMethod('Manual');
       setStep(2);
       return;
     }
 
-    // 3. FALLBACK
-    toast.error(`ID "${cleanId}" not found in pre-registrations or existing member profiles.`, {
-      toastId: `scan-not-found-${cleanId}`
-    });
+    toast.error(`ID "${cleanId}" not found in pre-registrations or existing member profiles.`);
   };
 
   const getCameraErrorMessage = (err: any): string => {
     const msg = typeof err === 'string' ? err : err?.message || String(err || '');
     const lower = msg.toLowerCase();
-
-    if (lower.includes('notallowederror') || lower.includes('permission denied') || lower.includes('permission')) {
-      return 'Permission denied by browser settings';
-    }
-    if (lower.includes('notreadableerror') || lower.includes('in use') || lower.includes('busy') || lower.includes('trackstart')) {
-      return 'Camera is busy or used by another app';
-    }
-    if (lower.includes('notfounderror') || lower.includes('no camera') || lower.includes('device missing')) {
-      return 'Camera hardware not found';
-    }
-    if (lower.includes('overconstrainederror') || lower.includes('constraint')) {
-      return 'Camera resolution or format unsupported';
-    }
+    if (lower.includes('notallowederror') || lower.includes('permission')) return 'Permission denied by browser';
+    if (lower.includes('notreadableerror') || lower.includes('in use')) return 'Camera is busy or in use';
+    if (lower.includes('notfounderror')) return 'Camera hardware not found';
     return msg || 'Camera initialization failed';
   };
 
@@ -959,15 +1099,12 @@ const isMonthlyValid =
         try {
           html5QrCode = new Html5Qrcode(qrRegionId);
           scannerRef.current = html5QrCode;
-
           const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: "environment" };
 
           html5QrCode.start(
             cameraConfig,
             { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
-            (decodedText) => {
-              handleValidateId(decodedText.trim());
-            },
+            (decodedText) => handleValidateId(decodedText.trim()),
             () => {}
           )
           .then(() => {
@@ -975,24 +1112,15 @@ const isMonthlyValid =
           })
           .catch((err) => {
             if (!isCancelled) {
-              console.error("Camera access failed", err);
               const reason = getCameraErrorMessage(err);
-
               if (cameras.length > 1) {
-                const currentIndex = selectedCameraId 
-                  ? cameras.findIndex(c => c.id === selectedCameraId) 
-                  : -1;
-                const nextIndex = (currentIndex + 1) % cameras.length;
-                const nextCamera = cameras[nextIndex];
-
+                const currentIndex = selectedCameraId ? cameras.findIndex(c => c.id === selectedCameraId) : -1;
+                const nextCamera = cameras[(currentIndex + 1) % cameras.length];
                 forceStopCamera();
                 setSelectedCameraId(nextCamera.id);
-                
-                toast.info(`Camera unavailable (${reason}). Switching to ${nextCamera.label || 'next camera'}...`, {
-                  toastId: "camera-switch-auto"
-                });
+                toast.info(`Switching camera: ${nextCamera.label || 'Next Camera'}`);
               } else {
-                toast.error(`Camera Error: ${reason}`, { toastId: "camera-denied" });
+                toast.error(`Camera Error: ${reason}`);
                 setIsScanning(false);
               }
             }
@@ -1011,6 +1139,29 @@ const isMonthlyValid =
   }, [isOpen, isScanning, step, intakeMode, selectedCameraId, cameras]);
 
   const validateStep1 = () => {
+    // If Existing Member mode is active and no member has been selected, block progression
+    if (enrollmentType === 'existing' && !selectedExistingMember) {
+      toast.error('Please search and select an existing member profile first.');
+      return false;
+    }
+
+    // Check if the selected member is blocked due to subscription rules or suspension
+    if (selectedExistingMember) {
+      const meta = getMemberSubscriptionMeta(selectedExistingMember);
+      if (meta.isSuspended) {
+        toast.error('This member account is suspended. Enrollment cannot proceed.');
+        return false;
+      }
+      if (meta.hasTwoSubs) {
+        toast.error('This member already has two active/queued subscriptions.');
+        return false;
+      }
+      if (meta.isOver30Days) {
+        toast.error(`Member has ${meta.remainingDays} days remaining on their active plan. Renewals only allowed within 30 days.`);
+        return false;
+      }
+    }
+
     const newErrors: Record<string, string> = {};
 
     if (!lastName.trim()) newErrors.lastName = 'Last name is required.';
@@ -1018,14 +1169,12 @@ const isMonthlyValid =
     if (!phone.trim() || phone.trim().toLowerCase() === 'no phone') newErrors.phone = 'Phone number is required.';
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
 
-    // Emergency Contact details are required ONLY for Minors (ages 12-17), and optional for adults (18+)
     if (isMinor) {
-      if (!parentName.trim()) newErrors.parentName = 'Parent / Guardian full name is required for minor applicants.';
+      if (!parentName.trim()) newErrors.parentName = 'Parent / Guardian full name is required for minors.';
       if (!parentRelationship.trim()) newErrors.parentRelationship = 'Parent relationship is required.';
       if (!parentPhone.trim()) newErrors.parentPhone = 'Parent contact phone is required.';
       if (!applicantSig) newErrors.applicantSig = 'Applicant digital signature is required.';
       if (!parentSig) newErrors.parentSig = 'Parent / Guardian digital signature is required.';
-
       if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required for minors.';
       if (!relationship.trim() || relationship.includes('Select Relationship')) {
         newErrors.relationship = 'Relationship is required for minors.';
@@ -1034,7 +1183,7 @@ const isMonthlyValid =
     }
 
     if (!waiverAgreed) {
-      newErrors.waiverAgreed = 'You must certify and agree to the waiver terms.';
+      newErrors.waiverAgreed = 'You must acknowledge the Terms & Conditions and Privacy Policy.';
     }
 
     setErrors(newErrors);
@@ -1048,19 +1197,17 @@ const isMonthlyValid =
       if (!firstName.trim()) missingList.push('First Name');
       if (!phone.trim()) missingList.push('Phone Number');
       if (!birthday.trim()) missingList.push('Birthday');
-      
       if (isMinor) {
-        if (!parentName.trim()) missingList.push('Parent Full Name');
-        if (!parentPhone.trim()) missingList.push('Parent Phone Number');
+        if (!parentName.trim()) missingList.push('Parent Name');
+        if (!parentPhone.trim()) missingList.push('Parent Phone');
         if (!applicantSig) missingList.push('Applicant Signature');
-        if (!parentSig) missingList.push('Parent/Guardian Signature');
-        if (!emergencyName.trim()) missingList.push('Emergency Contact Name');
-        if (!emergencyPhone.trim()) missingList.push('Emergency Contact Phone');
+        if (!parentSig) missingList.push('Parent Signature');
       }
-      
-      if (!waiverAgreed) missingList.push('Waiver Agreement Checkbox');
+      if (!waiverAgreed) missingList.push('Terms Agreement');
 
-      toast.error(`Please complete missing items: ${missingList.join(', ')}`);
+      if (missingList.length > 0) {
+        toast.error(`Please complete missing items: ${missingList.join(', ')}`);
+      }
       return;
     }
 
@@ -1077,167 +1224,140 @@ const isMonthlyValid =
   };
 
   const handleExecuteCheckout = async () => {
-  if (isSubmitting) return;
-  setIsSubmitting(true);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-  try {
-    let livePlanBasePrice = 0;
-    let liveGcashFee = 0;
-    let liveCardFee = 0;
-    let liveTotalPrice = 0;
+    try {
+      let livePlanBasePrice = 0;
+      let liveGcashFee = 0;
+      let liveCardFee = 0;
+      let liveTotalPrice = 0;
 
-    // 1. MANDATORY LIVE RE-VALIDATION FROM SUPABASE BEFORE CHECKOUT
-    if (selectedPlan !== 'No Subscription') {
-      let liveSettings: MembershipSettings | null = null;
-      try {
-        liveSettings = await settingsService.load();
-      } catch (err) {
-        toast.error("Network connection unstable. Could not verify live pricing with database. Checkout cancelled.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!liveSettings) {
-        toast.error("Unable to verify live rates from Supabase. Please retry once online.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Determine price strictly from live database response
-      const livePrice = selectedPlan === 'Monthly Membership' 
-        ? liveSettings.monthly_plan_price 
-        : liveSettings.yearly_plan_price;
-
-      if (typeof livePrice !== 'number' || livePrice <= 0) {
-        toast.error("Invalid live pricing returned from database. Subscription cannot be processed.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Sync state for UI rendering
-      setSettings(liveSettings);
-
-      // Compute exact pricing in real time to avoid React state batching delay
-      livePlanBasePrice = livePrice;
-      liveGcashFee = paymentMethod === 'GCash' ? (liveSettings.gcash_fee || 10) : 0;
-      liveCardFee = addIdCard ? (liveSettings.card_printing_fee || 50) : 0;
-      liveTotalPrice = livePlanBasePrice + liveGcashFee + liveCardFee;
-    } else {
-      liveCardFee = addIdCard ? (settings.card_printing_fee || 50) : 0;
-      liveTotalPrice = liveCardFee;
-    }
-
-    // 2. CHECK SUBSCRIPTION CONTRACT ELIGIBILITY
-    if (membershipStatusSummary.isBlocked) {
-      toast.error(membershipStatusSummary.description);
-      setIsSubmitting(false);
-      return;
-    }
-
-    let targetMember: Member;
-    const combinedName = getCombinedFullName();
-
-    // Look up existing member match by contact phone if needed
-    const existingByPhone = phone.trim() 
-      ? allMembers.find((m: Member) => m.phone === phone.trim()) 
-      : null;
-
-    const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
-
-    const memberFields = {
-      full_name: combinedName,
-      email: email.trim(),
-      phone: phone.trim(),
-      gender,
-      birthday,
-      address: address.trim(),
-      emergency_contact_name: emergencyName.trim(),
-      relationship: relationship.trim(),
-      emergency_contact_phone: emergencyPhone.trim(),
-      parent_name: isMinor ? parentName.trim() : null,
-      parent_relationship: isMinor ? parentRelationship.trim() : null,
-      parent_phone: isMinor ? parentPhone.trim() : null,
-      parent_email: isMinor ? parentEmail.trim() : null,
-      applicant_signature: isMinor ? applicantSig : null,
-      parent_signature: isMinor ? parentSig : null,
-      consent_date: isMinor ? (consentDate || new Date().toISOString()) : null,
-    };
-
-    // 3. PERSIST OR UPDATE MEMBER PROFILE IN SUPABASE
-    if (activeMemberToUse) {
-      targetMember = await memberService.update(activeMemberToUse.id, memberFields, 'Admin Staff');
-    } else {
-      targetMember = await memberService.create({
-        ...memberFields,
-        status: 'Active'
-      }, 'Admin Staff');
-    }
-
-    const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
-
-    // 4. CREATE SUBSCRIPTION RECORD WITH VALIDATED PRICING
-    let createdSub: Subscription | null = null;
-    if (selectedPlan !== 'No Subscription') {
-      createdSub = await subscriptionService.create(
-        targetMember.member_id,
-        selectedPlan,
-        mappedPayment,
-        'Admin Staff',
-        liveTotalPrice,
-        {
-          basePrice: livePlanBasePrice,
-          gcashFee: liveGcashFee,
-          cardFee: liveCardFee,
-          gcashRefNo: gcashReference.trim()
+      if (selectedPlan !== 'No Subscription') {
+        let liveSettings: MembershipSettings | null = null;
+        try {
+          liveSettings = await settingsService.load();
+        } catch {
+          toast.error("Network connection unstable. Could not verify live pricing with database.");
+          setIsSubmitting(false);
+          return;
         }
-      );
-    }
 
-    // 5. ISSUE ID CARD IF OPTED IN
-    if (addIdCard) {
-      await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
-    }
+        if (!liveSettings) {
+          toast.error("Unable to verify live rates from Supabase. Please retry once online.");
+          setIsSubmitting(false);
+          return;
+        }
 
-    // 6. APPROVE LOBBY PRE-REGISTRATION TICKET IF IMPORTED
-    if (importedQueueReg) {
-      await registrationService.approve(importedQueueReg.id, 'Admin Staff');
-    }
+        const livePrice = selectedPlan === 'Monthly Membership' 
+          ? liveSettings.monthly_plan_price 
+          : liveSettings.yearly_plan_price;
 
-    // 7. PREPARE RECEIPT METADATA & UI SYNC
-    const now = new Date();
-    const formattedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + 
-      now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+        if (typeof livePrice !== 'number' || livePrice <= 0) {
+          toast.error("Invalid live pricing returned from database. Subscription cannot be processed.");
+          setIsSubmitting(false);
+          return;
+        }
 
-    const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+        setSettings(liveSettings);
+        livePlanBasePrice = livePrice;
+        liveGcashFee = paymentMethod === 'GCash' ? (liveSettings.gcash_fee || 10) : 0;
+        liveCardFee = addIdCard ? (liveSettings.card_printing_fee || 50) : 0;
+        liveTotalPrice = livePlanBasePrice + liveGcashFee + liveCardFee;
+      } else {
+        liveCardFee = addIdCard ? (settings.card_printing_fee || 50) : 0;
+        liveTotalPrice = liveCardFee;
+      }
 
-    setFinishedIds({
-      member_id: targetMember.member_id,
-      sub_id: createdSub?.id || 'PROFILE-ONLY',
-      receipt_no: receiptNo,
-      transaction_date: formattedDate
-    });
+      if (membershipStatusSummary.isBlocked) {
+        toast.error(membershipStatusSummary.description);
+        setIsSubmitting(false);
+        return;
+      }
 
-    // Notify Logbook to refresh
-    window.dispatchEvent(new Event('palomar_logbook_updated'));
+      let targetMember: Member;
+      const combinedName = getCombinedFullName();
+      const existingByPhone = phone.trim() ? allMembers.find((m: Member) => m.phone === phone.trim()) : null;
+      const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
 
-    toast.success(selectedPlan === 'No Subscription' ? 'Member Profile enrolled (No subscription).' : 'Subscription enrollment complete.');
-    setStep(3);
-  } catch (err: any) {
-    toast.error(err.message || 'System error during wizard checkout.');
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+      const memberFields = {
+        full_name: combinedName,
+        email: email.trim(),
+        phone: phone.trim(),
+        gender,
+        birthday,
+        address: address.trim(),
+        emergency_contact_name: emergencyName.trim(),
+        relationship: relationship.trim(),
+        emergency_contact_phone: emergencyPhone.trim(),
+        parent_name: isMinor ? parentName.trim() : null,
+        parent_relationship: isMinor ? parentRelationship.trim() : null,
+        parent_phone: isMinor ? parentPhone.trim() : null,
+        parent_email: isMinor ? parentEmail.trim() : null,
+        applicant_signature: isMinor ? applicantSig : null,
+        parent_signature: isMinor ? parentSig : null,
+        consent_date: isMinor ? (consentDate || new Date().toISOString()) : null,
+      };
 
-  const handleDownloadReceiptImage = () => {
-    if (receiptRef.current) {
-      receiptRef.current.handleDownloadJpg();
-    }
-  };
+      if (activeMemberToUse) {
+        targetMember = await memberService.update(activeMemberToUse.id, memberFields, 'Admin Staff');
+      } else {
+        targetMember = await memberService.create({
+          ...memberFields,
+          status: 'Active'
+        }, 'Admin Staff');
+      }
 
-  const handlePrintReceipt = () => {
-    if (receiptRef.current) {
-      receiptRef.current.handlePrint();
+      const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
+      let createdSub: Subscription | null = null;
+      if (selectedPlan !== 'No Subscription') {
+        createdSub = await subscriptionService.create(
+          targetMember.member_id,
+          selectedPlan,
+          mappedPayment,
+          'Admin Staff',
+          liveTotalPrice,
+          {
+            basePrice: livePlanBasePrice,
+            gcashFee: liveGcashFee,
+            cardFee: liveCardFee,
+            gcashRefNo: gcashReference.trim()
+          }
+        );
+      }
+
+      if (addIdCard) {
+        await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
+      }
+
+      if (importedQueueReg) {
+        await registrationService.approve(importedQueueReg.id, 'Admin Staff');
+      }
+
+      const now = new Date();
+      const formattedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + 
+        now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+
+      const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+
+      setFinishedIds({
+        member_id: targetMember.member_id,
+        sub_id: createdSub?.id || 'PROFILE-ONLY',
+        receipt_no: receiptNo,
+        transaction_date: formattedDate
+      });
+
+      window.dispatchEvent(new Event('palomar_logbook_updated'));
+      
+      localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+      setDraftState('idle');
+
+      toast.success(selectedPlan === 'No Subscription' ? 'Member Profile enrolled.' : 'Subscription enrollment complete.');
+      setStep(3);
+    } catch (err: any) {
+      toast.error(err.message || 'System error during wizard checkout.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1252,19 +1372,21 @@ const isMonthlyValid =
   const totalPrice = planBasePrice + appliedGcashFee + appliedCardFee;
 
   const isPlanLocked = intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
-  const isConfirmDisabled = (paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && !isGcashValid) || isRestrictedUnder12 || membershipStatusSummary.isBlocked;
+  const isConfirmDisabled = (paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && !isGcashValid) || (selectedPlan !== 'No Subscription' && !subscriptionAgreement) || isRestrictedUnder12 || membershipStatusSummary.isBlocked;
+
+  // Determine whether to show the detailed personal form
+  const shouldShowDetailsForm = enrollmentType === 'new' || Boolean(selectedExistingMember) || Boolean(prefillMember) || Boolean(prefillData);
 
   if (!isOpen) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-2000 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
       <form 
-  onSubmit={handleFormSubmit} 
-  className={`relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col transition-all duration-300 ${
-    step === 3 ? 'max-w-md' : 'max-w-2xl'
-  }`}
->
-        
+        onSubmit={handleFormSubmit} 
+        className={`relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col transition-all duration-300 ${
+          step === 3 ? 'max-w-md' : 'max-w-2xl'
+        }`}
+      >
         {/* Progress Bar Header */}
         <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-800 relative select-none shrink-0">
           <div 
@@ -1276,21 +1398,48 @@ const isMonthlyValid =
         {/* Fixed Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-white/10 flex justify-between items-center select-none shrink-0 bg-slate-50 dark:bg-[#161920]">
           <div>
-            <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none block">Frontdesk Intake Console</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none block">
+                Frontdesk Intake Console
+              </span>
+              {step === 1 && intakeMode === 'Manual' && draftState !== 'idle' && (
+                <span className="hidden sm:inline-flex items-center gap-1 text-[8px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-zinc-700">
+                  {draftState === 'saving' ? (
+                    <><RefreshCw className="w-2.5 h-2.5 text-amber-500 animate-spin" /> Saving...</>
+                  ) : (
+                    <><Check className="w-2.5 h-2.5 text-emerald-500" /> Draft saved (24h)</>
+                  )}
+                </span>
+              )}
+            </div>
             <h3 className="font-heading text-xs sm:text-sm text-slate-900 dark:text-white mt-1 uppercase tracking-wider">
               Step {step} of 3: {
-                step === 1 ? (intakeMode === 'Import' ? 'Scan Lobby Pre-Registration' : 'Personal Details & Legal Consent') :
+                step === 1 ? (intakeMode === 'Import' ? 'Scan Lobby Pre-Registration' : 'Enroll a Member & Details') :
                 step === 2 ? 'Checkout Invoice & Membership Plan' : 'Enrollment Complete'
               }
             </h3>
           </div>
-          <button 
-            type="button"
-            onClick={handleModalClose} 
-            className="p-1.5 rounded-xl bg-slate-200 dark:bg-neutral-800 hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer border border-slate-300 dark:border-neutral-700"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {step === 1 && intakeMode === 'Manual' && draftState !== 'idle' && (
+              <button
+                type="button"
+                onClick={handleClearDraft}
+                className="p-1.5 rounded-xl bg-slate-200 dark:bg-zinc-800 hover:bg-red-500/20 hover:text-red-500 text-slate-500 transition-colors cursor-pointer border border-slate-300 dark:border-zinc-700 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1"
+                title="Clear Draft"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span className="hidden sm:inline">Clear</span>
+              </button>
+            )}
+            <button 
+              type="button"
+              onClick={handleModalClose} 
+              className="p-1.5 rounded-xl bg-slate-200 dark:bg-neutral-800 hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer border border-slate-300 dark:border-neutral-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body Content */}
@@ -1344,8 +1493,6 @@ const isMonthlyValid =
                 </div>
               ) : (
                 <div className="space-y-3 flex flex-col items-center">
-                  
-                  {/* CAMERA FRAME */}
                   <div className="relative w-full aspect-square max-w-65 rounded-2xl overflow-hidden bg-black border border-white/10 flex items-center justify-center">
                     <div id={qrRegionId} className="w-full h-full" />
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -1358,7 +1505,6 @@ const isMonthlyValid =
                     </div>
                   </div>
 
-                  {/* CAMERA CONTROLS */}
                   {cameras.length > 0 && (
                     <div className="w-full max-w-65 flex items-center justify-between gap-2">
                       <div className="hidden sm:flex items-center gap-1.5 w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl px-2.5 py-1.5 shadow-xs">
@@ -1381,7 +1527,13 @@ const isMonthlyValid =
 
                       <button
                         type="button"
-                        onClick={handleCycleCamera}
+                        onClick={() => {
+                          if (cameras.length <= 1) return;
+                          const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+                          const nextIndex = (currentIndex + 1) % cameras.length;
+                          forceStopCamera();
+                          setSelectedCameraId(cameras[nextIndex].id);
+                        }}
                         disabled={cameras.length <= 1}
                         className="flex sm:hidden w-full py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-zinc-700 cursor-pointer"
                       >
@@ -1399,13 +1551,189 @@ const isMonthlyValid =
             </div>
           )}
 
-          {/* STEP 1: MANUAL PERSONAL DETAILS WITH SEARCH LOOKUP */}
+          {/* STEP 1: ENROLL A MEMBER (MANUAL INTAKE) */}
           {step === 1 && intakeMode === 'Manual' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-left font-semibold animate-fade-in">
+            <div className="space-y-4 text-left font-semibold animate-fade-in">
               
-              {/* EXISTING MEMBER ATTACHED BANNER */}
+              {/* ── 2 BIG ENROLLMENT MODE BUTTONS ── */}
+              {!prefillMember && !prefillData && (
+                <div className="space-y-2 select-none">
+                  <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
+                    Enroll a Member • Select Action
+                  </span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* OPTION 1: SELECT EXISTING MEMBER */}
+                    <div
+                      onClick={handleChooseExistingMember}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
+                        enrollmentType === 'existing'
+                          ? 'bg-blue-500/10 border-blue-600 dark:border-blue-500 ring-2 ring-blue-500/20'
+                          : 'bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-500/50'
+                      }`}
+                    >
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        enrollmentType === 'existing'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 group-hover:text-blue-500'
+                      }`}>
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
+                          Select Existing Member
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block mt-0.5">
+                          Search and attach an existing profile to subscribe or renew
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* OPTION 2: CREATE NEW MEMBER */}
+                    <div
+                      onClick={handleChooseCreateNewMember}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
+                        enrollmentType === 'new'
+                          ? 'bg-emerald-500/10 border-emerald-600 dark:border-emerald-500 ring-2 ring-emerald-500/20'
+                          : 'bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 hover:border-emerald-400 dark:hover:border-emerald-500/50'
+                      }`}
+                    >
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        enrollmentType === 'new'
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 group-hover:text-emerald-500'
+                      }`}>
+                        <UserPlus className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
+                          Create New Member
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block mt-0.5">
+                          Register a fresh client profile and setup agreement waiver
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SEARCH BAR (ONLY VISIBLE WHEN "SELECT EXISTING MEMBER" IS CHOSEN) */}
+              {enrollmentType === 'existing' && !selectedExistingMember && !prefillData && (
+                <div className="space-y-2 select-none relative animate-fade-in">
+                  <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                    SEARCH EXISTING MEMBER PROFILE TO SUBSCRIBE
+                  </label>
+                  
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      placeholder="Type Name, Phone, or Member ID to lookup existing profile..."
+                      className="w-full pl-10 pr-10 py-3 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white rounded-xl text-xs outline-none focus:border-blue-500 font-medium shadow-xs"
+                    />
+                    {memberSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* AUTOCOMPLETE SUGGESTIONS LIST WITH SUBSCRIPTION / SUSPENSION STATUS BADGES */}
+                  {memberSearchQuery.trim().length > 0 && (
+                    <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-56 overflow-y-auto space-y-1 z-30 relative">
+                      {matchingSearchMembers.length > 0 ? (
+                        matchingSearchMembers.map((m: Member) => {
+                          const meta = getMemberSubscriptionMeta(m);
+
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => {
+                                if (meta.isSuspended) {
+                                  toast.error(`Member "${m.full_name}" is currently Suspended/Inactive.`);
+                                  return;
+                                }
+                                if (meta.hasTwoSubs) {
+                                  toast.error(`Member "${m.full_name}" already has two active/queued subscriptions.`);
+                                  return;
+                                }
+                                if (meta.isOver30Days) {
+                                  toast.warning(`Member "${m.full_name}" active plan has ${meta.remainingDays} days left. Renewals only allowed within 30 days.`);
+                                }
+                                handleSelectExistingMember(m);
+                                setMemberSearchQuery('');
+                              }}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                meta.isSuspended
+                                  ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 opacity-70'
+                                  : meta.isBlockedFromRenewing
+                                  ? 'bg-slate-50 dark:bg-zinc-950 border-amber-300/40 hover:border-amber-400'
+                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 hover:border-blue-500/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border ${
+                                  meta.isSuspended
+                                    ? 'bg-rose-500/10 text-rose-600 border-rose-500/30'
+                                    : 'bg-blue-600/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                                }`}>
+                                  {m.full_name[0]?.toUpperCase()}
+                                </div>
+                                <div className="min-w-0 text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-slate-900 dark:text-white truncate block uppercase">
+                                      {m.full_name}
+                                    </span>
+                                    {meta.isSuspended && (
+                                      <span className="text-[8px] font-mono font-bold bg-rose-500/20 text-rose-600 px-1.5 py-0.2 rounded">
+                                        SUSPENDED
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
+                                    {m.member_id} • {m.phone || 'No Phone'}
+                                    {meta.activeSub && ` • Active: ${meta.activeSub.plan_name} (${meta.remainingDays}d left)`}
+                                    {meta.queuedSub && ` • Queued Renewal: ${meta.queuedSub.plan_name}`}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0">
+                                <span className={`text-[9px] font-mono font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider border ${
+                                  meta.isSuspended
+                                    ? 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+                                    : meta.hasTwoSubs
+                                    ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                    : meta.isWithin30Days && meta.activeSub
+                                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                                }`}>
+                                  {meta.isSuspended ? 'Suspended' : meta.isWithin30Days && meta.activeSub ? 'Renew Extension' : 'Select Profile'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-3 text-center text-xs text-slate-500 font-mono">
+                          No existing profiles match "{memberSearchQuery}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ATTACHED EXISTING MEMBER BANNER */}
               {selectedExistingMember && (
-                <div className="md:col-span-2 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl text-blue-900 dark:text-blue-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs">
+                <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl text-blue-900 dark:text-blue-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs animate-fade-in">
                   <div className="flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                     <div>
@@ -1423,589 +1751,449 @@ const isMonthlyValid =
                       onClick={handleClearSelectedExistingMember}
                       className="px-2.5 py-1 bg-blue-100 dark:bg-blue-500/20 hover:bg-blue-200 dark:hover:bg-blue-500/30 text-blue-800 dark:text-blue-300 rounded-lg text-[9px] uppercase font-bold tracking-wider cursor-pointer border border-blue-300 dark:border-blue-400/30"
                     >
-                      Clear / Create New
+                      Clear / Change Profile
                     </button>
                   )}
                 </div>
               )}
 
-              {/* SEARCH-BASED MEMBER LOOKUP INPUT */}
-              {!selectedExistingMember && !prefillData && (
-                <div className="md:col-span-2 space-y-2 select-none relative">
-                  <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                    Search Existing Member Profile to Subscribe
-                  </label>
+              {/* APPLICANT STATUS CARD & DETAILS FORM (ONLY SHOWN ONCE A MEMBER IS SELECTED OR IN "CREATE NEW" MODE) */}
+              {shouldShowDetailsForm && (
+                <div className="space-y-4 animate-fade-in pt-1">
                   
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={memberSearchQuery}
-                      onChange={(e) => setMemberSearchQuery(e.target.value)}
-                      placeholder="Type Name, Phone, or Member ID to lookup existing profile..."
-                      className="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white rounded-xl text-xs outline-none focus:border-blue-500 font-medium"
-                    />
-                    {memberSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setMemberSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  {/* STATUS SUMMARY BANNER */}
+                  <div className={`p-3.5 rounded-2xl border transition-all flex flex-col gap-2 ${
+                    applicantStatusSummary.level === 'red'
+                      ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300'
+                      : applicantStatusSummary.level === 'amber'
+                      ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300'
+                      : applicantStatusSummary.level === 'blue'
+                      ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300'
+                      : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        {applicantStatusSummary.level === 'red' ? (
+                          <Ban className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                        ) : applicantStatusSummary.level === 'amber' ? (
+                          <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        ) : applicantStatusSummary.level === 'blue' ? (
+                          <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                        )}
 
-                  {/* AUTOCOMPLETE SUGGESTIONS POPUP LIST */}
-                  {memberSearchQuery.trim().length > 0 && (
-                    <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-48 overflow-y-auto space-y-1 z-30 relative">
-                      {matchingSearchMembers.length > 0 ? (
-                        matchingSearchMembers.map((m: Member) => {
-                          return (
-                            <div
-                              key={m.id}
-                              onClick={() => {
-                                handleSelectExistingMember(m);
-                                setMemberSearchQuery('');
-                              }}
-                              className="p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-xs shrink-0">
-                                  {m.full_name[0]?.toUpperCase()}
-                                </div>
-                                <div className="min-w-0 text-left">
-                                  <span className="font-bold text-xs text-slate-900 dark:text-white truncate block uppercase">{m.full_name}</span>
-                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
-                                    {m.member_id} • {m.phone || 'No Phone'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="shrink-0">
-                                <span className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                                  Select Profile
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="p-3 text-center text-xs text-slate-500 font-mono">
-                          No existing profiles match "{memberSearchQuery}"
+                        <div className="space-y-0.5">
+                          <h4 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white">
+                            {applicantStatusSummary.title}
+                          </h4>
+                          <p className="text-[10px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {applicantStatusSummary.description}
+                          </p>
                         </div>
+                      </div>
+
+                      {applicantStatusSummary.actionMember && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectExistingMember(applicantStatusSummary.actionMember!)}
+                          className="px-3 py-1.5 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
+                        >
+                          Attach Member
+                        </button>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* STEP 1: APPLICANT STATUS CARD */}
-              <div className={`md:col-span-2 p-3.5 rounded-2xl border transition-all flex flex-col gap-2 ${
-                applicantStatusSummary.level === 'amber'
-                  ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300'
-                  : applicantStatusSummary.level === 'blue'
-                  ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300'
-                  : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
-              }`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
-                    {applicantStatusSummary.level === 'amber' ? (
-                      <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    ) : applicantStatusSummary.level === 'blue' ? (
-                      <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    {applicantStatusSummary.notices.length > 1 && (
+                      <div className="pt-2 border-t border-slate-200 dark:border-white/10 select-none">
+                        <button
+                          type="button"
+                          onClick={() => setShowStatusDetails(!showStatusDetails)}
+                          className="text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer text-slate-700 dark:text-slate-300"
+                        >
+                          <span>{showStatusDetails ? 'Hide Status Details' : 'View Status Details'}</span>
+                          {showStatusDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+
+                        {showStatusDetails && (
+                          <div className="mt-2 space-y-1 text-[9px] font-mono">
+                            {applicantStatusSummary.notices.map((n, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                                <span>{n.type === 'warning' ? '⚠' : n.type === 'info' ? 'ℹ' : '✓'}</span>
+                                <span>{n.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* INPUT FIELDS GRID */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                    <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 select-none">
+                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Personal Details</span>
+                    </div>
+
+                    {/* Last Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        Last Name <span className="text-red-500">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={lastName} 
+                        disabled={isNameLocked}
+                        onChange={e => {
+                          setLastName(e.target.value);
+                          if (errors.lastName) setErrors(prev => ({ ...prev, lastName: '' }));
+                        }} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          isMissing(lastName) || errors.lastName 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
+                            : isNameLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder="e.g. Angeles" 
+                      />
+                      {errors.lastName && <span className="text-[9px] text-red-500 font-bold block">{errors.lastName}</span>}
+                    </div>
+
+                    {/* First Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        First Name <span className="text-red-500">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={firstName} 
+                        disabled={isNameLocked}
+                        onChange={e => {
+                          setFirstName(e.target.value);
+                          if (errors.firstName) setErrors(prev => ({ ...prev, firstName: '' }));
+                        }} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          isMissing(firstName) || errors.firstName 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
+                            : isNameLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder="e.g. Adrian" 
+                      />
+                      {errors.firstName && <span className="text-[9px] text-red-500 font-bold block">{errors.firstName}</span>}
+                    </div>
+
+                    {/* Middle Initial & Suffix */}
+                    <div className="grid grid-cols-2 gap-2 col-span-1">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">M.I.</label>
+                        <input 
+                          type="text" 
+                          value={middleInitials} 
+                          disabled={isNameLocked}
+                          onChange={e => setMiddleInitials(e.target.value)} 
+                          maxLength={2}
+                          className={`w-full p-2.5 rounded-xl text-xs outline-none ${
+                            isNameLocked
+                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                          }`} 
+                          placeholder="R." 
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Suffix</label>
+                        <input 
+                          type="text" 
+                          value={suffix} 
+                          disabled={isNameLocked}
+                          onChange={e => setSuffix(e.target.value)} 
+                          className={`w-full p-2.5 rounded-xl text-xs outline-none ${
+                            isNameLocked
+                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                          }`} 
+                          placeholder="e.g. Jr." 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                        <span>Contact Phone <span className="text-red-500">*</span></span>
+                        {isMissing(phone) && (
+                          <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Phone</span>
+                        )}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={phone} 
+                        disabled={isPhoneLocked}
+                        maxLength={11}
+                        onChange={e => {
+                          setPhone(e.target.value.replace(/\D/g, ''));
+                          if (errors.phone) setErrors(prev => ({ ...prev, phone: '' }));
+                        }} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          isMissing(phone) || errors.phone 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 placeholder:text-red-400/60' 
+                            : isPhoneLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder="0917XXXXXXX" 
+                      />
+                      
+                      {phoneMatchMember && !selectedExistingMember && (
+                        <div className="flex items-center justify-between text-[9px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                          <span className="flex items-center gap-1">
+                            <ShieldAlert className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Already used by {phoneMatchMember.full_name} ({phoneMatchMember.member_id})</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectExistingMember(phoneMatchMember)}
+                            className="text-amber-700 dark:text-amber-300 underline font-bold hover:text-amber-600 cursor-pointer ml-2"
+                          >
+                            Attach
+                          </button>
+                        </div>
+                      )}
+
+                      {errors.phone && <span className="text-[9px] text-red-500 font-bold block">{errors.phone}</span>}
+                    </div>
+
+                    {/* Gender */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Gender *</label>
+                      <select 
+                        value={gender} 
+                        disabled={isNameLocked}
+                        onChange={e => setGender(e.target.value)} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none ${
+                          isNameLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
+                        }`}
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Non-Binary">Non-Binary</option>
+                      </select>
+                    </div>
+
+                    {/* Birthday */}
+                    <div className="grid grid-cols-2 gap-2 col-span-1">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                          <span>Birthday *</span>
+                          {isMissing(birthday) && (
+                            <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Birthday</span>
+                          )}
+                        </label>
+                        <input 
+                          type="date" 
+                          value={birthday} 
+                          disabled={isBirthdayLocked}
+                          onChange={e => {
+                            setBirthday(e.target.value);
+                            if (errors.birthday) setErrors(prev => ({ ...prev, birthday: '' }));
+                          }} 
+                          className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                            isMissing(birthday) || errors.birthday 
+                              ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
+                              : isBirthdayLocked
+                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                          }`} 
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Age Status</label>
+                        <input 
+                          type="text" 
+                          value={birthday ? `${calculatedAge} yrs (${isRestrictedUnder12 ? 'Restricted' : isMinor ? 'Minor' : 'Adult'})` : '--'} 
+                          disabled 
+                          className={`w-full p-2.5 border rounded-xl text-xs font-mono font-bold outline-none cursor-not-allowed ${
+                            isRestrictedUnder12 ? 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-600 dark:text-red-500' :
+                            isMinor ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-500' : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-slate-300'
+                          }`} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Address */}
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        Home Address <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={address} 
+                        disabled={isAddressLocked}
+                        onChange={e => setAddress(e.target.value)} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          isAddressLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder="Barangay, City, Province (optional)" 
+                      />
+                    </div>
+
+                    {/* Emergency Contacts */}
+                    <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
+                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                        Emergency Contact {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional for 18+)</span>}
+                      </span>
+                    </div>
+
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={emergencyName} 
+                        disabled={isEmergencyNameLocked}
+                        onChange={e => {
+                          setEmergencyName(e.target.value);
+                          if (errors.emergencyName) setErrors(prev => ({ ...prev, emergencyName: '' }));
+                        }} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          (isMinor && isMissing(emergencyName)) || errors.emergencyName 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
+                            : isEmergencyNameLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder={isMinor ? 'Parent, guardian, or emergency contact full name *' : 'Contact person’s full name (optional)'} 
+                      />
+                      {errors.emergencyName && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyName}</span>}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                      </label>
+                      <select 
+                        value={relationship} 
+                        disabled={isRelationshipLocked}
+                        onChange={e => {
+                          setRelationship(e.target.value);
+                          if (errors.relationship) setErrors(prev => ({ ...prev, relationship: '' }));
+                        }} 
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none font-medium transition-colors ${
+                          errors.relationship 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 cursor-pointer' 
+                            : isRelationshipLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
+                        }`}
+                      >
+                        <option value="">Select Relationship {isMinor ? '*' : '(optional)'}</option>
+                        <optgroup label="Immediate Family">
+                          <option value="Mother">Mother</option>
+                          <option value="Father">Father</option>
+                          <option value="Spouse / Partner">Spouse / Partner</option>
+                          <option value="Brother">Brother</option>
+                          <option value="Sister">Sister</option>
+                        </optgroup>
+                        <optgroup label="Guardian & Other">
+                          <option value="Legal Guardian">Legal Guardian</option>
+                          <option value="Friend / Colleague">Friend / Colleague</option>
+                          <option value="Other">Other</option>
+                        </optgroup>
+                      </select>
+                      {errors.relationship && <span className="text-[9px] text-red-500 font-bold block">{errors.relationship}</span>}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                        Emergency Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={emergencyPhone} 
+                        disabled={isEmergencyPhoneLocked}
+                        onChange={e => {
+                          setEmergencyPhone(e.target.value.replace(/\D/g, ''));
+                          if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
+                        }}
+                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                          (isMinor && isMissing(emergencyPhone)) || errors.emergencyPhone 
+                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
+                            : isEmergencyPhoneLocked
+                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
+                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                        }`} 
+                        placeholder={isMinor ? 'Emergency contact number *' : '0918XXXXXXX (optional)'} 
+                      />
+                      {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
+                    </div>
+
+                    {/* Minor Signatures if Age 12-17 */}
+                    {isMinor && (
+                      <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-3">
+                        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200">
+                          <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider">Required Minor Consent</p>
+                            <p className="text-[10px] leading-relaxed mt-0.5">Both applicant and parent/guardian must sign before registration can proceed.</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <SignaturePad label="Applicant Signature *" value={applicantSig} onChange={setApplicantSig} error={errors.applicantSig} />
+                          <SignaturePad label="Parent / Guardian Signature *" value={parentSig} onChange={setParentSig} error={errors.parentSig} />
+                        </div>
+                      </div>
                     )}
 
-                    <div className="space-y-0.5">
-                      <h4 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white">
-                        {applicantStatusSummary.title}
-                      </h4>
-                      <p className="text-[10px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                        {applicantStatusSummary.description}
-                      </p>
+                    {/* Waiver Agreement Checkbox */}
+                    <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={waiverAgreed} 
+                          onChange={e => {
+                            setWaiverAgreed(e.target.checked);
+                            if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
+                          }} 
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
+                        />
+                        <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
+                          I certify that the information is accurate and that the member agrees to the <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>. *
+                        </span>
+                      </label>
+                      {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
                     </div>
                   </div>
 
-                  {applicantStatusSummary.actionMember && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectExistingMember(applicantStatusSummary.actionMember!)}
-                      className="px-3 py-1.5 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
-                    >
-                      Attach Member
-                    </button>
-                  )}
-                </div>
-
-                {/* COLLAPSIBLE SECONDARY NOTICES */}
-                {applicantStatusSummary.notices.length > 1 && (
-                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 select-none">
-                    <button
-                      type="button"
-                      onClick={() => setShowStatusDetails(!showStatusDetails)}
-                      className="text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer text-slate-700 dark:text-slate-300"
-                    >
-                      <span>{showStatusDetails ? 'Hide Status Details' : 'View Status Details'}</span>
-                      {showStatusDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    </button>
-
-                    {showStatusDetails && (
-                      <div className="mt-2 space-y-1 text-[9px] font-mono">
-                        {applicantStatusSummary.notices.map((n, idx) => (
-                          <div key={idx} className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                            <span>
-                              {n.type === 'warning' ? '⚠' : n.type === 'info' ? 'ℹ' : '✓'}
-                            </span>
-                            <span>{n.text}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 select-none">
-                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Personal Details</span>
-              </div>
-
-              {/* Last Name */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                  Last Name <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="text" 
-                  value={lastName} 
-                  disabled={isNameLocked}
-                  onChange={e => {
-                    setLastName(e.target.value);
-                    if (errors.lastName) setErrors(prev => ({ ...prev, lastName: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(lastName) || errors.lastName 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                      : isNameLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="e.g. Angeles" 
-                />
-                {errors.lastName && <span className="text-[9px] text-red-500 font-bold block">{errors.lastName}</span>}
-              </div>
-
-              {/* First Name */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                  First Name <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="text" 
-                  value={firstName} 
-                  disabled={isNameLocked}
-                  onChange={e => {
-                    setFirstName(e.target.value);
-                    if (errors.firstName) setErrors(prev => ({ ...prev, firstName: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(firstName) || errors.firstName 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                      : isNameLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="e.g. Adrian" 
-                />
-                {errors.firstName && <span className="text-[9px] text-red-500 font-bold block">{errors.firstName}</span>}
-              </div>
-
-              {/* Middle Initial & Suffix */}
-              <div className="grid grid-cols-2 gap-2 col-span-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">M.I.</label>
-                  <input 
-                    type="text" 
-                    value={middleInitials} 
-                    disabled={isNameLocked}
-                    onChange={e => setMiddleInitials(e.target.value)} 
-                    maxLength={2}
-                    className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                      isNameLocked
-                        ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                        : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                    }`} 
-                    placeholder="R." 
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Suffix</label>
-                  <input 
-                    type="text" 
-                    value={suffix} 
-                    disabled={isNameLocked}
-                    onChange={e => setSuffix(e.target.value)} 
-                    className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                      isNameLocked
-                        ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                        : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                    }`} 
-                    placeholder="e.g. Jr." 
-                  />
-                </div>
-              </div>
-
-              {/* Phone */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                  <span>Contact Phone <span className="text-red-500">*</span></span>
-                  {isMissing(phone) && (
-                    <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Phone</span>
-                  )}
-                </label>
-                <input 
-                  type="text" 
-                  value={phone} 
-                  disabled={isPhoneLocked}
-                  maxLength={11}
-                  onChange={e => {
-                    setPhone(e.target.value.replace(/\D/g, ''))
-                    if (errors.phone) setErrors(prev => ({ ...prev, phone: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isMissing(phone) || errors.phone 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 placeholder:text-red-400/60' 
-                      : isPhoneLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="0917XXXXXXX" 
-                />
-                
-                {phoneMatchMember && !selectedExistingMember && (
-                  <div className="flex items-center justify-between text-[9px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
-                    <span className="flex items-center gap-1">
-                      <ShieldAlert className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span>Already used by {phoneMatchMember.full_name} ({phoneMatchMember.member_id})</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectExistingMember(phoneMatchMember)}
-                      className="text-amber-700 dark:text-amber-300 underline font-bold hover:text-amber-600 cursor-pointer ml-2"
-                    >
-                      Attach
-                    </button>
-                  </div>
-                )}
-
-                {errors.phone && <span className="text-[9px] text-red-500 font-bold block">{errors.phone}</span>}
-              </div>
-
-              {/* Gender */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Gender *</label>
-                <select 
-                  value={gender} 
-                  disabled={isNameLocked}
-                  onChange={e => setGender(e.target.value)} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                    isNameLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
-                  }`}
-                >
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Non-Binary">Non-Binary</option>
-                </select>
-              </div>
-
-              {/* Birthday */}
-              <div className="grid grid-cols-2 gap-2 col-span-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                    <span>Birthday *</span>
-                    {isMissing(birthday) && (
-                      <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">⚠️ Missing Birthday</span>
-                    )}
-                  </label>
-                  <input 
-                    type="date" 
-                    value={birthday} 
-                    disabled={isBirthdayLocked}
-                    onChange={e => {
-                      setBirthday(e.target.value);
-                      if (errors.birthday) setErrors(prev => ({ ...prev, birthday: '' }));
-                    }} 
-                    className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                      isMissing(birthday) || errors.birthday 
-                        ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                        : isBirthdayLocked
-                        ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                        : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                    }`} 
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">Age Status</label>
-                  <input 
-                    type="text" 
-                    value={birthday ? `${calculatedAge} yrs (${isRestrictedUnder12 ? 'Restricted' : isMinor ? 'Minor' : 'Adult'})` : '--'} 
-                    disabled 
-                    className={`w-full p-2.5 border rounded-xl text-xs font-mono font-bold outline-none cursor-not-allowed ${
-                      isRestrictedUnder12 ? 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-600 dark:text-red-500' :
-                      isMinor ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-500' : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-slate-300'
-                    }`} 
-                  />
-                </div>
-              </div>
-
-              {/* Address */}
-              <div className="md:col-span-2 space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                  <span>Home Address <span className="text-slate-400 font-normal">(optional)</span></span>
-                </label>
-                <input 
-                  type="text" 
-                  value={address} 
-                  disabled={isAddressLocked}
-                  onChange={e => {
-                    setAddress(e.target.value);
-                    if (errors.address) setErrors(prev => ({ ...prev, address: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    isAddressLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="Barangay, City, Province (optional)" 
-                />
-              </div>
-
-              {/* Emergency Contact */}
-              <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
-                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                  Emergency Contact {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional for 18+)</span>}
-                </span>
-              </div>
-
-              {/* Emergency Contact Name */}
-              <div className="md:col-span-2 space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                  Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                </label>
-                <input 
-                  type="text" 
-                  value={emergencyName} 
-                  disabled={isEmergencyNameLocked}
-                  onChange={e => {
-                    setEmergencyName(e.target.value);
-                    if (errors.emergencyName) setErrors(prev => ({ ...prev, emergencyName: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    (isMinor && isMissing(emergencyName)) || errors.emergencyName 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                      : isEmergencyNameLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="Contact person's full name (optional)" 
-                />
-                {errors.emergencyName && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyName}</span>}
-              </div>
-
-              {/* Relationship */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                  Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                </label>
-                <select 
-                  value={relationship} 
-                  disabled={isRelationshipLocked}
-                  onChange={e => {
-                    setRelationship(e.target.value);
-                    if (errors.relationship) setErrors(prev => ({ ...prev, relationship: '' }));
-                  }} 
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none font-medium transition-colors ${
-                    errors.relationship 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 cursor-pointer' 
-                      : isRelationshipLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
-                  }`}
-                >
-                  <option value="">Select Relationship {isMinor ? '*' : '(optional)'}</option>
-                  <optgroup label="Immediate Family">
-                    <option value="Mother">Mother</option>
-                    <option value="Father">Father</option>
-                    <option value="Spouse / Partner">Spouse / Partner</option>
-                    <option value="Husband">Husband</option>
-                    <option value="Wife">Wife</option>
-                    <option value="Brother">Brother</option>
-                    <option value="Sister">Sister</option>
-                    <option value="Son">Son</option>
-                    <option value="Daughter">Daughter</option>
-                  </optgroup>
-                  <optgroup label="Extended Family">
-                    <option value="Grandmother">Grandmother</option>
-                    <option value="Grandfather">Grandfather</option>
-                    <option value="Aunt">Aunt</option>
-                    <option value="Uncle">Uncle</option>
-                    <option value="Cousin">Cousin</option>
-                    <option value="Relative">Other Relative</option>
-                  </optgroup>
-                  <optgroup label="Guardian & Other">
-                    <option value="Legal Guardian">Legal Guardian</option>
-                    <option value="Friend / Colleague">Friend / Colleague</option>
-                    <option value="Other">Other</option>
-                  </optgroup>
-                </select>
-                {errors.relationship && <span className="text-[9px] text-red-500 font-bold block">{errors.relationship}</span>}
-              </div>
-
-              {/* Emergency Phone */}
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                  Emergency Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                </label>
-                <input 
-                  type="text" 
-                  value={emergencyPhone} 
-                  disabled={isEmergencyPhoneLocked}
-                  onChange={e => {
-                    setEmergencyPhone(e.target.value.replace(/\D/g, ''));
-                    if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
-                  }}
-                  className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                    (isMinor && isMissing(emergencyPhone)) || errors.emergencyPhone 
-                      ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                      : isEmergencyPhoneLocked
-                      ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                      : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                  }`} 
-                  placeholder="0918XXXXXXX (optional)" 
-                />
-                {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
-              </div>
-
-              {/* Digital Signatures */}
-              {Boolean(applicantSig || parentSig) && (
-                <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <FileSignature className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Digital Signatures</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
-                      className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-blue-500" />
-                      <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
-                    </button>
-                  </div>
-
-                  {showSignaturesInAudit && (
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-                          Applicant Signature
-                        </span>
-                        {applicantSig ? (
-                          <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-                            <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-                          </div>
-                        ) : (
-                          <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-                        )}
-                      </div>
-
-                      <div>
-                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-                          Parent / Guardian Signature
-                        </span>
-                        {parentSig ? (
-                          <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-                            <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-                          </div>
-                        ) : (
-                          <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
-
-              {/* Master Waiver Checkbox */}
-              <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={waiverAgreed} 
-                    onChange={e => {
-                      setWaiverAgreed(e.target.checked);
-                      if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
-                    }} 
-                    className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
-                  />
-                  <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
-                    I certify that all information provided is accurate and true, and agree to the Wolf Palomar Gym Membership Waiver & Terms. *
-                  </span>
-                </label>
-                {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
-              </div>
 
             </div>
           )}
 
+          <AgreementDocumentViewer isOpen={agreementDocument !== null} onClose={() => setAgreementDocument(null)} initialDocument={agreementDocument || 'terms'} />
+
           {/* STEP 2: CHECKOUT INVOICE & MEMBERSHIP PLAN SELECTION */}
           {step === 2 && (
             <div className="p-4 sm:p-5 bg-slate-100/90 dark:bg-zinc-900/80 rounded-2xl border border-slate-200 dark:border-zinc-800 text-left space-y-5 animate-fade-in">
-              
-              {/* SUPABASE CONNECTION FALLBACK ALERT */}
-              <AnimatePresence>
-                {(settingsError || isUsingSettingsFallback) && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <WifiOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span>Live rates unavailable from Supabase. Standard default pricing applied.</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={fetchWizardSettings}
-                      disabled={isLoadingSettings}
-                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-500/30 rounded-lg text-[9px] font-mono uppercase font-bold tracking-wider cursor-pointer flex items-center gap-1 transition-all"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isLoadingSettings ? 'animate-spin' : ''}`} />
-                      <span>Retry</span>
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               <div className="border-b border-slate-200 dark:border-zinc-800 pb-3 space-y-3">
                 <div className="flex justify-between items-center select-none font-bold">
                   <div className="flex items-center gap-2">
                     <h4 className="font-heading text-xs tracking-wider uppercase text-slate-900 dark:text-white">Checkout Invoice & Profile Audit</h4>
                     {isMinor ? (
                       <span className="text-[9px] font-mono bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
-                        MINOR APPLICANT ({calculatedAge} YRS)
-                      </span>
-                    ) : isRestrictedUnder12 ? (
-                      <span className="text-[9px] font-mono bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full font-bold">
-                        RESTRICTED (&lt;12 YRS)
+                        MINOR ({calculatedAge} YRS)
                       </span>
                     ) : (
                       <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
-                        ADULT APPLICANT ({calculatedAge} YRS)
+                        ADULT ({calculatedAge} YRS)
                       </span>
                     )}
                   </div>
@@ -2019,169 +2207,37 @@ const isMonthlyValid =
                   
                   <div className="text-right">
                     <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Client Contact</span>
-                    <div className="flex items-center justify-end gap-2 mt-0.5">
-                      <span className="text-sm font-mono font-bold text-slate-900 dark:text-white">{phone || 'N/A'}</span>
-                      <button 
-                        type="button"
-                        onClick={() => setShowClientDetails(!showClientDetails)}
-                        className="px-2.5 py-1 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        {showClientDetails ? 'Hide More Info' : 'Show More Info'}
-                      </button>
-                    </div>
+                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white block mt-0.5">{phone || 'N/A'}</span>
                   </div>
-                </div>
-
-                {/* COMPREHENSIVE CLIENT AUDIT DRAWER */}
-                {showClientDetails && (
-                  <div className="p-4 bg-white dark:bg-zinc-950/90 border border-slate-200 dark:border-blue-500/20 rounded-2xl space-y-4 animate-fade-in text-[11px] text-slate-700 dark:text-slate-300 font-medium shadow-xs">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <div>
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Gender / Age</span>
-                        <span className="text-slate-900 dark:text-white font-bold">{gender} • {calculatedAge ? `${calculatedAge} yrs old` : 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Birthday</span>
-                        <span className="text-slate-900 dark:text-white font-mono">{birthday || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Email Address</span>
-                        <span className="text-slate-900 dark:text-white truncate block">{email || 'N/A'}</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Home Address</span>
-                        <span className="text-slate-900 dark:text-white truncate block">{address || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Emergency Contact</span>
-                        <span className="text-slate-900 dark:text-white">{emergencyName || 'N/A'} ({relationship || 'N/A'})</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 uppercase font-bold block">Emergency Phone</span>
-                        <span className="font-mono text-slate-900 dark:text-white">{emergencyPhone || 'N/A'}</span>
-                      </div>
-                    </div>
-
-                    {/* Digital Signatures */}
-                    {Boolean(applicantSig || parentSig) && (
-                      <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-2 select-none">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <FileSignature className="w-3.5 h-3.5 text-blue-500" />
-                            <span>Digital Signatures</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setShowSignaturesInAudit(!showSignaturesInAudit)}
-                            className="px-2.5 py-1 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors border-none"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-blue-500" />
-                            <span>{showSignaturesInAudit ? 'Hide Signatures' : 'Show Signatures'}</span>
-                          </button>
-                        </div>
-
-                        {showSignaturesInAudit && (
-                          <div className="grid grid-cols-2 gap-3 pt-1">
-                            <div>
-                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-                                Applicant Signature
-                              </span>
-                              {applicantSig ? (
-                                <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-                                  <img src={applicantSig} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
-                                </div>
-                              ) : (
-                                <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-                              )}
-                            </div>
-
-                            <div>
-                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block mb-1">
-                                Parent / Guardian Signature
-                              </span>
-                              {parentSig ? (
-                                <div className="p-1.5 bg-white dark:bg-zinc-950 rounded-xl border border-slate-300 dark:border-zinc-700 h-16 flex items-center justify-center">
-                                  <img src={parentSig} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
-                                </div>
-                              ) : (
-                                <span className="text-[9px] text-slate-400 italic">No signature on file</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* STEP 2 MEMBERSHIP VALIDATION CARD */}
-              <div className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3 ${
-                membershipStatusSummary.level === 'red' 
-                  ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300' 
-                  : membershipStatusSummary.level === 'amber'
-                  ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300'
-                  : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
-              }`}>
-                {membershipStatusSummary.level === 'red' ? (
-                  <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                ) : membershipStatusSummary.level === 'amber' ? (
-                  <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                ) : (
-                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                )}
-
-                <div className="space-y-0.5">
-                  <h4 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white">
-                    {membershipStatusSummary.title}
-                  </h4>
-                  <p className="text-[10px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                    {membershipStatusSummary.description}
-                  </p>
                 </div>
               </div>
 
-              {/* Selected Membership Plan Selector */}
+              {/* MEMBERSHIP PLAN OPTIONS */}
               <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">Select Membership Option</span>
-                  {isPlanLocked && (
-                    <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1 uppercase tracking-wider select-none">
-                      <Lock className="w-3 h-3" /> Locked for Pre-Registered Applicant
-                    </span>
-                  )}
-                </div>
-
+                <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">Select Membership Option</span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div 
-  onClick={() => {
-    if (isMonthlyValid && !isPlanLocked) setSelectedPlan('Monthly Membership');
-  }}
-  className={`p-3.5 rounded-xl border transition-all ${
-    !isMonthlyValid || isPlanLocked ? 'cursor-not-allowed opacity-50 pointer-events-none' : 'cursor-pointer'
-  } ${
-    selectedPlan === 'Monthly Membership' 
-      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-md shadow-emerald-500/5' 
-      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-300'
-  }`}
->
-  <span className="block text-xs uppercase font-heading">Monthly Plan</span>
-  <span className="font-mono text-sm font-black block mt-1">
-    {isMonthlyValid ? `₱${settings.monthly_plan_price.toLocaleString()}` : 'Unavailable'}
-  </span>
-</div>
+                    onClick={() => { if (!isPlanLocked) setSelectedPlan('Monthly Membership'); }}
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      isPlanLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                    } ${
+                      selectedPlan === 'Monthly Membership' 
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-md shadow-emerald-500/5' 
+                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="block text-xs uppercase font-heading">Monthly Plan</span>
+                    <span className="font-mono text-sm font-black block mt-1">₱{settings.monthly_plan_price.toLocaleString()}</span>
+                  </div>
 
                   <div 
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('Yearly Membership');
-                    }}
+                    onClick={() => { if (!isPlanLocked) setSelectedPlan('Yearly Membership'); }}
                     className={`p-3.5 rounded-xl border transition-all ${
                       isPlanLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
                     } ${
                       selectedPlan === 'Yearly Membership' 
                         ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 font-bold shadow-md shadow-blue-500/5' 
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-300'
+                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
                     }`}
                   >
                     <span className="block text-xs uppercase font-heading">Yearly Plan</span>
@@ -2189,15 +2245,13 @@ const isMonthlyValid =
                   </div>
 
                   <div 
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('No Subscription');
-                    }}
+                    onClick={() => { if (!isPlanLocked) setSelectedPlan('No Subscription'); }}
                     className={`p-3.5 rounded-xl border transition-all ${
                       isPlanLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
                     } ${
                       selectedPlan === 'No Subscription' 
                         ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 font-bold shadow-md shadow-amber-500/5' 
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-300'
+                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
                     }`}
                   >
                     <span className="block text-xs uppercase font-heading">No Subscription</span>
@@ -2206,21 +2260,21 @@ const isMonthlyValid =
                 </div>
               </div>
 
-              {/* Payment Gateway */}
+              {/* PAYMENT METHOD */}
               {selectedPlan !== 'No Subscription' && (
                 <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
                   <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">Select Payment Gateway</span>
                   <div className="grid grid-cols-2 gap-3">
                     <div 
                       onClick={() => setPaymentMethod('Cash')} 
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'Cash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'Cash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400'}`}
                     >
                       <span className="text-sm">💰</span>
                       <span className="text-xs font-bold uppercase">Cash</span>
                     </div>
                     <div 
                       onClick={() => setPaymentMethod('GCash')} 
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'GCash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'GCash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400'}`}
                     >
                       <span className="text-sm">📱</span>
                       <span className="text-xs font-bold uppercase">GCash</span>
@@ -2229,19 +2283,14 @@ const isMonthlyValid =
                 </div>
               )}
 
-              {/* GCash Reference Field */}
+              {/* GCash Reference */}
               {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
                 <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800 text-xs font-semibold animate-fade-in">
-                  <div className="flex justify-between items-center">
-                    <label className={`uppercase text-[9px] font-bold transition-colors ${isGcashValid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                      {isGcashValid ? '✓ GCash Reference Code Validated' : 'GCash Transaction Reference No. *'}
-                    </label>
-                  </div>
-                  
+                  <label className={`uppercase text-[9px] font-bold ${isGcashValid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    {isGcashValid ? '✓ GCash Reference Code Validated' : 'GCash Transaction Reference No. *'}
+                  </label>
                   <input 
                     type="text" 
-                    inputMode="numeric"
-                    pattern="[0-9]*"
                     maxLength={13}
                     value={gcashReference} 
                     onChange={e => setGcashReference(e.target.value.replace(/\D/g, ''))} 
@@ -2253,11 +2302,11 @@ const isMonthlyValid =
                 </div>
               )}
 
-              {/* Printed Laminated Card Option */}
+              {/* Printed ID Option */}
               <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between select-none font-semibold">
                 <div>
                   <span className="font-bold text-slate-900 dark:text-slate-200 block">Issue Printed Laminated Card</span>
-                  <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">Laminated QR membership card for check-in scanning.</span>
+                  <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">Laminated QR membership card for check-in.</span>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input 
@@ -2270,7 +2319,7 @@ const isMonthlyValid =
                 </label>
               </div>
 
-              {/* Fee Calculation Breakdown */}
+              {/* Fee Breakdown */}
               <div className="border-t border-dashed border-slate-300 dark:border-zinc-800 pt-3 space-y-1 font-mono text-xs">
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
                   <span>Plan Base Price:</span>
@@ -2278,13 +2327,13 @@ const isMonthlyValid =
                 </div>
                 {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
                   <div className="flex justify-between text-emerald-700 dark:text-emerald-400 font-bold">
-                    <span>GCash Convenience Fee:</span>
+                    <span>GCash Fee:</span>
                     <span>+₱{gcashFee}.00</span>
                   </div>
                 )}
                 {addIdCard && (
                   <div className="flex justify-between text-blue-700 dark:text-blue-400 font-bold">
-                    <span>Printed Card Fee:</span>
+                    <span>Card Printing Fee:</span>
                     <span>+₱{cardFee}.00</span>
                   </div>
                 )}
@@ -2293,55 +2342,71 @@ const isMonthlyValid =
                   <span className="text-emerald-600 dark:text-emerald-400 text-base">₱{totalPrice.toLocaleString()}.00</span>
                 </div>
               </div>
+
+              {selectedPlan !== 'No Subscription' && (
+                <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={subscriptionAgreement} 
+                      onChange={(e) => setSubscriptionAgreement(e.target.checked)} 
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-emerald-600 accent-emerald-600 cursor-pointer shrink-0" 
+                    />
+                    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                      I confirm that the member has reviewed and agrees to the <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>.
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
           {/* STEP 3: ENROLLMENT COMPLETE */}
-{step === 3 && finishedIds && (
-  <div className="py-2 space-y-4 animate-scale-up">
-    <div className="text-center space-y-1">
-      <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
-        <CheckCircle className="w-5 h-5" />
-      </div>
-      <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
-        Intake Successful
-      </h4>
-      <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
-        The member profile has been enrolled in the database.
-      </p>
-    </div>
+          {step === 3 && finishedIds && (
+            <div className="py-2 space-y-4 animate-scale-up">
+              <div className="text-center space-y-1">
+                <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle className="w-5 h-5" />
+                </div>
+                <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
+                  Intake Successful
+                </h4>
+                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
+                  The member profile has been registered and verified in the database.
+                </p>
+              </div>
 
-    {/* Render receipt naturally without inner scrolling portrait container */}
-    <div className="w-full flex justify-center pt-2">
-      <OfficialReceipt
-        ref={receiptRef}
-        variant="inline"
-        data={{
-          receiptType: 'subscription',
-          receiptNo: finishedIds.receipt_no,
-          customerName: getCombinedFullName(),
-          planType: selectedPlan === 'No Subscription' ? 'No Subscription (Profile Only)' : selectedPlan,
-          basePrice: planBasePrice,
-          gcashFee: appliedGcashFee,
-          cardFee: appliedCardFee,
-          paymentMethod: paymentMethod,
-          gcashRefNo: gcashReference,
-          transactionDate: finishedIds.transaction_date,
-          processedBy: 'WOLF PALOMAR STAFF',
-          qrValue: finishedIds.receipt_no
-        }}
-      />
-    </div>
-  </div>
-)}
+              <div className="w-full flex justify-center pt-2">
+                <OfficialReceipt
+                  ref={receiptRef}
+                  variant="inline"
+                  data={{
+                    receiptType: 'subscription',
+                    receiptNo: finishedIds.receipt_no,
+                    customerName: getCombinedFullName(),
+                    planType: selectedPlan === 'No Subscription' ? 'No Subscription (Profile Only)' : selectedPlan,
+                    basePrice: planBasePrice,
+                    gcashFee: appliedGcashFee,
+                    cardFee: appliedCardFee,
+                    paymentMethod: paymentMethod,
+                    gcashRefNo: gcashReference,
+                    transactionDate: finishedIds.transaction_date,
+                    processedBy: 'WOLF PALOMAR STAFF',
+                    qrValue: finishedIds.receipt_no
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
         </div>
 
-        {/* PINNED FIXED FOOTER BAR */}
+        {/* PINNED FOOTER BAR */}
         <div className="p-4 sm:px-6 border-t border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-[#12141a] flex justify-between items-center shrink-0 select-none">
           {step < 3 ? (
             <>
               <button 
+                type="button"
                 disabled={step === 1 || isSubmitting} 
                 onClick={handleBack} 
                 className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
@@ -2389,7 +2454,7 @@ const isMonthlyValid =
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleDownloadReceiptImage}
+                  onClick={() => receiptRef.current?.handleDownloadJpg()}
                   className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
                 >
                   <Download className="w-3.5 h-3.5 text-blue-500" />
@@ -2398,7 +2463,7 @@ const isMonthlyValid =
 
                 <button
                   type="button"
-                  onClick={handlePrintReceipt}
+                  onClick={() => receiptRef.current?.handlePrint()}
                   className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
                 >
                   <Printer className="w-3.5 h-3.5 text-emerald-500" />
@@ -2442,7 +2507,6 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
     prefillData?: OnlineRegistration;
   }>({ isOpen: false, mode: null, plan: null });
 
-  // Auto-open modal when scanner redirects with prefilled REG-XXXXXXXXX data
   useEffect(() => {
     if (location.state?.openWizard) {
       setModalConfig({
@@ -2452,7 +2516,6 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
         step: location.state.initialStep ?? 1,
         prefillData: location.state.prefillData
       });
-      // Clear navigation state so it doesn't reopen on browser refresh
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
@@ -2484,19 +2547,17 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({ onOnboardi
     }
   };
 
+  const isMonthlyValid = 
+    !isLoadingSettings && 
+    !settingsError && 
+    typeof settings?.monthly_plan_price === 'number' && 
+    settings.monthly_plan_price > 0;
 
-const isMonthlyValid = 
-  !isLoadingSettings && 
-  !settingsError && 
-  typeof settings?.monthly_plan_price === 'number' && 
-  settings.monthly_plan_price > 0;
-
-const isYearlyValid = 
-  !isLoadingSettings && 
-  !settingsError && 
-  typeof settings?.yearly_plan_price === 'number' && 
-  settings.yearly_plan_price > 0;
-
+  const isYearlyValid = 
+    !isLoadingSettings && 
+    !settingsError && 
+    typeof settings?.yearly_plan_price === 'number' && 
+    settings.yearly_plan_price > 0;
 
   useEffect(() => {
     fetchSettings();
@@ -2505,7 +2566,7 @@ const isYearlyValid =
   return (
     <div className="relative space-y-6">
       
-    {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
+      {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
       <div className="hidden lg:block">
         <AnimatePresence>
           <motion.button
@@ -2531,7 +2592,7 @@ const isYearlyValid =
         </AnimatePresence>
       </div>
 
-      {/* SUPABASE CONNECTION / PRICING FALLBACK ALERT BANNER */}
+      {/* SUPABASE CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>
         {(settingsError || isUsingFallback) && (
           <motion.div
@@ -2600,7 +2661,6 @@ const isYearlyValid =
 
       {/* CHOICE 2: MANUAL PLAN CATALOG */}
       {isLoadingSettings ? (
-        /* ANIMATED SKELETON CARDS DURING SUPABASE LOADING */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2">
           {[1, 2].map((idx) => (
             <div 
@@ -2628,116 +2688,111 @@ const isYearlyValid =
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2 text-left">
-          
           {/* MONTHLY PLAN CARD */}
-<motion.div 
-  whileHover={isMonthlyValid ? { scale: 1.01 } : {}}
-  transition={{ duration: 0.2 }}
-  onClick={() => { 
-    if (isMonthlyValid) {
-      setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
-    }
-  }}
-  className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
-    isMonthlyValid 
-      ? 'border-(--border-color) hover:border-emerald-500/40 cursor-pointer' 
-      : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
-  }`}
->
-  <div className="space-y-3">
-    <div className="flex justify-between items-center">
-      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Standard Plan</span>
-      <Award className={`w-5 h-5 ${isMonthlyValid ? 'text-emerald-500' : 'text-slate-400'}`} />
-    </div>
-    
-    <div className="flex items-center justify-between">
-      <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Monthly Membership</h4>
-      
-    </div>
+          <motion.div 
+            whileHover={isMonthlyValid ? { scale: 1.01 } : {}}
+            transition={{ duration: 0.2 }}
+            onClick={() => { 
+              if (isMonthlyValid) {
+                setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
+              }
+            }}
+            className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+              isMonthlyValid 
+                ? 'border-(--border-color) hover:border-emerald-500/40 cursor-pointer' 
+                : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+            }`}
+          >
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Standard Plan</span>
+                <Award className={`w-5 h-5 ${isMonthlyValid ? 'text-emerald-500' : 'text-slate-400'}`} />
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Monthly Membership</h4>
+              </div>
 
-    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-      Provides unlimited facility access with standard lobby card scanning. Daily entry fee is calculated as ₱0 per check-in visit.
-    </p>
-  </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+                Provides unlimited facility access with standard lobby card scanning. Daily entry fee is calculated as ₱0 per check-in visit.
+              </p>
+            </div>
 
-  <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-    <span className={`text-2xl font-mono font-black ${isMonthlyValid ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-zinc-500'}`}>
-      {isMonthlyValid ? `₱${settings.monthly_plan_price.toLocaleString()}` : '₱ --'}
-    </span>
-    
-    {/* LOCKED / DISABLED BUTTON */}
-    <button 
-      type="button"
-      disabled={!isMonthlyValid}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (isMonthlyValid) {
-          setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
-        }
-      }}
-      className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
-    >
-      {isMonthlyValid ? 'Select Monthly' : 'Unavailable'}
-    </button>
-  </div>
-</motion.div>
+            <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+              <span className={`text-2xl font-mono font-black ${isMonthlyValid ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-zinc-500'}`}>
+                {isMonthlyValid ? `₱${settings.monthly_plan_price.toLocaleString()}` : '₱ --'}
+              </span>
+              
+              <button 
+                type="button"
+                disabled={!isMonthlyValid}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMonthlyValid) {
+                    setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Monthly Membership' });
+                  }
+                }}
+                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+              >
+                {isMonthlyValid ? 'Select Monthly' : 'Unavailable'}
+              </button>
+            </div>
+          </motion.div>
 
           {/* YEARLY PLAN CARD */}
-<motion.div 
-  whileHover={isYearlyValid ? { scale: 1.01 } : {}}
-  transition={{ duration: 0.2 }}
-  onClick={() => { 
-    if (isYearlyValid) {
-      setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
-    }
-  }}
-  className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
-    isYearlyValid 
-      ? 'border-(--border-color) hover:border-blue-500/40 cursor-pointer' 
-      : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
-  }`}
->
-  <div className="space-y-3">
-    <div className="flex justify-between items-center">
-      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Discount Plan</span>
-      <Award className={`w-5 h-5 ${isYearlyValid ? 'text-blue-500' : 'text-slate-400'}`} />
-    </div>
+          <motion.div 
+            whileHover={isYearlyValid ? { scale: 1.01 } : {}}
+            transition={{ duration: 0.2 }}
+            onClick={() => { 
+              if (isYearlyValid) {
+                setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
+              }
+            }}
+            className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+              isYearlyValid 
+                ? 'border-(--border-color) hover:border-blue-500/40 cursor-pointer' 
+                : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+            }`}
+          >
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Intake Choice 2 • Discount Plan</span>
+                <Award className={`w-5 h-5 ${isYearlyValid ? 'text-blue-500' : 'text-slate-400'}`} />
+              </div>
 
-    <div className="flex items-center justify-between">
-      <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Yearly Membership</h4>
-    </div>
+              <div className="flex items-center justify-between">
+                <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">Yearly Membership</h4>
+              </div>
 
-    <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-      Enables discounted facility access key card. Walk-in daily rates are reduced to ₱{isYearlyValid ? settings.yearly_member_checkin_fee.toLocaleString() : '--'} per visit.
-    </p>
-  </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+                Enables discounted facility access key card. Walk-in daily rates are reduced to ₱{isYearlyValid ? settings.yearly_member_checkin_fee.toLocaleString() : '--'} per visit.
+              </p>
+            </div>
 
-  <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-    <span className={`text-2xl font-mono font-black ${isYearlyValid ? 'text-blue-600 dark:text-blue-500' : 'text-slate-400 dark:text-zinc-500'}`}>
-      {isYearlyValid ? `₱${settings.yearly_plan_price.toLocaleString()}` : '₱ --'}
-    </span>
-    
-    {/* LOCKED / DISABLED BUTTON */}
-    <button 
-      type="button"
-      disabled={!isYearlyValid}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (isYearlyValid) {
-          setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
-        }
-      }}
-      className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
-    >
-      {isYearlyValid ? 'Select Yearly' : 'Unavailable'}
-    </button>
-  </div>
-</motion.div>
-
+            <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+              <span className={`text-2xl font-mono font-black ${isYearlyValid ? 'text-blue-600 dark:text-blue-500' : 'text-slate-400 dark:text-zinc-500'}`}>
+                {isYearlyValid ? `₱${settings.yearly_plan_price.toLocaleString()}` : '₱ --'}
+              </span>
+              
+              <button 
+                type="button"
+                disabled={!isYearlyValid}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isYearlyValid) {
+                    setModalConfig({ isOpen: true, mode: 'Manual', plan: 'Yearly Membership' });
+                  }
+                }}
+                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+              >
+                {isYearlyValid ? 'Select Yearly' : 'Unavailable'}
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
 
-<IntakeWizardModal
+      <IntakeWizardModal
         isOpen={modalConfig.isOpen}
         initialIntakeMode={modalConfig.mode}
         initialPlan={modalConfig.plan}
