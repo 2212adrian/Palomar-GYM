@@ -279,7 +279,6 @@ export const Sales: React.FC = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [ratesConfig, setRatesConfig] = useState<any>(null);
-  const [loading] = useState(false);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   const itemsPerPage = useResponsiveItemsPerPage();
@@ -358,31 +357,29 @@ export const Sales: React.FC = () => {
     }
   };
 
-  // ZERO-EGRESS SANITIZED FETCHING USING SESSION CACHE & POSTGRES RPC
+  // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchTransactions = useCallback(async (isBackground: boolean = false) => {
-    try {
-      const cacheKey = `sales_sanitized_${dateStr}`;
+    const cacheKey = `sales_sanitized_${dateStr}`;
 
-      if (!isBackground) {
-        const cachedSession = sessionStorage.getItem(cacheKey);
-        if (cachedSession) {
-          try {
-            const parsed = JSON.parse(cachedSession);
-            if (Array.isArray(parsed) && parsed.length >= 0) {
-              setTransactions(parsed);
-              setLoadingTransactions(false);
-              return;
-            }
-          } catch (e) {
-            console.error('Failed to parse cached sales session:', e);
+    // 1. Instant Cache Hydration
+    if (!isBackground) {
+      const cachedSession = sessionStorage.getItem(cacheKey);
+      if (cachedSession) {
+        try {
+          const parsed = JSON.parse(cachedSession);
+          if (Array.isArray(parsed)) {
+            setTransactions(parsed);
           }
+        } catch (e) {
+          console.error('Failed to parse cached sales session:', e);
         }
-      }
-
-      if (!isBackground) {
+      } else {
         setLoadingTransactions(true);
       }
+    }
 
+    try {
+      // 2. Always fetch fresh server data in background
       const { data, error } = await supabase.rpc('get_sanitized_sales', {
         target_date: dateStr
       });
@@ -393,7 +390,6 @@ export const Sales: React.FC = () => {
       }
 
       const freshTransactions = data || [];
-
       setTransactions(freshTransactions);
       sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
 
@@ -425,8 +421,9 @@ export const Sales: React.FC = () => {
     fetchProducts();
     fetchTransactions(false);
 
+    const channelId = `sales_rt_${dateStr}_${Date.now()}`;
     const salesChannel = supabase
-      .channel(`sales_realtime_${dateStr}`)
+      .channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
         sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
         fetchTransactions(true);
@@ -434,7 +431,7 @@ export const Sales: React.FC = () => {
       .subscribe();
 
     const productsChannel = supabase
-      .channel('products-realtime-changes')
+      .channel(`products_rt_${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
         fetchProducts();
       })
@@ -606,7 +603,6 @@ export const Sales: React.FC = () => {
       const itemsList = newTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || newTx.productName;
       const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
 
-      // Refresh local product stock list and log audit asynchronously
       logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id)
         .then(() => fetchProducts())
         .catch(console.error);
@@ -639,7 +635,6 @@ export const Sales: React.FC = () => {
     }, 380);
   };
 
-  // Intercepted by Postgres trigger: restores product stock and sets deleted_at / deleted_by
   const handleConfirmDelete = useCallback(async (stagedTx: any) => {
     try {
       const { error } = await supabase
@@ -658,7 +653,6 @@ export const Sales: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to commit sale deletion to database:', err);
       toast.error(err.message || 'There was a problem deleting this sale. Please try again.');
-      // Rollback to UI if server deletion fails
       setTransactions(prev => {
         const updated = [stagedTx, ...prev.filter(t => t.id !== stagedTx.id)].sort((a, b) => {
           const dateA = a.created_at || a.createdAt || '';
@@ -672,7 +666,7 @@ export const Sales: React.FC = () => {
       setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
       fetchProducts();
     }
-  }, [user?.email, dateStr]);
+  }, [dateStr]);
 
   const handleUndoDelete = (stagedTx: any) => {
     setDeletingIds(prev => prev.filter(id => id !== stagedTx.id));
@@ -689,7 +683,6 @@ export const Sales: React.FC = () => {
     toast.info('Deletion canceled. The transaction has been put back.');
   };
 
-  // Commit on unmount if any staged delete is pending
   useEffect(() => {
     return () => {
       if (stagedDeletionsRef.current.length > 0) {
@@ -712,7 +705,6 @@ export const Sales: React.FC = () => {
             <>
               <Button
                 onClick={() => {
-                  // Commit any pending deletions immediately before opening Recycle Bin
                   if (stagedDeletionsRef.current.length > 0) {
                     stagedDeletionsRef.current.forEach(tx => handleConfirmDelete(tx));
                   }
@@ -788,7 +780,7 @@ export const Sales: React.FC = () => {
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
-      <TabLoader isVisible={loading} />
+      <TabLoader isVisible={false} />
 
       {/* --- SLIM VERTICAL DESKTOP NAVIGATION TABS --- */}
       {role === 'admin' && (

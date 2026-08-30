@@ -289,7 +289,7 @@ export const LogbookPage: React.FC = () => {
   }, [user, profile]);
 
   const [logs, setLogs] = useState<LogRecord[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState<boolean>(true);
+  const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
 
   // Date selection states
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
@@ -317,31 +317,29 @@ export const LogbookPage: React.FC = () => {
     return location.pathname.startsWith('/members') ? 'members' : 'logbook';
   }, [location.pathname]);
 
-  // ZERO-EGRESS SESSION CACHING WITH SANITIZED RPC
+  // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchAttendanceFromSupabase = useCallback(async (isBackground: boolean = false) => {
-    try {
-      const cacheKey = `logbook_sanitized_${dateStr}`;
+    const cacheKey = `logbook_sanitized_${dateStr}`;
 
-      if (!isBackground) {
-        const cachedSession = sessionStorage.getItem(cacheKey);
-        if (cachedSession) {
-          try {
-            const parsed = JSON.parse(cachedSession);
-            if (Array.isArray(parsed) && parsed.length >= 0) {
-              setLogs(parsed);
-              setLoadingLogs(false);
-              return;
-            }
-          } catch (e) {
-            console.error('Failed to parse cached logbook session:', e);
+    // 1. Instant Cache Hydration
+    if (!isBackground) {
+      const cachedSession = sessionStorage.getItem(cacheKey);
+      if (cachedSession) {
+        try {
+          const parsed = JSON.parse(cachedSession);
+          if (Array.isArray(parsed)) {
+            setLogs(parsed);
           }
+        } catch (e) {
+          console.error('Failed to parse cached logbook session:', e);
         }
-      }
-
-      if (!isBackground) {
+      } else {
         setLoadingLogs(true);
       }
+    }
 
+    try {
+      // 2. Always fetch fresh server data in background
       const { data, error } = await supabase.rpc('get_sanitized_logbook', {
         target_date: dateStr
       });
@@ -387,8 +385,9 @@ export const LogbookPage: React.FC = () => {
   useEffect(() => {
     fetchAttendanceFromSupabase(false);
 
+    const channelId = `logbook_rt_${dateStr}_${Date.now()}`;
     const channel = supabase
-      .channel(`logbook_realtime_${dateStr}`)
+      .channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
         sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
         fetchAttendanceFromSupabase(true);
@@ -570,7 +569,6 @@ export const LogbookPage: React.FC = () => {
     toast.info(`Undone payment. Set back to Unpaid.`);
   };
 
-  // COMMITS THE DELETION TO SUPABASE AFTER 5 SECONDS OR UPON CONFIRMING / CLOSING TOAST
   const commitDelete = useCallback(async (targetLog: LogRecord | null) => {
     if (!targetLog) return;
     try {
@@ -587,7 +585,6 @@ export const LogbookPage: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to commit deletion to database:', err);
       toast.error(err.message || 'Failed to move check-in log to Recycle Bin.');
-      // Rollback to UI if server update fails
       setLogs(prev => {
         const updated: LogRecord[] = [targetLog, ...prev.filter(item => String(item.id) !== String(targetLog.id))].sort((a, b) => {
           const dateA = a.timestamp || '';
@@ -613,7 +610,6 @@ export const LogbookPage: React.FC = () => {
     const strId = String(log.id);
     if (deletingIds.includes(strId)) return;
 
-    // If another delete was pending, commit it immediately before processing next
     if (pendingDeleteRef.current && String(pendingDeleteRef.current.id) !== strId) {
       const priorLog = pendingDeleteRef.current;
       pendingDeleteRef.current = null;
@@ -622,7 +618,6 @@ export const LogbookPage: React.FC = () => {
 
     setDeletingIds(prev => [...prev, strId]);
 
-    // Animate out, then start 5s undo countdown without updating Supabase yet
     setTimeout(() => {
       setLogs(prev => {
         const updated: LogRecord[] = prev.filter(item => String(item.id) !== strId);
@@ -637,7 +632,6 @@ export const LogbookPage: React.FC = () => {
     }, 380);
   };
 
-  // USER CLOSED TOAST OR 5 SECONDS EXPIRED -> COMMIT TO SUPABASE (MOVED TO RECYCLE BIN)
   const confirmDelete = () => {
     const logToCommit = pendingDeleteRef.current || pendingDelete;
     setPendingDelete(null);
@@ -649,7 +643,6 @@ export const LogbookPage: React.FC = () => {
     }
   };
 
-  // USER CLICKED UNDO IN TOAST -> RESTORE LOCALLY WITHOUT WRITING TO SUPABASE
   const undoDelete = () => {
     const logToRestore = pendingDeleteRef.current || pendingDelete;
     if (!logToRestore) return;
@@ -672,7 +665,6 @@ export const LogbookPage: React.FC = () => {
     toast.info('Check-in record restored.');
   };
 
-  // Commit on unmount if user navigates away while delete is pending
   useEffect(() => {
     return () => {
       if (pendingDeleteRef.current) {
@@ -689,7 +681,6 @@ export const LogbookPage: React.FC = () => {
             <>
               <Button
                 onClick={() => {
-                  // If delete is pending when opening bin, commit it so it shows
                   if (pendingDeleteRef.current) {
                     confirmDelete();
                   }
