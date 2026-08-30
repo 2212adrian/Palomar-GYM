@@ -561,7 +561,7 @@ export const Sales: React.FC = () => {
     try {
       const calculatedGcashFee = newTx.paymentMethod === 'GCash' ? (ratesConfig?.gcash_fee || 10.00) : 0.00;
 
-      // Matches public.sales columns exactly (no staff_name)
+      // Inserting into sales automatically decrements inventory via DB trigger `tr_sales_deduct_stock_on_insert`
       const { data: insertedSale, error } = await supabase
         .from('sales')
         .insert([{
@@ -606,27 +606,10 @@ export const Sales: React.FC = () => {
       const itemsList = newTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || newTx.productName;
       const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
 
-      const stockUpdatePromises = (newTx.items || []).map(async (item: any) => {
-        const { data: currentProduct } = await supabase
-          .from('products')
-          .select('stock_quantity')
-          .eq('id', item.productId)
-          .single();
-
-        if (currentProduct) {
-          const updatedStock = Math.max(0, (currentProduct.stock_quantity ?? 0) - item.quantity);
-          return supabase
-            .from('products')
-            .update({ stock_quantity: updatedStock })
-            .eq('id', item.productId);
-        }
-      });
-
-      const auditLogPromise = logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id);
-
-      Promise.all([...stockUpdatePromises, auditLogPromise]).then(() => {
-        fetchProducts();
-      }).catch(console.error);
+      // Refresh local product stock list and log audit asynchronously
+      logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id)
+        .then(() => fetchProducts())
+        .catch(console.error);
 
     } catch (err: any) {
       console.error('Error saving sale transaction:', err);
