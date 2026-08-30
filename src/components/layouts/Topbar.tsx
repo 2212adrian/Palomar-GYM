@@ -295,9 +295,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   // Global Notification Store
   const {
     unreadBadgeCount,
-    incidentUnreadCount,
-    stockAlertsCount,
-    expiringSubsCount,
     isNotificationOpen,
     markBadgeSeen,
     toggleNotificationOpen,
