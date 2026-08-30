@@ -14,6 +14,7 @@ import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { supabase } from '../../../lib/supabase/client';
+import { logAudit } from '../../../lib/supabase/audit';
 
 interface SalesReportCompilerProps {
   isOpen: boolean;
@@ -270,6 +271,12 @@ export const SalesReportCompiler: React.FC<SalesReportCompilerProps> = ({
       const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
       saveAs(blob, `Palomar_Sales_Report_${startDate}_to_${endDate}.pdf`);
       toast.success('Sales PDF report generated and downloaded successfully!');
+      
+      await logAudit(
+        'REPORT_GENERATED',
+        `Generated and downloaded Sales PDF report from ${startDate} to ${endDate} (${filteredReportTransactions.length} records, Total: ₱${totalAmount.toFixed(2)}).`
+      );
+
       onClose();
     } catch {
       toast.error('Could not generate the PDF report. Please try again.');

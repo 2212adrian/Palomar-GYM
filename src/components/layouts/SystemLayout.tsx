@@ -7,6 +7,7 @@ import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { TabLoader } from '../ui/TabLoader';
+import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 
 interface TabLoadingContextType {
   startLoading: (id: string) => void;
@@ -134,6 +135,15 @@ export const SystemLayout: React.FC = () => {
     } else {
       setSlideOut(true);
       setCurtainHidden(true);
+    }
+
+    // Immediately request necessary camera & notification permissions when authenticated
+    const hasPrompted = sessionStorage.getItem('palomar_initial_permissions_prompted');
+    if (!hasPrompted) {
+      sessionStorage.setItem('palomar_initial_permissions_prompted', '1');
+      setTimeout(() => {
+        promptInitialPermissionsOnLogin().catch(() => {});
+      }, 1000);
     }
   }, []);
 

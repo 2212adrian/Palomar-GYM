@@ -621,7 +621,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map((p: any) => {
                     const limitActive = hasStockLimit(p);
-                    const isOutOfStock = limitActive && getProductStock(p) <= 0;
+                    const stock = getProductStock(p);
+                    const isOutOfStock = limitActive && stock <= 0;
+                    const isLowStock = limitActive && !isOutOfStock && p.low_stock_alert !== null && p.low_stock_alert !== undefined && stock <= p.low_stock_alert;
+
                     return (
                       <button
                         key={p.id}
@@ -638,8 +641,16 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         </div>
                         <div className="text-right">
                           <div className="text-xs font-heading text-[var(--color-text)] font-bold">₱{getProductPrice(p).toFixed(2)}</div>
-                          <div className="text-[9px] font-sans font-bold text-slate-400">
-                            {isOutOfStock ? 'OUT OF STOCK' : (!limitActive ? 'UNLIMITED' : `Stock: ${getProductStock(p)}`)}
+                          <div className="text-[9px] font-sans font-bold">
+                            {isOutOfStock ? (
+                              <span className="text-red-500 font-black">NO STOCK (0)</span>
+                            ) : isLowStock ? (
+                              <span className="text-amber-500 dark:text-amber-400 font-black">LOW STOCK ({stock})</span>
+                            ) : !limitActive ? (
+                              <span className="text-blue-500 dark:text-blue-400">UNLIMITED</span>
+                            ) : (
+                              <span className="text-slate-400">Stock: {stock}</span>
+                            )}
                           </div>
                         </div>
                       </button>

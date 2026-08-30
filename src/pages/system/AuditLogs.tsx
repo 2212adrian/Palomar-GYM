@@ -29,12 +29,14 @@ import {
 
 const CATEGORIES = [
   { id: 'all', label: 'All Activities' },
+  { id: 'sales', label: 'Sales & Products' },
+  { id: 'attendance', label: 'Logbook & Attendance' },
   { id: 'members', label: 'Members' },
-  { id: 'attendance', label: 'Attendance' },
-  { id: 'payments', label: 'Payments' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'payments', label: 'Payments & Rates' },
+  { id: 'incidents', label: 'Incident Reports' },
+  { id: 'settings', label: 'Settings & Profile' },
   { id: 'backups', label: 'Backups' },
-  { id: 'security', label: 'Security' },
+  { id: 'security', label: 'Security & Users' },
   { id: 'auth', label: 'Authentication' }
 ];
 
@@ -74,21 +76,60 @@ export const AuditLogs: React.FC = () => {
 
   const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
+    // Sales & Products
+    if (act.includes('SALE_CREATED') || act.includes('SALE_ADD')) return 'Created New Sale';
+    if (act.includes('SALE_REMOVED') || act.includes('SALE_DELETE')) return 'Moved Sale to Recycle Bin';
+    if (act.includes('SALE_RESTORED')) return 'Restored Sale from Recycle Bin';
+    if (act.includes('SALES_REPORT') || act.includes('SALES_PRINT')) return 'Generated Sales Report';
+    if (act.includes('RECEIPT_PRINTED')) return 'Printed Official Receipt';
+    if (act.includes('PRODUCT_ADDED') || act.includes('PRODUCT_CREATE')) return 'Added New Product';
+    if (act.includes('PRODUCT_UPDATED') || act.includes('PRODUCT_EDIT')) return 'Updated Product Information';
+    if (act.includes('PRODUCT_REMOVED') || act.includes('PRODUCT_DELETE')) return 'Moved Product to Recycle Bin';
+    if (act.includes('PRODUCT_RESTORED')) return 'Restored Product from Recycle Bin';
+    if (act.includes('PRODUCT_LABELS_PRINTED')) return 'Printed Product Sheet Labels';
+
+    // Logbook & Attendance
+    if (act.includes('CHECK_IN') || act.includes('LOGBOOK_CHECKIN') || act.includes('ATTENDANCE_CHECKIN')) return 'Logged Member / Walk-In Check-In';
+    if (act.includes('CHECK_OUT')) return 'Member Checked Out';
+    if (act.includes('LOGBOOK_REMOVED') || act.includes('LOGBOOK_DELETE') || act.includes('ATTENDANCE_REMOVED')) return 'Moved Check-In to Recycle Bin';
+    if (act.includes('LOGBOOK_RESTORED') || act.includes('ATTENDANCE_RESTORED')) return 'Restored Check-In from Recycle Bin';
+    if (act.includes('LOGBOOK_REPORT') || act.includes('ATTENDANCE_REPORT')) return 'Generated Attendance Report';
+    if (act.includes('PAYMENT_COLLECTED')) return 'Collected Outstanding Payment';
+    if (act.includes('PAYMENT_UNDONE')) return 'Reverted Payment to Unpaid';
+
+    // Members
     if (act.includes('ONLINE_REGISTRATION_APPROVED') || act.includes('ONLINE_REG_APPROVED')) return 'Approved Online Pre-Registration';
     if (act.includes('ONLINE_REGISTRATION_REJECTED') || act.includes('ONLINE_REG_REJECTED')) return 'Rejected Online Pre-Registration';
     if (act.includes('ONLINE_REGISTRATION_PURGED') || act.includes('ONLINE_REG_PURGED')) return 'Purged Expired Registrations';
-    if (act.includes('CHECK_IN')) return 'Member Checked In';
-    if (act.includes('CHECK_OUT')) return 'Member Checked Out';
-    if (act.includes('LOGBOOK')) return 'Logbook Entry Recorded';
+    if (act.includes('MEMBER_CREATED') || act.includes('MEMBER_ENROLLED')) return 'Enrolled New Member';
     if (act.includes('MEMBER_UPDATED') || act.includes('MEMBER_EDIT')) return 'Updated Member Details';
-    if (act.includes('MEMBER_CREATED') || act.includes('MEMBER_REG')) return 'Registered New Member';
-    if (act.includes('MEMBER_DEACTIVATED')) return 'Deactivated Member Account';
+    if (act.includes('MEMBER_REMOVED') || act.includes('MEMBER_DELETE') || act.includes('MEMBER_DEACTIVATED')) return 'Moved Member to Recycle Bin';
+    if (act.includes('MEMBER_RESTORED')) return 'Restored Member from Recycle Bin';
+    if (act.includes('MEMBER_CARDS_PRINTED')) return 'Printed Member ID Cards';
+    if (act.includes('MEMBER_PLAN_EXTENDED') || act.includes('SUBSCRIPTION_EXTENDED')) return 'Extended Member Subscription';
+
+    // Incidents
+    if (act.includes('INCIDENT_CREATED') || act.includes('INCIDENT_REPORT_CREATED')) return 'Filed Incident Report';
+    if (act.includes('INCIDENT_RESOLVED') || act.includes('INCIDENT_REPORT_RESOLVED')) return 'Resolved Incident Report';
+    if (act.includes('INCIDENT_UPDATED') || act.includes('INCIDENT_STATUS')) return 'Updated Incident Status';
+    if (act.includes('INCIDENT_DELETED') || act.includes('INCIDENT_REMOVED')) return 'Deleted Incident Report';
+    if (act.includes('INCIDENT_COMMENT')) return 'Added Comment to Incident';
+
+    // Dashboard & Reports
+    if (act.includes('DASHBOARD_REPORT') || act.includes('DASHBOARD_PRINT')) return 'Printed Dashboard Summary';
+    if (act.includes('REVENUE_GOAL')) return 'Configured Revenue Goal';
+
+    // Settings & System
     if (act.includes('PAYMENT_RECEIVED') || act.includes('PAYMENT_ADD')) return 'Received Plan Payment';
-    if (act.includes('SYSTEM_RATES_UPDATED') || act.includes('RATES_CONFIG')) return 'Updated Pricing Rates';
+    if (act.includes('SYSTEM_RATES_UPDATED') || act.includes('RATES_CONFIG')) return 'Updated Pricing & Rates';
     if (act.includes('DATABASE_BACKUP') || act.includes('GENERATE_BACKUP')) return 'Created System Backup';
     if (act.includes('RESTORE_DATABASE') || act.includes('RESTORE_BACKUP')) return 'Restored System Backup';
     if (act.includes('LOGIN') || act.includes('SIGN_IN')) return 'User Logged In';
     if (act.includes('LOGOUT') || act.includes('SIGN_OUT')) return 'User Logged Out';
+    if (act.includes('USER_CREATED') || act.includes('ACCOUNT_CREATED')) return 'Created Staff/Admin Account';
+    if (act.includes('USER_UPDATED') || act.includes('ACCOUNT_UPDATED')) return 'Updated Staff/Admin Account';
+    if (act.includes('USER_DEACTIVATED') || act.includes('USER_SUSPENDED')) return 'Suspended User Account';
+    if (act.includes('GYM_PROFILE')) return 'Updated Gym Profile Information';
     if (act.includes('DELETE') || act.includes('PURGE')) return 'Purged System Record';
     
     return action.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
@@ -97,21 +138,23 @@ export const AuditLogs: React.FC = () => {
   const getActionCategory = (action: string): string => {
     const act = action.toLowerCase();
     if (act.includes('login') || act.includes('logout') || act.includes('auth')) return 'auth';
+    if (act.includes('sale') || act.includes('product') || act.includes('receipt')) return 'sales';
+    if (act.includes('incident')) return 'incidents';
     if (act.includes('check_in') || act.includes('check_out') || act.includes('logbook') || act.includes('attendance')) return 'attendance';
-    if (act.includes('member') || act.includes('online_registration') || act.includes('online_reg')) return 'members';
-    if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('reset')) return 'security';
-    if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('sale') || act.includes('rates')) return 'payments';
+    if (act.includes('member') || act.includes('online_registration') || act.includes('online_reg') || act.includes('enroll')) return 'members';
+    if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('security') || act.includes('account')) return 'security';
+    if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('rates') || act.includes('revenue_goal')) return 'payments';
     if (act.includes('backup') || act.includes('snapshot')) return 'backups';
-    if (act.includes('config') || act.includes('settings') || act.includes('gym')) return 'settings';
+    if (act.includes('config') || act.includes('settings') || act.includes('gym') || act.includes('permission') || act.includes('dashboard')) return 'settings';
     return 'all';
   };
 
   const getActionSeverity = (action: string): 'info' | 'warning' | 'critical' => {
     const act = action.toUpperCase();
-    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE_ADMIN') || act.includes('DEACTIVATE') || act.includes('ONLINE_REGISTRATION_REJECTED')) {
+    if (act.includes('DELETE') || act.includes('PURGE') || act.includes('RESTORE_DATABASE') || act.includes('REMOVE') || act.includes('DEACTIVATE') || act.includes('SUSPEND') || act.includes('ONLINE_REGISTRATION_REJECTED')) {
       return 'critical';
     }
-    if (act.includes('UPDATE') || act.includes('CONFIG') || act.includes('EDIT') || act.includes('BACKUP') || act.includes('SAVE')) {
+    if (act.includes('UPDATE') || act.includes('CONFIG') || act.includes('EDIT') || act.includes('BACKUP') || act.includes('SAVE') || act.includes('RESOLVED') || act.includes('RESTORED') || act.includes('EXTENDED')) {
       return 'warning';
     }
     return 'info';
@@ -120,19 +163,21 @@ export const AuditLogs: React.FC = () => {
   const getActionIcon = (action: string, severity: string) => {
     const act = action.toUpperCase();
     const style = "w-4 h-4";
-    if (act.includes('ONLINE_REGISTRATION_APPROVED')) return <UserCheck className={`${style} text-emerald-450`} />;
+    if (act.includes('ONLINE_REGISTRATION_APPROVED')) return <UserCheck className={`${style} text-emerald-500`} />;
     if (act.includes('ONLINE_REGISTRATION_REJECTED')) return <UserX className={`${style} text-red-500`} />;
+    if (act.includes('INCIDENT')) return <AlertTriangle className={`${style} text-amber-500`} />;
+    if (act.includes('SALE') || act.includes('PRODUCT') || act.includes('RECEIPT')) return <CreditCard className={`${style} text-emerald-500`} />;
     if (severity === 'critical') return <Trash2 className={`${style} text-red-500`} />;
-    if (act.includes('CHECK_IN') || act.includes('CHECK_OUT') || act.includes('LOGBOOK')) {
-      return <CheckCircle2 className={`${style} text-emerald-450`} />;
+    if (act.includes('CHECK_IN') || act.includes('CHECK_OUT') || act.includes('LOGBOOK') || act.includes('ATTENDANCE')) {
+      return <CheckCircle2 className={`${style} text-emerald-500`} />;
     }
-    if (act.includes('PAYMENT')) return <CreditCard className={`${style} text-emerald-450`} />;
-    if (act.includes('MEMBER') || act.includes('USER')) return <User className={`${style} text-blue-400`} />;
+    if (act.includes('PAYMENT') || act.includes('RATES')) return <CreditCard className={`${style} text-emerald-500`} />;
+    if (act.includes('MEMBER') || act.includes('USER') || act.includes('ACCOUNT')) return <User className={`${style} text-blue-400`} />;
     if (act.includes('BACKUP') || act.includes('SNAPSHOT')) return <Database className={`${style} text-amber-500`} />;
     if (act.includes('RESTORE')) return <RefreshCw className={`${style} text-red-500`} />;
     if (act.includes('LOGIN')) return <LogIn className={`${style} text-blue-400`} />;
     if (act.includes('LOGOUT')) return <LogOut className={`${style} text-slate-400`} />;
-    if (act.includes('CONFIG') || act.includes('RATES')) return <SettingsIcon className={`${style} text-amber-500`} />;
+    if (act.includes('CONFIG') || act.includes('RATES') || act.includes('GYM') || act.includes('SETTINGS')) return <SettingsIcon className={`${style} text-amber-500`} />;
     return <Activity className={`${style} text-slate-400`} />;
   };
 

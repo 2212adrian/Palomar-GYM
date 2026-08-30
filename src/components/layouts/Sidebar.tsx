@@ -8,6 +8,8 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { isSuperAdmin } from '../../constants/auth';
+import { useNotificationStore, formatBadgeCount } from '../../stores/useNotificationStore';
 
 // Package version retrieval matching Login.tsx reference
 import pkg from '../../../package.json';
@@ -32,6 +34,8 @@ interface ChildItem {
   path: string;
   roles?: ('admin' | 'staff')[];
   badge?: string;
+  notificationCount?: number;
+  notificationColor?: 'red' | 'amber';
   description?: string;
 }
 
@@ -40,6 +44,7 @@ interface MenuItem {
   icon: React.ReactNode;
   roles?: ('admin' | 'staff')[];
   path?: string;
+  notificationCount?: number;
   children?: ChildItem[];
 }
 
@@ -103,6 +108,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navigate = useNavigate();
   const { user, profile } = useAuthStore() as any; 
 
+  const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
+
+  // Real-time Notification Store
+  const {
+    incidentUnreadCount,
+    stockAlertsCount,
+    expiringSubsCount,
+    subscribeRealtime
+  } = useNotificationStore();
+
+  useEffect(() => {
+    const unsubscribe = subscribeRealtime(user?.email, profile?.role);
+    return () => {
+      unsubscribe();
+    };
+  }, [user?.email, profile?.role, subscribeRealtime]);
+
   // Accordion Expand States
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(null);
@@ -148,6 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         name: 'LOGBOOK & PLANS',
         icon: isMemberSection ? <Users className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" /> : <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
+        notificationCount: isAdmin ? expiringSubsCount : undefined,
         children: [
           { 
             name: 'Logbook', 
@@ -158,6 +181,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             name: 'Member List', 
             path: '/members/list', 
             description: 'Accounts & profiles',
+            notificationCount: isAdmin ? expiringSubsCount : undefined,
+            notificationColor: 'red',
             roles: ['admin']
           },
           { 
@@ -171,6 +196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         name: 'SALES',
         icon: <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
+        notificationCount: isAdmin ? stockAlertsCount : undefined,
         children: [
           { 
             name: 'Register Sale', 
@@ -181,6 +207,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             name: 'Product List', 
             path: '/sales/products', 
             description: 'Product Inventory & Barcode generation',
+            notificationCount: isAdmin ? stockAlertsCount : undefined,
+            notificationColor: 'amber',
             roles: ['admin']
           }
         ]
@@ -189,10 +217,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         name: 'INCIDENT REPORTS',
         icon: <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />,
         roles: ['admin', 'staff'],
+        notificationCount: isAdmin ? incidentUnreadCount : 0,
         path: '/reports'
       }
     ];
-  }, [location.pathname]);
+  }, [location.pathname, isAdmin, incidentUnreadCount, stockAlertsCount, expiringSubsCount]);
 
   // Role Filtering
   const allowedMenu = useMemo(() => {
@@ -452,6 +481,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {/* Collapsed Badge (Top-Right) */}
+                    {collapsed && item.notificationCount !== undefined && item.notificationCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20 animate-pulse">
+                        {formatBadgeCount(item.notificationCount)}
+                      </span>
+                    )}
+
+                    {/* Expanded Badge (Right Side) */}
+                    {!collapsed && item.notificationCount !== undefined && item.notificationCount > 0 && (
+                      <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                        {formatBadgeCount(item.notificationCount)}
+                      </span>
+                    )}
                   </Link>
                 </div>
               );
@@ -483,8 +526,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
 
+                  {/* Collapsed Parent Badge */}
+                  {collapsed && item.notificationCount !== undefined && item.notificationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20">
+                      {formatBadgeCount(item.notificationCount)}
+                    </span>
+                  )}
+
                   {!collapsed && (
-                    <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                    <div className="flex items-center gap-2">
+                      {!isExpanded && item.notificationCount !== undefined && item.notificationCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs">
+                          {formatBadgeCount(item.notificationCount)}
+                        </span>
+                      )}
+                      <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                    </div>
                   )}
                 </button>
 
@@ -507,13 +564,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2.5">
+                                <div className="flex items-center gap-2.5 min-w-0">
                                   <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
                                     isActive 
                                       ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
                                       : 'bg-slate-300 dark:bg-slate-600'
                                   }`} />
-                                  <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
+                                  <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors truncate ${
                                     isActive 
                                       ? 'text-[#123c73] dark:text-white font-black' 
                                       : 'text-slate-700 dark:text-slate-300 font-bold'
@@ -522,11 +579,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   </span>
                                 </div>
 
-                                {child.badge && (
-                                  <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
-                                    {child.badge}
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {child.notificationCount !== undefined && child.notificationCount > 0 && (
+                                    <span className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
+                                      child.notificationColor === 'amber'
+                                        ? 'bg-amber-500 text-white border border-amber-400/40'
+                                        : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                    }`}>
+                                      {formatBadgeCount(child.notificationCount)}
+                                    </span>
+                                  )}
+
+                                  {child.badge && (
+                                    <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                      {child.badge}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
                               {child.description && (
@@ -745,6 +814,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </span>
                           <span className="font-bold">{item.name}</span>
                         </div>
+
+                        {item.notificationCount !== undefined && item.notificationCount > 0 && (
+                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                            {formatBadgeCount(item.notificationCount)}
+                          </span>
+                        )}
                       </Link>
                     </div>
                   );
@@ -767,7 +842,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="font-bold">{item.name}</span>
                       </div>
 
-                      <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                      <div className="flex items-center gap-2">
+                        {!isMobileExpanded && item.notificationCount !== undefined && item.notificationCount > 0 && (
+                          <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs">
+                            {formatBadgeCount(item.notificationCount)}
+                          </span>
+                        )}
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`} />
+                      </div>
                     </button>
 
                     <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
@@ -789,13 +871,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 }`}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2.5">
+                                  <div className="flex items-center gap-2.5 min-w-0">
                                     <span className={`w-2 h-2 rounded-full shrink-0 transition-all ${
                                       isActive 
                                         ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125' 
                                         : 'bg-slate-300 dark:bg-slate-600'
                                     }`} />
-                                    <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors ${
+                                    <span className={`text-[11px] font-heading tracking-wider uppercase transition-colors truncate ${
                                       isActive 
                                         ? 'text-[#123c73] dark:text-white font-black' 
                                         : 'text-slate-700 dark:text-slate-300 font-bold'
@@ -804,11 +886,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     </span>
                                   </div>
 
-                                  {child.badge && (
-                                    <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md">
-                                      {child.badge}
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {child.notificationCount !== undefined && child.notificationCount > 0 && (
+                                      <span className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
+                                        child.notificationColor === 'amber'
+                                          ? 'bg-amber-500 text-white border border-amber-400/40'
+                                          : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                      }`}>
+                                        {formatBadgeCount(child.notificationCount)}
+                                      </span>
+                                    )}
+
+                                    {child.badge && (
+                                      <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                        {child.badge}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {child.description && (

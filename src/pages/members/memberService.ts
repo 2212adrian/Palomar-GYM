@@ -89,7 +89,7 @@ const writeAudit = async (
   details?: string
 ) => {
   try {
-    const formattedDetails = `${category}: ${details || reason || 'No additional details'} (by ${user})`;
+    const formattedDetails = details || reason || `${category} operation processed.`;
     await logAudit(action, formattedDetails, affectedId);
   } catch (err) {
     console.warn('Audit logging bypassed:', err);

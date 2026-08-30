@@ -127,7 +127,7 @@ const CATEGORY_THEMES = {
     label: 'STUDENT WALK-IN',
     shortLabel: 'STUDENT',
     icon: GraduationCap,
-    bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-cyan-500 dark:bg-cyan-400',
     badgeClass: 'bg-cyan-50 text-cyan-900 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-500 font-bold',
     iconBoxClass: 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-600',
@@ -137,7 +137,7 @@ const CATEGORY_THEMES = {
     label: 'REGULAR WALK-IN',
     shortLabel: 'REGULAR',
     icon: User,
-    bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-purple-500 dark:bg-purple-400',
     badgeClass: 'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
     iconBoxClass: 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600',
@@ -147,7 +147,7 @@ const CATEGORY_THEMES = {
     label: 'EXISTING MEMBER',
     shortLabel: 'MEMBER',
     icon: ShieldCheck,
-    bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-blue-500 dark:bg-blue-400',
     badgeClass: 'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500 font-bold',
     iconBoxClass: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
@@ -157,7 +157,7 @@ const CATEGORY_THEMES = {
     label: 'NEW MEMBERSHIP',
     shortLabel: 'SUBSCRIPTION',
     icon: Crown,
-    bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
     badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500 font-bold',
     iconBoxClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
@@ -219,7 +219,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     const theme = isGCash
       ? {
           type: 'gcash',
-          bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
           borderAccent: 'bg-blue-500 dark:bg-blue-400',
           badgeClass: 'bg-blue-600 text-white border border-blue-400 font-bold',
           iconBoxClass: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
@@ -228,7 +228,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       : isCash
       ? {
           type: 'cash',
-          bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
           borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
           badgeClass: 'bg-emerald-700 text-white border border-emerald-500 dark:bg-emerald-800 dark:text-emerald-100 dark:border-emerald-400 font-bold',
           iconBoxClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
@@ -236,7 +236,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
         }
       : {
           type: 'other',
-          bgClass: 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 dark:border-slate-800 shadow-sm hover:shadow-md',
+          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
           borderAccent: 'bg-slate-400',
           badgeClass: 'bg-slate-700 text-white border border-slate-400 font-bold',
           iconBoxClass: 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
@@ -254,12 +254,12 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
 
   const containerClasses = useMemo(() => {
     if (mode === 'attendance' && attendanceMeta) {
-      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-all duration-200 ${attendanceMeta.theme.bgClass} p-2.5 sm:p-3.5`;
+      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-colors duration-150 will-change-transform transform-gpu ${attendanceMeta.theme.bgClass} p-2.5 sm:p-3.5`;
     }
     if (mode === 'sale' && saleMeta) {
-      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-all duration-200 ${saleMeta.theme.bgClass} p-2.5 sm:p-3.5`;
+      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-colors duration-150 will-change-transform transform-gpu ${saleMeta.theme.bgClass} p-2.5 sm:p-3.5`;
     }
-    return 'pointer-events-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 relative overflow-hidden select-none z-10 touch-pan-y w-full';
+    return 'pointer-events-auto bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-white/10 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 relative overflow-hidden select-none z-10 touch-pan-y w-full will-change-transform transform-gpu';
   }, [mode, attendanceMeta, saleMeta]);
 
   const CategoryIcon = attendanceMeta?.theme.icon || User;
@@ -268,7 +268,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   return (
     <div className="relative overflow-hidden rounded-2xl w-full">
       {/* Swipe background tracks */}
-      <div className="absolute inset-0 rounded-2xl pointer-events-none select-none z-0 overflow-hidden bg-slate-200 dark:bg-slate-950">
+      <div className="absolute inset-0 rounded-2xl pointer-events-none select-none z-0 overflow-hidden bg-slate-200 dark:bg-[#0c0e12]">
         <motion.div 
           style={{ opacity: receiptOpacity }}
           className="absolute inset-y-0 left-0 bg-blue-600 flex items-center pl-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
@@ -290,8 +290,9 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
         drag="x"
         dragDirectionLock={true}
         dragConstraints={{ left: -100, right: 100 }}
-        dragElastic={0.15}
+        dragElastic={0.08}
         dragSnapToOrigin={true}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 35 }}
         onDragEnd={(e, info) => onDragEnd(e, info, data)}
         className={containerClasses}
       >

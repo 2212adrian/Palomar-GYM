@@ -1,7 +1,7 @@
 // src/pages/scanner/scannerService.ts
 import { supabase } from '../../lib/supabase/client';
-import { memberService, subscriptionService, cardService } from '../members/memberService';
-import type { Member, Subscription, OnlineRegistration } from '../../types/members';
+import { memberService, cardService } from '../members/memberService';
+import type { Member, OnlineRegistration } from '../../types/members';
 
 export interface HybridMemberResult {
   id: string;

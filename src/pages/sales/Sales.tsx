@@ -29,6 +29,7 @@ import { createPortal } from 'react-dom';
 
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client'; 
+import { logAudit } from '../../lib/supabase/audit';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 
@@ -602,11 +603,8 @@ export const Sales: React.FC = () => {
       setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
       setCurrentPage(1);
 
-      const itemsList = newTx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${newTx.productName}`;
-      const auditDetails = `Recorded sale transaction: ${insertedSale?.id || newTx.id}\n` +
-        `Payment Method: ${newTx.paymentMethod}\n` +
-        `Total Amount: ₱${newTx.totalAmount.toFixed(2)}\n\n` +
-        `Items Purchased:\n${itemsList}`;
+      const itemsList = newTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || newTx.productName;
+      const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
 
       const stockUpdatePromises = (newTx.items || []).map(async (item: any) => {
         const { data: currentProduct } = await supabase
@@ -624,11 +622,7 @@ export const Sales: React.FC = () => {
         }
       });
 
-      const auditLogPromise = supabase.from('audit_logs').insert([{
-        action: 'SALE_RECORDED',
-        details: auditDetails,
-        actor_username: user?.email || 'System'
-      }]);
+      const auditLogPromise = logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id);
 
       Promise.all([...stockUpdatePromises, auditLogPromise]).then(() => {
         fetchProducts();
@@ -672,17 +666,10 @@ export const Sales: React.FC = () => {
 
       if (error) throw error;
 
-      const itemsList = stagedTx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${stagedTx.product_name}`;
-      const auditDetails = `Moved sale transaction to Recycle Bin: ${stagedTx.receipt_no || stagedTx.id}\n` +
-        `Payment Method: ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}\n` +
-        `Total Amount: ₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)}\n\n` +
-        `Items Removed:\n${itemsList}`;
+      const itemsList = stagedTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || stagedTx.product_name;
+      const auditDetails = `Moved sale transaction (₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)} via ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}) to Recycle Bin — Items: ${itemsList}`;
 
-      await supabase.from('audit_logs').insert([{
-        action: 'SALE_REMOVED',
-        details: auditDetails,
-        actor_username: user?.email || 'System'
-      }]);
+      await logAudit('SALE_REMOVED', auditDetails, stagedTx.id);
 
       toast.success('This sale has been moved to your Recycle Bin.');
     } catch (err: any) {

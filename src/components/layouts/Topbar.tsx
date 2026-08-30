@@ -19,12 +19,15 @@ import {
   ChevronRight,
   Package,
   AlertTriangle,
-  PackageX
+  PackageX,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence, animate, useMotionValue, useTransform } from 'framer-motion';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
+import { useNotificationStore, formatBadgeCount } from '../../stores/useNotificationStore';
+import { NotificationPopover } from './NotificationPopover';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -288,6 +291,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     user?.user_metadata?.role === 'admin' || 
     profile?.role?.toLowerCase() === 'admin' ||
     isSuperAdmin(user?.email);
+
+  // Global Notification Store
+  const {
+    incidentUnreadCount,
+    stockAlertsCount,
+    expiringSubsCount,
+    isNotificationOpen,
+    toggleNotificationOpen,
+    setNotificationOpen
+  } = useNotificationStore();
+
+  const totalAlerts = (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
 
   useEffect(() => {
     const handleLogbookKpiUpdate = (e: Event) => {
@@ -957,6 +972,36 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
         <div className="hidden md:block xl:hidden text-[12px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
           {currentTimeShort}
         </div>
+
+        {/* NOTIFICATION BELL & POPUP DRAWER (ADMIN/SUPERADMIN ONLY) */}
+        {isAdmin && (
+          <div className="relative">
+            <button
+              type="button"
+              id="btn-topbar-notifications"
+              onClick={toggleNotificationOpen}
+              aria-label="Toggle notifications"
+              title={`${totalAlerts} Active Notification${totalAlerts === 1 ? '' : 's'}`}
+              className={`relative h-9 sm:h-9.5 w-9 sm:w-9.5 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
+                totalAlerts > 0
+                  ? 'bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-red-400 border-red-500/30'
+                  : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
+              }`}
+            >
+              <Bell className={`w-4 h-4 sm:w-4.5 sm:h-4.5 ${totalAlerts > 0 ? 'animate-bounce' : ''}`} />
+              {totalAlerts > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
+                  {formatBadgeCount(totalAlerts)}
+                </span>
+              )}
+            </button>
+
+            <NotificationPopover 
+              isOpen={isNotificationOpen} 
+              onClose={() => setNotificationOpen(false)} 
+            />
+          </div>
+        )}
 
         {/* MOBILE MENU */}
         <button 

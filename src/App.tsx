@@ -14,8 +14,11 @@ import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from './lib/supabase/client';
 
+import { promptInitialPermissionsOnLogin } from './lib/permissions';
+
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
+  const user = useAuthStore((state) => state.user);
   
   // State to manage the exit confirmation modal
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
@@ -27,6 +30,20 @@ export const App: React.FC = () => {
   useEffect(() => {
     isExitModalOpenRef.current = isExitModalOpen;
   }, [isExitModalOpen]);
+
+  // Prompt camera and notification permissions immediately upon login
+  useEffect(() => {
+    if (user?.id) {
+      const askedKey = `palomar_perm_asked_${user.id}`;
+      const alreadyAsked = sessionStorage.getItem(askedKey);
+      if (!alreadyAsked) {
+        sessionStorage.setItem(askedKey, 'true');
+        promptInitialPermissionsOnLogin().catch((err) => {
+          console.warn('Initial permissions prompt handled:', err);
+        });
+      }
+    }
+  }, [user?.id]);
 
   // Global Theme Initialization (Survives hard page refreshes on protected routes)
   useEffect(() => {

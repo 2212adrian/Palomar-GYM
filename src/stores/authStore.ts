@@ -201,7 +201,7 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
           user: session.user,
           profile: {
             id: session.user.id,
-            username: dbProfile?.username || session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
+            username: isSuperAdminUser ? 'SUPERADMIN' : (dbProfile?.username || session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User'),
             role: userRole as 'admin' | 'staff',
             status: userStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,

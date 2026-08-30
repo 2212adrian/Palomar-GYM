@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useContext, useRef  } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
@@ -250,15 +251,9 @@ export const IncidentReports: React.FC = () => {
     };
   }, [isAdmin, user]);
 
-  const recordAuditLog = async (action: string, details: any) => {
+  const recordAuditLog = async (action: string, details: string) => {
     try {
-      if (!user) return;
-      await supabase.from('audit_logs').insert({
-        action,
-        user_id: user.id,
-        details: JSON.stringify(details),
-        created_at: new Date().toISOString()
-      });
+      await logAudit(action, details);
     } catch {
       // Prevent background errors
     }
@@ -395,11 +390,7 @@ export const IncidentReports: React.FC = () => {
         if (error) throw error;
 
         toast.success('Report updated successfully.');
-        await recordAuditLog('INCIDENT_REPORT_UPDATED', { 
-          title: titleClean, 
-          priority: formPriority,
-          tags: formTags 
-        });
+        await recordAuditLog('INCIDENT_UPDATED', `Updated incident report "${titleClean}" (${formPriority} priority).`);
       } else {
         const staffName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff Personnel';
         const { data, error } = await supabase
@@ -421,12 +412,7 @@ export const IncidentReports: React.FC = () => {
 
         toast.success('Report submitted successfully.');
         if (data) {
-          await recordAuditLog('INCIDENT_REPORT_CREATED', { 
-            title: titleClean, 
-            priority: formPriority,
-            tags: formTags,
-            staff_name: staffName
-          });
+          await recordAuditLog('INCIDENT_CREATED', `Filed incident report "${titleClean}" with ${formPriority} priority by ${staffName}.`);
         }
       }
 
@@ -484,10 +470,7 @@ export const IncidentReports: React.FC = () => {
 
       if (error) throw error;
 
-      await recordAuditLog('INCIDENT_REPORT_DELETED', { 
-        title: pendingDelete.title,
-        staff_name: pendingDelete.staff_name
-      });
+      await recordAuditLog('INCIDENT_DELETED', `Deleted incident report "${pendingDelete.title}".`);
     } catch {
       toast.error('Deletion failure. Restoring report file.');
       // Fallback: put it back on connection error
@@ -522,12 +505,10 @@ export const IncidentReports: React.FC = () => {
       if (error) throw error;
 
       await recordAuditLog(
-        status === 'Read' ? 'INCIDENT_REPORT_MARKED_READ' : 'INCIDENT_REPORT_MARKED_UNREAD', 
-        { 
-          title: target?.title || 'Unknown Title',
-          status: status === 'Read' ? 'Reviewed' : 'Unread',
-          staff_name: target?.staff_name || 'Unknown Staff'
-        }
+        status === 'Read' ? 'INCIDENT_RESOLVED' : 'INCIDENT_UPDATED',
+        status === 'Read'
+          ? `Marked incident report "${target?.title || 'Report'}" as Reviewed / Read.`
+          : `Marked incident report "${target?.title || 'Report'}" as Unread.`
       );
       
       if (selectedReport?.id === id) {
@@ -553,11 +534,8 @@ export const IncidentReports: React.FC = () => {
 
       toast.success(archiveState ? 'Report moved to archives.' : 'Report restored to workspace.');
       await recordAuditLog(
-        archiveState ? 'INCIDENT_REPORT_ARCHIVED' : 'INCIDENT_REPORT_RESTORATION', 
-        { 
-          title: target?.title || 'Unknown Title',
-          staff_name: target?.staff_name || 'Unknown Staff'
-        }
+        archiveState ? 'INCIDENT_ARCHIVED' : 'INCIDENT_RESTORED',
+        `${archiveState ? 'Archived' : 'Restored'} incident report "${target?.title || 'Report'}".`
       );
       
       if (selectedReport?.id === id) {
@@ -574,7 +552,7 @@ export const IncidentReports: React.FC = () => {
     if (selectedIds.length === 0) return;
 
     const targetReports = reports.filter(r => selectedIds.includes(r.id));
-    const targetTitles = targetReports.map(r => r.title);
+    const targetTitles = targetReports.map(r => r.title).join(', ');
 
     try {
       setLoading(true);
@@ -585,10 +563,7 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully removed ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_DELETED', { 
-          titles: targetTitles,
-          count: targetTitles.length
-        });
+        await recordAuditLog('INCIDENT_DELETED', `Deleted ${selectedIds.length} incident reports: ${targetTitles}.`);
       } else if (action === 'Archive') {
         const { error } = await supabase
           .from('incident_reports')
@@ -596,10 +571,7 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully archived ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_ARCHIVED', { 
-          titles: targetTitles,
-          count: targetTitles.length
-        });
+        await recordAuditLog('INCIDENT_ARCHIVED', `Archived ${selectedIds.length} incident reports: ${targetTitles}.`);
       } else {
         const { error } = await supabase
           .from('incident_reports')
@@ -611,11 +583,7 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully updated ${selectedIds.length} reports.`);
-        await recordAuditLog('BULK_INCIDENT_REPORTS_STATUS_UPDATE', { 
-          titles: targetTitles,
-          status: action === 'Read' ? 'Reviewed' : 'Unread',
-          count: targetTitles.length
-        });
+        await recordAuditLog('INCIDENT_UPDATED', `Marked ${selectedIds.length} incident reports as ${action === 'Read' ? 'Reviewed' : 'Unread'}: ${targetTitles}.`);
       }
       setSelectedIds([]);
       fetchIncidentReports();

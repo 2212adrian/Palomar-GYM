@@ -8,6 +8,7 @@ import { Share } from '@capacitor/share';
 import { toast } from 'react-toastify';
 import { Modal } from './Modal';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 
 export interface ReceiptItem {
   productName: string;
@@ -622,6 +623,10 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         </html>
       `);
       doc.close();
+      logAudit(
+        'RECEIPT_PRINTED',
+        `Printed official receipt #${receiptNo} for ${data.customerName || 'Customer'} (₱${totalDue.toFixed(2)} via ${paymentMethod}).`
+      ).catch(() => {});
     } catch (err) {
       console.error('Print error:', err);
       toast.error('Could not initiate print.');

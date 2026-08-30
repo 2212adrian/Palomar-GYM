@@ -198,7 +198,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
       `}</style>
 
       {/* ─── VISIBLE CONTRASTING CONTAINER ─── */}
-      <div className="bg-slate-100 dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm mb-4 space-y-3">
+      <div className="bg-slate-100 dark:bg-[#161920] border border-slate-200/90 dark:border-white/10 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-xs mb-4 space-y-3">
         
         {/* Top Header Row */}
         <div className="flex items-center justify-between w-full gap-2">
@@ -208,7 +208,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             {role === 'admin' ? (
               <button
                 onClick={() => onWeekStartChange(subWeeks(currentWeekStart, 1))}
-                className="p-2 sm:p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-750 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="p-2 sm:p-2.5 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-50 dark:hover:bg-[#252b37] transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Previous week"
               >
                 <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
@@ -223,7 +223,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               className={`md:hidden p-2 sm:p-2.5 border rounded-xl transition-all cursor-pointer active:scale-95 shrink-0 relative shadow-xs ${
                 isSearchOpen || searchQuery
                   ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202]'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750'
+                  : 'bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#252b37]'
               }`}
               aria-label="Toggle search bar"
               title="Search records"
@@ -240,10 +240,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             onClick={() => dateInputRef.current?.showPicker()} 
             className="text-center flex-1 cursor-pointer hover:opacity-80 transition-opacity relative py-0.5"
           >
-            <span className="text-[9px] font-heading tracking-widest text-[#1b365d] dark:text-slate-400 uppercase select-none block font-bold">
+            <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-slate-400 uppercase select-none block font-bold">
               SELECTED WEEK DATE
             </span>
-            <span className="font-heading text-xs sm:text-sm text-[#193d70] dark:text-slate-100 tracking-wider block mt-0.5 select-none font-extrabold">
+            <span className="font-heading text-xs sm:text-sm text-[#123c73] dark:text-slate-100 tracking-wider block mt-0.5 select-none font-extrabold">
               {role === 'admin' ? (
                 `${format(currentWeekStart, 'MMMM d')} — ${format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'MMMM d, yyyy')}`
               ) : (
@@ -266,7 +266,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             {!isCurrentWeek && role === 'admin' && (
               <button
                 onClick={handleResetToCurrent}
-                className="px-2.5 py-2 sm:px-3 text-xs text-[#123c73] bg-[#123c73]/10 dark:text-blue-300 dark:bg-blue-900/30 border border-[#123c73]/20 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-[#123c73]/20 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="px-2.5 py-2 sm:px-3 text-xs text-[#123c73] bg-[#123c73]/10 dark:text-red-300 dark:bg-red-950/40 border border-[#123c73]/20 dark:border-red-500/30 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-[#123c73]/20 dark:hover:bg-red-950/60 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Reset to current day"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -278,7 +278,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               <button
                 onClick={handleNextWeek}
                 disabled={isCurrentWeek}
-                className="p-2 sm:p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-750 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="p-2 sm:p-2.5 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-50 dark:hover:bg-[#252b37] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Next week"
               >
                 <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
@@ -324,7 +324,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                       active 
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-md scale-[1.03] z-10 font-bold' 
                         : selectable 
-                          ? 'bg-white dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 font-bold shadow-xs active:scale-95' 
+                          ? 'bg-white dark:bg-[#1e232d] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-[#252b37] font-bold shadow-xs active:scale-95' 
                           : 'bg-transparent border-transparent text-slate-400 dark:text-zinc-600 opacity-40 cursor-not-allowed'
                     }`}
                   >
@@ -358,7 +358,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/30 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
+                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/30 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
                 />
                 {searchQuery && (
                   <button
@@ -384,10 +384,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                       MozAppearance: 'none', 
                       appearance: 'none' 
                     }}
-                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-zinc-600 transition-colors shadow-xs"
+                    className="bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-xs"
                   >
                     {filterOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-[#1e232d] text-slate-800 dark:text-slate-200">
                         {opt.label === 'All' ? 'Type: All' : opt.label}
                       </option>
                     ))}
@@ -411,7 +411,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
                   >
                     {paymentOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                      <option key={opt.value} value={opt.value} className="bg-white dark:bg-[#1e232d] text-slate-800 dark:text-slate-200">
                         {opt.label === 'All Pay' || opt.label === 'All' ? 'Pay: All' : `Pay: ${opt.label}`}
                       </option>
                     ))}

@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
+import { logAudit } from '../../../lib/supabase/audit';
 
 interface SalesRecycleBinProps {
   isOpen: boolean;
@@ -292,17 +293,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
           }
         }
 
-        const itemsList = tx.items?.map((i: any) => `\t- ${i.productName || i.product_name} (${i.quantity}x)`).join('\n') || `\t- ${tx.productName || tx.product_name}`;
-        const auditDetails = `Restored sale transaction from Recycle Bin: ${tx.receipt_no || tx.id}\n` +
-          `Payment Method: ${tx.paymentMethod || tx.payment_method || 'Cash'}\n` +
-          `Total Amount: ₱${Number(tx.totalAmount || tx.total_amount || 0).toFixed(2)}\n\n` +
-          `Items Restored:\n${itemsList}`;
+        const itemsList = tx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || tx.productName || tx.product_name;
+        const auditDetails = `Restored sale transaction (₱${Number(tx.totalAmount || tx.total_amount || 0).toFixed(2)} via ${tx.paymentMethod || tx.payment_method || 'Cash'}) from Recycle Bin back to ledger — Items: ${itemsList}`;
 
-        await supabase.from('audit_logs').insert([{
-          action: 'SALE_RESTORED',
-          details: auditDetails,
-          actor_username: actor
-        }]);
+        await logAudit('SALE_RESTORED', auditDetails, tx.id);
       }
 
       setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));

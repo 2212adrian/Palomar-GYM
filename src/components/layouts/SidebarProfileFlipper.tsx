@@ -12,6 +12,7 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import { useRevenueGoals, type GoalTimeframe } from '../../stores/useRevenueGoals';
+import { isSuperAdmin } from '../../constants/auth';
 
 // ─── HUD THEMES (No heavy gradient transitions to prevent click lag) ───
 interface GameCardTheme {
@@ -143,6 +144,7 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
   avatarElement
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+  const isSuperAdminUser = isSuperAdmin(user?.email);
 
   const {
     timeframe,
@@ -183,21 +185,24 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
           {/* Top Row: Avatar + Name + Goals Button */}
           <div className="flex items-center justify-between gap-2.5">
             <div className="relative shrink-0">
-              <div className="w-10 h-10 rounded-full ring-2 ring-[#123c73]/20 dark:ring-red-500/30 p-0.5 bg-slate-100 dark:bg-neutral-800 overflow-hidden">
+              <div className={`w-10 h-10 rounded-full ring-2 ${isSuperAdminUser ? 'ring-purple-500/50 dark:ring-purple-400/50' : 'ring-[#123c73]/20 dark:ring-red-500/30'} p-0.5 bg-slate-100 dark:bg-neutral-800 overflow-hidden`}>
                 {avatarElement}
               </div>
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#161920]" />
             </div>
 
             <div className="flex-1 min-w-0">
-              <h4 className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white truncate leading-none">
-                {profile?.username || 'Wolf Palomar'}
+              <h4 className={`font-heading text-xs font-black tracking-wider uppercase truncate leading-none ${isSuperAdminUser ? 'text-purple-600 dark:text-purple-400' : 'text-slate-900 dark:text-white'}`}>
+                {isSuperAdminUser ? 'SUPERADMIN' : (profile?.username || 'Wolf Palomar')}
               </h4>
 
               <div className="flex items-center gap-1.5 mt-1">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-[9px] font-sans font-extrabold uppercase tracking-wide">
-                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                  {profile?.role || 'ADMIN'}
+                <span className={isSuperAdminUser 
+                  ? "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/15 dark:bg-purple-950/70 text-purple-600 dark:text-purple-300 border border-purple-500/35 text-[9px] font-sans font-black uppercase tracking-wide shadow-xs"
+                  : "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-[9px] font-sans font-extrabold uppercase tracking-wide"
+                }>
+                  <span className={`w-1 h-1 rounded-full ${isSuperAdminUser ? 'bg-purple-500 animate-pulse' : 'bg-emerald-500'}`} />
+                  {isSuperAdminUser ? 'SUPERADMIN' : (profile?.role || 'ADMIN')}
                 </span>
               </div>
             </div>

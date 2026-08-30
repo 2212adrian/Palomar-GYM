@@ -32,6 +32,7 @@ import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { supabase } from '../../../lib/supabase/client';
+import { logAudit } from '../../../lib/supabase/audit';
 import type { BirReportItem, TopProductMetric, RevenueTimelinePoint } from '../types';
 import { formatPHP } from '../dashboardService';
 
@@ -443,6 +444,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       const filename = `PalomarGym_${selectedCategoryMeta.filePrefix}_${startDate}_to_${endDate}.csv`;
       saveAs(blob, filename);
       toast.success(`Exported ${filename} successfully!`);
+      
+      await logAudit(
+        'REPORT_GENERATED',
+        `Exported ${selectedCategoryMeta.title} (CSV) from ${startDate} to ${endDate} (${categoryStats.count} records, Total: ₱${categoryStats.totalValue.toFixed(2)}).`
+      );
     } catch (err: any) {
       toast.error(`Export failed: ${err.message}`);
     } finally {
@@ -700,6 +706,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       const filename = `PalomarGym_${selectedCategoryMeta.filePrefix}_${startDate}.pdf`;
       saveAs(blob, filename);
       toast.success(`Generated ${filename} successfully!`);
+
+      await logAudit(
+        'REPORT_GENERATED',
+        `Generated and downloaded ${selectedCategoryMeta.title} (PDF) for ${startDate} (${categoryStats.count} records, Total: ₱${categoryStats.totalValue.toFixed(2)}).`
+      );
     } catch (err: any) {
       toast.error(`PDF generation failed: ${err.message}`);
     } finally {

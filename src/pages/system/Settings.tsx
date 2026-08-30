@@ -10,6 +10,7 @@ import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation';
+import { PermissionsSettings } from './PermissionsSettings';
 import { 
   User as UserIcon, 
   Building, 
@@ -17,6 +18,7 @@ import {
   Users, 
   Database, 
   FileText,
+  ShieldCheck,
   ChevronRight,
   ChevronLeft,
   Save,
@@ -25,7 +27,7 @@ import {
   Moon
 } from 'lucide-react';
 
-export type TabID = 'account' | 'gym-profile' | 'rates' | 'users' | 'backup' | 'audit' | 'info';
+export type TabID = 'account' | 'permissions' | 'gym-profile' | 'rates' | 'users' | 'backup' | 'audit' | 'info';
 
 export interface TabItem {
   id: TabID;
@@ -42,6 +44,13 @@ const TABS: TabItem[] = [
     description: 'Update your account credentials', 
     icon: UserIcon, 
     adminOnly: false 
+  },
+  {
+    id: 'permissions',
+    label: 'Device Permissions',
+    description: 'Camera & notification access',
+    icon: ShieldCheck,
+    adminOnly: false
   },
   { 
     id: 'gym-profile', 
@@ -89,6 +98,7 @@ const TABS: TabItem[] = [
 
 const TAB_URL_MAP: Record<TabID, string> = {
   'account': 'personal-account',
+  'permissions': 'device-permissions',
   'gym-profile': 'gym-profile',
   'rates': 'rates-and-payments',
   'users': 'user-management',
@@ -99,6 +109,7 @@ const TAB_URL_MAP: Record<TabID, string> = {
 
 const URL_TAB_MAP: Record<string, TabID> = {
   'personal-account': 'account',
+  'device-permissions': 'permissions',
   'gym-profile': 'gym-profile',
   'rates-and-payments': 'rates',
   'user-management': 'users',
@@ -495,6 +506,7 @@ export default function Settings() {
           {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
           <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
             {activeTab === 'personal-account' && <PersonalAccount />}
+            {activeTab === 'device-permissions' && <PermissionsSettings />}
             {activeTab === 'gym-profile' && <GymProfile />}
             {activeTab === 'rates-and-payments' && <RatesPayments />}
             {activeTab === 'user-management' && <UserManagement />}
