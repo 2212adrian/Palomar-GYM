@@ -20,7 +20,7 @@ import {
   getNotificationPermissionStatus, 
   requestCameraPermission, 
   requestNotificationPermission,
-  PermissionState 
+  type PermissionState 
 } from '../../lib/permissions';
 
 export const PermissionsSettings: React.FC = () => {

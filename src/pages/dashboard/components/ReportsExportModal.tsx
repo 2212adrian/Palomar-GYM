@@ -398,7 +398,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   }, [reportType, liveBirData, liveSalesData, liveAttendanceData, liveSubsData, revenueTimeline]);
 
   // ─── 1. EXPORT TO CSV (EXCEL COMPATIBLE) ───
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     try {
       setIsExporting(true);
       let csvContent = '\uFEFF'; // UTF-8 BOM for Microsoft Excel
