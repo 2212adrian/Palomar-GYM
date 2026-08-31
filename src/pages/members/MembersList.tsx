@@ -34,7 +34,7 @@ import { StaffPlansConsole, IntakeWizardModal } from './components/SubscriptionP
 import { DigitalQRCardModal } from './components/DigitalQRCardModal';
 import { ManualCardTemplateModal } from './components/ManualCardTemplateModal';
 import { MemberCardPrintModal } from './components/MemberCardPrintModal';
-import { MemberAvatar } from '../../components/ui/MemberAvatar';
+import { MemberAvatar } from './components/MemberAvatar';
 import { toast } from 'react-toastify';
 
 interface MembersListProps {
@@ -281,7 +281,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         hasSub: false,
         canRenew: true,
         planName: 'Profile Only',
-        statusLabel: 'No Active Contract',
+        statusLabel: 'No Subscription',
         badgeStyle: 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30',
         dotColor: 'bg-slate-400',
         subscribedAt: null,
@@ -510,7 +510,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       return 'group !bg-blue-500/10 hover:!bg-blue-500/15 border-l-2 border-blue-500 transition-colors duration-150 cursor-pointer';
     }
     if (isSuspended) {
-      return 'group bg-slate-200/50 dark:bg-zinc-900/40 hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 opacity-60 text-slate-400 transition-colors duration-150 cursor-pointer';
+      return 'group bg-amber-500/10 dark:bg-amber-500/15 hover:!bg-amber-500/20 border-l-2 border-amber-500 text-amber-950 dark:text-amber-200 transition-colors duration-150 cursor-pointer';
     }
     return 'group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150 cursor-pointer';
   };
@@ -569,9 +569,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             className="shadow-xs border border-black/10 dark:border-white/10 shrink-0"
           />
           <div className="min-w-0">
-            <span className="font-extrabold block text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight">
-              {item.full_name}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight">
+                {item.full_name}
+              </span>
+              {item.status === 'Suspended' && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  SUSPENDED
+                </span>
+              )}
+            </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium block mt-0.5 leading-none truncate">
               {item.member_id} • {item.phone}
             </span>
@@ -612,7 +620,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     },
     {
       key: 'card_printed',
-      header: 'Security Badge',
+      header: 'Card Status',
       sortable: true,
       sortValue: (item) => {
         const cardObj = getActiveCard(item.member_id);
@@ -648,25 +656,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             title="Click to view & print card"
           >
             {isQr ? <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> : <CreditCard className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
-            <span>{isQr ? 'Digital QR Badge' : 'Manual Badge'}</span>
+            <span>{isQr ? 'Digital QR Card' : 'Manual Card'}</span>
           </button>
         );
       }
-    },
-    {
-      key: 'status',
-      header: 'System Status',
-      sortable: true,
-      render: (item) => (
-        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider border ${
-          item.status === 'Active' 
-            ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40' 
-            : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40'
-        }`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${item.status === 'Active' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          {item.status}
-        </span>
-      )
     },
     {
       key: 'actions',
@@ -958,27 +951,23 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         <Skeleton height={14} width={120} />
                         <Skeleton height={14} width={140} />
                         <Skeleton height={14} width={110} />
-                        <Skeleton height={14} width={90} />
                         <Skeleton height={28} width={70} />
                       </div>
                       {Array.from({ length: 8 }).map((_, idx) => (
                         <div key={idx} className="flex items-center justify-between py-2 px-3 border-b border-(--border-color)/40 last:border-none">
-                          <div className="flex items-center gap-2.5 w-1/4">
+                          <div className="flex items-center gap-2.5 w-1/3">
                             <Skeleton circle width={38} height={38} className="shrink-0" />
                             <div className="space-y-1 flex-1">
                               <Skeleton height={14} width="70%" />
                               <Skeleton height={10} width="50%" />
                             </div>
                           </div>
-                          <div className="w-1/4 space-y-1">
+                          <div className="w-1/3 space-y-1">
                             <Skeleton height={14} width="65%" />
                             <Skeleton height={16} width={90} borderRadius={6} />
                           </div>
-                          <div className="w-1/6">
+                          <div className="w-1/5">
                             <Skeleton height={24} width={105} borderRadius={8} />
-                          </div>
-                          <div className="w-1/8">
-                            <Skeleton height={20} width={65} borderRadius={6} />
                           </div>
                           <div className="flex items-center justify-end gap-1.5">
                             <Skeleton height={28} width={65} borderRadius={8} />
@@ -1136,7 +1125,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                               isSelected
                                 ? 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500 shadow-md'
                                 : isSuspended
-                                ? 'bg-slate-200/50 dark:bg-zinc-900/40 border-(--border-color) opacity-70'
+                                ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-950 dark:text-amber-200'
                                 : 'bg-(--bg-card) border-(--border-color) shadow-xs active:scale-[0.99]'
                             }`}
                           >
@@ -1162,23 +1151,21 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                 />
 
                                 <div className="min-w-0">
-                                  <h3 className="font-heading font-extrabold text-sm text-(--color-text) truncate leading-tight">
-                                    {member.full_name}
-                                  </h3>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h3 className="font-heading font-extrabold text-sm text-(--color-text) truncate leading-tight">
+                                      {member.full_name}
+                                    </h3>
+                                    {isSuspended && (
+                                      <span className="px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 shrink-0">
+                                        SUSPENDED
+                                      </span>
+                                    )}
+                                  </div>
                                   <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate font-medium">
                                     {member.member_id}
                                   </span>
                                 </div>
                               </div>
-
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-heading font-black uppercase tracking-wider border shrink-0 flex items-center gap-1 ${
-                                isSuspended
-                                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                                  : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                              }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isSuspended ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                                {member.status}
-                              </span>
                             </div>
 
                             {/* Plan & Security Details Grid */}
@@ -1507,7 +1494,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
                 >
                   <QrCode className="w-4 h-4 text-blue-500" />
-                  <span>Digital QR Security Badge</span>
+                  <span>Digital QR Card</span>
                 </button>
 
                 <button
@@ -1591,6 +1578,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           subscription={getActiveSubscription(qrModalMember.member_id)}
           card={getActiveCard(qrModalMember.member_id)}
           onClose={() => setQrModalMember(null)}
+          onOpenPrintModal={(memberId) => {
+            setQrModalMember(null);
+            setSelectedMemberIds([memberId]);
+            setShowBatchCardModal(true);
+          }}
         />
       )}
 

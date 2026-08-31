@@ -19,9 +19,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { isSuperAdmin } from '../../../constants/auth';
 import { supabase } from '../../../lib/supabase/client';
 import { Table, type Column } from '../../../components/ui/Table';
-import { MemberAvatar } from '../../../components/ui/MemberAvatar';
-import { MemberAvatarUploadModal } from '../../../components/ui/MemberAvatarUploadModal';
-import { MemberPhotoModal } from '../../../components/ui/MemberPhotoModal';
+import { MemberAvatar, MemberPhotoModal } from './MemberAvatar';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -53,8 +51,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   // Custom Modal States
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isDigitalQrModalOpen, setIsDigitalQrModalOpen] = useState(false);
-  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [, setIsDigitalQrModalOpen] = useState(false);
   const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -68,6 +65,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [isVerifyingVoid, setIsVerifyingVoid] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Card Reissue & Unbind Modal States
+  const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
+  const [isUnbindModalOpen, setIsUnbindModalOpen] = useState(false);
 
   // Inline Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
@@ -187,10 +188,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return validSubs[0];
   }, [subscriptions, localMember.member_id]);
 
-  // Effective status calculation for active/latest contract
   const targetSubForDisplay = activeContract || latestContract;
 
-  // Expiration days calculation for expired plans
   const expiredDaysText = useMemo(() => {
     if (!targetSubForDisplay) return null;
     const endMs = new Date(targetSubForDisplay.end_date).getTime();
@@ -220,9 +219,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return attendance.reduce((acc, curr) => acc + (Number(curr.entry_fee) || 0), 0);
   }, [attendance]);
 
-  // Reissue Confirmation Modal State
-  const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
+  const currentCard = useMemo(() => {
+    return cards.find((c: MemberCard) => c.status === 'Active');
+  }, [cards]);
 
+  useEffect(() => {
+    if (currentCard?.card_type === 'Manual') {
+      setSelectedCardFormat('Manual');
+    } else {
+      setSelectedCardFormat('QR');
+    }
+  }, [currentCard]);
+
+  // Card Reissue Token Handler
   const handleConfirmReissueToken = async () => {
     try {
       if (currentCard) {
@@ -234,13 +243,35 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       }
       setIsReissueModalOpen(false);
       setRefreshKey(prev => prev + 1);
+      await loadProfileCollections();
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message || 'Failed to reissue card token.');
     }
   };
 
-  // Helper to accurately parse subscription creation timestamp
+  // Card Unbind Handler (Deactivates card so profile becomes "No Card Registered")
+  const handleConfirmUnbindCard = async () => {
+    try {
+      if (currentCard) {
+        const { error } = await supabase
+          .from('member_cards')
+          .update({ status: 'Deactivated', updated_at: new Date().toISOString() })
+          .eq('id', currentCard.id);
+
+        if (error) throw error;
+
+        toast.success(`Card ${currentCard.card_number} unbinded. Member now has no registered card.`);
+      }
+      setIsUnbindModalOpen(false);
+      setRefreshKey(prev => prev + 1);
+      await loadProfileCollections();
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to unbind card.');
+    }
+  };
+
   const getSubscriptionCreationTime = (sub: Subscription): number => {
     if (sub.created_at) {
       const isoStr = typeof sub.created_at === 'string' ? sub.created_at.replace(' ', 'T') : sub.created_at;
@@ -254,7 +285,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return Date.now();
   };
 
-  // Void eligibility calculation
   const getVoidEligibility = (sub?: Subscription | null) => {
     if (!sub) {
       return { eligible: false, reason: 'No subscription record selected for voiding.' };
@@ -264,7 +294,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     const nowTime = Date.now();
     const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
 
-    // Allow voiding if created within 24 hours
     if (hoursDiff > 24) {
       return {
         eligible: false,
@@ -272,11 +301,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       };
     }
 
-    // Ignore 'Walk-In' or 'New Membership' entries prior to subscription creation
     const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
       if (att.customer_type === 'New Membership' || att.customer_type === 'Walk-In') return false;
       const checkInTime = new Date(att.check_in_time).getTime();
-      return checkInTime > (createdTime + 60000); // 1-minute grace period
+      return checkInTime > (createdTime + 60000);
     });
 
     if (hasFacilityVisitsAfterSub) {
@@ -289,7 +317,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return { eligible: true, reason: '' };
   };
 
-  // Lock rule: Edit and Delete are locked ONLY when a TRULY ACTIVE subscription contract exists
   const hasActiveSubscription = !!activeContract;
 
   useEffect(() => {
@@ -360,19 +387,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Avatar change handler from upload/camera modal
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
 
-const handleAvatarSaved = async (newUrl: string) => {
-  try {
-    await memberService.update(localMember.id, { image_url: newUrl }, user?.email || 'Admin Staff');
-    setLocalMember(prev => ({ ...prev, image_url: newUrl, avatar_url: newUrl }));
-    onMutationSuccess();
-    toast.success('Member photo updated successfully.');
-  } catch (err: any) {
-    toast.error('Failed to update photo: ' + err.message);
-  }
-};
+  const handleAvatarSaved = async (newUrl: string) => {
+    try {
+      await memberService.update(localMember.id, { image_url: newUrl }, user?.email || 'Admin Staff');
+      setLocalMember(prev => ({ ...prev, image_url: newUrl, avatar_url: newUrl }));
+      onMutationSuccess();
+      toast.success('Member photo updated successfully.');
+    } catch (err: any) {
+      toast.error('Failed to update photo: ' + err.message);
+    }
+  };
 
   const handleStatusToggleConfirm = async () => {
     const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
@@ -405,7 +431,6 @@ const handleAvatarSaved = async (newUrl: string) => {
     }
   };
 
-  // Void Subscription Execution with Admin Password Verification
   const handleConfirmVoidSubscription = async () => {
     if (!targetVoidSub || !isAdmin) return;
     if (!voidReason) {
@@ -499,18 +524,6 @@ const handleAvatarSaved = async (newUrl: string) => {
     setSelectedReceiptData(data);
   };
 
-  const currentCard = useMemo(() => {
-    return cards.find((c: MemberCard) => c.status === 'Active');
-  }, [cards]);
-
-  useEffect(() => {
-    if (currentCard?.card_type === 'Manual') {
-      setSelectedCardFormat('Manual');
-    } else {
-      setSelectedCardFormat('QR');
-    }
-  }, [currentCard]);
-
   const extMember = localMember as any;
 
   const registrationDateText = useMemo(() => {
@@ -519,7 +532,6 @@ const handleAvatarSaved = async (newUrl: string) => {
     return isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString();
   }, [localMember.created_at]);
 
-  // Invoices & Receipts Table Columns Configuration
   const receiptColumns = useMemo<Column<Receipt>[]>(() => [
     {
       key: 'id',
@@ -600,7 +612,6 @@ const handleAvatarSaved = async (newUrl: string) => {
     }
   ], []);
 
-  // Attendance Table Columns Configuration
   const attendanceColumns = useMemo<Column<AttendanceRecord>[]>(() => [
     {
       key: 'check_in_time',
@@ -692,26 +703,25 @@ const handleAvatarSaved = async (newUrl: string) => {
           </div>
 
           <div className="flex items-center gap-3 text-left">
-            {/* CLICKABLE PROFILE PICTURE WITH SELFIE / UPLOAD ACTION OVERLAY */}
-<div className="relative group">
-  <MemberAvatar
-    src={localMember.image_url || localMember.avatar_url}
-    name={localMember.full_name}
-    size={60}
-    roundedClassName="rounded-2xl shadow-md border-2 border-white/20"
-    isEditable={true}
-    onEditClick={() => setIsPhotoModalOpen(true)}
-    badgeTooltip="Click to view and change member photo"
-  />
-  <button
-    type="button"
-    onClick={() => setIsPhotoModalOpen(true)}
-    className="absolute -bottom-1 -right-1 p-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-md cursor-pointer border border-white/20 transition-transform active:scale-95"
-    title="Change photo"
-  >
-    <Camera className="w-3 h-3" />
-  </button>
-</div>
+            <div className="relative group">
+              <MemberAvatar
+                src={localMember.image_url || localMember.avatar_url}
+                name={localMember.full_name}
+                size={60}
+                roundedClassName="rounded-2xl shadow-md border-2 border-white/20"
+                isEditable={true}
+                onEditClick={() => setIsPhotoModalOpen(true)}
+                badgeTooltip="Click to view and change member photo"
+              />
+              <button
+                type="button"
+                onClick={() => setIsPhotoModalOpen(true)}
+                className="absolute -bottom-1 -right-1 p-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-md cursor-pointer border border-white/20 transition-transform active:scale-95"
+                title="Change photo"
+              >
+                <Camera className="w-3 h-3" />
+              </button>
+            </div>
 
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1413,7 +1423,7 @@ const handleAvatarSaved = async (newUrl: string) => {
             </div>
           )}
 
-          {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
+          {/* TAB 3: CARDS & DIGITAL CARD */}
           {activeTab === 'Cards' && (() => {
             const cardExpIso = currentCard?.expires_at 
               || (currentCard?.issued_at 
@@ -1441,6 +1451,7 @@ const handleAvatarSaved = async (newUrl: string) => {
                 toast.success(`Member security card format set to ${type}.`);
                 setSelectedCardFormat(type);
                 setRefreshKey(prev => prev + 1);
+                await loadProfileCollections();
                 onMutationSuccess();
               } catch (err: any) {
                 toast.error(err.message || 'Failed to update card format.');
@@ -1462,7 +1473,7 @@ const handleAvatarSaved = async (newUrl: string) => {
                     }`}
                   >
                     <QrCode className="w-4 h-4" />
-                    <span>Digital QR Badge</span>
+                    <span>Digital QR Card</span>
                   </button>
 
                   <button
@@ -1475,7 +1486,7 @@ const handleAvatarSaved = async (newUrl: string) => {
                     }`}
                   >
                     <CreditCard className="w-4 h-4" />
-                    <span>Manual Physical Badge</span>
+                    <span>Manual Card</span>
                   </button>
                 </div>
 
@@ -1518,10 +1529,9 @@ const handleAvatarSaved = async (newUrl: string) => {
                       </div>
                     </div>
 
-                    {/* DYNAMIC DISPLAY: DIGITAL QR BADGE VS MANUAL TEMPLATE ASSET */}
+                    {/* DYNAMIC DISPLAY: DIGITAL QR CARD VS MANUAL TEMPLATE ASSET */}
                     {selectedCardFormat === 'QR' ? (
                       <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
-                        {/* BRANDING HEADER */}
                         <div className="text-center space-y-0.5">
                           <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
                             WOLF PALOMAR GYM
@@ -1535,7 +1545,6 @@ const handleAvatarSaved = async (newUrl: string) => {
                           </p>
                         </div>
 
-                        {/* CARD BODY */}
                         <div className="flex items-center gap-3 pt-1">
                           <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
                             <img
@@ -1592,17 +1601,16 @@ const handleAvatarSaved = async (newUrl: string) => {
                         </div>
                       </div>
                     ) : (
-                      /* MANUAL TEMPLATE CARD DISPLAY */
                       <div className="flex flex-col items-center gap-3 pt-2">
                         <div className="w-full max-w-sm sm:max-w-md aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-black p-1.5 flex items-center justify-center">
                           <img 
                             src={cardTemplateImg} 
-                            alt="Manual Physical Member Card Template Asset" 
+                            alt="Manual Member Card Template Asset" 
                             className="w-full h-full object-contain block"
                           />
                         </div>
                         <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
-                          Manual Physical Pass Template Asset • Official Gym Print Layout
+                          Manual Card Template Asset • Official Gym Print Layout
                         </span>
                       </div>
                     )}
@@ -1621,16 +1629,28 @@ const handleAvatarSaved = async (newUrl: string) => {
                   </div>
                 )}
 
-                <div className="pt-2">
-                  <button 
-                    type="button"
-                    onClick={() => setIsReissueModalOpen(true)} 
-                    className="w-full min-h-[44px] px-4 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Reissue Card Security Token</span>
-                  </button>
-                </div>
+                {/* ACTION BUTTONS: REISSUE TOKEN & UNBIND CARD */}
+                {currentCard && (
+                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => setIsReissueModalOpen(true)} 
+                      className="min-h-[44px] px-4 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      <span>Reissue Card Token</span>
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={() => setIsUnbindModalOpen(true)} 
+                      className="min-h-[44px] px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Unbind / Remove Card</span>
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1785,18 +1805,6 @@ const handleAvatarSaved = async (newUrl: string) => {
 
         </div>
 
-        {/* PROFILE PICTURE LIVE CAMERA / UPLOAD MODAL */}
-        {isAvatarModalOpen && (
-          <MemberAvatarUploadModal
-            isOpen={isAvatarModalOpen}
-            onClose={() => setIsAvatarModalOpen(false)}
-            memberName={localMember.full_name}
-            memberId={localMember.member_id}
-            currentImageUrl={localMember.image_url || localMember.avatar_url}
-            onSaveSuccess={handleAvatarSaved}
-          />
-        )}
-
         {/* PROFILE PICTURE VIEW & CHANGE MODAL */}
         {isPhotoModalOpen && (
           <MemberPhotoModal
@@ -1923,6 +1931,47 @@ const handleAvatarSaved = async (newUrl: string) => {
               >
                 <RefreshCw className="w-4 h-4" />
                 <span>Confirm Reissue Token</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* UNBIND CARD CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isUnbindModalOpen}
+          onClose={() => setIsUnbindModalOpen(false)}
+          title="UNBIND SECURITY CARD"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertOctagon className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>Deactivate Credential Card</span>
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Unbinding will immediately revoke and deactivate card <strong>{currentCard?.card_number}</strong>. The profile will return to <strong>"No Card Registered"</strong> status.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Are you sure you want to unbind the security card from <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsUnbindModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnbindCard}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirm Unbind</span>
               </button>
             </div>
           </div>

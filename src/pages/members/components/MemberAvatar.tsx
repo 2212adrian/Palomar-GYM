@@ -1,18 +1,44 @@
-// src/components/ui/MemberPhotoModal.tsx
+// src/components/ui/MemberAvatar.tsx
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Upload, RefreshCw, Check, SwitchCamera, User, Sparkles, Trash2 } from 'lucide-react';
-import { Modal } from './Modal';
-import { 
-  compressImageTo1024, 
-  uploadMemberAvatar, 
+import {
+  Camera,
+  Upload,
+  RefreshCw,
+  Check,
+  SwitchCamera,
+  User,
+  Sparkles,
+  Trash2,
+  AlertCircle,
+} from 'lucide-react';
+import { Modal } from '../../../components/ui/Modal';
+import { supabase } from '../../../lib/supabase/client';
+import {
+  MEMBER_AVATARS_BUCKET,
+  compressImageTo1024,
+  uploadMemberAvatar,
   deleteMemberAvatarFromBucket,
-  type CompressResult 
-} from '../../lib/supabase/memberStorage';
-import { supabase } from '../../lib/supabase/client';
+  type CompressResult,
+} from '../../../lib/supabase/memberStorage';
 import { toast } from 'react-toastify';
 
-interface MemberPhotoModalProps {
+/* -------------------------------------------------------------------------- */
+/*                                   TYPES                                    */
+/* -------------------------------------------------------------------------- */
+
+export interface MemberAvatarProps {
+  src?: string | null;
+  name?: string;
+  className?: string;
+  size?: number; // default 40
+  roundedClassName?: string;
+  isEditable?: boolean;
+  onEditClick?: () => void;
+  badgeTooltip?: string;
+}
+
+export interface MemberPhotoModalProps {
   isOpen: boolean;
   onClose: () => void;
   memberName: string;
@@ -22,7 +48,13 @@ interface MemberPhotoModalProps {
   onDeleteSuccess?: () => Promise<void> | void;
 }
 
+export type MemberAvatarUploadModalProps = MemberPhotoModalProps;
+
 type ModalMode = 'view' | 'camera' | 'preview';
+
+/* -------------------------------------------------------------------------- */
+/*                                   HELPERS                                  */
+/* -------------------------------------------------------------------------- */
 
 const getFriendlyCameraErrorMessage = (err: any): string => {
   const msg = typeof err === 'string' ? err : err?.message || String(err || '');
@@ -39,6 +71,124 @@ const getFriendlyCameraErrorMessage = (err: any): string => {
   return 'Could not start camera. You can still upload a photo from your files.';
 };
 
+/* -------------------------------------------------------------------------- */
+/*                            MEMBER AVATAR DISPLAY                           */
+/* -------------------------------------------------------------------------- */
+
+export const MemberAvatar: React.FC<MemberAvatarProps> = ({
+  src,
+  name = 'Member',
+  className = '',
+  size = 40,
+  roundedClassName = 'rounded-xl',
+  isEditable = false,
+  onEditClick,
+  badgeTooltip = 'Click to change photo (Take selfie / upload)',
+}) => {
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  const [hasError, setHasError] = useState<boolean>(false);
+
+  useEffect(() => {
+    setHasError(false);
+    if (!src || !src.trim()) {
+      setResolvedUrl(null);
+      return;
+    }
+
+    const trimmed = src.trim();
+
+    // Direct HTTP(S), Blob, or base64 Data URLs
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('blob:') ||
+      trimmed.startsWith('data:')
+    ) {
+      setResolvedUrl(trimmed);
+      return;
+    }
+
+    // Relative storage bucket path resolution
+    const resolveStoragePath = async () => {
+      const cleanPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+      try {
+        const { data: pubData } = supabase.storage
+          .from(MEMBER_AVATARS_BUCKET)
+          .getPublicUrl(cleanPath);
+
+        if (pubData?.publicUrl) {
+          setResolvedUrl(pubData.publicUrl);
+        } else {
+          const { data: fallbackPub } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(cleanPath);
+          setResolvedUrl(fallbackPub?.publicUrl || null);
+        }
+      } catch {
+        setHasError(true);
+      }
+    };
+
+    resolveStoragePath();
+  }, [src]);
+
+  const initial = (name || 'M').trim().charAt(0).toUpperCase() || 'M';
+
+  const sizeStyle = size
+    ? { width: `${size}px`, height: `${size}px`, minWidth: `${size}px`, minHeight: `${size}px` }
+    : undefined;
+
+  return (
+    <div
+      style={sizeStyle}
+      onClick={(e) => {
+        if (isEditable && onEditClick) {
+          e.stopPropagation();
+          onEditClick();
+        }
+      }}
+      className={`relative group shrink-0 select-none overflow-hidden ${roundedClassName} ${
+        isEditable ? 'cursor-pointer' : ''
+      } ${className}`}
+      title={isEditable ? badgeTooltip : name}
+    >
+      {resolvedUrl && !hasError ? (
+        <img
+          src={resolvedUrl}
+          alt={name}
+          onError={() => setHasError(true)}
+          className={`w-full h-full object-cover border border-(--border-color) ${roundedClassName} transition-transform duration-200 group-hover:scale-105`}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className={`w-full h-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading font-black shadow-inner border border-white/20 ${roundedClassName}`}
+          style={{ fontSize: `${Math.max(12, Math.round(size * 0.42))}px` }}
+        >
+          {initial}
+        </div>
+      )}
+
+      {/* Interactive Hover / Edit Overlay Badge */}
+      {isEditable && (
+        <div
+          className={`absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white ${roundedClassName} backdrop-blur-xs`}
+        >
+          <Camera className="w-5 h-5 text-white animate-pulse" />
+          <span className="text-[8px] font-heading font-extrabold uppercase tracking-wider mt-0.5 text-white">
+            Photo
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/*                       MEMBER PHOTO MODAL / UPLOAD                          */
+/* -------------------------------------------------------------------------- */
+
 export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
   isOpen,
   onClose,
@@ -48,7 +198,6 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
   onSaveSuccess,
   onDeleteSuccess,
 }) => {
-  // Default to 'view' if a photo exists, or 'camera' if no photo yet
   const [mode, setMode] = useState<ModalMode>('view');
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraIndex, setSelectedCameraIndex] = useState<number>(0);
@@ -64,7 +213,6 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Stop all active camera tracks safely
   const stopCameraStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
@@ -78,7 +226,6 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
     }
   }, []);
 
-  // Discover and list available cameras
   const detectCameras = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -90,7 +237,6 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
     }
   }, []);
 
-  // Start live webcam stream
   const startCameraStream = useCallback(async (deviceId?: string) => {
     stopCameraStream();
     setCameraError(null);
@@ -123,19 +269,17 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
     }
   }, [stopCameraStream, detectCameras]);
 
-  // Handle modal lifecycle
   useEffect(() => {
-  if (isOpen) {
-    setMode('view'); // Always default to Member Photo view
-    setPreviewResult(null);
-    setCameraError(null);
-    setConfirmDelete(false);
-  } else {
-    stopCameraStream();
-  }
-}, [isOpen, stopCameraStream]);
+    if (isOpen) {
+      setMode('view');
+      setPreviewResult(null);
+      setCameraError(null);
+      setConfirmDelete(false);
+    } else {
+      stopCameraStream();
+    }
+  }, [isOpen, stopCameraStream]);
 
-  // Activate camera when switching to 'camera' mode
   useEffect(() => {
     if (isOpen && mode === 'camera') {
       const activeDeviceId = cameras[selectedCameraIndex]?.deviceId;
@@ -196,22 +340,19 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
       stopCameraStream();
     } catch (err: any) {
       toast.error('Could not process image: ' + err.message);
+    } finally {
+      e.target.value = '';
     }
   };
 
-  // Save confirmed photo (cleans up any older version first to prevent stacking)
   const handleSavePhoto = async () => {
     if (!previewResult) return;
     setIsSaving(true);
 
     try {
-      // 1. Delete previous bucket files for this member so storage doesn't stack
       await deleteMemberAvatarFromBucket(memberId, currentImageUrl);
-
-      // 2. Upload new compressed photo
       const publicUrl = await uploadMemberAvatar(memberId, previewResult.blob);
 
-      // 3. Update database
       await supabase
         .from('members')
         .update({ 
@@ -232,16 +373,13 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
     }
   };
 
-  // Complete deletion of current photo from bucket and member record
   const handleDeletePhoto = async () => {
     if (!currentImageUrl || isDeleting) return;
     setIsDeleting(true);
 
     try {
-      // 1. Purge from Supabase Storage bucket
       await deleteMemberAvatarFromBucket(memberId, currentImageUrl);
 
-      // 2. Nullify in members table
       await supabase
         .from('members')
         .update({ 
@@ -257,7 +395,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
         await onSaveSuccess('');
       }
 
-      toast.success('Photo removed and storage bucket cleaned.');
+      toast.success('Photo removed successfully.');
       setConfirmDelete(false);
       setMode('camera');
     } catch (err: any) {
@@ -286,7 +424,16 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
       }
     >
       <div className="space-y-3.5 text-left font-body">
-        {/* MEMBER DETAILS HEADER */}
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        {/* Member Header Info */}
         <div className="flex items-center justify-between p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl">
           <div>
             <h4 className="font-extrabold text-sm text-(--color-text) leading-tight">{memberName}</h4>
@@ -317,7 +464,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
               )}
             </div>
 
-            {/* ACTION OPTIONS */}
+            {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 type="button"
@@ -336,17 +483,9 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
                 <Upload className="w-4 h-4 text-blue-500" />
                 <span>Upload File</span>
               </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
             </div>
 
-            {/* DELETE PHOTO OPTION */}
+            {/* Delete Photo Section */}
             {currentImageUrl && (
               <div className="pt-2 border-t border-(--border-color)">
                 {!confirmDelete ? (
@@ -425,6 +564,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
             <div className="relative w-full aspect-square max-w-56 sm:max-w-64 mx-auto rounded-3xl overflow-hidden bg-black border-2 border-dashed border-blue-500 shadow-2xl flex items-center justify-center">
               {cameraError ? (
                 <div className="p-4 text-center text-xs text-rose-300 space-y-2">
+                  <AlertCircle className="w-6 h-6 text-rose-400 mx-auto" />
                   <p className="font-bold">{cameraError}</p>
                   <button
                     type="button"
@@ -482,7 +622,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
 
             <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
               <Sparkles className="w-4 h-4" />
-              <span>Photo ready to save</span>
+              <span>Photo ready to save (1024x1024 HD)</span>
             </div>
 
             <div className="flex items-center justify-between gap-2 pt-1">
@@ -521,7 +661,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
           </div>
         )}
 
-        {/* BOTTOM CANCEL BUTTON */}
+        {/* Modal Footer */}
         <div className="pt-2 border-t border-(--border-color) flex justify-end">
           <button
             type="button"
@@ -536,4 +676,5 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
   );
 };
 
+/* Backwards-compatibility alias */
 export const MemberAvatarUploadModal = MemberPhotoModal;

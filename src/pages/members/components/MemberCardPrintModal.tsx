@@ -1129,10 +1129,10 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
         
         {/* LEFT CONTROL SIDEBAR PANEL */}
-        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-6 flex flex-col justify-between overflow-y-auto no-scrollbar pb-32 md:pb-6 ${
+        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-5 flex flex-col justify-between overflow-hidden h-full ${
           activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
         }`}>
-          <div className="flex flex-col gap-4 flex-1">
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-hidden">
             
             {/* Card Format Choice */}
             <div className="p-3 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-2 text-left shrink-0">
@@ -1170,7 +1170,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
             {/* Selection Drawer vs Manual Copies Count */}
             {cardFormat === 'manual_template' ? (
-              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 text-left">
+              <div className="p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl flex flex-col flex-1 min-h-0 overflow-hidden space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Manual Template Copies
@@ -1215,8 +1215,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                 </div>
               </div>
             ) : (
-              <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 flex flex-col min-h-60 flex-1">
-                {/* SELECT MEMBERS HEADER TOOLBAR */}
+              <div className="p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl flex flex-col flex-1 min-h-0 overflow-hidden gap-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-1.5">
                     <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Members</h4>
@@ -1271,7 +1270,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                 </div>
 
                 {/* MEMBER SELECTION LIST */}
-                <div className="overflow-y-auto max-h-64 no-scrollbar space-y-1.5 p-1 flex-1 min-w-0">
+                 <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 select-none">
                   {filteredMembers.map(m => {
                     const hasActiveCard = isCardIssued(m.member_id);
                     const eligible = isMemberEligible(m.member_id);
@@ -1281,7 +1280,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                       <div
                         key={m.id}
                         onClick={() => handleToggleMember(m)}
-                        className={`w-full p-2.5 rounded-xl flex items-center justify-between gap-2.5 transition-all box-border ${
+                        className={`w-full py-2 px-2.5 rounded-xl flex items-center justify-between gap-2 transition-all box-border ${
                           !eligible
                             ? 'opacity-50 cursor-not-allowed bg-slate-200/50 dark:bg-zinc-900/20 border border-transparent'
                             : isSelected 
@@ -1809,7 +1808,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                   Confirm Card Overwrite & Reissue
                 </h3>
                 <span className="text-[10px] text-amber-500 font-bold block mt-0.5">
-                  Previous Security Badges Will Be Invalidated
+                  Previous Member Card Will Be Invalidated
                 </span>
               </div>
             </div>

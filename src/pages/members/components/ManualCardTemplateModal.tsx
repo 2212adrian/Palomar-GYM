@@ -81,7 +81,7 @@ export const ManualCardTemplateModal: React.FC<ManualCardTemplateModalProps> = (
           <div className="flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-amber-500" />
             <h3 className="font-heading text-sm font-bold tracking-wider uppercase">
-              MANUAL PHYSICAL CARD TEMPLATE
+              MANUAL CARD TEMPLATE
             </h3>
           </div>
           <button

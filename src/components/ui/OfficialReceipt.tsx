@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useImperativeHandle, forwardRef, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
-import { X, Download, Printer, Share2, Copy, Check } from 'lucide-react';
+import { X, Download, Printer, Share2, Copy, Check, QrCode } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -186,11 +186,11 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
 
   const receiptType = data.receiptType || (data.items && data.items.length > 0 ? 'sales' : 'subscription');
   const receiptTitle = RECEIPT_TITLES[receiptType] || 'Official Receipt';
+  const hasQr = receiptType === 'subscription' || receiptType === 'attendance';
 
   const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
   const isGCash = paymentMethod.includes('GCASH');
 
-  // Sanitize plan description string (e.g. "SUBSCRIBED UNDER MONTHLY MEMBERSHIP" -> "MONTHLY MEMBERSHIP")
   const formattedPlanType = useMemo(() => {
     if (!data.planType) return '';
     let str = data.planType.trim();
@@ -245,7 +245,7 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
   }, [data.transactionDate]);
 
   const qrPayload = data.qrValue || receiptNo;
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
   const generateReceiptCanvasDataUrl = async (): Promise<string | null> => {
     try {
@@ -262,7 +262,8 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       if (isGCash || data.gcashRefNo) extraRows++;
       if (vatEnabled) extraRows += 2;
 
-      const height = 490 + (extraRows * 20) + (itemCount * 18) + 60;
+      const qrSectionHeight = hasQr ? 140 : 0;
+      const height = 480 + (extraRows * 20) + (itemCount * 18) + qrSectionHeight;
 
       canvas.width = width * scale;
       canvas.height = height * scale;
@@ -316,41 +317,48 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 11px monospace';
       ctx.fillText(receiptTitle.toUpperCase(), width / 2, y);
-      y += 18;
+      y += 16;
 
-      if (receiptType === 'subscription' || receiptType === 'attendance') {
-        const qrImg = await loadQrImage(qrImageUrl);
+      // Balanced centered QR Code Section
+      if (hasQr) {
+        const qrBoxHeight = 120;
+        const qrSize = 75;
+        const qrX = (width - qrSize) / 2;
 
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(20, y, width - 40, 52);
+        ctx.fillRect(35, y, width - 70, qrBoxHeight);
         ctx.strokeStyle = '#cbd5e1';
-        ctx.strokeRect(20, y, width - 40, 52);
+        ctx.strokeRect(35, y, width - 70, qrBoxHeight);
 
+        // Header text inside QR Card
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 8px system-ui, sans-serif';
+        ctx.fillText('SCAN FOR CHECK-IN / ENTRY', width / 2, y + 14);
+
+        // QR Code Container
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(qrX - 3, y + 20, qrSize + 6, qrSize + 6);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.strokeRect(qrX - 3, y + 20, qrSize + 6, qrSize + 6);
+
+        const qrImg = await loadQrImage(qrImageUrl);
         if (qrImg) {
-          ctx.drawImage(qrImg, 28, y + 6, 40, 40);
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = '#64748b';
-          ctx.font = 'bold 8px system-ui, sans-serif';
-          ctx.fillText('SCAN FOR CHECK-IN', 78, y + 20);
-
-          ctx.fillStyle = '#0f172a';
-          ctx.font = 'bold 10px monospace';
-          ctx.fillText(receiptNo, 78, y + 36);
+          ctx.drawImage(qrImg, qrX, y + 23, qrSize, qrSize);
         } else {
-          ctx.textAlign = 'center';
-          ctx.fillStyle = '#64748b';
-          ctx.font = 'bold 8px monospace';
-          ctx.fillText('CHECK-IN ENTRY CODE', width / 2, y + 20);
-
-          ctx.fillStyle = '#0f172a';
-          ctx.font = 'bold 11px monospace';
-          ctx.fillText(receiptNo, width / 2, y + 36);
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '8px monospace';
+          ctx.fillText('[QR CODE]', width / 2, y + 60);
         }
 
-        y += 64;
+        // Receipt code under QR
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 9.5px monospace';
+        ctx.fillText(receiptNo, width / 2, y + qrBoxHeight - 8);
+
+        y += qrBoxHeight + 12;
         drawDashedLine(y);
-        y += 18;
+        y += 16;
       }
 
       const renderRow = (label: string, value: string, isHighlight = false, fontColor = '#0f172a') => {
@@ -574,20 +582,37 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
                   margin: 0 auto 1.5mm auto !important;
                   display: block !important;
                 }
-                .receipt-qr-img {
-                  width: 12mm !important;
-                  height: 12mm !important;
-                  object-fit: contain !important;
-                  display: block !important;
-                }
                 .receipt-qr-container {
                   display: flex !important;
-                  flex-direction: row !important;
+                  flex-direction: column !important;
                   align-items: center !important;
-                  gap: 3mm !important;
-                  border: 1px solid #000 !important;
+                  justify-content: center !important;
+                  text-align: center !important;
+                  border: 1px dashed #000 !important;
                   padding: 2mm !important;
-                  margin: 2mm 0 !important;
+                  margin: 2mm auto !important;
+                  width: 48mm !important;
+                }
+                .receipt-qr-img {
+                  width: 22mm !important;
+                  height: 22mm !important;
+                  object-fit: contain !important;
+                  display: block !important;
+                  margin: 1mm auto !important;
+                }
+                .receipt-qr-label {
+                  font-size: 7.5px !important;
+                  font-weight: bold !important;
+                  margin-bottom: 0.5mm !important;
+                  display: block !important;
+                  text-align: center !important;
+                }
+                .receipt-qr-code-text {
+                  font-size: 8.5px !important;
+                  font-weight: bold !important;
+                  margin-top: 0.5mm !important;
+                  display: block !important;
+                  text-align: center !important;
                 }
                 .manual-signature-line {
                   border-bottom: 1px solid #000 !important;
@@ -849,20 +874,25 @@ export const OfficialReceipt = forwardRef<OfficialReceiptRef, OfficialReceiptPro
         {receiptTitle}
       </div>
 
-      {/* QR Code Block */}
-      {(receiptType === 'subscription' || receiptType === 'attendance') && (
-        <div className="receipt-qr-container flex items-center gap-3 py-1.5 px-2 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] my-1.5">
-          <img
-            src={qrImageUrl}
-            alt="Check-in QR Code"
-            className="receipt-qr-img w-10 h-10 object-contain shrink-0 rounded bg-white p-0.5 border border-slate-200"
-          />
-          <div className="text-[8px] font-mono leading-tight overflow-hidden text-left flex-1">
-            <span className="text-slate-500 font-bold block text-[7.5px]">SCAN FOR CHECK-IN</span>
-            <span className="text-[var(--color-text)] font-black block tracking-tight uppercase break-all text-[9px] mt-0.5">
-              {receiptNo}
-            </span>
+      {/* Centered Compact QR Code Badge */}
+      {hasQr && (
+        <div className="receipt-qr-container flex flex-col items-center justify-center p-2 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] my-1.5 text-center">
+          <div className="flex items-center justify-center gap-1 text-[7px] font-sans font-bold text-slate-500 uppercase tracking-wider mb-1 receipt-qr-label">
+            <QrCode className="w-3 h-3 text-[var(--color-primary-light)]" />
+            <span>Scan For Check-In / Entry</span>
           </div>
+
+          <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm inline-block">
+            <img
+              src={qrImageUrl}
+              alt="Check-in QR Code"
+              className="receipt-qr-img w-20 h-20 object-contain block mx-auto"
+            />
+          </div>
+
+          <span className="receipt-qr-code-text font-mono font-bold text-[8.5px] text-[var(--color-text)] tracking-wider uppercase mt-1 select-all">
+            {receiptNo}
+          </span>
         </div>
       )}
 

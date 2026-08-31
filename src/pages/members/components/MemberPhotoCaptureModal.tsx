@@ -1,13 +1,13 @@
 // src/pages/members/components/MemberPhotoCaptureModal.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
-  X, Camera, Upload, RefreshCw, CheckCircle2, AlertCircle, 
-  RotateCcw, SwitchCamera, Sparkles, Image as ImageIcon, Loader2
+  X, Camera, Upload, CheckCircle2, AlertCircle, 
+  RotateCcw, SwitchCamera, Sparkles, Loader2
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { compressImageTo64KB, uploadMemberProfilePhoto, MAX_AVATAR_SIZE_BYTES } from '../../../lib/supabase/memberStorage';
+import { compressImageTo1024, uploadMemberProfilePhoto } from '../../../lib/supabase/memberStorage';
 
 interface MemberPhotoCaptureModalProps {
   isOpen: boolean;
@@ -24,7 +24,6 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
   onPhotoSaved,
   memberName = 'Member',
   memberId = 'member',
-  currentPhotoUrl = null,
 }) => {
   const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
   
@@ -108,14 +107,14 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
   };
 
   // Process raw image file or dataUrl: compress to <= 64KB
-  const processImage = async (source: File | Blob | string, originalSize = 0) => {
+   const processImage = async (source: File | Blob | string, originalSize = 0) => {
     setIsProcessing(true);
     try {
-      const { blob, dataUrl, sizeBytes } = await compressImageTo64KB(source, MAX_AVATAR_SIZE_BYTES);
+      const { blob, dataUrl, sizeBytes } = await compressImageTo1024(source, 1024, 0.85);
       setCompressedBlob(blob);
       setPreviewDataUrl(dataUrl);
       setCompressedSizeBytes(sizeBytes);
-      setOriginalSizeBytes(originalSize || blob.size);
+      setOriginalSizeBytes(originalSize || (source instanceof Blob ? source.size : 0));
       
       // Stop camera if photo is taken
       stopCamera();

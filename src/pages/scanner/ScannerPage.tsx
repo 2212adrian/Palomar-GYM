@@ -40,7 +40,6 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase/client';
 import { ImageZoomModal } from './ImageZoomModal';
-import { MemberAvatar } from '../../components/ui/MemberAvatar';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {

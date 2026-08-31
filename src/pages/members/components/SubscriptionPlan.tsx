@@ -47,6 +47,7 @@ interface IntakeDraft {
   parentRelationship: string;
   parentPhone: string;
   parentEmail: string;
+  sameAsParent: boolean;
   applicantSig: string | null;
   parentSig: string | null;
   waiverAgreed: boolean;
@@ -274,15 +275,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 }) => {
   const [step, setStep] = useState<number>(() => initialStep !== undefined ? initialStep : 1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [, setShowClientDetails] = useState<boolean>(true);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
-  const [, setShowSignaturesInAudit] = useState<boolean>(false);
   const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(initialIntakeMode || 'Manual');
   const [selectedPlan, setSelectedPlan] = useState<'Monthly Membership' | 'Yearly Membership' | 'No Subscription'>(
     initialPlan || 'Monthly Membership'
   );
 
-  // Step 1 Enrollment Mode: "Select Existing Member" vs "Create New Member"
   const [enrollmentType, setEnrollmentType] = useState<'existing' | 'new'>('existing');
 
   const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
@@ -354,6 +352,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [parentRelationship, setParentRelationship] = useState('Father');
   const [parentPhone, setParentPhone] = useState('');
   const [parentEmail, setParentEmail] = useState('');
+  const [sameAsParent, setSameAsParent] = useState(true);
   const [applicantSig, setApplicantSig] = useState<string | null>(null);
   const [parentSig, setParentSig] = useState<string | null>(null);
   const [consentDate, setConsentDate] = useState<string | null>(null);
@@ -370,38 +369,33 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const lastScanTimeRef = useRef<number>(0);
   const lastScannedIdRef = useRef<string>('');
   
- const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
-const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
-// Fetch and enumerate connected camera devices, defaulting to rear/back camera
-useEffect(() => {
-  if (isOpen && intakeMode === 'Import' && isScanning) {
-    Html5Qrcode.getCameras()
-      .then((devices) => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-
-          // Find back/rear camera by label keywords
-          const backCam = devices.find((d) => {
-            const label = d.label.toLowerCase();
-            return (
-              label.includes('back') ||
-              label.includes('rear') ||
-              label.includes('environment') ||
-              label.includes('facing back')
-            );
-          });
-
-          // Default to back camera if found, otherwise fallback to first available
-          const defaultCameraId = backCam ? backCam.id : devices[0].id;
-          setSelectedCameraId(defaultCameraId);
-        }
-      })
-      .catch((err) => {
-        console.warn("Could not retrieve camera list:", err);
-      });
-  }
-}, [isOpen, intakeMode, isScanning]);
+  useEffect(() => {
+    if (isOpen && intakeMode === 'Import' && isScanning) {
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          if (devices && devices.length > 0) {
+            setCameras(devices);
+            const backCam = devices.find((d) => {
+              const label = d.label.toLowerCase();
+              return (
+                label.includes('back') ||
+                label.includes('rear') ||
+                label.includes('environment') ||
+                label.includes('facing back')
+              );
+            });
+            const defaultCameraId = backCam ? backCam.id : devices[0].id;
+            setSelectedCameraId(defaultCameraId);
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not retrieve camera list:", err);
+        });
+    }
+  }, [isOpen, intakeMode, isScanning]);
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [gcashReference, setGcashReference] = useState('');
@@ -554,6 +548,12 @@ useEffect(() => {
     setEmergencyName('');
     setRelationship('');
     setEmergencyPhone('');
+    setParentName('');
+    setParentRelationship('Father');
+    setParentPhone('');
+    setParentEmail('');
+    setApplicantSig(null);
+    setParentSig(null);
     setWaiverAgreed(false);
     setSubscriptionAgreement(false);
     setErrors({});
@@ -600,6 +600,7 @@ useEffect(() => {
           setParentRelationship(draft.parentRelationship || 'Father');
           setParentPhone(draft.parentPhone || '');
           setParentEmail(draft.parentEmail || '');
+          setSameAsParent(draft.sameAsParent ?? true);
           setApplicantSig(draft.applicantSig || null);
           setParentSig(draft.parentSig || null);
           setWaiverAgreed(Boolean(draft.waiverAgreed));
@@ -623,7 +624,7 @@ useEffect(() => {
       selectedMemberId: selectedExistingMember?.id,
       lastName, firstName, middleInitials, suffix, email, phone, gender, birthday, address,
       emergencyName, relationship, emergencyPhone, parentName, parentRelationship, parentPhone, parentEmail,
-      applicantSig, parentSig, waiverAgreed,
+      sameAsParent, applicantSig, parentSig, waiverAgreed,
       savedAt: Date.now()
     };
 
@@ -656,7 +657,7 @@ useEffect(() => {
     isOpen, isSubmitting, intakeMode, prefillData, prefillMember, enrollmentType, selectedExistingMember,
     lastName, firstName, middleInitials, suffix, email, phone, gender, birthday, address,
     emergencyName, relationship, emergencyPhone, parentName, parentRelationship, parentPhone, parentEmail,
-    applicantSig, parentSig, waiverAgreed
+    sameAsParent, applicantSig, parentSig, waiverAgreed
   ]);
 
   const handleClearDraft = () => {
@@ -679,6 +680,7 @@ useEffect(() => {
     setParentRelationship('Father');
     setParentPhone('');
     setParentEmail('');
+    setSameAsParent(true);
     setApplicantSig(null);
     setParentSig(null);
     setWaiverAgreed(false);
@@ -726,6 +728,15 @@ useEffect(() => {
   const isRestrictedUnder12 = useMemo(() => !!birthday && calculatedAge < 12, [birthday, calculatedAge]);
   const isMinor = useMemo(() => !!birthday && calculatedAge >= 12 && calculatedAge < 18, [birthday, calculatedAge]);
 
+  // Auto-sync parent fields to emergency contact for minors when sameAsParent is enabled
+  useEffect(() => {
+    if (isMinor && sameAsParent) {
+      if (parentName) setEmergencyName(parentName);
+      if (parentPhone) setEmergencyPhone(parentPhone);
+      if (parentRelationship) setRelationship(parentRelationship);
+    }
+  }, [isMinor, sameAsParent, parentName, parentPhone, parentRelationship]);
+
   const isGcashValid = useMemo(() => {
     const clean = gcashReference.trim();
     return clean.length >= 10 && /^\d+$/.test(clean);
@@ -740,7 +751,6 @@ useEffect(() => {
     }
   };
 
-  // Helper to determine subscription/suspension details for any member
   const getMemberSubscriptionMeta = useCallback((m: Member) => {
     const now = Date.now();
     const activeSub = allSubscriptions.find((s: Subscription) => {
@@ -884,7 +894,7 @@ useEffect(() => {
     };
   }, [importedQueueReg, prefillData, selectedExistingMember, prefillMember, phoneMatchMember, getMemberSubscriptionMeta]);
 
-  // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY (WITH 30-DAY EXTENSION QUEUE LOGIC)
+  // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY
   const membershipStatusSummary = useMemo(() => {
     if (selectedPlan === 'No Subscription') {
       return {
@@ -985,9 +995,7 @@ useEffect(() => {
     if (isOpen) {
       const startingStep = initialStep !== undefined ? initialStep : (prefillData ? 2 : 1);
       setStep(startingStep);
-      setShowClientDetails(true);
       setShowStatusDetails(false);
-      setShowSignaturesInAudit(false);
       setErrors({});
       setMemberSearchQuery('');
       lastScannedIdRef.current = '';
@@ -1024,7 +1032,7 @@ useEffect(() => {
           scannerRef.current.clear();
         }
       } catch (e) {
-        // Ignore cleanup
+        // Cleanup ignore
       }
     }
 
@@ -1153,13 +1161,11 @@ useEffect(() => {
   }, [isOpen, isScanning, step, intakeMode, selectedCameraId, cameras]);
 
   const validateStep1 = () => {
-    // If Existing Member mode is active and no member has been selected, block progression
     if (enrollmentType === 'existing' && !selectedExistingMember) {
       toast.error('Please search and select an existing member profile first.');
       return false;
     }
 
-    // Check if the selected member is blocked due to subscription rules or suspension
     if (selectedExistingMember) {
       const meta = getMemberSubscriptionMeta(selectedExistingMember);
       if (meta.isSuspended) {
@@ -1184,16 +1190,16 @@ useEffect(() => {
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
 
     if (isMinor) {
-      if (!parentName.trim()) newErrors.parentName = 'Parent / Guardian full name is required for minors.';
-      if (!parentRelationship.trim()) newErrors.parentRelationship = 'Parent relationship is required.';
+      if (!parentName.trim()) newErrors.parentName = 'Parent / Legal Guardian name is required for minors.';
+      if (!parentRelationship.trim()) newErrors.parentRelationship = 'Relationship to minor is required.';
       if (!parentPhone.trim()) newErrors.parentPhone = 'Parent contact phone is required.';
       if (!applicantSig) newErrors.applicantSig = 'Applicant digital signature is required.';
       if (!parentSig) newErrors.parentSig = 'Parent / Guardian digital signature is required.';
-      if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required for minors.';
-      if (!relationship.trim() || relationship.includes('Select Relationship')) {
-        newErrors.relationship = 'Relationship is required for minors.';
+
+      if (!sameAsParent) {
+        if (!emergencyName.trim()) newErrors.emergencyName = 'Emergency contact name is required.';
+        if (!emergencyPhone.trim()) newErrors.emergencyPhone = 'Emergency phone is required.';
       }
-      if (!emergencyPhone.trim()) newErrors.emergencyPhone = 'Emergency phone is required for minors.';
     }
 
     if (!waiverAgreed) {
@@ -1294,6 +1300,10 @@ useEffect(() => {
       const existingByPhone = phone.trim() ? allMembers.find((m: Member) => m.phone === phone.trim()) : null;
       const activeMemberToUse = prefillMember || selectedExistingMember || existingMemberMatch || existingByPhone;
 
+      const finalEmergencyName = isMinor && sameAsParent ? parentName.trim() : emergencyName.trim();
+      const finalRelationship = isMinor && sameAsParent ? parentRelationship.trim() : relationship.trim();
+      const finalEmergencyPhone = isMinor && sameAsParent ? parentPhone.trim() : emergencyPhone.trim();
+
       const memberFields = {
         full_name: combinedName,
         email: email.trim(),
@@ -1301,9 +1311,9 @@ useEffect(() => {
         gender,
         birthday,
         address: address.trim(),
-        emergency_contact_name: emergencyName.trim(),
-        relationship: relationship.trim(),
-        emergency_contact_phone: emergencyPhone.trim(),
+        emergency_contact_name: finalEmergencyName,
+        relationship: finalRelationship,
+        emergency_contact_phone: finalEmergencyPhone,
         parent_name: isMinor ? parentName.trim() : null,
         parent_relationship: isMinor ? parentRelationship.trim() : null,
         parent_phone: isMinor ? parentPhone.trim() : null,
@@ -1388,13 +1398,12 @@ useEffect(() => {
   const isPlanLocked = intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
   const isConfirmDisabled = (paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && !isGcashValid) || (selectedPlan !== 'No Subscription' && !subscriptionAgreement) || isRestrictedUnder12 || membershipStatusSummary.isBlocked;
 
-  // Determine whether to show the detailed personal form
   const shouldShowDetailsForm = enrollmentType === 'new' || Boolean(selectedExistingMember) || Boolean(prefillMember) || Boolean(prefillData);
 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-2000 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
       <form 
         onSubmit={handleFormSubmit} 
         className={`relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col transition-all duration-300 ${
@@ -1519,24 +1528,23 @@ useEffect(() => {
                     </div>
                   </div>
 
-                  {/* CAMERA SWITCHER CONTROLS */}
-{cameras.length > 1 && (
-  <div className="flex items-center justify-center pt-2">
-    <button
-      type="button"
-      onClick={() => {
-        const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
-        const nextIndex = (currentIndex + 1) % cameras.length;
-        forceStopCamera();
-        setSelectedCameraId(cameras[nextIndex].id);
-      }}
-      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
-    >
-      <SwitchCamera className="w-4 h-4" />
-      <span>Switch Camera</span>
-    </button>
-  </div>
-)}
+                  {cameras.length > 1 && (
+                    <div className="flex items-center justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+                          const nextIndex = (currentIndex + 1) % cameras.length;
+                          forceStopCamera();
+                          setSelectedCameraId(cameras[nextIndex].id);
+                        }}
+                        className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                        <span>Switch Camera</span>
+                      </button>
+                    </div>
+                  )}
 
                   <p className="text-[10px] text-slate-600 dark:text-slate-400 text-center font-semibold animate-pulse leading-none">
                     Position the lobby QR badge within camera frame
@@ -1550,7 +1558,6 @@ useEffect(() => {
           {step === 1 && intakeMode === 'Manual' && (
             <div className="space-y-4 text-left font-semibold animate-fade-in">
               
-              {/* ── 2 BIG ENROLLMENT MODE BUTTONS ── */}
               {!prefillMember && !prefillData && (
                 <div className="space-y-2 select-none">
                   <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
@@ -1558,7 +1565,6 @@ useEffect(() => {
                   </span>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* OPTION 1: SELECT EXISTING MEMBER */}
                     <div
                       onClick={handleChooseExistingMember}
                       className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
@@ -1584,7 +1590,6 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    {/* OPTION 2: CREATE NEW MEMBER */}
                     <div
                       onClick={handleChooseCreateNewMember}
                       className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
@@ -1613,7 +1618,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* SEARCH BAR (ONLY VISIBLE WHEN "SELECT EXISTING MEMBER" IS CHOSEN) */}
               {enrollmentType === 'existing' && !selectedExistingMember && !prefillData && (
                 <div className="space-y-2 select-none relative animate-fade-in">
                   <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
@@ -1640,7 +1644,6 @@ useEffect(() => {
                     )}
                   </div>
 
-                  {/* AUTOCOMPLETE SUGGESTIONS LIST WITH SUBSCRIPTION / SUSPENSION STATUS BADGES */}
                   {memberSearchQuery.trim().length > 0 && (
                     <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-56 overflow-y-auto space-y-1 z-30 relative">
                       {matchingSearchMembers.length > 0 ? (
@@ -1726,7 +1729,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* ATTACHED EXISTING MEMBER BANNER */}
               {selectedExistingMember && (
                 <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl text-blue-900 dark:text-blue-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs animate-fade-in">
                   <div className="flex items-center gap-2">
@@ -1752,11 +1754,10 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* APPLICANT STATUS CARD & DETAILS FORM (ONLY SHOWN ONCE A MEMBER IS SELECTED OR IN "CREATE NEW" MODE) */}
               {shouldShowDetailsForm && (
                 <div className="space-y-4 animate-fade-in pt-1">
                   
-                  {/* STATUS SUMMARY BANNER */}
+                  {/* Status Banner */}
                   <div className={`p-3.5 rounded-2xl border transition-all flex flex-col gap-2 ${
                     applicantStatusSummary.level === 'red'
                       ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300'
@@ -1824,7 +1825,7 @@ useEffect(() => {
                     )}
                   </div>
 
-                  {/* INPUT FIELDS GRID */}
+                  {/* Input Fields Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
                     <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 select-none">
                       <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Personal Details</span>
@@ -2039,132 +2040,279 @@ useEffect(() => {
                       />
                     </div>
 
-                    {/* Emergency Contacts */}
-                    <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                        Emergency Contact {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional for 18+)</span>}
-                      </span>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                      </label>
-                      <input 
-                        type="text" 
-                        value={emergencyName} 
-                        disabled={isEmergencyNameLocked}
-                        onChange={e => {
-                          setEmergencyName(e.target.value);
-                          if (errors.emergencyName) setErrors(prev => ({ ...prev, emergencyName: '' }));
-                        }} 
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          (isMinor && isMissing(emergencyName)) || errors.emergencyName 
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                            : isEmergencyNameLocked
-                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`} 
-                        placeholder={isMinor ? 'Parent, guardian, or emergency contact full name *' : 'Contact person’s full name (optional)'} 
-                      />
-                      {errors.emergencyName && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyName}</span>}
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                      </label>
-                      <select 
-                        value={relationship} 
-                        disabled={isRelationshipLocked}
-                        onChange={e => {
-                          setRelationship(e.target.value);
-                          if (errors.relationship) setErrors(prev => ({ ...prev, relationship: '' }));
-                        }} 
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none font-medium transition-colors ${
-                          errors.relationship 
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 cursor-pointer' 
-                            : isRelationshipLocked
-                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
-                        }`}
-                      >
-                        <option value="">Select Relationship {isMinor ? '*' : '(optional)'}</option>
-                        <optgroup label="Immediate Family">
-                          <option value="Mother">Mother</option>
-                          <option value="Father">Father</option>
-                          <option value="Spouse / Partner">Spouse / Partner</option>
-                          <option value="Brother">Brother</option>
-                          <option value="Sister">Sister</option>
-                        </optgroup>
-                        <optgroup label="Guardian & Other">
-                          <option value="Legal Guardian">Legal Guardian</option>
-                          <option value="Friend / Colleague">Friend / Colleague</option>
-                          <option value="Other">Other</option>
-                        </optgroup>
-                      </select>
-                      {errors.relationship && <span className="text-[9px] text-red-500 font-bold block">{errors.relationship}</span>}
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Emergency Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
-                      </label>
-                      <input 
-                        type="text" 
-                        value={emergencyPhone} 
-                        disabled={isEmergencyPhoneLocked}
-                        onChange={e => {
-                          setEmergencyPhone(e.target.value.replace(/\D/g, ''));
-                          if (errors.emergencyPhone) setErrors(prev => ({ ...prev, emergencyPhone: '' }));
-                        }}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          (isMinor && isMissing(emergencyPhone)) || errors.emergencyPhone 
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400' 
-                            : isEmergencyPhoneLocked
-                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`} 
-                        placeholder={isMinor ? 'Emergency contact number *' : '0918XXXXXXX (optional)'} 
-                      />
-                      {errors.emergencyPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.emergencyPhone}</span>}
-                    </div>
-
-                    {/* Minor Signatures if Age 12-17 */}
-                    {isMinor && (
-                      <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-3">
-                        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200">
-                          <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider">Required Minor Consent</p>
-                            <p className="text-[10px] leading-relaxed mt-0.5">Both applicant and parent/guardian must sign before registration can proceed.</p>
-                          </div>
+                    {/* ─── 1. ADULT SECTION (18+) ─── */}
+                    {!isMinor && (
+                      <>
+                        <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                            Emergency Contact <span className="text-slate-400 font-normal">(optional for 18+)</span>
+                          </span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <SignaturePad label="Applicant Signature *" value={applicantSig} onChange={setApplicantSig} error={errors.applicantSig} />
-                          <SignaturePad label="Parent / Guardian Signature *" value={parentSig} onChange={setParentSig} error={errors.parentSig} />
+
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Emergency Contact Name <span className="text-slate-400 font-normal">(optional)</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            value={emergencyName} 
+                            disabled={isEmergencyNameLocked}
+                            onChange={e => setEmergencyName(e.target.value)} 
+                            className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                            placeholder="Contact person's full name" 
+                          />
                         </div>
-                      </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Relationship <span className="text-slate-400 font-normal">(optional)</span>
+                          </label>
+                          <select 
+                            value={relationship} 
+                            disabled={isRelationshipLocked}
+                            onChange={e => setRelationship(e.target.value)} 
+                            className="w-full p-2.5 rounded-xl text-xs outline-none font-medium border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer"
+                          >
+                            <option value="">Select Relationship (optional)</option>
+                            <option value="Mother">Mother</option>
+                            <option value="Father">Father</option>
+                            <option value="Spouse / Partner">Spouse / Partner</option>
+                            <option value="Brother">Brother</option>
+                            <option value="Sister">Sister</option>
+                            <option value="Friend">Friend</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Emergency Phone <span className="text-slate-400 font-normal">(optional)</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            maxLength={11}
+                            value={emergencyPhone} 
+                            disabled={isEmergencyPhoneLocked}
+                            onChange={e => setEmergencyPhone(e.target.value.replace(/\D/g, ''))}
+                            className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white" 
+                            placeholder="0918XXXXXXX" 
+                          />
+                        </div>
+                      </>
                     )}
 
-                    {/* Waiver Agreement Checkbox */}
-                    <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={waiverAgreed} 
-                          onChange={e => {
-                            setWaiverAgreed(e.target.checked);
-                            if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
-                          }} 
-                          className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
-                        />
-                        <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
-                          I certify that the information is accurate and that the member agrees to the <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>. *
-                        </span>
-                      </label>
-                      {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
-                    </div>
+                    {/* ─── 2. MINOR SECTION (12–17 YRS) ─── */}
+                    {isMinor && (
+                      <>
+                        <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                            Parent / Legal Guardian Details <span className="text-red-500">*</span>
+                          </span>
+                        </div>
+
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Parent / Legal Guardian Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={parentName}
+                            onChange={(e) => {
+                              setParentName(e.target.value);
+                              if (sameAsParent) setEmergencyName(e.target.value);
+                              if (errors.parentName) setErrors(prev => ({ ...prev, parentName: '' }));
+                            }}
+                            className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                              errors.parentName
+                                ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
+                                : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                            }`}
+                            placeholder="Parent or legal guardian's full name"
+                          />
+                          {errors.parentName && <span className="text-[9px] text-red-500 font-bold block">{errors.parentName}</span>}
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Relationship to Minor <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={parentRelationship}
+                            onChange={(e) => {
+                              setParentRelationship(e.target.value);
+                              if (sameAsParent) setRelationship(e.target.value);
+                              if (errors.parentRelationship) setErrors(prev => ({ ...prev, parentRelationship: '' }));
+                            }}
+                            className="w-full p-2.5 rounded-xl text-xs outline-none font-medium border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer"
+                          >
+                            <option value="Father">Father</option>
+                            <option value="Mother">Mother</option>
+                            <option value="Legal Guardian">Legal Guardian</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          {errors.parentRelationship && <span className="text-[9px] text-red-500 font-bold block">{errors.parentRelationship}</span>}
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                            Parent Phone Number <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={11}
+                            value={parentPhone}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setParentPhone(val);
+                              if (sameAsParent) setEmergencyPhone(val);
+                              if (errors.parentPhone) setErrors(prev => ({ ...prev, parentPhone: '' }));
+                            }}
+                            className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                              errors.parentPhone
+                                ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
+                                : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                            }`}
+                            placeholder="0918XXXXXXX"
+                          />
+                          {errors.parentPhone && <span className="text-[9px] text-red-500 font-bold block">{errors.parentPhone}</span>}
+                        </div>
+
+                        <div className="md:col-span-2 p-2.5 bg-slate-100 dark:bg-zinc-800/60 rounded-xl border border-slate-200 dark:border-zinc-700 flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
+                            <input
+                              type="checkbox"
+                              checked={sameAsParent}
+                              onChange={(e) => {
+                                setSameAsParent(e.target.checked);
+                                if (e.target.checked) {
+                                  setEmergencyName(parentName);
+                                  setRelationship(parentRelationship);
+                                  setEmergencyPhone(parentPhone);
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 accent-blue-600 cursor-pointer"
+                            />
+                            <span>Use Parent / Legal Guardian as Primary Emergency Contact</span>
+                          </label>
+                        </div>
+
+                        {!sameAsParent && (
+                          <>
+                            <div className="md:col-span-2 space-y-1">
+                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                                Alternate Emergency Contact Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={emergencyName}
+                                onChange={(e) => setEmergencyName(e.target.value)}
+                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                                placeholder="Alternate contact name"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                                Relationship <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={relationship}
+                                onChange={(e) => setRelationship(e.target.value)}
+                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                                placeholder="e.g. Aunt, Grandparent"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                                Emergency Phone <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                maxLength={11}
+                                value={emergencyPhone}
+                                onChange={(e) => setEmergencyPhone(e.target.value.replace(/\D/g, ''))}
+                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                                placeholder="0918XXXXXXX"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {/* Minor Signatures */}
+                        <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-3">
+                          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200">
+                            <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider">Required Minor Consent</p>
+                              <p className="text-[10px] leading-relaxed mt-0.5">
+                                Both applicant and parent/guardian must sign before registration can proceed.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <SignaturePad
+                              label="Applicant Signature *"
+                              value={applicantSig}
+                              onChange={(sig) => {
+                                setApplicantSig(sig);
+                                if (errors.applicantSig) setErrors(prev => ({ ...prev, applicantSig: '' }));
+                              }}
+                              error={errors.applicantSig}
+                            />
+                            <SignaturePad
+                              label="Parent / Guardian Signature *"
+                              value={parentSig}
+                              onChange={(sig) => {
+                                setParentSig(sig);
+                                if (errors.parentSig) setErrors(prev => ({ ...prev, parentSig: '' }));
+                              }}
+                              error={errors.parentSig}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Waiver & Guardian Responsibility Checkbox */}
+<div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
+  <label className="flex items-start gap-2.5 cursor-pointer">
+    <input 
+      type="checkbox" 
+      checked={waiverAgreed} 
+      onChange={e => {
+        setWaiverAgreed(e.target.checked);
+        if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
+      }} 
+      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
+    />
+    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
+      {isMinor ? (
+        <>
+          I certify that I am the lawful parent/legal guardian, all information is true and correct, and I voluntarily grant permission for this minor to enroll and use the facility, accepting full responsibility for their safety, compliance, and conduct under the{' '}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+            Terms &amp; Conditions
+          </button>{' '}
+          and{' '}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+            Privacy Policy
+          </button>. *
+        </>
+      ) : (
+        <>
+          I certify that all information provided is accurate and that the member agrees to abide by the{' '}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+            Terms &amp; Conditions
+          </button>{' '}
+          and{' '}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+            Privacy Policy
+          </button>. *
+        </>
+      )}
+    </span>
+  </label>
+  {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
+</div>
                   </div>
 
                 </div>
@@ -2207,7 +2355,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* MEMBERSHIP PLAN OPTIONS */}
+              {/* Membership Plan Options */}
               <div className="space-y-1.5">
                 <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">Select Membership Option</span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2255,28 +2403,41 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* PAYMENT METHOD */}
-              {selectedPlan !== 'No Subscription' && (
-                <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
-                  <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">Select Payment Gateway</span>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div 
-                      onClick={() => setPaymentMethod('Cash')} 
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'Cash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400'}`}
-                    >
-                      <span className="text-sm">💰</span>
-                      <span className="text-xs font-bold uppercase">Cash</span>
-                    </div>
-                    <div 
-                      onClick={() => setPaymentMethod('GCash')} 
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${paymentMethod === 'GCash' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold' : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400'}`}
-                    >
-                      <span className="text-sm">📱</span>
-                      <span className="text-xs font-bold uppercase">GCash</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+{/* PAYMENT METHOD GATEWAY */}
+{selectedPlan !== 'No Subscription' && (
+  <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
+    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">
+      Select Payment Gateway
+    </span>
+    <div className="grid grid-cols-2 gap-3">
+      {/* Cash Option */}
+      <div 
+        onClick={() => setPaymentMethod('Cash')} 
+        className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+          paymentMethod === 'Cash' 
+            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
+            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+        }`}
+      >
+        <span className="text-sm">💰</span>
+        <span className="text-xs font-bold uppercase">Cash</span>
+      </div>
+
+      {/* GCash Option */}
+      <div 
+        onClick={() => setPaymentMethod('GCash')} 
+        className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+          paymentMethod === 'GCash' 
+            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
+            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+        }`}
+      >
+        <span className="text-sm">📱</span>
+        <span className="text-xs font-bold uppercase">GCash</span>
+      </div>
+    </div>
+  </div>
+)}
 
               {/* GCash Reference */}
               {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
@@ -2300,8 +2461,8 @@ useEffect(() => {
               {/* Printed ID Option */}
               <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between select-none font-semibold">
                 <div>
-                  <span className="font-bold text-slate-900 dark:text-slate-200 block">Issue Printed Laminated Card</span>
-                  <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">Laminated QR membership card for check-in.</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-200 block">Add Membership Card for Entry (3 Years Expiry)</span>
+                  <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">A membership card for check-in.</span>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input 
@@ -2337,22 +2498,6 @@ useEffect(() => {
                   <span className="text-emerald-600 dark:text-emerald-400 text-base">₱{totalPrice.toLocaleString()}.00</span>
                 </div>
               </div>
-
-              {selectedPlan !== 'No Subscription' && (
-                <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={subscriptionAgreement} 
-                      onChange={(e) => setSubscriptionAgreement(e.target.checked)} 
-                      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-emerald-600 accent-emerald-600 cursor-pointer shrink-0" 
-                    />
-                    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      I confirm that the member has reviewed and agrees to the <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>.
-                    </span>
-                  </label>
-                </div>
-              )}
             </div>
           )}
 
