@@ -8,14 +8,11 @@ import {
   X, 
   ShoppingCart, 
   QrCode, 
-  RefreshCw, 
   Camera as CameraIcon, 
   SwitchCamera 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
@@ -34,6 +31,15 @@ interface CartItem {
   quantity: number;
 }
 
+const getCameraErrorMessage = (err: any): string => {
+  const msg = typeof err === 'string' ? err : err?.message || String(err || '');
+  const lower = msg.toLowerCase();
+  if (lower.includes('notallowederror') || lower.includes('permission')) return 'Permission denied by browser';
+  if (lower.includes('notreadableerror') || lower.includes('in use')) return 'Camera is busy or in use';
+  if (lower.includes('notfounderror')) return 'Camera hardware not found';
+  return msg || 'Camera initialization failed';
+};
+
 export const SalesDialog: React.FC<SalesDialogProps> = ({
   isOpen,
   onClose,
@@ -51,26 +57,50 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-  const [isScanningLoading, setIsScanningLoading] = useState(false);
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  // Synchronous ref to instantly block spam clicks
   const isSubmittingRef = useRef(false);
 
   const playBeepSound = () => {
-  try {
-    const audio = new Audio(beepSoundUrl);
-    audio.currentTime = 0;
-    audio.play().catch((err) => {
-      console.warn('Audio playback prevented or failed:', err);
-    });
-  } catch (err) {
-    console.warn('Audio creation error:', err);
-  }
-};
+    try {
+      const audio = new Audio(beepSoundUrl);
+      audio.currentTime = 0;
+      audio.play().catch((err) => {
+        console.warn('Audio playback prevented or failed:', err);
+      });
+    } catch (err) {
+      console.warn('Audio creation error:', err);
+    }
+  };
 
-  // Fetch rates configurations from database
+  const stopAllCameraTracks = () => {
+    if (scannerRef.current) {
+      if (scannerRef.current.isScanning) {
+        scannerRef.current.stop().then(() => {
+          try { scannerRef.current?.clear(); } catch (e) {}
+        }).catch(() => {});
+      } else {
+        try { scannerRef.current.clear(); } catch (e) {}
+      }
+      scannerRef.current = null;
+    }
+
+    const videoElements = document.querySelectorAll('video');
+    videoElements.forEach((video) => {
+      if (video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => {
+          track.stop();
+          track.enabled = false;
+        });
+        video.srcObject = null;
+      }
+    });
+  };
+
+  // Fetch rates configurations
   useEffect(() => {
     const fetchRatesConfig = async () => {
       try {
@@ -91,45 +121,59 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
   }, [isOpen]);
 
-  // Schema-independent helper attributes
   const getProductName = (p: any) => p.product_name || p.name || 'Unnamed Product';
   const getProductPrice = (p: any) => Number(p.selling_price || p.sellingPrice || 0);
   const getProductStock = (p: any) => p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 0);
   const getProductBarcode = (p: any) => p.barcode_id || p.barcode || 'N/A';
   const hasStockLimit = (p: any) => p.has_stock_limit === true || p.hasStockLimit === true;
 
-  // Reset submit references & states when modal opens or closes
   useEffect(() => {
     if (isOpen) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       setShowLiveScanner(false);
       setSearchTerm('');
+    } else {
+      stopAllCameraTracks();
     }
   }, [isOpen]);
 
-  // Fetch available camera devices when live scanner becomes active
-  useEffect(() => {
-    if (showLiveScanner) {
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            if (!selectedCameraId) {
-              setSelectedCameraId(devices[0].id);
-            }
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not list cameras:', err);
-        });
-    }
-  }, [showLiveScanner]);
+ // Fetch camera list and default to back/rear camera when scanner becomes active
+useEffect(() => {
+  if (showLiveScanner) {
+    Html5Qrcode.getCameras()
+      .then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
 
+          // Find back/rear camera by label keywords
+          const backCam = devices.find((d) => {
+            const label = d.label.toLowerCase();
+            return (
+              label.includes('back') ||
+              label.includes('rear') ||
+              label.includes('environment') ||
+              label.includes('facing back')
+            );
+          });
+
+          // Default to back camera if found, otherwise fallback to first available
+          const defaultCameraId = backCam ? backCam.id : devices[0].id;
+          setSelectedCameraId(defaultCameraId);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not list cameras:', err);
+      });
+  } else {
+    stopAllCameraTracks();
+  }
+}, [showLiveScanner]);
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
     const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
     const nextIndex = (currentIndex + 1) % cameras.length;
+    stopAllCameraTracks();
     setSelectedCameraId(cameras[nextIndex].id);
   };
 
@@ -139,7 +183,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
     setSearchTerm(trimmed);
 
-    // Exact product match lookup
     const exactMatch = products.find((p: any) => {
       if (p.hidden) return false;
       const bc = (p.barcode_id || p.barcode || '').toLowerCase();
@@ -154,149 +197,87 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
   };
 
-  // Live Camera Scanner lifecycle effect
+  // Live Camera Scanner lifecycle
   useEffect(() => {
-  let html5QrCode: Html5Qrcode | null = null;
-
-  if (showLiveScanner) {
-    const element = document.getElementById('sales-qr-reader');
-    if (element) {
-      html5QrCode = new Html5Qrcode('sales-qr-reader', {
-        verbose: false,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.UPC_A
-        ],
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true
-        }
-      });
-
-      const cameraConfig = selectedCameraId
-        ? { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
-
-      html5QrCode
-        .start(
-          cameraConfig,
-          {
-            fps: 15,
-            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-              const width = Math.floor(viewfinderWidth * 0.90);
-              const height = Math.floor(viewfinderHeight * 0.65);
-              return { width: Math.max(width, 240), height: Math.max(height, 120) };
-            }
-          },
-          (decodedText) => {
-            handleBarcodeScanned(decodedText);
-            setShowLiveScanner(false);
-          },
-          () => {}
-        )
-        .catch((err) => {
-          console.error('Live camera start failed:', err);
-          setShowLiveScanner(false);
-        });
-    }
-  }
-
-  return () => {
-    if (html5QrCode) {
-      if (html5QrCode.isScanning) {
-        html5QrCode
-          .stop()
-          .then(() => {
-            try { html5QrCode?.clear(); } catch (e) {}
-          })
-          .catch(console.error);
-      } else {
-        try { html5QrCode.clear(); } catch (e) {}
-      }
-    }
-  };
-}, [showLiveScanner, selectedCameraId]);
-
-  const requestCameraPermission = async (): Promise<boolean> => {
-    try {
-      const status = await CapacitorCamera.checkPermissions();
-      if (status.camera !== 'granted') {
-        const requestRes = await CapacitorCamera.requestPermissions({ permissions: ['camera'] });
-        if (requestRes.camera !== 'granted') {
-          toast.error('Camera permission was denied.');
-          return false;
-        }
-      }
-      return true;
-    } catch (err) {
-      console.warn('Permission request failed:', err);
-      return true;
-    }
-  };
-
-  const scanImageFile = async (file: File) => {
     let html5QrCode: Html5Qrcode | null = null;
-    try {
-      html5QrCode = new Html5Qrcode('sales-qr-reader-hidden');
-      const decodedText = await html5QrCode.scanFile(file, false);
-      if (decodedText) {
-        handleBarcodeScanned(decodedText);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Scan file failed:', err);
-      toast.error('No valid barcode or QR code detected in image.');
-    } finally {
-      if (html5QrCode) {
-        try { html5QrCode.clear(); } catch (e) {}
-      }
+    let isCancelled = false;
+
+    if (showLiveScanner) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById('sales-qr-reader');
+        if (!element || isCancelled) return;
+
+        try {
+          html5QrCode = new Html5Qrcode('sales-qr-reader', {
+            verbose: false,
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.QR_CODE,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.UPC_A
+            ],
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
+            }
+          });
+          scannerRef.current = html5QrCode;
+
+          const cameraConfig = selectedCameraId
+            ? { deviceId: { exact: selectedCameraId } }
+            : { facingMode: 'environment' };
+
+          html5QrCode
+            .start(
+              cameraConfig,
+              {
+                fps: 20,
+                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                  const width = Math.floor(viewfinderWidth * 0.90);
+                  const height = Math.floor(viewfinderHeight * 0.65);
+                  return { width: Math.max(width, 240), height: Math.max(height, 120) };
+                }
+              },
+              (decodedText) => {
+                handleBarcodeScanned(decodedText);
+                setShowLiveScanner(false);
+                stopAllCameraTracks();
+              },
+              () => {}
+            )
+            .catch((err) => {
+              if (!isCancelled) {
+                const reason = getCameraErrorMessage(err);
+                if (cameras.length > 1) {
+                  const currentIndex = selectedCameraId ? cameras.findIndex(c => c.id === selectedCameraId) : -1;
+                  const nextCamera = cameras[(currentIndex + 1) % cameras.length];
+                  stopAllCameraTracks();
+                  setSelectedCameraId(nextCamera.id);
+                  toast.info(`Switching camera: ${nextCamera.label || 'Next Camera'}`);
+                } else {
+                  toast.error(`Camera Error: ${reason}`);
+                  setShowLiveScanner(false);
+                  stopAllCameraTracks();
+                }
+              }
+            });
+        } catch (e) {
+          console.error("Sales scanner init error:", e);
+        }
+      }, 250);
+
+      return () => {
+        isCancelled = true;
+        clearTimeout(timer);
+        stopAllCameraTracks();
+      };
     }
-    return false;
+  }, [showLiveScanner, selectedCameraId]);
+
+  const handleStartScan = () => {
+    setShowLiveScanner((prev) => !prev);
   };
 
-  const handleCapacitorCameraScan = async () => {
-    setIsScanningLoading(true);
-    try {
-      const photo = await CapacitorCamera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.Uri,
-        source: CameraSource.Camera
-      });
-
-      if (photo && photo.webPath) {
-        const response = await fetch(photo.webPath);
-        const blob = await response.blob();
-        const file = new File([blob], 'scanned_barcode.jpg', { type: blob.type || 'image/jpeg' });
-        await scanImageFile(file);
-      }
-    } catch (error: any) {
-      if (
-        error?.message !== 'User cancelled photos app' && 
-        error?.message !== 'User cancelled photo'
-      ) {
-        console.warn('Capacitor camera error:', error);
-        setShowLiveScanner(true);
-      }
-    } finally {
-      setIsScanningLoading(false);
-    }
-  };
-
-  const handleStartScan = async () => {
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) return;
-
-    if (Capacitor.isNativePlatform()) {
-      await handleCapacitorCameraScan();
-    } else {
-      setShowLiveScanner((prev) => !prev);
-    }
-  };
-
-  // Product instant lookup
   const filteredProducts = useMemo(() => {
     if (!searchTerm.trim()) return [];
     const q = searchTerm.toLowerCase();
@@ -309,19 +290,16 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     });
   }, [products, searchTerm]);
 
-  // Compute GCash Convenience Fee based on payment method
   const gcashFee = useMemo(() => {
     if (paymentMethod !== 'GCash') return 0;
     return ratesConfig?.gcash_fee !== undefined ? Number(ratesConfig.gcash_fee) : 10.00;
   }, [paymentMethod, ratesConfig]);
 
-  // Compute total payable amount (includes GCash fee if applicable)
   const totalPayable = useMemo(() => {
     const cartTotal = cart.reduce((sum, item) => sum + (getProductPrice(item.product) * item.quantity), 0);
     return cartTotal + gcashFee;
   }, [cart, gcashFee]);
 
-  // AUTOMATIC CASH RECEIVED: Prefills exact total cost to speed up transactions
   useEffect(() => {
     if (paymentMethod === 'Cash') {
       setAmountReceived(totalPayable > 0 ? totalPayable.toString() : '');
@@ -371,9 +349,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   };
 
   const handleCompleteSale = async () => {
-    if (isSubmittingRef.current || isSuccess) {
-      return;
-    }
+    if (isSubmittingRef.current || isSuccess) return;
 
     if (cart.length === 0) {
       toast.error('Your shopping cart is empty.');
@@ -397,7 +373,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     setIsSubmitting(true); 
 
     try {
-      // Process Stock Update for each cart item
       const updatedProducts = products.map((p: any) => {
         const cartItem = cart.find(item => item.product.id === p.id);
         if (cartItem) {
@@ -405,11 +380,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
           const limitActive = hasStockLimit(p);
           if (limitActive) {
             const newStock = Math.max(0, stock - cartItem.quantity);
-            if (p.stock_quantity !== undefined) {
-              return { ...p, stock_quantity: newStock };
-            } else {
-              return { ...p, stock: newStock };
-            }
+            return p.stock_quantity !== undefined 
+              ? { ...p, stock_quantity: newStock } 
+              : { ...p, stock: newStock };
           }
         }
         return p;
@@ -436,11 +409,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         date: format(now, 'yyyy-MM-dd'),
       };
 
-      // Await database insertion FIRST before displaying success modal
       await onSaleSuccess(newTx, updatedProducts);
 
-      // Only display success modal if insertion succeeded
       setIsSuccess(true);
+      stopAllCameraTracks();
 
       setTimeout(() => {
         setIsSuccess(false);
@@ -455,7 +427,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
     } catch (err: any) {
       console.error('Sale execution error:', err);
-      // Reset submit state on error so user can retry
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
@@ -464,17 +435,21 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   return createPortal(
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        stopAllCameraTracks();
+        onClose();
+      }}
       title="RECORD SALE TRANSACTION"
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body relative text-left"
     >
-      <div id="sales-qr-reader-hidden" className="hidden" aria-hidden="true" />
-
       <button
         type="button"
         disabled={isSubmitting}
-        onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
+        onClick={() => {
+          stopAllCameraTracks();
+          onClose();
+        }}
+        className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
         aria-label="Close Dialog"
       >
         <X className="w-5 h-5" />
@@ -503,10 +478,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   disabled={isSubmitting || showLiveScanner}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className={`w-full pl-10 pr-20 py-2.5 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-xs font-bold transition-all uppercase ${
+                  className={`w-full pl-10 pr-20 py-2.5 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-bold transition-all uppercase ${
                     showLiveScanner 
                       ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-900 text-slate-400' 
-                      : 'text-[var(--color-text)] focus:border-blue-500'
+                      : 'text-(--color-text) focus:border-blue-500'
                   }`}
                   autoFocus
                 />
@@ -515,7 +490,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-11 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full text-slate-400 hover:text-[var(--color-text)] transition-colors cursor-pointer"
+                    className="absolute right-11 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer"
                     title="Clear search"
                   >
                     <X className="w-4 h-4" />
@@ -525,7 +500,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 <button
                   type="button"
                   onClick={handleStartScan}
-                  disabled={isScanningLoading || isSubmitting}
+                  disabled={isSubmitting}
                   className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
                     showLiveScanner 
                       ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse' 
@@ -533,11 +508,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   }`}
                   title="Scan Barcode / QR Code"
                 >
-                  {isScanningLoading ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <QrCode className="w-4 h-4" />
-                  )}
+                  <QrCode className="w-4 h-4" />
                 </button>
               </div>
 
@@ -551,7 +522,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setShowLiveScanner(false)}
+                      onClick={() => {
+                        setShowLiveScanner(false);
+                        stopAllCameraTracks();
+                      }}
                       className="text-xs text-slate-400 hover:text-white p-1 rounded cursor-pointer"
                     >
                       <X className="w-4 h-4" />
@@ -571,53 +545,26 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     </div>
                   </div>
 
-                  {/* CAMERA SWITCHER CONTROLS */}
-                  {cameras.length > 0 && (
-                    <div className="flex items-center justify-between gap-2 pt-1 max-w-55 mx-auto">
-                      <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1.5 w-full">
-                        <CameraIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <select
-                          value={selectedCameraId}
-                          onChange={(e) => setSelectedCameraId(e.target.value)}
-                          className="w-full bg-transparent text-[10px] font-bold text-slate-200 outline-none cursor-pointer truncate"
-                        >
-                          {cameras.map((cam, idx) => (
-                            <option key={cam.id} value={cam.id} className="bg-zinc-900 text-white">
-                              {cam.label || `Camera ${idx + 1}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {cameras.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={handleCycleCamera}
-                          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded-xl transition-colors cursor-pointer border border-zinc-700 shrink-0"
-                          title="Switch Camera"
-                        >
-                          <SwitchCamera className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {Capacitor.isNativePlatform() && (
-                    <button
-                      type="button"
-                      onClick={handleCapacitorCameraScan}
-                      className="text-[11px] font-bold text-amber-400 hover:underline uppercase tracking-wider block mx-auto cursor-pointer"
-                    >
-                      Snap Photo with Native Camera
-                    </button>
-                  )}
+                 {/* CAMERA SWITCHER CONTROLS */}
+{cameras.length > 1 && (
+  <div className="flex items-center justify-center pt-2">
+    <button
+      type="button"
+      onClick={handleCycleCamera}
+      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+    >
+      <SwitchCamera className="w-4 h-4" />
+      <span>Switch Camera</span>
+    </button>
+  </div>
+)}
                 </div>
               )}
             </div>
 
             {/* SEARCH RESULTS SUGGESTIONS */}
             {searchTerm && (
-              <div className="max-h-40 overflow-y-auto border border-[var(--border-color)] bg-[var(--bg-input)] rounded-xl divide-y divide-[var(--border-color)] shadow-inner">
+              <div className="max-h-40 overflow-y-auto border border-(--border-color) bg-(--bg-input) rounded-xl divide-y divide-(--border-color) shadow-inner">
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map((p: any) => {
                     const limitActive = hasStockLimit(p);
@@ -636,11 +583,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         }`}
                       >
                         <div>
-                          <div className="text-xs font-bold text-[var(--color-text)] uppercase">{getProductName(p)}</div>
+                          <div className="text-xs font-bold text-(--color-text) uppercase">{getProductName(p)}</div>
                           <div className="text-[9px] text-slate-500 font-mono">Barcode: {getProductBarcode(p)}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs font-heading text-[var(--color-text)] font-bold">₱{getProductPrice(p).toFixed(2)}</div>
+                          <div className="text-xs font-heading text-(--color-text) font-bold">₱{getProductPrice(p).toFixed(2)}</div>
                           <div className="text-[9px] font-sans font-bold">
                             {isOutOfStock ? (
                               <span className="text-red-500 font-black">NO STOCK (0)</span>
@@ -678,11 +625,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                       key={item.product.id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-[var(--border-color)] flex items-center justify-between gap-3 text-xs"
+                      className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color) flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-[var(--color-text)] truncate uppercase">{getProductName(item.product)}</h4>
-                        <span className="text-[10px] text-[var(--color-primary)] font-heading font-bold mt-0.5 block">₱{getProductPrice(item.product).toFixed(2)}</span>
+                        <h4 className="font-bold text-(--color-text) truncate uppercase">{getProductName(item.product)}</h4>
+                        <span className="text-[10px] text-(--color-primary) font-heading font-bold mt-0.5 block">₱{getProductPrice(item.product).toFixed(2)}</span>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
@@ -690,7 +637,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, -1)}
-                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           -
                         </button>
@@ -699,7 +646,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, 1)}
-                          className="w-7 h-7 border border-[var(--border-color)] bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           +
                         </button>
@@ -708,7 +655,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="p-4 border border-dashed border-[var(--border-color)] rounded-xl text-center text-xs text-slate-400">
+                <div className="p-4 border border-dashed border-(--border-color) rounded-xl text-center text-xs text-slate-400">
                   Cart is empty. Search or scan a barcode to add products.
                 </div>
               )}
@@ -716,7 +663,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
             {/* PAYMENT METHOD SELECTOR */}
             {cart.length > 0 && (
-              <div className="space-y-3 border-t border-[var(--border-color)] pt-3">
+              <div className="space-y-3 border-t border-(--border-color) pt-3">
                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
                   Choose Payment Method
                 </div>
@@ -728,7 +675,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     className={`py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'Cash'
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
-                        : 'bg-transparent border-[var(--border-color)] text-slate-500'
+                        : 'bg-transparent border-(--border-color) text-slate-500'
                     }`}
                   >
                     CASH
@@ -740,7 +687,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     className={`py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'GCash'
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
-                        : 'bg-transparent border-[var(--border-color)] text-slate-500'
+                        : 'bg-transparent border-(--border-color) text-slate-500'
                     }`}
                   >
                     GCASH
@@ -758,7 +705,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         disabled={isSubmitting}
                         value={amountReceived}
                         onChange={(e) => setAmountReceived(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--color-text)] font-mono font-bold text-sm"
+                        className="w-full pl-8 pr-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-sm"
                       />
                     </div>
                     
@@ -778,7 +725,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                       disabled={isSubmitting}
                       value={referenceNumber}
                       onChange={(e) => setReferenceNumber(e.target.value)}
-                      className="w-full px-3 py-2 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--color-text)] font-mono font-bold text-xs uppercase"
+                      className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-xs uppercase"
                     />
                     
                     {referenceNumber.trim().length >= 6 && (
@@ -793,14 +740,14 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
             {/* RECEIPT SUMMARY BREAKDOWN */}
             {cart.length > 0 && (
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-[var(--border-color)] space-y-1.5 text-xs font-sans">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-(--border-color) space-y-1.5 text-xs font-sans">
                 <div className="flex justify-between text-slate-500">
                   <span>Unique Items:</span>
-                  <span className="font-bold text-[var(--color-text)]">{cart.length} items</span>
+                  <span className="font-bold text-(--color-text)">{cart.length} items</span>
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Total Units:</span>
-                  <span className="font-bold text-[var(--color-text)]">{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                  <span className="font-bold text-(--color-text)">{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>
                 </div>
                 {paymentMethod === 'GCash' && gcashFee > 0 && (
                   <div className="flex justify-between text-slate-500">
@@ -808,9 +755,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     <span className="text-rose-500 font-bold">+₱{gcashFee.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="border-t border-[var(--border-color)] pt-1.5 flex justify-between font-heading text-sm text-[var(--color-text)]">
+                <div className="border-t border-(--border-color) pt-1.5 flex justify-between font-heading text-sm text-(--color-text)">
                   <span>TOTAL PAYABLE:</span>
-                  <span className="text-[var(--color-primary)] font-extrabold text-base">
+                  <span className="text-(--color-primary) font-extrabold text-base">
                     ₱{totalPayable.toFixed(2)}
                   </span>
                 </div>
@@ -839,7 +786,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
               <Check className="w-8 h-8" />
             </div>
-            <h2 className="font-heading text-lg font-bold tracking-wider text-[var(--color-text)] uppercase">
+            <h2 className="font-heading text-lg font-bold tracking-wider text-(--color-text)] uppercase">
               SALE AUTHORIZED
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs text-center font-body animate-pulse uppercase font-semibold">

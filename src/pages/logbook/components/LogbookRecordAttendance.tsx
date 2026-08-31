@@ -9,8 +9,7 @@ import {
   UserCheck, 
   QrCode, 
   Coins, 
-  CreditCard,
-  RefreshCw,
+  CreditCard, 
   ChevronRight,
   User,
   GraduationCap,
@@ -24,14 +23,13 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
 import { supabase } from '../../../lib/supabase/client';
 import { createPortal } from 'react-dom';
+import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
 // Dynamic Members Engine Integration
 import { memberService, subscriptionService, cardService, settingsService } from '../../members/memberService';
@@ -73,23 +71,65 @@ interface SelectedClient {
   avatarUrl?: string | null;
 }
 
-// Forcefully stop all camera tracks at browser hardware level
-const stopAllCameraTracks = () => {
+const playBeepSound = () => {
   try {
-    const videoElements = document.querySelectorAll('video');
-    videoElements.forEach((video) => {
-      if (video.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        video.srcObject = null;
-      }
+    const audio = new Audio(beepSoundUrl);
+    audio.currentTime = 0;
+    audio.play().catch((err) => {
+      console.warn('Audio playback prevented or failed:', err);
     });
   } catch (err) {
-    console.warn('Error stopping camera tracks:', err);
+    console.warn('Audio creation error:', err);
   }
 };
 
-// Helper to auto-suffix walk-in names when duplicates occur (e.g. JOHN -> JOHN (2))
+const getCameraErrorMessage = (err: any): string => {
+  const msg = typeof err === 'string' ? err : err?.message || String(err || '');
+  const lower = msg.toLowerCase();
+  if (lower.includes('notallowederror') || lower.includes('permission')) return 'Permission denied by browser';
+  if (lower.includes('notreadableerror') || lower.includes('in use')) return 'Camera is busy or in use';
+  if (lower.includes('notfounderror')) return 'Camera hardware not found';
+  return msg || 'Camera initialization failed';
+};
+
+const extractCleanMemberId = (rawCode: string): string => {
+  let cleaned = (rawCode || '').trim();
+
+  // Handle JSON
+  if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(cleaned);
+      cleaned = parsed.memberId || parsed.member_id || parsed.id || parsed.code || parsed.cardNumber || cleaned;
+    } catch (_) {}
+  }
+
+  // Handle URL
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+    try {
+      const url = new URL(cleaned);
+      const queryId = url.searchParams.get('id') || url.searchParams.get('memberId') || url.searchParams.get('token');
+      if (queryId) return queryId.trim();
+      const segments = url.pathname.split('/').filter(Boolean);
+      if (segments.length > 0) return segments[segments.length - 1].trim();
+    } catch (_) {}
+  }
+
+  // Handle Colon Format (e.g. MEM-000015:2029-08-24 or MEMBER:MEM-000015)
+  if (cleaned.includes(':')) {
+    const parts = cleaned.split(':');
+    const memPart = parts.find(p => 
+      p.toUpperCase().startsWith('MEM-') || 
+      p.toUpperCase().startsWith('MEM') || 
+      p.toUpperCase().startsWith('REG-') || 
+      p.toUpperCase().startsWith('REC-')
+    );
+    if (memPart) return memPart.trim();
+    return parts[0].trim();
+  }
+
+  return cleaned;
+};
+
 const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
   const cleanBase = baseName.replace(/\s*\(\d+\)$/, '').trim().toUpperCase();
 
@@ -124,44 +164,57 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>([]);
   const [todayLogs, setTodayLogs] = useState<any[]>([]);
 
-  // Search, View Mode and Suggestions
   const [memberSearch, setMemberSearch] = useState('');
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   
-  // Default filter view
   const [filterMode, setFilterMode] = useState<'non-member' | 'member'>('non-member');
-  
-  // Pre-selection for Walk-In pass type before processing
   const [walkInPassType, setWalkInPassType] = useState<'walkin_regular' | 'walkin_student'>('walkin_regular');
 
-  // Lightbox & Camera
   const [photoModal, setPhotoModal] = useState<{ name: string; memberId?: string; url: string | null } | null>(null);
-  const [isScanningLoading, setIsScanningLoading] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   
-  // Selected entry type
   const [selectedEntry, setSelectedEntry] = useState<'walkin_regular' | 'walkin_student' | 'member_entry' | null>(null);
 
-  // Payment Setup
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
 
-  // Override toggle (Allowed for Staff & Admin)
   const [adminOverride, setAdminOverride] = useState(false);
 
-  // Dynamic Rates State
   const [walkinRegularFee, setWalkinRegularFee] = useState(100);
   const [walkinStudentFee, setWalkinStudentFee] = useState(80);
   const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
   const [gcashFeeRate, setGcashFeeRate] = useState(10);
 
-  
+  const stopAllCameraTracks = () => {
+    if (scannerRef.current) {
+      if (scannerRef.current.isScanning) {
+        scannerRef.current.stop().then(() => {
+          try { scannerRef.current?.clear(); } catch (e) {}
+        }).catch(() => {});
+      } else {
+        try { scannerRef.current.clear(); } catch (e) {}
+      }
+      scannerRef.current = null;
+    }
 
-  // Auto-check override for non-members (walk-ins)
+    const videoElements = document.querySelectorAll('video');
+    videoElements.forEach((video) => {
+      if (video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => {
+          track.stop();
+          track.enabled = false;
+        });
+        video.srcObject = null;
+      }
+    });
+  };
+
   useEffect(() => {
     if (selectedClient) {
       if (selectedClient.isWalkIn) {
@@ -172,7 +225,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [selectedClient]);
 
-  // Load active rates configuration directly from Supabase rates_config table
   const loadRates = useCallback(async () => {
     try {
       const { data: ratesData, error } = await supabase
@@ -200,7 +252,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, []);
 
-  // Load active member profiles dynamically from database
   const loadDynamicMembers = useCallback(async () => {
     try {
       const [members, subscriptions, cards, { data: dbAttendance }] = await Promise.all([
@@ -294,7 +345,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, []);
 
-  // Find duplicates
   const duplicateLog = useMemo(() => {
     if (!selectedClient) return null;
     return todayLogs.find((log: any) => {
@@ -309,37 +359,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   }, [selectedClient, todayLogs]);
 
   const isLockedByDuplicate = Boolean(duplicateLog && !adminOverride);
-
-  const requestCameraPermission = async (): Promise<boolean> => {
-    try {
-      const status = await Camera.checkPermissions();
-      if (status.camera !== 'granted') {
-        const requestRes = await Camera.requestPermissions({ permissions: ['camera'] });
-        if (requestRes.camera !== 'granted') {
-          toast.error('Camera permission was denied.');
-          return false;
-        }
-      }
-      return true;
-    } catch (err) {
-      console.warn('Permission request failed:', err);
-      return true;
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      loadRates();
-      loadDynamicMembers();
-      loadTodayLogs();
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
-      resetForm();
-    } else {
-      stopAllCameraTracks();
-    }
-  }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
-  
 
   const handleSelectMember = useCallback((member: MemberProfile) => {
     const client: SelectedClient = {
@@ -367,14 +386,163 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, []);
 
-  // Auto-select Registered Member if initialSearch matches dynamicMembers
+  // Comprehensive Scan Processing (Direct Member Validation)
+  const handleBarcodeOrQrScanned = useCallback(async (scannedText: string) => {
+    const raw = scannedText.trim();
+    if (!raw) return;
+
+    const cleanId = extractCleanMemberId(raw);
+    const cleanIdUpper = cleanId.toUpperCase();
+    const rawUpper = raw.toUpperCase();
+
+    // 1. Check if it's an online registration ticket
+    if (cleanIdUpper.startsWith('REG-') || rawUpper.startsWith('REG-')) {
+      try {
+        const { data: regData } = await supabase
+          .from('online_registrations')
+          .select('*')
+          .is('deleted_at', null)
+          .or(`id.ilike.${cleanIdUpper},id.ilike.${rawUpper}`)
+          .maybeSingle();
+
+        if (regData) {
+          playBeepSound();
+          stopAllCameraTracks();
+          setShowLiveScanner(false);
+          onClose();
+          navigate('/members/plans', {
+            state: {
+              openWizard: true,
+              initialStep: 1,
+              initialIntakeMode: 'Manual',
+              prefillData: regData
+            }
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn('Registration lookup error:', err);
+      }
+    }
+
+    // 2. Lookup in loaded members list
+    const matchedMember = dynamicMembers.find((m) => {
+      const mid = (m.memberId || '').toUpperCase();
+      const dbId = (m.id || '').toUpperCase();
+      const mName = (m.name || '').toUpperCase();
+      const mPhone = (m.phone || '').trim();
+
+      return (
+        mid === cleanIdUpper ||
+        mid === rawUpper ||
+        dbId === cleanIdUpper ||
+        dbId === rawUpper ||
+        mName === cleanIdUpper ||
+        (mPhone && mPhone === cleanId) ||
+        m.cardNumbers.some((c) => c.toUpperCase() === cleanIdUpper || c.toUpperCase() === rawUpper)
+      );
+    });
+
+    if (matchedMember) {
+      playBeepSound();
+      stopAllCameraTracks();
+      setShowLiveScanner(false);
+      setFilterMode('member');
+      handleSelectMember(matchedMember);
+      toast.success(`Verified: ${matchedMember.name} (${matchedMember.memberId})`);
+      return;
+    }
+
+    // 3. Fallback: Search online if members list wasn't cached yet
+    try {
+      const [members, subscriptions] = await Promise.all([
+        memberService.getAll(),
+        subscriptionService.getAll()
+      ]);
+
+      const freshMatch = members.find((m: Member) => 
+        m.member_id.toUpperCase() === cleanIdUpper ||
+        m.member_id.toUpperCase() === rawUpper ||
+        m.full_name.toUpperCase() === cleanIdUpper ||
+        (m.phone && m.phone.trim() === cleanId)
+      );
+
+      if (freshMatch) {
+        playBeepSound();
+        stopAllCameraTracks();
+        setShowLiveScanner(false);
+        setFilterMode('member');
+
+        const activeSub = subscriptions.find((s: Subscription) => s.member_id === freshMatch.member_id && s.status === 'Active');
+        const planName = activeSub ? activeSub.plan_name : 'No Active Plan';
+
+        handleSelectMember({
+          id: freshMatch.id,
+          name: freshMatch.full_name,
+          memberId: freshMatch.member_id,
+          membership: planName,
+          status: activeSub ? 'Active' : 'Expired',
+          phone: freshMatch.phone || '',
+          email: freshMatch.email || '',
+          address: freshMatch.address || '',
+          regDate: freshMatch.created_at || 'N/A',
+          expDate: activeSub ? new Date(activeSub.end_date).toLocaleDateString() : 'N/A',
+          lastVisit: 'Recent',
+          todayVisits: 0,
+          cardNumbers: [],
+          avatarUrl: freshMatch.avatar_url || null
+        });
+
+        toast.success(`Verified: ${freshMatch.full_name}`);
+        return;
+      }
+    } catch (err) {
+      console.warn('Fallback member lookup error:', err);
+    }
+
+    // 4. If code is unrecognized, populate search bar
+    stopAllCameraTracks();
+    setShowLiveScanner(false);
+    setFilterMode('non-member');
+    setMemberSearch(cleanId);
+    toast.info(`Scanned: "${cleanId}". Select pass type to proceed.`);
+  }, [dynamicMembers, handleSelectMember, navigate, onClose]);
+
+  const resetForm = () => {
+    setMemberSearch('');
+    setSuggestions([]);
+    setSelectedClient(null);
+    setSelectedEntry(null);
+    setWalkInPassType('walkin_regular');
+    setPaymentMethod('Cash');
+    setAmountReceived('');
+    setReferenceNumber('');
+    setAdminOverride(false);
+    setShowLiveScanner(false);
+    setPhotoModal(null);
+    setFilterMode('non-member');
+    stopAllCameraTracks();
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      loadRates();
+      loadDynamicMembers();
+      loadTodayLogs();
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      resetForm();
+    } else {
+      stopAllCameraTracks();
+    }
+  }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
+
   useEffect(() => {
     if (!isOpen || !initialSearch || !initialSearch.trim()) return;
 
     const query = initialSearch.trim().toLowerCase();
-    const cleanQuery = query.includes(':') ? query.split(':')[0].trim() : query;
+    const cleanQuery = extractCleanMemberId(query).toLowerCase();
 
-    // Wait for dynamicMembers array to be populated from database
     if (dynamicMembers.length > 0) {
       const matchedMember = dynamicMembers.find(
         (m) =>
@@ -396,112 +564,92 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
-  // Load available camera devices when scanner becomes active
   useEffect(() => {
-    if (showLiveScanner) {
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            if (!selectedCameraId) {
-              setSelectedCameraId(devices[0].id);
-            }
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not list cameras:', err);
+  Html5Qrcode.getCameras()
+    .then((devices) => {
+      if (devices && devices.length > 0) {
+        setCameras(devices);
+        
+        // Find back/rear camera by label keywords
+        const backCam = devices.find((d) => {
+          const label = d.label.toLowerCase();
+          return (
+            label.includes('back') ||
+            label.includes('rear') ||
+            label.includes('environment') ||
+            label.includes('facing back')
+          );
         });
-    } else {
-      stopAllCameraTracks();
-    }
-  }, [showLiveScanner]);
+
+        // Default to back camera if found, otherwise fallback to first available
+        const defaultCameraId = backCam ? backCam.id : devices[0].id;
+        setSelectedCameraId(defaultCameraId);
+      }
+    })
+    .catch((err) => console.warn('Camera list error:', err));
+}, []);
 
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
     const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
     const nextIndex = (currentIndex + 1) % cameras.length;
+    stopAllCameraTracks();
     setSelectedCameraId(cameras[nextIndex].id);
   };
 
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
+    let isCancelled = false;
 
     if (showLiveScanner) {
-      const element = document.getElementById('live-qr-reader');
-      if (element) {
-        html5QrCode = new Html5Qrcode('live-qr-reader');
-        const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: 'environment' };
+      const timer = setTimeout(() => {
+        const element = document.getElementById('live-qr-reader');
+        if (!element || isCancelled) return;
 
-        html5QrCode
-          .start(
-            cameraConfig,
-            { fps: 10, qrbox: { width: 220, height: 220 } },
-            (decodedText) => {
-              handleMemberSearchChange(decodedText);
-              toast.success(`Scanned: ${decodedText}`);
-              setShowLiveScanner(false);
-              stopAllCameraTracks();
-            },
-            () => {}
-          )
-          .catch((err) => {
-            console.error('Live camera start failed:', err);
-            
-            if (cameras.length > 1) {
-              const currentIndex = selectedCameraId
-                ? cameras.findIndex((c) => c.id === selectedCameraId)
-                : -1;
-              const nextIndex = (currentIndex + 1) % cameras.length;
-              const nextCamera = cameras[nextIndex];
+        try {
+          html5QrCode = new Html5Qrcode('live-qr-reader');
+          scannerRef.current = html5QrCode;
+          const cameraConfig = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : { facingMode: 'environment' };
 
-              try { html5QrCode?.clear(); } catch (e) {}
-              setSelectedCameraId(nextCamera.id);
-              toast.info(`Camera unavailable. Switching to ${nextCamera.label || 'next camera'}...`);
-            } else {
-              toast.error('Unable to access camera feed.');
-              setShowLiveScanner(false);
-              stopAllCameraTracks();
-            }
-          });
-      }
-    }
-
-    return () => {
-      if (html5QrCode) {
-        if (html5QrCode.isScanning) {
           html5QrCode
-            .stop()
-            .then(() => {
-              try { html5QrCode?.clear(); } catch (e) {}
-              stopAllCameraTracks();
-            })
-            .catch(console.error);
-        } else {
-          try { html5QrCode.clear(); } catch (e) {}
-          stopAllCameraTracks();
+            .start(
+              cameraConfig,
+              { fps: 20, qrbox: { width: 220, height: 220 } },
+              (decodedText) => {
+                handleBarcodeOrQrScanned(decodedText);
+              },
+              () => {}
+            )
+            .catch((err) => {
+              if (!isCancelled) {
+                const reason = getCameraErrorMessage(err);
+                if (cameras.length > 1) {
+                  const currentIndex = selectedCameraId ? cameras.findIndex((c) => c.id === selectedCameraId) : -1;
+                  const nextCamera = cameras[(currentIndex + 1) % cameras.length];
+                  stopAllCameraTracks();
+                  setSelectedCameraId(nextCamera.id);
+                  toast.info(`Switching camera: ${nextCamera.label || 'Next Camera'}`);
+                } else {
+                  toast.error(`Camera Error: ${reason}`);
+                  setShowLiveScanner(false);
+                  stopAllCameraTracks();
+                }
+              }
+            });
+        } catch (e) {
+          console.error("Attendance scanner init error:", e);
         }
-      }
-    };
-  }, [showLiveScanner, selectedCameraId]);
+      }, 250);
 
-  const resetForm = () => {
-    setMemberSearch('');
-    setSuggestions([]);
-    setSelectedClient(null);
-    setSelectedEntry(null);
-    setWalkInPassType('walkin_regular');
-    setPaymentMethod('Cash');
-    setAmountReceived('');
-    setReferenceNumber('');
-    setAdminOverride(false);
-    setShowLiveScanner(false);
-    setPhotoModal(null);
-    setFilterMode('non-member');
-    stopAllCameraTracks();
-  };
+      return () => {
+        isCancelled = true;
+        clearTimeout(timer);
+        stopAllCameraTracks();
+      };
+    }
+  }, [showLiveScanner, selectedCameraId, handleBarcodeOrQrScanned, cameras]);
 
   const handleMemberSearchChange = (val: string) => {
-    if (showLiveScanner) return;
     setMemberSearch(val);
     if (!val.trim()) {
       setSuggestions([]);
@@ -568,68 +716,10 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     navigate('/members/plans');
   };
 
-  const scanImageFile = async (file: File) => {
-    let html5QrCode: Html5Qrcode | null = null;
-    try {
-      html5QrCode = new Html5Qrcode('qr-reader-hidden');
-      const decodedText = await html5QrCode.scanFile(file, false);
-      if (decodedText) {
-        handleMemberSearchChange(decodedText);
-        toast.success(`Scanned: ${decodedText}`);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Scan file failed:', err);
-      toast.error('No valid QR code or barcode detected in image.');
-    } finally {
-      if (html5QrCode) {
-        try { html5QrCode.clear(); } catch (e) {}
-      }
-    }
-    return false;
-  };
-
-  const handleCapacitorCameraScan = async () => {
-    setIsScanningLoading(true);
-    try {
-      const photo = await Camera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.Uri,
-        source: CameraSource.Camera
-      });
-
-      if (photo && photo.webPath) {
-        const response = await fetch(photo.webPath);
-        const blob = await response.blob();
-        const file = new File([blob], 'scanned_qr.jpg', { type: blob.type || 'image/jpeg' });
-        await scanImageFile(file);
-      }
-    } catch (error: any) {
-      if (
-        error?.message !== 'User cancelled photos app' && 
-        error?.message !== 'User cancelled photo'
-      ) {
-        console.warn('Capacitor camera error:', error);
-        setShowLiveScanner(true);
-      }
-    } finally {
-      setIsScanningLoading(false);
-    }
-  };
-
-  const handleStartScan = async () => {
+  const handleStartScan = () => {
     setMemberSearch('');
     setSuggestions([]);
-
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) return;
-
-    if (Capacitor.isNativePlatform()) {
-      await handleCapacitorCameraScan();
-    } else {
-      setShowLiveScanner((prev) => !prev);
-    }
+    setShowLiveScanner((prev) => !prev);
   };
 
   const derivedBilling = useMemo(() => {
@@ -683,7 +773,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [paymentMethod, derivedBilling.totalDue]);
 
-  
   const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
 
@@ -782,24 +871,24 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
     }
   }, [selectedClient, selectedEntry, duplicateLog, adminOverride, paymentMethod, amountReceived, referenceNumber, derivedBilling.totalDue]);
 
-   useEffect(() => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' && selectedClient && selectedEntry) {
-      e.preventDefault();
-      if (isFormValid && !isSubmitting) {
-        handleCompleteCheckIn();
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && selectedClient && selectedEntry) {
+        e.preventDefault();
+        if (isFormValid && !isSubmitting) {
+          handleCompleteCheckIn();
+        }
       }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
     }
-  };
 
-  if (isOpen) {
-    window.addEventListener('keydown', handleKeyDown);
-  }
-
-  return () => {
-    window.removeEventListener('keydown', handleKeyDown);
-  };
-}, [isOpen, selectedClient, selectedEntry, isFormValid, isSubmitting, handleCompleteCheckIn]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, selectedClient, selectedEntry, isFormValid, isSubmitting]);
 
   if (!isOpen) return null;
 
@@ -813,9 +902,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       title="Reception Check-In"
       className="w-full mx-auto my-auto p-4 sm:p-5 overflow-visible transition-all duration-300 relative text-left max-w-lg"
     >
-      <div id="qr-reader-hidden" className="hidden" aria-hidden="true" />
-
-      {/* Close Button */}
       <button
         type="button"
         disabled={isSubmitting}
@@ -832,7 +918,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
       {!isSuccess ? (
         <div className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans">
 
-          {/* FILTER MODE TOGGLE SWITCH (NON-MEMBERS / MEMBERS ONLY) */}
+          {/* FILTER MODE TOGGLE SWITCH */}
           {!selectedClient && (
             <div className="flex bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
               <button
@@ -914,7 +1000,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                 <button
                   type="button"
                   onClick={handleStartScan}
-                  disabled={isScanningLoading}
                   className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
                     showLiveScanner 
                       ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse' 
@@ -922,11 +1007,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   }`}
                   title="Scan QR / Barcode using Camera"
                 >
-                  {isScanningLoading ? (
-                    <RefreshCw className="w-4.5 h-4.5 animate-spin text-white" />
-                  ) : (
-                    <QrCode className="w-4.5 h-4.5" />
-                  )}
+                  <QrCode className="w-4.5 h-4.5" />
                 </button>
               </div>
 
@@ -964,45 +1045,18 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   </div>
 
                   {/* CAMERA SWITCHER CONTROLS */}
-                  {cameras.length > 0 && (
-                    <div className="flex items-center justify-between gap-2 pt-1 max-w-55 mx-auto">
-                      <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1.5 w-full">
-                        <CameraIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <select
-                          value={selectedCameraId}
-                          onChange={(e) => setSelectedCameraId(e.target.value)}
-                          className="w-full bg-transparent text-[10px] font-bold text-slate-200 outline-none cursor-pointer truncate"
-                        >
-                          {cameras.map((cam, idx) => (
-                            <option key={cam.id} value={cam.id} className="bg-zinc-900 text-white">
-                              {cam.label || `Camera ${idx + 1}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {cameras.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={handleCycleCamera}
-                          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded-xl transition-colors cursor-pointer border border-zinc-700 shrink-0"
-                          title="Switch Camera"
-                        >
-                          <SwitchCamera className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {Capacitor.isNativePlatform() && (
-                    <button
-                      type="button"
-                      onClick={handleCapacitorCameraScan}
-                      className="text-[11px] font-bold text-amber-400 hover:underline uppercase tracking-wider block mx-auto cursor-pointer"
-                    >
-                      Snap Photo with Native Camera
-                    </button>
-                  )}
+{cameras.length > 1 && (
+  <div className="flex items-center justify-center pt-2">
+    <button
+      type="button"
+      onClick={handleCycleCamera}
+      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+    >
+      <SwitchCamera className="w-4 h-4" />
+      <span>Switch Camera</span>
+    </button>
+  </div>
+)}
                 </div>
               )}
 
@@ -1103,7 +1157,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                       </div>
                     </div>
                   ) : (
-                    /* NO MEMBER MATCH FOUND - REDIRECT PROMPT */
                     <div className="p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl text-center space-y-3 shadow-xs">
                       <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                         NO REGISTERED MEMBERS MATCH "<strong>{memberSearch.toUpperCase()}</strong>"
@@ -1127,14 +1180,11 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
               {/* NON-MEMBERS TAB WALK-IN PROCESSOR CARD */}
               {filterMode === 'non-member' && memberSearch.trim().length > 0 && (
                 <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center text-center space-y-3 shadow-sm animate-fade-in">
-                  
-                  {/* DISPLAY TYPED NAME */}
                   <div className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-200 font-black text-sm uppercase tracking-wide">
                     <User className="w-4 h-4 text-blue-500" />
                     <span>NAME: <span className="text-blue-600 dark:text-blue-400 font-mono underline underline-offset-4">{memberSearch.toUpperCase()}</span></span>
                   </div>
 
-                  {/* SELECT PASS TYPE BEFORE PROCESSING */}
                   <div className="w-full space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                       SELECT WALK-IN PASS TYPE
@@ -1192,14 +1242,12 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                     </div>
                   </div>
 
-                  {/* 3-CHARACTER VALIDATION WARNING */}
                   {memberSearch.trim().length < 3 && (
                     <div className="text-[11px] font-bold text-amber-500 uppercase tracking-wide">
                       ⚠️ Guest name must be at least 3 characters
                     </div>
                   )}
 
-                  {/* BIGGER PROCESS WALK-IN BUTTON */}
                   <button
                     type="button"
                     disabled={memberSearch.trim().length < 3}
@@ -1246,7 +1294,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           {selectedClient && (
             <div className="p-3 bg-slate-100/90 dark:bg-zinc-900/90 border-2 border-(--border-color) rounded-xl flex items-center justify-between gap-3 animate-fade-in">
               <div className="flex items-center gap-3 min-w-0">
-                
                 {!selectedClient.isWalkIn ? (
                   <button
                     type="button"
@@ -1521,7 +1568,6 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
 
         </div>
       ) : (
-        /* SUCCESS ANIMATION OVERLAY */
         <div className="py-12 flex flex-col items-center justify-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
             <Check className="w-8 h-8" />
@@ -1581,6 +1627,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           </div>
         </Modal>
       )}
-    </Modal>, document.body
+    </Modal>, 
+    document.body
   );
 };

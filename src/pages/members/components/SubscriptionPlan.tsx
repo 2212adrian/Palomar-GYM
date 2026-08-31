@@ -373,19 +373,33 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
 const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
-// Fetch and enumerate connected camera devices when scanner opens
+// Fetch and enumerate connected camera devices, defaulting to rear/back camera
 useEffect(() => {
   if (isOpen && intakeMode === 'Import' && isScanning) {
-    Html5Qrcode.getCameras().then((devices) => {
-      if (devices && devices.length > 0) {
-        setCameras(devices);
-        if (!selectedCameraId) {
-          setSelectedCameraId(devices[0].id);
+    Html5Qrcode.getCameras()
+      .then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+
+          // Find back/rear camera by label keywords
+          const backCam = devices.find((d) => {
+            const label = d.label.toLowerCase();
+            return (
+              label.includes('back') ||
+              label.includes('rear') ||
+              label.includes('environment') ||
+              label.includes('facing back')
+            );
+          });
+
+          // Default to back camera if found, otherwise fallback to first available
+          const defaultCameraId = backCam ? backCam.id : devices[0].id;
+          setSelectedCameraId(defaultCameraId);
         }
-      }
-    }).catch((err) => {
-      console.warn("Could not retrieve camera list:", err);
-    });
+      })
+      .catch((err) => {
+        console.warn("Could not retrieve camera list:", err);
+      });
   }
 }, [isOpen, intakeMode, isScanning]);
 
@@ -1505,43 +1519,24 @@ useEffect(() => {
                     </div>
                   </div>
 
-                  {cameras.length > 0 && (
-                    <div className="w-full max-w-65 flex items-center justify-between gap-2">
-                      <div className="hidden sm:flex items-center gap-1.5 w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl px-2.5 py-1.5 shadow-xs">
-                        <Camera className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <select
-                          value={selectedCameraId}
-                          onChange={(e) => {
-                            forceStopCamera();
-                            setSelectedCameraId(e.target.value);
-                          }}
-                          className="w-full bg-transparent text-[10px] font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer truncate"
-                        >
-                          {cameras.map((cam, idx) => (
-                            <option key={cam.id} value={cam.id} className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-white">
-                              {cam.label || `Camera ${idx + 1}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (cameras.length <= 1) return;
-                          const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
-                          const nextIndex = (currentIndex + 1) % cameras.length;
-                          forceStopCamera();
-                          setSelectedCameraId(cameras[nextIndex].id);
-                        }}
-                        disabled={cameras.length <= 1}
-                        className="flex sm:hidden w-full py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-zinc-700 cursor-pointer"
-                      >
-                        <SwitchCamera className="w-3.5 h-3.5 text-blue-500" />
-                        <span>Switch Camera ({cameras.length})</span>
-                      </button>
-                    </div>
-                  )}
+                  {/* CAMERA SWITCHER CONTROLS */}
+{cameras.length > 1 && (
+  <div className="flex items-center justify-center pt-2">
+    <button
+      type="button"
+      onClick={() => {
+        const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+        const nextIndex = (currentIndex + 1) % cameras.length;
+        forceStopCamera();
+        setSelectedCameraId(cameras[nextIndex].id);
+      }}
+      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+    >
+      <SwitchCamera className="w-4 h-4" />
+      <span>Switch Camera</span>
+    </button>
+  </div>
+)}
 
                   <p className="text-[10px] text-slate-600 dark:text-slate-400 text-center font-semibold animate-pulse leading-none">
                     Position the lobby QR badge within camera frame
