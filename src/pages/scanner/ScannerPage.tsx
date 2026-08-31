@@ -11,7 +11,6 @@ import {
   SwitchCamera,
   ArrowRight,
   ShoppingBag,
-  User,
   ShieldCheck,
   RotateCcw,
   Calendar,
@@ -41,7 +40,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase/client';
 import { ImageZoomModal } from './ImageZoomModal';
-
+import { MemberAvatar } from '../../components/ui/MemberAvatar';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {
@@ -183,7 +182,7 @@ export const ScannerPage: React.FC = () => {
         }
       })
       .catch((err) => console.warn('Camera enumeration error:', err));
-  }, []);
+  }, [selectedCameraId]);
 
   const entryFee = useMemo(() => {
     if (!scanResult?.member) return 0;
@@ -867,7 +866,7 @@ export const ScannerPage: React.FC = () => {
                       ? 'BARCODE LASER SCANNER' 
                       : 'QR CODE SCANNER'}
                   </h2>
-                  <p className="text-[10px] text-slate-400 font-medium truncate max-w-[200px] sm:max-w-[280px]">
+                  <p className="text-[10px] text-slate-400 font-medium truncate max-w-50 sm:max-w-70">
                     {isCartMode
                       ? `Cart Active (${productCart.reduce((s, i) => s + i.quantity, 0)} Items) • PR-XXXX & MFG`
                       : scanMode === 'barcode'
@@ -954,7 +953,7 @@ export const ScannerPage: React.FC = () => {
                 className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 ${
                   isCartExpanded 
                     ? 'w-36 sm:w-44 h-36 sm:h-44' 
-                    : 'w-full max-w-[420px] sm:max-w-[460px] h-[340px] sm:h-[380px]'
+                    : 'w-full max-w-105 sm:max-w-115 h-85 sm:h-95'
                 } ${
                   scanFeedback === 'success'
                     ? 'border-emerald-400 ring-4 ring-emerald-500/30'
@@ -966,7 +965,7 @@ export const ScannerPage: React.FC = () => {
                 {/* LIVE IN-APP CAMERA CONTAINER */}
                 <div id={qrRegionId} className="w-full h-full" />
 
-                {/* DYNAMIC RETICLE HUD OVERLAY: SQUARE (QR) vs. RECTANGLE (BARCODE) */}
+                {/* DYNAMIC RETICLE HUD OVERLAY */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
                   <motion.div 
                     layout
@@ -1000,7 +999,7 @@ export const ScannerPage: React.FC = () => {
                         <div className="h-full w-[1.5px] bg-cyan-300 absolute" />
                       </div>
                     ) : (
-                      <div className="w-full h-[1px] bg-amber-400/25 absolute" />
+                      <div className="w-full h-px bg-amber-400/25 absolute" />
                     )}
 
                     {/* Animated Laser Scanning Line */}
@@ -1015,8 +1014,8 @@ export const ScannerPage: React.FC = () => {
                         }}
                         className={`absolute left-2 right-2 h-0.5 rounded-full ${
                           scanMode === 'barcode'
-                            ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_18px_#f59e0b]'
-                            : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_18px_#22d3ee]'
+                            ? 'bg-linear-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_18px_#f59e0b]'
+                            : 'bg-linear-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_18px_#22d3ee]'
                         }`}
                       />
                     )}
@@ -1045,7 +1044,7 @@ export const ScannerPage: React.FC = () => {
                             <select
                               value={selectedCameraId}
                               onChange={(e) => handleCameraChange(e.target.value)}
-                              className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer max-w-[160px] truncate"
+                              className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer max-w-40 truncate"
                             >
                               {cameras.map((cam, idx) => (
                                 <option key={cam.id} value={cam.id} className="bg-zinc-900 text-white">
@@ -1068,7 +1067,7 @@ export const ScannerPage: React.FC = () => {
                       ) : (
                         <div className="px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-slate-300 border border-white/10 text-[10px] font-bold flex items-center gap-1">
                           <Camera className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="truncate max-w-[100px]">{cameras[0]?.label || 'Camera'}</span>
+                          <span className="truncate max-w-25">{cameras[0]?.label || 'Camera'}</span>
                         </div>
                       )}
                     </div>
@@ -1085,7 +1084,7 @@ export const ScannerPage: React.FC = () => {
                       className="absolute inset-0 bg-emerald-500/35 backdrop-blur-[2px] flex items-center justify-center pointer-events-none z-20"
                     >
                       <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_40px_#10b981] animate-bounce">
-                        <Check className="w-9 h-9 stroke-[3]" />
+                        <Check className="w-9 h-9 stroke-3" />
                       </div>
                     </motion.div>
                   )}
@@ -1362,7 +1361,7 @@ export const ScannerPage: React.FC = () => {
                               </div>
                               {saleAmountReceived && (
                                 <div className="text-[10px] font-bold text-emerald-400 flex justify-between pt-0.5">
-                                  <span>Change Due:</span>
+                                <span>Change Due:</span>
                                   <span className="font-mono">₱{Math.max(0, Number(saleAmountReceived) - cartTotalPayable).toFixed(2)}</span>
                                 </div>
                               )}
@@ -1427,52 +1426,53 @@ export const ScannerPage: React.FC = () => {
                 title={
                   scanResult.type === 'registration' ? 'PRE-REGISTRATION TICKET' : 'MEMBER PHOTO VERIFICATION'
                 }
-                className="w-full max-w-lg md:max-w-xl mx-auto p-5 sm:p-6 my-auto max-h-[90vh] overflow-y-auto relative text-left animate-fade-in z-350"
+                className="w-full max-w-md mx-auto p-3.5 sm:p-5 my-auto max-h-[95vh] relative text-left animate-fade-in z-350"
               >
                 <button
                   type="button"
                   onClick={handleScanAgain}
-                  className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
 
+                {/* PRE-REGISTRATION TICKET VIEW */}
                 {scanResult.type === 'registration' && scanResult.registration && (
-                  <div className="space-y-4 pt-2">
-                    <div className="p-4 bg-blue-50/60 dark:bg-zinc-900/80 border border-blue-200 dark:border-blue-500/30 rounded-2xl space-y-3 shadow-xs">
+                  <div className="space-y-3 pt-1">
+                    <div className="p-3.5 bg-blue-50/60 dark:bg-zinc-900/80 border border-blue-200 dark:border-blue-500/30 rounded-2xl space-y-2.5 shadow-xs">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
                           <Smartphone className="w-3.5 h-3.5 shrink-0" /> LOBBY TICKET
                         </span>
-                        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-zinc-700">
+                        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-zinc-700">
                           {scanResult.registration.id}
                         </span>
                       </div>
 
                       <div>
-                        <h3 className="font-heading font-black text-lg text-slate-900 dark:text-white uppercase tracking-wide leading-tight">
+                        <h3 className="font-heading font-black text-base sm:text-lg text-slate-900 dark:text-white uppercase tracking-wide leading-tight">
                           {scanResult.registration.full_name}
                         </h3>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 font-mono mt-1">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-mono mt-0.5">
                           Phone: {scanResult.registration.phone} {scanResult.registration.email ? `• ${scanResult.registration.email}` : ''}
                         </p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 dark:border-zinc-800 text-xs">
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-zinc-800 text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase block">Status</span>
-                          <span className="font-extrabold text-amber-600 dark:text-amber-400 uppercase">{scanResult.registration.status}</span>
+                          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block">Status</span>
+                          <span className="font-extrabold text-amber-600 dark:text-amber-400 uppercase text-xs">{scanResult.registration.status}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase block">Preferred Plan</span>
-                          <span className="font-extrabold text-blue-600 dark:text-blue-400 uppercase">
+                          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase block">Preferred Plan</span>
+                          <span className="font-extrabold text-blue-600 dark:text-blue-400 uppercase text-xs">
                             {scanResult.registration.preferred_plan}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex gap-2.5 pt-1">
+                    <div className="flex gap-2 pt-1">
                       <Button
                         type="button"
                         variant="secondary"
@@ -1510,293 +1510,249 @@ export const ScannerPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* MEMBER PHOTO VERIFICATION VIEW */}
                 {scanResult.type === 'member' && scanResult.member && (
-                  <div className="pt-2">
-                    <div className="flex flex-col sm:flex-row items-stretch gap-4">
-                      {/* MEMBER PHOTO & IDENTITY BADGE */}
+                  <div className="space-y-2.5 pt-1">
+                    
+                    {/* 1:1 SQUARE MEMBER PHOTO BADGE */}
+                    <div className="flex justify-center">
                       <div 
                         onClick={() => {
-                          if (scanResult.member?.avatarUrl) {
+                          const photoUrl = scanResult.member?.avatarUrl;
+                          if (photoUrl) {
                             setZoomImage({
-                              url: scanResult.member.avatarUrl,
-                              title: `${scanResult.member.fullName} (${scanResult.member.memberId})`
+                              url: photoUrl,
+                              title: `${scanResult.member?.fullName || 'Member'} (${scanResult.member?.memberId || 'ID'})`
                             });
                           }
                         }}
-                        className={`group w-full sm:w-44 h-48 sm:h-auto min-h-55 rounded-2xl overflow-hidden bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 shadow-inner flex items-center justify-center relative shrink-0 transition-all ${
-                          scanResult.member.avatarUrl ? 'cursor-pointer hover:border-cyan-500/60' : ''
+                        className={`group relative w-36 h-36 sm:w-44 sm:h-44 aspect-square rounded-2xl overflow-hidden bg-slate-900 border-2 border-white/15 shadow-xl flex items-center justify-center shrink-0 transition-all ${
+                          scanResult.member?.avatarUrl ? 'cursor-pointer hover:border-cyan-500/80 active:scale-95' : ''
                         }`}
-                        title={scanResult.member.avatarUrl ? "Click to Zoom Photo" : undefined}
+                        title={scanResult.member?.avatarUrl ? "Click to Zoom Photo" : undefined}
                       >
-                        {scanResult.member.avatarUrl ? (
+                        {scanResult.member?.avatarUrl ? (
                           <>
                             <img 
                               src={scanResult.member.avatarUrl} 
                               alt={scanResult.member.fullName} 
                               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
                             />
-                            <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-[11px] font-bold uppercase tracking-wider backdrop-blur-[2px]">
+                            <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-[2px]">
                               <Maximize2 className="w-4 h-4 text-cyan-400" />
-                              <span>Click to Zoom</span>
+                              <span>Zoom</span>
                             </div>
                           </>
                         ) : (
-                          <div className="flex flex-col items-center justify-center text-slate-400 dark:text-zinc-600 space-y-1.5">
-                            <User className="w-14 h-14 stroke-[1.3]" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider">No Photo</span>
+                          <div className="w-full h-full bg-gradient-to-br from-red-700 to-red-950 flex flex-col items-center justify-center p-3 text-center select-none">
+                            <div className="w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-2xl font-black text-white shadow-inner mb-1.5">
+                              {scanResult.member.fullName.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-[9px] font-mono font-black text-white/80 uppercase tracking-wider">
+                              NO PHOTO
+                            </span>
                           </div>
                         )}
 
-                        <div className="absolute top-2.5 right-2.5 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/15 flex items-center gap-1 text-[9px] font-bold text-emerald-400 uppercase tracking-wider shadow-sm z-10">
-                          <ShieldCheck className="w-3 h-3" /> Identity Check
+                        <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-white/15 flex items-center gap-1 text-[8px] sm:text-[9px] font-bold text-emerald-400 uppercase tracking-wider shadow-sm z-10 pointer-events-none">
+                          <ShieldCheck className="w-2.5 h-2.5" /> Identity Check
                         </div>
-                      </div>
-
-                      {/* MEMBER & RECEIPT DETAILS */}
-                      <div className="flex-1 flex flex-col justify-between space-y-3 min-w-0">
-                        <div className="space-y-2">
-                          <div>
-                            <h3 className="font-heading text-lg font-black text-slate-900 dark:text-white uppercase tracking-wide leading-tight truncate">
-                              {scanResult.member.fullName}
-                            </h3>
-                            <p className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 truncate">
-                              {scanResult.member.memberId} {scanResult.member.phone ? `• ${scanResult.member.phone}` : ''}
-                            </p>
-                          </div>
-
-                          {/* SPECIFIC RECEIPT BANNER (When scanning a REC- code) */}
-                          {scanResult.member.isSpecificReceiptScan && (
-                            <div className={`p-2.5 rounded-xl border text-xs space-y-1 ${
-                              scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon'
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                                : scanResult.member.status === 'Scheduled'
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
-                                : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-                            }`}>
-                              <div className="flex items-center justify-between font-bold text-[10px] uppercase">
-                                <span>🧾 Receipt: {scanResult.member.receiptNumber}</span>
-                                <span className="font-mono">
-                                  {scanResult.member.startDate} – {scanResult.member.expDate}
-                                </span>
-                              </div>
-                              <p className="text-[11px] font-bold">
-                                {scanResult.member.receiptValidityNote}
-                              </p>
-                            </div>
-                          )}
-
-                          {/* STATUS & PLAN PILLS */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${
-                              scanResult.member.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' :
-                              scanResult.member.status === 'Expires Soon' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
-                              scanResult.member.status === 'Scheduled' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30' :
-                              'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                            }`}>
-                              {scanResult.member.status === 'Scheduled' ? 'Scheduled (Future Plan)' : scanResult.member.status}
-                            </span>
-
-                            <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-zinc-700 uppercase truncate">
-                              {scanResult.member.membershipPlan}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* DATES GRID */}
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5">
-                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-cyan-500" />
-                              {scanResult.member.status === 'Scheduled' ? 'Starts On' : 'Valid Until'}
-                            </span>
-                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs block">
-                              {scanResult.member.status === 'Scheduled' ? scanResult.member.startDate : scanResult.member.expDate}
-                            </span>
-                          </div>
-
-                          <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5">
-                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center gap-1">
-  <Clock className="w-3 h-3 text-emerald-500" />
-  {scanResult.member.status === 'Scheduled' ? 'Activation' : 'Remaining'}
-</span>
-                            <span className={`font-mono font-bold text-xs block ${
-                              scanResult.member.status === 'Scheduled' ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
-                            }`}>
-                              {scanResult.member.status === 'Scheduled' ? 'Upcoming' : `${scanResult.member.remainingDays} Days Left`}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* ENTRY FEE SETTLEMENT (FOR ACTIVE YEARLY MEMBERS) */}
-                        {scanResult.member.status !== 'Scheduled' && entryFee > 0 ? (
-                          <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-xl space-y-2 text-left">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">
-                                Entry Fee Settlement
-                              </span>
-                              <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
-                                Total: ₱{totalEntryFee.toFixed(2)}
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-200/60 dark:bg-zinc-950 rounded-lg">
-                              <button
-                                type="button"
-                                onClick={() => setPaymentMethod('Cash')}
-                                className={`py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                                  paymentMethod === 'Cash'
-                                    ? 'bg-cyan-600 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                }`}
-                              >
-                                <CircleDollarSign className="w-3 h-3" /> Cash
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setPaymentMethod('GCash')}
-                                className={`py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                                  paymentMethod === 'GCash'
-                                    ? 'bg-cyan-600 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                }`}
-                              >
-                                <CreditCard className="w-3 h-3" /> GCash
-                              </button>
-                            </div>
-
-                            {paymentMethod === 'GCash' && (
-                              <div className="space-y-1">
-                                <label className="text-[9px] font-bold uppercase text-slate-500 dark:text-slate-400 block">
-                                  GCash Reference Number
-                                </label>
-                                <input
-                                  type="text"
-                                  value={referenceNumber}
-                                  onChange={(e) => setReferenceNumber(e.target.value)}
-                                  placeholder="ENTER REF NO. (MIN 6 DIGITS)..."
-                                  className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-lg font-mono text-xs font-bold uppercase outline-none focus:border-cyan-500 text-slate-900 dark:text-white"
-                                />
-                              </div>
-                            )}
-
-                            <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
-                              <input
-                                type="checkbox"
-                                checked={isPaymentConfirmed}
-                                onChange={(e) => setIsPaymentConfirmed(e.target.checked)}
-                                className="w-4 h-4 rounded border-emerald-500 text-emerald-500 accent-emerald-500 cursor-pointer shrink-0"
-                              />
-                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
-                                Confirmed payment of ₱{totalEntryFee.toFixed(2)} received ({paymentMethod})
-                              </span>
-                            </label>
-                          </div>
-                        ) : (
-                          scanResult.member.status === 'Active' && (
-                            <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center gap-1.5 font-bold text-[10px] uppercase">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <span>No Fee (Monthly Plan)</span>
-                            </div>
-                          )
-                        )}
-
-                        {/* DUPLICATE ATTENDANCE WARNING */}
-                        {scanResult.member.alreadyCheckedInToday && (
-                          <div className="p-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-xl flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold uppercase truncate">
-                              ⚠️ Checked in today
-                            </span>
-                            <label className="inline-flex items-center gap-1.5 text-[10px] font-bold cursor-pointer shrink-0">
-                              <input
-                                type="checkbox"
-                                checked={adminOverride}
-                                onChange={(e) => setAdminOverride(e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-cyan-600 accent-cyan-600 cursor-pointer"
-                              />
-                              <span>Override</span>
-                            </label>
-                          </div>
-                        )}
-
-                        {/* ACTION BUTTONS */}
-                        {scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon' ? (
-                          <div className="flex items-center gap-2 pt-2 mt-auto">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={handleScanAgain}
-                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-                              <span>SCAN AGAIN</span>
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={handleConfirmCheckIn}
-                              disabled={isSubmittingCheckIn || isLockedByDuplicate || isLockedByPayment}
-                              className="flex-1 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span className="whitespace-nowrap">
-                                {isSubmittingCheckIn 
-                                  ? 'Logging...' 
-                                  : isLockedByDuplicate 
-                                  ? 'Override Req.'
-                                  : isLockedByPayment
-                                  ? 'Payment Req.'
-                                  : 'Confirm Entry'}
-                              </span>
-                            </Button>
-                          </div>
-                        ) : scanResult.member.status === 'Scheduled' ? (
-                          <div className="flex items-center gap-2 pt-2 mt-auto">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={handleScanAgain}
-                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-                              <span>Scan Again</span>
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={handleRedirectToAttendance}
-                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer bg-blue-600 hover:bg-blue-500"
-                            >
-                              <span className="whitespace-nowrap">Daily Walk-In</span>
-                              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 pt-2 mt-auto">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={handleScanAgain}
-                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                              <span>Scan Again</span>
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={handleRedirectToAttendance}
-                              className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <span className="whitespace-nowrap">Walk-In Pass</span>
-                              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-                            </Button>
-                          </div>
-                        )}
                       </div>
                     </div>
+
+                    {/* MEMBER IDENTITY HEADER */}
+                    <div className="text-center space-y-1">
+                      <h3 className="font-heading text-base sm:text-lg font-black text-slate-900 dark:text-white uppercase tracking-wide leading-tight truncate">
+                        {scanResult.member.fullName}
+                      </h3>
+                      <p className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400">
+                        {scanResult.member.memberId} {scanResult.member.phone ? `• ${scanResult.member.phone}` : ''}
+                      </p>
+
+                      {/* STATUS & PLAN PILLS */}
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap pt-0.5">
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black uppercase tracking-wider border ${
+                          scanResult.member.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' :
+                          scanResult.member.status === 'Expires Soon' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
+                          scanResult.member.status === 'Scheduled' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30' :
+                          'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                        }`}>
+                          {scanResult.member.status === 'Scheduled' ? 'Scheduled (Future)' : scanResult.member.status}
+                        </span>
+
+                        <span className="text-[9px] sm:text-[10px] font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-700 uppercase truncate">
+                          {scanResult.member.membershipPlan}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* RECEIPT BANNER (If scanning a specific receipt) */}
+                    {scanResult.member.isSpecificReceiptScan && (
+                      <div className={`p-2 rounded-xl border text-[11px] space-y-0.5 text-center ${
+                        scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon'
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                          : scanResult.member.status === 'Scheduled'
+                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300'
+                          : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+                      }`}>
+                        <div className="flex items-center justify-between font-bold text-[9px] uppercase">
+                          <span>🧾 {scanResult.member.receiptNumber}</span>
+                          <span className="font-mono">{scanResult.member.startDate} – {scanResult.member.expDate}</span>
+                        </div>
+                        <p className="text-[10px] font-bold truncate">{scanResult.member.receiptValidityNote}</p>
+                      </div>
+                    )}
+
+                    {/* DATES GRID */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5 text-center">
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center justify-center gap-1">
+                          <Calendar className="w-3 h-3 text-cyan-500 shrink-0" />
+                          {scanResult.member.status === 'Scheduled' ? 'Starts On' : 'Valid Until'}
+                        </span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs block">
+                          {scanResult.member.status === 'Scheduled' ? (scanResult.member.startDate || 'N/A') : (scanResult.member.expDate || 'N/A')}
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5 text-center">
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center justify-center gap-1">
+                          <Clock className="w-3 h-3 text-emerald-500 shrink-0" />
+                          {scanResult.member.status === 'Scheduled' ? 'Activation' : 'Remaining'}
+                        </span>
+                        <span className={`font-mono font-bold text-xs block ${
+                          scanResult.member.status === 'Scheduled' ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
+                        }`}>
+                          {scanResult.member.status === 'Scheduled' ? 'Upcoming' : `${scanResult.member.remainingDays} Days Left`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ENTRY FEE SETTLEMENT (FOR YEARLY MEMBERS) */}
+                    {scanResult.member.status !== 'Scheduled' && entryFee > 0 && (
+                      <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-xl space-y-2 text-left">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">
+                            Entry Fee Settlement
+                          </span>
+                          <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                            Total: ₱{totalEntryFee.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-200/60 dark:bg-zinc-950 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('Cash')}
+                            className={`py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                              paymentMethod === 'Cash'
+                                ? 'bg-cyan-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <CircleDollarSign className="w-3 h-3" /> Cash
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('GCash')}
+                            className={`py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                              paymentMethod === 'GCash'
+                                ? 'bg-cyan-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <CreditCard className="w-3 h-3" /> GCash
+                          </button>
+                        </div>
+
+                        {paymentMethod === 'GCash' && (
+                          <input
+                            type="text"
+                            value={referenceNumber}
+                            onChange={(e) => setReferenceNumber(e.target.value)}
+                            placeholder="ENTER GCASH REF NO. (MIN 6 DIGITS)..."
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-lg font-mono text-xs font-bold uppercase outline-none focus:border-cyan-500 text-slate-900 dark:text-white"
+                          />
+                        )}
+
+                        <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={isPaymentConfirmed}
+                            onChange={(e) => setIsPaymentConfirmed(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded border-emerald-500 text-emerald-500 accent-emerald-500 cursor-pointer shrink-0"
+                          />
+                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                            Confirmed ₱{totalEntryFee.toFixed(2)} received ({paymentMethod})
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* DUPLICATE ATTENDANCE WARNING */}
+                    {scanResult.member.alreadyCheckedInToday && (
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-xl flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase truncate">
+                          ⚠️ Checked in today
+                        </span>
+                        <label className="inline-flex items-center gap-1.5 text-[10px] font-bold cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={adminOverride}
+                            onChange={(e) => setAdminOverride(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded text-cyan-600 accent-cyan-600 cursor-pointer"
+                          />
+                          <span>Override</span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* ACTION BUTTONS */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleScanAgain}
+                        className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                        <span>Scan Again</span>
+                      </Button>
+
+                      {scanResult.member.status === 'Active' || scanResult.member.status === 'Expires Soon' ? (
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={handleConfirmCheckIn}
+                          disabled={isSubmittingCheckIn || isLockedByDuplicate || isLockedByPayment}
+                          className="flex-1 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="whitespace-nowrap">
+                            {isSubmittingCheckIn 
+                              ? 'Logging...' 
+                              : isLockedByDuplicate 
+                              ? 'Override Req.'
+                              : isLockedByPayment
+                              ? 'Payment Req.'
+                              : 'Confirm Entry'}
+                          </span>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={handleRedirectToAttendance}
+                          className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer bg-blue-600 hover:bg-blue-500"
+                        >
+                          <span className="whitespace-nowrap">
+                            {scanResult.member.status === 'Scheduled' ? 'Daily Walk-In' : 'Walk-In Pass'}
+                          </span>
+                          <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                        </Button>
+                      )}
+                    </div>
+
                   </div>
                 )}
               </Modal>

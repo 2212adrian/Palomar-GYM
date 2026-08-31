@@ -44,6 +44,38 @@ export interface HybridScanResult {
   registration?: OnlineRegistration;
 }
 
+/**
+ * Ensures relative storage paths or raw filenames resolve to full public URLs.
+ */
+export const resolveAvatarUrl = (rawUrl?: string | null): string | null => {
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  const trimmed = rawUrl.trim();
+
+  // Already a full HTTP(S), Blob, or base64 Data URL
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('blob:')
+  ) {
+    return trimmed;
+  }
+
+  // Relative storage path: check 'avatars' and 'member-avatars' buckets
+  try {
+    const cleanPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+    
+    // Default bucket check
+    const bucket = cleanPath.startsWith('member-avatars/') ? 'member-avatars' : 'avatars';
+    const filePath = cleanPath.replace(/^(avatars|member-avatars)\//, '');
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return data?.publicUrl || trimmed;
+  } catch {
+    return trimmed;
+  }
+};
+
 export const parseScannedMemberCode = (rawCode: string): { fullCode: string; memberIdPart: string } => {
   let fullCode = (rawCode || '').trim();
 
@@ -201,6 +233,8 @@ export const scannerService = {
           const planName = subData.plan_name 
             || (subData.plan_type ? `${subData.plan_type.toUpperCase()} MEMBERSHIP` : 'Active Membership');
 
+          const photoUrl = resolveAvatarUrl(member.image_url || member.avatar_url);
+
           return {
             type: 'member',
             rawCode,
@@ -210,7 +244,7 @@ export const scannerService = {
               fullName: member.full_name,
               phone: member.phone || '',
               email: member.email || '',
-              avatarUrl: member.avatar_url || member.image_url || null,
+              avatarUrl: photoUrl,
               status: calculatedStatus,
               membershipPlan: planName,
               startDate: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -239,6 +273,7 @@ export const scannerService = {
           const todayStr = new Date().toISOString().split('T')[0];
           const receiptDateStr = createdAt.toISOString().split('T')[0];
           const isToday = todayStr === receiptDateStr;
+          const photoUrl = resolveAvatarUrl(member?.image_url || member?.avatar_url);
 
           return {
             type: 'member',
@@ -249,7 +284,7 @@ export const scannerService = {
               fullName: member?.full_name || receiptData.customer_name,
               phone: member?.phone || '',
               email: member?.email || '',
-              avatarUrl: member?.avatar_url || member?.image_url || null,
+              avatarUrl: photoUrl,
               status: isToday ? 'Active' : 'Expired',
               membershipPlan: receiptData.item_description || 'Walk-In Daily Pass',
               startDate: createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -317,7 +352,7 @@ export const scannerService = {
 
       const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
 
-      const member = (allMembers || []).find((m: Member) => {
+      let member = (allMembers || []).find((m: Member) => {
         const mId = (m.member_id || '').toLowerCase();
         const mDbId = (m.id || '').toLowerCase();
         const mPhone = (m.phone || '').trim();
@@ -336,6 +371,20 @@ export const scannerService = {
           (mName && (mName === fc || mName === mid))
         );
       });
+
+      // Direct Database fallback query if not in cache
+      if (!member) {
+        const { data: dbMember } = await supabase
+          .from('members')
+          .select('*')
+          .is('deleted_at', null)
+          .or(`member_id.ilike.${memberIdPart},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`)
+          .maybeSingle();
+
+        if (dbMember) {
+          member = dbMember;
+        }
+      }
 
       if (member) {
         // Query ALL non-voided subscriptions for this member
@@ -414,6 +463,7 @@ export const scannerService = {
           .limit(1);
 
         const alreadyCheckedInToday = Boolean(todayAtt && todayAtt.length > 0);
+        const photoUrl = resolveAvatarUrl(member.image_url || member.avatar_url);
 
         return {
           type: 'member',
@@ -424,7 +474,7 @@ export const scannerService = {
             fullName: member.full_name,
             phone: member.phone || '',
             email: member.email || '',
-            avatarUrl: member.avatar_url || (member as any).image_url || null,
+            avatarUrl: photoUrl,
             status: calculatedStatus,
             membershipPlan: planName,
             startDate: startDateStr,

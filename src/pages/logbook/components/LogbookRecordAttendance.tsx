@@ -71,6 +71,28 @@ interface SelectedClient {
   avatarUrl?: string | null;
 }
 
+const resolveAvatarUrl = (rawUrl?: string | null): string | null => {
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  const trimmed = rawUrl.trim();
+
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('blob:')
+  ) {
+    return trimmed;
+  }
+
+  try {
+    const cleanPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+    const { data } = supabase.storage.from('member-avatars').getPublicUrl(cleanPath);
+    return data?.publicUrl || trimmed;
+  } catch {
+    return trimmed;
+  }
+};
+
 const playBeepSound = () => {
   try {
     const audio = new Audio(beepSoundUrl);
@@ -304,6 +326,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                  d.getFullYear() === now.getFullYear();
         }).length;
 
+        const resolvedPhoto = resolveAvatarUrl(m.image_url || m.avatar_url);
+
         return {
           id: m.id,
           name: m.full_name,
@@ -320,7 +344,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           lastVisit: lastVisitStr,
           todayVisits,
           cardNumbers: memberCards,
-          avatarUrl: m.avatar_url || null
+          avatarUrl: resolvedPhoto
         };
       });
 
@@ -476,6 +500,8 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         const activeSub = subscriptions.find((s: Subscription) => s.member_id === freshMatch.member_id && s.status === 'Active');
         const planName = activeSub ? activeSub.plan_name : 'No Active Plan';
 
+        const resolvedPhoto = resolveAvatarUrl(freshMatch.image_url || freshMatch.avatar_url);
+
         handleSelectMember({
           id: freshMatch.id,
           name: freshMatch.full_name,
@@ -490,7 +516,7 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
           lastVisit: 'Recent',
           todayVisits: 0,
           cardNumbers: [],
-          avatarUrl: freshMatch.avatar_url || null
+          avatarUrl: resolvedPhoto
         });
 
         toast.success(`Verified: ${freshMatch.full_name}`);
@@ -565,29 +591,27 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
   }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
   useEffect(() => {
-  Html5Qrcode.getCameras()
-    .then((devices) => {
-      if (devices && devices.length > 0) {
-        setCameras(devices);
-        
-        // Find back/rear camera by label keywords
-        const backCam = devices.find((d) => {
-          const label = d.label.toLowerCase();
-          return (
-            label.includes('back') ||
-            label.includes('rear') ||
-            label.includes('environment') ||
-            label.includes('facing back')
-          );
-        });
+    Html5Qrcode.getCameras()
+      .then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+          
+          const backCam = devices.find((d) => {
+            const label = d.label.toLowerCase();
+            return (
+              label.includes('back') ||
+              label.includes('rear') ||
+              label.includes('environment') ||
+              label.includes('facing back')
+            );
+          });
 
-        // Default to back camera if found, otherwise fallback to first available
-        const defaultCameraId = backCam ? backCam.id : devices[0].id;
-        setSelectedCameraId(defaultCameraId);
-      }
-    })
-    .catch((err) => console.warn('Camera list error:', err));
-}, []);
+          const defaultCameraId = backCam ? backCam.id : devices[0].id;
+          setSelectedCameraId(defaultCameraId);
+        }
+      })
+      .catch((err) => console.warn('Camera list error:', err));
+  }, []);
 
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
@@ -1055,18 +1079,18 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
                   </div>
 
                   {/* CAMERA SWITCHER CONTROLS */}
-{cameras.length > 1 && (
-  <div className="flex items-center justify-center pt-2">
-    <button
-      type="button"
-      onClick={handleCycleCamera}
-      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
-    >
-      <SwitchCamera className="w-4 h-4" />
-      <span>Switch Camera</span>
-    </button>
-  </div>
-)}
+                  {cameras.length > 1 && (
+                    <div className="flex items-center justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCycleCamera}
+                        className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                        <span>Switch Camera</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

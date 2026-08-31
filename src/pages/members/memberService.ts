@@ -243,9 +243,14 @@ export const memberService = {
     }
     const { data: previousData } = await findQuery.maybeSingle();
 
+    // Sanitize payload: database column is image_url
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
-    if ('avatar_url' in updates && !('image_url' in updates)) {
-      payload.image_url = updates.avatar_url;
+    
+    if ('avatar_url' in payload) {
+      if (!payload.image_url && payload.avatar_url) {
+        payload.image_url = payload.avatar_url;
+      }
+      delete payload.avatar_url; // Prevent PostgREST schema cache error
     }
     delete payload.id;
 
@@ -265,7 +270,7 @@ export const memberService = {
 
     const memberObj: Member = {
       ...updated,
-      avatar_url: updated.image_url || updated.avatar_url || null
+      avatar_url: updated.image_url || null
     };
 
     const changes: string[] = [];
@@ -276,20 +281,8 @@ export const memberService = {
       if (updates.phone && updates.phone !== previousData.phone) {
         changes.push(`Phone: "${previousData.phone || 'None'}" -> "${updates.phone}"`);
       }
-      if (updates.email !== undefined && updates.email !== previousData.email) {
-        changes.push(`Email: "${previousData.email || 'None'}" -> "${updates.email || 'None'}"`);
-      }
-      if (updates.emergency_contact_name && updates.emergency_contact_name !== previousData.emergency_contact_name) {
-        changes.push(`Emergency Contact: "${previousData.emergency_contact_name || 'None'}" -> "${updates.emergency_contact_name}"`);
-      }
-      if (updates.emergency_contact_phone && updates.emergency_contact_phone !== previousData.emergency_contact_phone) {
-        changes.push(`Emergency Phone: "${previousData.emergency_contact_phone || 'None'}" -> "${updates.emergency_contact_phone}"`);
-      }
       if (updates.status && updates.status !== previousData.status) {
         changes.push(`Status: "${previousData.status}" -> "${updates.status}"`);
-      }
-      if (updates.notes !== undefined && updates.notes !== previousData.notes) {
-        changes.push(`Notes updated`);
       }
     }
 

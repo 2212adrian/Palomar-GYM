@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { 
   X, ShieldAlert, UserCheck, UserX, Trash2, Lock, Pencil, Save,
   ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
-  User, Clock, QrCode, CalendarCheck
+  User, Clock, QrCode, CalendarCheck, Camera
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from '../memberService';
@@ -14,12 +14,14 @@ import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord, Membe
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { OfficialReceipt, type ReceiptData } from '../../../components/ui/OfficialReceipt';
-import { DigitalQRCardModal } from './DigitalQRCardModal';
 import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
 import { useAuthStore } from '../../../stores/authStore';
 import { isSuperAdmin } from '../../../constants/auth';
 import { supabase } from '../../../lib/supabase/client';
 import { Table, type Column } from '../../../components/ui/Table';
+import { MemberAvatar } from '../../../components/ui/MemberAvatar';
+import { MemberAvatarUploadModal } from '../../../components/ui/MemberAvatarUploadModal';
+import { MemberPhotoModal } from '../../../components/ui/MemberPhotoModal';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -52,6 +54,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDigitalQrModalOpen, setIsDigitalQrModalOpen] = useState(false);
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -85,6 +88,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
   const [selectedCardFormat, setSelectedCardFormat] = useState<'QR' | 'Manual'>('QR');
+  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
 
   const loadProfileCollections = async () => {
     try {
@@ -105,11 +109,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
-
-useEffect(() => {
-  settingsService.load().then(setSettings).catch(console.warn);
-}, []);
+  useEffect(() => {
+    settingsService.load().then(setSettings).catch(console.warn);
+  }, []);
 
   useEffect(() => {
     loadProfileCollections();
@@ -239,53 +241,53 @@ useEffect(() => {
   };
 
   // Helper to accurately parse subscription creation timestamp
-const getSubscriptionCreationTime = (sub: Subscription): number => {
-  if (sub.created_at) {
-    const isoStr = typeof sub.created_at === 'string' ? sub.created_at.replace(' ', 'T') : sub.created_at;
-    const t = new Date(isoStr).getTime();
-    if (!isNaN(t)) return t;
-  }
-  if (sub.start_date) {
-    const t = new Date(sub.start_date).getTime();
-    if (!isNaN(t)) return t;
-  }
-  return Date.now();
-};
+  const getSubscriptionCreationTime = (sub: Subscription): number => {
+    if (sub.created_at) {
+      const isoStr = typeof sub.created_at === 'string' ? sub.created_at.replace(' ', 'T') : sub.created_at;
+      const t = new Date(isoStr).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (sub.start_date) {
+      const t = new Date(sub.start_date).getTime();
+      if (!isNaN(t)) return t;
+    }
+    return Date.now();
+  };
 
-// Void eligibility calculation
-const getVoidEligibility = (sub?: Subscription | null) => {
-  if (!sub) {
-    return { eligible: false, reason: 'No subscription record selected for voiding.' };
-  }
+  // Void eligibility calculation
+  const getVoidEligibility = (sub?: Subscription | null) => {
+    if (!sub) {
+      return { eligible: false, reason: 'No subscription record selected for voiding.' };
+    }
 
-  const createdTime = getSubscriptionCreationTime(sub);
-  const nowTime = Date.now();
-  const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
+    const createdTime = getSubscriptionCreationTime(sub);
+    const nowTime = Date.now();
+    const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
 
-  // Allow voiding if created within 24 hours
-  if (hoursDiff > 24) {
-    return {
-      eligible: false,
-      reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
-    };
-  }
+    // Allow voiding if created within 24 hours
+    if (hoursDiff > 24) {
+      return {
+        eligible: false,
+        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
+      };
+    }
 
-  // Ignore 'Walk-In' or 'New Membership' entries prior to subscription creation
-  const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
-    if (att.customer_type === 'New Membership' || att.customer_type === 'Walk-In') return false;
-    const checkInTime = new Date(att.check_in_time).getTime();
-    return checkInTime > (createdTime + 60000); // 1-minute grace period
-  });
+    // Ignore 'Walk-In' or 'New Membership' entries prior to subscription creation
+    const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
+      if (att.customer_type === 'New Membership' || att.customer_type === 'Walk-In') return false;
+      const checkInTime = new Date(att.check_in_time).getTime();
+      return checkInTime > (createdTime + 60000); // 1-minute grace period
+    });
 
-  if (hasFacilityVisitsAfterSub) {
-    return {
-      eligible: false,
-      reason: 'This subscription has already been used for facility visits and can no longer be voided.'
-    };
-  }
+    if (hasFacilityVisitsAfterSub) {
+      return {
+        eligible: false,
+        reason: 'This subscription has already been used for facility visits and can no longer be voided.'
+      };
+    }
 
-  return { eligible: true, reason: '' };
-};
+    return { eligible: true, reason: '' };
+  };
 
   // Lock rule: Edit and Delete are locked ONLY when a TRULY ACTIVE subscription contract exists
   const hasActiveSubscription = !!activeContract;
@@ -357,6 +359,20 @@ const getVoidEligibility = (sub?: Subscription | null) => {
       toast.error(err.message || 'Failed to update member profile.');
     }
   };
+
+  // Avatar change handler from upload/camera modal
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+
+const handleAvatarSaved = async (newUrl: string) => {
+  try {
+    await memberService.update(localMember.id, { image_url: newUrl }, user?.email || 'Admin Staff');
+    setLocalMember(prev => ({ ...prev, image_url: newUrl, avatar_url: newUrl }));
+    onMutationSuccess();
+    toast.success('Member photo updated successfully.');
+  } catch (err: any) {
+    toast.error('Failed to update photo: ' + err.message);
+  }
+};
 
   const handleStatusToggleConfirm = async () => {
     const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
@@ -488,12 +504,12 @@ const getVoidEligibility = (sub?: Subscription | null) => {
   }, [cards]);
 
   useEffect(() => {
-  if (currentCard?.card_type === 'Manual') {
-    setSelectedCardFormat('Manual');
-  } else {
-    setSelectedCardFormat('QR');
-  }
-}, [currentCard]);
+    if (currentCard?.card_type === 'Manual') {
+      setSelectedCardFormat('Manual');
+    } else {
+      setSelectedCardFormat('QR');
+    }
+  }, [currentCard]);
 
   const extMember = localMember as any;
 
@@ -658,7 +674,7 @@ const getVoidEligibility = (sub?: Subscription | null) => {
         onClick={(e) => e.stopPropagation()}
       >
         
-        {/* COMPACT HEADER */}
+        {/* COMPACT HEADER WITH CLICKABLE AVATAR */}
         <div className="p-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest">
@@ -676,9 +692,27 @@ const getVoidEligibility = (sub?: Subscription | null) => {
           </div>
 
           <div className="flex items-center gap-3 text-left">
-            <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-lg sm:text-2xl font-black shadow-md shrink-0">
-              {(localMember.full_name || 'M')[0]}
-            </div>
+            {/* CLICKABLE PROFILE PICTURE WITH SELFIE / UPLOAD ACTION OVERLAY */}
+<div className="relative group">
+  <MemberAvatar
+    src={localMember.image_url || localMember.avatar_url}
+    name={localMember.full_name}
+    size={60}
+    roundedClassName="rounded-2xl shadow-md border-2 border-white/20"
+    isEditable={true}
+    onEditClick={() => setIsPhotoModalOpen(true)}
+    badgeTooltip="Click to view and change member photo"
+  />
+  <button
+    type="button"
+    onClick={() => setIsPhotoModalOpen(true)}
+    className="absolute -bottom-1 -right-1 p-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-md cursor-pointer border border-white/20 transition-transform active:scale-95"
+    title="Change photo"
+  >
+    <Camera className="w-3 h-3" />
+  </button>
+</div>
+
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <h3 className="text-base sm:text-lg font-bold text-(--color-text) leading-tight truncate">
@@ -718,23 +752,22 @@ const getVoidEligibility = (sub?: Subscription | null) => {
               <span className="text-xs font-bold text-(--color-text) block mt-1">{stats.totalVisits} visits</span>
             </div>
 
-           {/* STATS CAROUSEL - Active Plan Box */}
-<div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-  <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
-  <span className={`text-xs font-bold truncate block mt-1 ${
-    activeContract 
-      ? 'text-emerald-600 dark:text-emerald-400' 
-      : targetSubForDisplay?.status === 'Voided'
-      ? 'text-amber-600 dark:text-amber-400'
-      : 'text-rose-600 dark:text-rose-400'
-  }`}>
-    {activeContract 
-      ? 'Active' 
-      : targetSubForDisplay?.status === 'Voided' 
-      ? 'Voided' 
-      : 'Expired'}
-  </span>
-</div>
+            <div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
+              <span className={`text-xs font-bold truncate block mt-1 ${
+                activeContract 
+                  ? 'text-emerald-600 dark:text-emerald-400' 
+                  : targetSubForDisplay?.status === 'Voided'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-rose-600 dark:text-rose-400'
+              }`}>
+                {activeContract 
+                  ? 'Active' 
+                  : targetSubForDisplay?.status === 'Voided' 
+                  ? 'Voided' 
+                  : 'Expired'}
+              </span>
+            </div>
 
             <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">Reissued</span>
@@ -1217,13 +1250,13 @@ const getVoidEligibility = (sub?: Subscription | null) => {
 
                       {/* Benefit Fee Note */}
                       <div className="p-2 bg-slate-500/10 rounded-xl text-[10px] font-mono flex items-center justify-between text-slate-400">
-  <span>Check-In Entry Benefit:</span>
-  <strong className="text-(--color-text) font-bold">
-    {targetSubForDisplay.plan_type === 'yearly' 
-      ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
-      : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
-  </strong>
-</div>
+                        <span>Check-In Entry Benefit:</span>
+                        <strong className="text-(--color-text) font-bold">
+                          {targetSubForDisplay.plan_type === 'yearly' 
+                            ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
+                            : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
+                        </strong>
+                      </div>
                     </div>
 
                     {/* QUEUED RENEWAL CONTRACT CARD */}
@@ -1380,7 +1413,7 @@ const getVoidEligibility = (sub?: Subscription | null) => {
             </div>
           )}
 
-       {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
+          {/* TAB 3: CARDS & DIGITAL SECURITY BADGES */}
           {activeTab === 'Cards' && (() => {
             const cardExpIso = currentCard?.expires_at 
               || (currentCard?.issued_at 
@@ -1752,13 +1785,27 @@ const getVoidEligibility = (sub?: Subscription | null) => {
 
         </div>
 
-        {/* DIGITAL QR BADGE MODAL */}
-        {isDigitalQrModalOpen && (
-          <DigitalQRCardModal
-            member={localMember}
-            subscription={activeContract}
-            card={currentCard}
-            onClose={() => setIsDigitalQrModalOpen(false)}
+        {/* PROFILE PICTURE LIVE CAMERA / UPLOAD MODAL */}
+        {isAvatarModalOpen && (
+          <MemberAvatarUploadModal
+            isOpen={isAvatarModalOpen}
+            onClose={() => setIsAvatarModalOpen(false)}
+            memberName={localMember.full_name}
+            memberId={localMember.member_id}
+            currentImageUrl={localMember.image_url || localMember.avatar_url}
+            onSaveSuccess={handleAvatarSaved}
+          />
+        )}
+
+        {/* PROFILE PICTURE VIEW & CHANGE MODAL */}
+        {isPhotoModalOpen && (
+          <MemberPhotoModal
+            isOpen={isPhotoModalOpen}
+            onClose={() => setIsPhotoModalOpen(false)}
+            memberName={localMember.full_name}
+            memberId={localMember.member_id}
+            currentImageUrl={localMember.image_url || localMember.avatar_url}
+            onSaveSuccess={handleAvatarSaved}
           />
         )}
 

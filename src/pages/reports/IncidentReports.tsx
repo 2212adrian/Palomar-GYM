@@ -205,11 +205,11 @@ export const IncidentReports: React.FC = () => {
         <button
           onClick={() => setShowContactsModal(true)}
           title="Escalated emergency contact directory"
-          aria-label="Emergency Contacts"
+          aria-label="Emergency Staff Contacts"
           className="px-3.5 py-2.5 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 cursor-pointer inline-flex items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
         >
           <PhoneCall className="w-4 h-4 text-blue-500" />
-          <span>Emergency Contacts</span>
+          <span>Emergency Staff Contacts</span>
         </button>
 
         {!isAdmin && (
