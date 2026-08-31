@@ -8,7 +8,6 @@ import {
   X, 
   ShoppingCart, 
   QrCode, 
-  Camera as CameraIcon, 
   SwitchCamera 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';

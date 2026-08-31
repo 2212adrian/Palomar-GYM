@@ -17,7 +17,6 @@ import {
   Users,
   Eye,
   ShieldCheck,
-  Camera as CameraIcon, 
   SwitchCamera,
   UserPlus,
   ArrowRight

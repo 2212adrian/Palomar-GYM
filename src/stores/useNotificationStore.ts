@@ -3,12 +3,12 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase/client';
 import { isSuperAdmin } from '../constants/auth';
 
-const NOTIF_SEEN_COUNT_KEY = 'palomar_notifications_last_seen_count';
+const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
 const DISMISSED_MEMBER_KEY = 'palomar_dismissed_member_alerts';
 
-// Helper functions for localStorage persisted dismissals
-const getDismissedIds = (key: string): string[] => {
+// Helper functions for localStorage persisted IDs
+const getStoredIds = (key: string): string[] => {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(key);
@@ -18,12 +18,27 @@ const getDismissedIds = (key: string): string[] => {
   }
 };
 
-const saveDismissedIds = (key: string, ids: string[]) => {
+const saveStoredIds = (key: string, ids: string[]) => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(key, JSON.stringify(ids));
   } catch (err) {
-    console.warn('Failed to persist dismissed alerts:', err);
+    console.warn('Failed to persist notification state:', err);
+  }
+};
+
+// Push native browser notification if granted
+const triggerBrowserNotification = (title: string, options?: NotificationOptions) => {
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification(title, {
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        ...options
+      });
+    } catch (e) {
+      console.warn('Could not spawn browser notification:', e);
+    }
   }
 };
 
@@ -72,7 +87,7 @@ interface NotificationState {
   markBadgeSeen: () => void;
 
   requestBrowserPermission: () => Promise<NotificationPermission>;
-  fetchNotifications: (userEmail?: string | null, userRole?: string | null) => Promise<void>;
+  fetchNotifications: (userEmail?: string | null, userRole?: string | null, isRealtimeEvent?: boolean) => Promise<void>;
   markIncidentRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   dismissAlert: (type: 'incident' | 'stock' | 'member', id: string) => void;
@@ -107,14 +122,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   markBadgeSeen: () => {
     const state = get();
-    const total = (state.incidentUnreadCount || 0) + (state.stockAlertsCount || 0) + (state.expiringSubsCount || 0);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(NOTIF_SEEN_COUNT_KEY, total.toString());
-      } catch (err) {
-        console.warn('Failed to save seen notification count:', err);
-      }
-    }
+    // Gather all active notification unique IDs
+    const activeIds = [
+      ...state.unreadIncidents.map((i) => `incident_${i.id}`),
+      ...state.stockAlertProducts.map((p) => `stock_${p.id}`),
+      ...state.expiringMembers.map((m) => `member_${m.id}`)
+    ];
+
+    const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+    activeIds.forEach((id) => seenSet.add(id));
+    saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
+
     set({ unreadBadgeCount: 0 });
   },
 
@@ -126,9 +144,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       const permission = await Notification.requestPermission();
       set({ browserPermission: permission });
       if (permission === 'granted') {
-        new Notification('Wolf Palomar Notifications Enabled', {
-          body: 'You will receive real-time alerts for incidents, stock shortages, and membership expiries.',
-          icon: '/favicon.svg'
+        triggerBrowserNotification('Wolf Palomar Gym Notifications Enabled', {
+          body: 'You will receive real-time notifications for incidents, inventory stock alerts, and expiring subscriptions.'
         });
       }
       return permission;
@@ -138,10 +155,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
-  fetchNotifications: async (userEmail, userRole) => {
+  fetchNotifications: async (userEmail, userRole, isRealtimeEvent = false) => {
     const isAdmin = isSuperAdmin(userEmail) || userRole?.toLowerCase() === 'admin';
-    const dismissedStockIds = new Set(getDismissedIds(DISMISSED_STOCK_KEY));
-    const dismissedMemberIds = new Set(getDismissedIds(DISMISSED_MEMBER_KEY));
+    const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
+    const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
+    const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
 
     // 1. INCIDENT REPORTS
     let incidentCount = 0;
@@ -165,6 +183,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
             created_at: d.created_at,
             staff_name: d.staff_name || 'Staff'
           }));
+
+          // Trigger native desktop alert for unseen incident if from realtime event
+          if (isRealtimeEvent) {
+            unreadList.forEach((inc) => {
+              if (!seenIdsSet.has(`incident_${inc.id}`)) {
+                triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
+                  body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`
+                });
+              }
+            });
+          }
         }
       } catch (err) {
         console.warn('Failed to load incident reports for notification:', err);
@@ -188,7 +217,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           const isOut = p.stock_quantity <= 0;
           const isLow = !isOut && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert;
 
-          // Only include if not previously dismissed
           if ((isOut || isLow) && !dismissedStockIds.has(p.id)) {
             if (isOut) noStock++;
             if (isLow) lowStock++;
@@ -201,6 +229,18 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               isOutOfStock: isOut,
               isLowStock: isLow
             });
+
+            // Trigger desktop alert if new item
+            if (isRealtimeEvent && !seenIdsSet.has(`stock_${p.id}`)) {
+              triggerBrowserNotification(
+                isOut ? `⛔ Out of Stock: ${p.product_name}` : `⚠️ Low Stock: ${p.product_name}`,
+                {
+                  body: isOut
+                    ? 'This item has run out of stock and requires restocking.'
+                    : `Only ${p.stock_quantity} left in stock (Alert threshold: ${p.low_stock_alert}).`
+                }
+              );
+            }
           }
         });
       }
@@ -241,11 +281,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
             const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
             if (diffDays >= 0 && diffDays <= 7 && !dismissedMemberIds.has(s.id) && !dismissedMemberIds.has(s.member_id)) {
               expiringCount++;
+              const fullName = memberMap.get(s.member_id) || `Member #${s.member_id}`;
+              const planName = s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership';
+
               expiringList.push({
                 id: s.id,
                 member_id: s.member_id,
-                full_name: memberMap.get(s.member_id) || `Member #${s.member_id}`,
-                plan_type: s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership',
+                full_name: fullName,
+                plan_type: planName,
                 end_date: s.end_date,
                 daysRemaining: diffDays
               });
@@ -257,18 +300,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       console.warn('Failed to load expiring subscriptions:', err);
     }
 
-    const totalCalculated = incidentCount + (noStock + lowStock) + expiringCount;
+    // Compute unseen count using individual item keys
+    const allCurrentItemKeys = [
+      ...unreadList.map((i) => `incident_${i.id}`),
+      ...stockAlertList.map((p) => `stock_${p.id}`),
+      ...expiringList.map((m) => `member_${m.id}`)
+    ];
 
-    let badgeNumber = totalCalculated;
-    if (typeof window !== 'undefined') {
-      const rawSeen = localStorage.getItem(NOTIF_SEEN_COUNT_KEY);
-      if (rawSeen !== null) {
-        const savedCount = Number(rawSeen);
-        if (!isNaN(savedCount)) {
-          badgeNumber = Math.max(0, totalCalculated - savedCount);
-        }
-      }
-    }
+    const unreadBadge = allCurrentItemKeys.filter((key) => !seenIdsSet.has(key)).length;
 
     set({
       incidentUnreadCount: incidentCount,
@@ -279,7 +318,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       unreadIncidents: unreadList,
       stockAlertProducts: stockAlertList,
       expiringMembers: expiringList,
-      unreadBadgeCount: badgeNumber
+      unreadBadgeCount: unreadBadge
     });
   },
 
@@ -296,18 +335,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       if (!error) {
         set((state) => {
           const filtered = state.unreadIncidents.filter((i) => i.id !== id);
-          const newIncidentCount = filtered.length;
-          const newBadgeCount = Math.max(0, state.unreadBadgeCount - 1);
-
-          if (typeof window !== 'undefined') {
-            const newTotal = newIncidentCount + state.stockAlertsCount + state.expiringSubsCount;
-            localStorage.setItem(NOTIF_SEEN_COUNT_KEY, (newTotal - newBadgeCount).toString());
-          }
+          
+          // Mark seen
+          const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+          seenSet.add(`incident_${id}`);
+          saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
 
           return {
             unreadIncidents: filtered,
-            incidentUnreadCount: newIncidentCount,
-            unreadBadgeCount: newBadgeCount
+            incidentUnreadCount: filtered.length,
+            unreadBadgeCount: Math.max(0, state.unreadBadgeCount - 1)
           };
         });
       }
@@ -332,19 +369,22 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           .in('id', unreadIds);
       }
 
-      // 2. Persist dismissed stock and member alert IDs in localStorage
+      // 2. Persist dismissed stock and member alert IDs
       const currentStockIds = state.stockAlertProducts.map((p) => p.id);
       const currentMemberIds = state.expiringMembers.map((m) => m.id);
 
-      const existingDismissedStock = getDismissedIds(DISMISSED_STOCK_KEY);
-      const existingDismissedMembers = getDismissedIds(DISMISSED_MEMBER_KEY);
+      const existingDismissedStock = getStoredIds(DISMISSED_STOCK_KEY);
+      const existingDismissedMembers = getStoredIds(DISMISSED_MEMBER_KEY);
 
-      saveDismissedIds(DISMISSED_STOCK_KEY, Array.from(new Set([...existingDismissedStock, ...currentStockIds])));
-      saveDismissedIds(DISMISSED_MEMBER_KEY, Array.from(new Set([...existingDismissedMembers, ...currentMemberIds])));
+      saveStoredIds(DISMISSED_STOCK_KEY, Array.from(new Set([...existingDismissedStock, ...currentStockIds])));
+      saveStoredIds(DISMISSED_MEMBER_KEY, Array.from(new Set([...existingDismissedMembers, ...currentMemberIds])));
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(NOTIF_SEEN_COUNT_KEY, '0');
-      }
+      // 3. Mark all seen
+      const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+      state.unreadIncidents.forEach((i) => seenSet.add(`incident_${i.id}`));
+      state.stockAlertProducts.forEach((p) => seenSet.add(`stock_${p.id}`));
+      state.expiringMembers.forEach((m) => seenSet.add(`member_${m.id}`));
+      saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
 
       set({
         incidentUnreadCount: 0,
@@ -365,16 +405,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   dismissAlert: (type, id) => {
     set((state) => {
       let updatedState: Partial<NotificationState> = {};
+      const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
 
       if (type === 'incident') {
+        seenSet.add(`incident_${id}`);
         const filtered = state.unreadIncidents.filter((i) => i.id !== id);
         updatedState = {
           unreadIncidents: filtered,
           incidentUnreadCount: filtered.length
         };
       } else if (type === 'stock') {
-        const existingDismissed = getDismissedIds(DISMISSED_STOCK_KEY);
-        saveDismissedIds(DISMISSED_STOCK_KEY, Array.from(new Set([...existingDismissed, id])));
+        seenSet.add(`stock_${id}`);
+        const existingDismissed = getStoredIds(DISMISSED_STOCK_KEY);
+        saveStoredIds(DISMISSED_STOCK_KEY, Array.from(new Set([...existingDismissed, id])));
 
         const filtered = state.stockAlertProducts.filter((p) => p.id !== id);
         const noStock = filtered.filter((p) => p.isOutOfStock).length;
@@ -386,8 +429,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           lowStockCount: lowStock
         };
       } else if (type === 'member') {
-        const existingDismissed = getDismissedIds(DISMISSED_MEMBER_KEY);
-        saveDismissedIds(DISMISSED_MEMBER_KEY, Array.from(new Set([...existingDismissed, id])));
+        seenSet.add(`member_${id}`);
+        const existingDismissed = getStoredIds(DISMISSED_MEMBER_KEY);
+        saveStoredIds(DISMISSED_MEMBER_KEY, Array.from(new Set([...existingDismissed, id])));
 
         const filtered = state.expiringMembers.filter((m) => m.id !== id && m.member_id !== id);
         updatedState = {
@@ -396,39 +440,57 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         };
       }
 
-      const newBadgeCount = Math.max(0, state.unreadBadgeCount - 1);
-      updatedState.unreadBadgeCount = newBadgeCount;
-
-      if (typeof window !== 'undefined') {
-        const newTotal = (updatedState.incidentUnreadCount ?? state.incidentUnreadCount) +
-                         (updatedState.stockAlertsCount ?? state.stockAlertsCount) +
-                         (updatedState.expiringSubsCount ?? state.expiringSubsCount);
-        localStorage.setItem(NOTIF_SEEN_COUNT_KEY, (newTotal - newBadgeCount).toString());
-      }
+      saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
+      updatedState.unreadBadgeCount = Math.max(0, state.unreadBadgeCount - 1);
 
       return updatedState as NotificationState;
     });
   },
 
   subscribeRealtime: (userEmail, userRole) => {
-    get().fetchNotifications(userEmail, userRole);
+    // 1. Perform initial data fetch
+    get().fetchNotifications(userEmail, userRole, false);
 
-    const channel = supabase
-      .channel('notification-store-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_reports' }, () => {
-        get().fetchNotifications(userEmail, userRole);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        get().fetchNotifications(userEmail, userRole);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => {
-        get().fetchNotifications(userEmail, userRole);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
-        get().fetchNotifications(userEmail, userRole);
-      })
-      .subscribe();
+    // 2. Use a unique channel ID per subscription session to avoid channel collisions
+    const channelId = `notifications-${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId);
 
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'incident_reports' },
+        () => {
+          get().fetchNotifications(userEmail, userRole, true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => {
+          get().fetchNotifications(userEmail, userRole, true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions' },
+        () => {
+          get().fetchNotifications(userEmail, userRole, true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'members' },
+        () => {
+          get().fetchNotifications(userEmail, userRole, true);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          // Connected to real-time events
+        }
+      });
+
+    // 3. Clean up on unmount
     return () => {
       supabase.removeChannel(channel);
     };

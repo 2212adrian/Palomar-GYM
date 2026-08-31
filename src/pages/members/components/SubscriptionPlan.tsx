@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Award, Smartphone, CheckCircle, X, Eye, Check, Lock, 
   FileSignature, ChevronLeft, Eraser, UserCheck, ShieldAlert, Search,
-  Download, Printer, ChevronDown, ChevronUp, Info, Loader2, Camera, SwitchCamera,
+  Download, Printer, ChevronDown, ChevronUp, Info, Loader2, SwitchCamera,
   RefreshCw, WifiOff, Users, UserPlus, Trash2, Ban
 } from 'lucide-react';
 import { toast } from 'react-toastify';

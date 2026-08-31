@@ -291,14 +291,24 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     profile?.role?.toLowerCase() === 'admin' ||
     isSuperAdmin(user?.email);
 
-  // Global Notification Store
-  const {
-    unreadBadgeCount,
-    isNotificationOpen,
-    markBadgeSeen,
-    toggleNotificationOpen,
-    setNotificationOpen
-  } = useNotificationStore();
+const {
+  unreadBadgeCount,
+  isNotificationOpen,
+  markBadgeSeen,
+  toggleNotificationOpen,
+  setNotificationOpen,
+  subscribeRealtime
+} = useNotificationStore();
+
+useEffect(() => {
+  if (user?.email) {
+    const unsubscribe = subscribeRealtime(user.email, profile?.role);
+    return () => {
+      unsubscribe();
+    };
+  }
+}, [user?.email, profile?.role, subscribeRealtime]);
+
   
   const handleToggleNotifications = (e: React.MouseEvent) => {
     e.stopPropagation();
