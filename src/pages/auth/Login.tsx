@@ -128,7 +128,8 @@ export const Login: React.FC = () => {
     return false;
   });
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [curtainClosing, setCurtainClosing] = useState<boolean>(false);
+  const [loginStarted, setLoginStarted] = useState<boolean>(false);
+  const [loginResting, setLoginResting] = useState<boolean>(false);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
@@ -302,7 +303,8 @@ export const Login: React.FC = () => {
     sessionStorage.removeItem('outroActive');
     sessionStorage.removeItem('playDashboardIntro');
     setIsLoggingIn(false);
-    setCurtainClosing(false);
+    setLoginStarted(false);
+    setLoginResting(false);
   }, []);
 
   useEffect(() => {
@@ -534,9 +536,16 @@ export const Login: React.FC = () => {
       if (error) throw error;
 
       setIsLoggingIn(true);
+      setLoginStarted(false);
+      setLoginResting(false);
+
       setTimeout(() => {
-        setCurtainClosing(true);
+        setLoginStarted(true);
       }, 20);
+
+      setTimeout(() => {
+        setLoginResting(true);
+      }, 1100);
       
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
@@ -552,7 +561,8 @@ export const Login: React.FC = () => {
         sessionStorage.removeItem('outroActive');
         sessionStorage.removeItem('playDashboardIntro');
         setIsLoggingIn(false);
-        setCurtainClosing(false);
+        setLoginStarted(false);
+        setLoginResting(false);
 
         await logAudit(
           'USER_LOGIN_FAILED',
@@ -587,7 +597,8 @@ export const Login: React.FC = () => {
       sessionStorage.removeItem('outroActive');
       sessionStorage.removeItem('playDashboardIntro');
       setIsLoggingIn(false);
-      setCurtainClosing(false);
+      setLoginStarted(false);
+      setLoginResting(false);
       toast.error(err.message || 'Invalid username, email, or password.');
       setLoginValue('password', '');
       triggerShake(setShakePassword);
@@ -1132,20 +1143,26 @@ export const Login: React.FC = () => {
 
       </div>
 
-      {/* LOGIN SUCCESS OUTRO FLUIDISM CURTAIN */}
+      {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
       {isLoggingIn && (
         <div
-          className={`fixed top-0 bottom-0 -left-[50vw] w-[150vw] z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
-            curtainClosing ? 'translate-x-[50vw]' : '-translate-x-[150%]'
+          className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+            loginStarted ? "translate-x-0 scale-x-[-1]" : "-translate-x-[250%] scale-x-[-1]"
           }`}
         >
           <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-            <div className="absolute top-0 right-0 h-full origin-right scale-x-[2] sm:scale-x-[3.5]">
-              <div className="absolute top-0 right-16 sm:right-24 h-full w-16 sm:w-28 blur-xl opacity-90 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
-              <div className="absolute top-0 right-8 sm:right-14 h-full w-8 sm:w-14 bg-[#123c73] dark:bg-[#7a0000] opacity-95" />
-              <div className="absolute top-0 right-4 sm:right-8 h-full w-5 sm:w-8 bg-[#295c9a] dark:bg-[#a60303]" />
-              <div className="absolute top-0 right-1.5 sm:right-3 h-full w-3 sm:w-5 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_15px_rgba(83,156,255,0.9)] sm:shadow-[0_0_25px_rgba(83,156,255,0.9)] dark:shadow-[0_0_15px_rgba(230,0,0,0.9)] dark:sm:shadow-[0_0_25px_rgba(230,0,0,0.9)]" />
-              <div className="absolute top-0 right-0 h-full w-1 sm:w-1.5 bg-white dark:bg-red-100 shadow-[0_0_20px_rgba(255,255,255,1)] sm:shadow-[0_0_30px_rgba(255,255,255,1)] dark:shadow-[0_0_20px_rgba(255,120,120,1)] dark:sm:shadow-[0_0_30px_rgba(255,120,120,1)]" />
+            <div 
+              className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                loginResting 
+                  ? "scale-x-100" 
+                  : "scale-x-[2.5] sm:scale-x-[8]"
+              }`}
+            >
+              <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
+              <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#7a0000] opacity-90" />
+              <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#295c9a] dark:bg-[#a60303]" />
+              <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_10px_rgba(83,156,255,0.8)] sm:shadow-[0_0_20px_rgba(83,156,255,0.8)] dark:shadow-[0_0_10px_rgba(230,0,0,0.8)] dark:sm:shadow-[0_0_20px_rgba(230,0,0,0.8)]" />
+              <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)] dark:sm:shadow-[0_0_25px_rgba(255,100,100,1)]" />
             </div>
           </div>
         </div>

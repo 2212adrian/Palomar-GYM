@@ -88,27 +88,6 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 flex-1 sm:flex-initial">
-              <button
-                type="button"
-                onClick={() => setSelectedCardFormat('QR')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                  selectedFormat === 'QR' ? 'bg-red-600 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                QR Card
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCardFormat('Manual')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                  selectedFormat === 'Manual' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Manual Card
-              </button>
-            </div>
-
             <button
               type="button"
               onClick={onClose}
