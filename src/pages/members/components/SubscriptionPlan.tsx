@@ -1203,7 +1203,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }
 
     if (!waiverAgreed) {
-      newErrors.waiverAgreed = 'You must acknowledge the Terms & Conditions and Privacy Policy.';
+      newErrors.waiverAgreed = 'You must acknowledge the Terms & Conditions and Privacy Policy.';   
     }
 
     setErrors(newErrors);
@@ -1245,6 +1245,16 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleExecuteCheckout = async () => {
     if (isSubmitting) return;
+
+    // Validation: Checkbox required for paid subscriptions
+    if (selectedPlan !== 'No Subscription' && !subscriptionAgreement) {
+      setErrors(prev => ({
+        ...prev,
+        subscriptionAgreement: 'You must acknowledge the Terms & Conditions and Privacy Policy.'
+      }));
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -1396,7 +1406,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const totalPrice = planBasePrice + appliedGcashFee + appliedCardFee;
 
   const isPlanLocked = intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
-  const isConfirmDisabled = (paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && !isGcashValid) || (selectedPlan !== 'No Subscription' && !subscriptionAgreement) || isRestrictedUnder12 || membershipStatusSummary.isBlocked;
+  const isConfirmDisabled = (paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && !isGcashValid) || isRestrictedUnder12 || membershipStatusSummary.isBlocked;
 
   const shouldShowDetailsForm = enrollmentType === 'new' || Boolean(selectedExistingMember) || Boolean(prefillMember) || Boolean(prefillData);
 
@@ -2274,45 +2284,45 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     )}
 
                     {/* Waiver & Guardian Responsibility Checkbox */}
-<div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
-  <label className="flex items-start gap-2.5 cursor-pointer">
-    <input 
-      type="checkbox" 
-      checked={waiverAgreed} 
-      onChange={e => {
-        setWaiverAgreed(e.target.checked);
-        if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
-      }} 
-      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
-    />
-    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
-      {isMinor ? (
-        <>
-          I certify that I am the lawful parent/legal guardian, all information is true and correct, and I voluntarily grant permission for this minor to enroll and use the facility, accepting full responsibility for their safety, compliance, and conduct under the{' '}
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
-            Terms &amp; Conditions
-          </button>{' '}
-          and{' '}
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
-            Privacy Policy
-          </button>. *
-        </>
-      ) : (
-        <>
-          I certify that all information provided is accurate and that the member agrees to abide by the{' '}
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
-            Terms &amp; Conditions
-          </button>{' '}
-          and{' '}
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
-            Privacy Policy
-          </button>. *
-        </>
-      )}
-    </span>
-  </label>
-  {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
-</div>
+                    <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={waiverAgreed} 
+                          onChange={e => {
+                            setWaiverAgreed(e.target.checked);
+                            if (errors.waiverAgreed) setErrors(prev => ({ ...prev, waiverAgreed: '' }));
+                          }} 
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
+                        />
+                        <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
+                          {isMinor ? (
+                            <>
+                              I certify that I am the lawful parent/legal guardian, all information is true and correct, and I voluntarily grant permission for this minor to enroll and use the facility, accepting full responsibility for their safety, compliance, and conduct under the{' '}
+                              <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+                                Terms &amp; Conditions
+                              </button>{' '}
+                              and{' '}
+                              <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+                                Privacy Policy
+                              </button>. *
+                            </>
+                          ) : (
+                            <>
+                              I certify that all information provided is accurate and that the member agrees to abide by the{' '}
+                              <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+                                Terms &amp; Conditions
+                              </button>{' '}
+                              and{' '}
+                              <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer">
+                                Privacy Policy
+                              </button>. *
+                            </>
+                          )}
+                        </span>
+                      </label>
+                      {errors.waiverAgreed && <span className="text-[9px] text-red-500 font-bold block mt-1">{errors.waiverAgreed}</span>}
+                    </div>
                   </div>
 
                 </div>
@@ -2403,41 +2413,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               </div>
 
-{/* PAYMENT METHOD GATEWAY */}
-{selectedPlan !== 'No Subscription' && (
-  <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
-    <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">
-      Select Payment Gateway
-    </span>
-    <div className="grid grid-cols-2 gap-3">
-      {/* Cash Option */}
-      <div 
-        onClick={() => setPaymentMethod('Cash')} 
-        className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
-          paymentMethod === 'Cash' 
-            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
-            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
-        }`}
-      >
-        <span className="text-sm">💰</span>
-        <span className="text-xs font-bold uppercase">Cash</span>
-      </div>
+              {/* PAYMENT METHOD GATEWAY */}
+              {selectedPlan !== 'No Subscription' && (
+                <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
+                  <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">
+                    Select Payment Gateway
+                  </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Cash Option */}
+                    <div 
+                      onClick={() => setPaymentMethod('Cash')} 
+                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+                        paymentMethod === 'Cash' 
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
+                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm">💰</span>
+                      <span className="text-xs font-bold uppercase">Cash</span>
+                    </div>
 
-      {/* GCash Option */}
-      <div 
-        onClick={() => setPaymentMethod('GCash')} 
-        className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
-          paymentMethod === 'GCash' 
-            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
-            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
-        }`}
-      >
-        <span className="text-sm">📱</span>
-        <span className="text-xs font-bold uppercase">GCash</span>
-      </div>
-    </div>
-  </div>
-)}
+                    {/* GCash Option */}
+                    <div 
+                      onClick={() => setPaymentMethod('GCash')} 
+                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+                        paymentMethod === 'GCash' 
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs' 
+                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm">📱</span>
+                      <span className="text-xs font-bold uppercase">GCash</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Subscription Terms & Privacy Agreement Checkbox */}
+              {selectedPlan !== 'No Subscription' && (
+                <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={subscriptionAgreement} 
+                      onChange={(e) => {
+                        setSubscriptionAgreement(e.target.checked);
+                        if (errors.subscriptionAgreement) {
+                          setErrors(prev => ({ ...prev, subscriptionAgreement: '' }));
+                        }
+                      }} 
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0" 
+                    />
+                    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
+                      I verify that payment has been received and the member agrees to strictly obey and follow all gym rules, facility regulations, and policies stated in the{' '}
+                      <button 
+                        type="button" 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('terms'); }} 
+                        className="text-blue-700 dark:text-blue-400 underline font-bold cursor-pointer"
+                      >
+                        Terms &amp; Conditions
+                      </button>{' '}
+                      and{' '}
+                      <button 
+                        type="button" 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreementDocument('privacy'); }} 
+                        className="text-blue-700 dark:text-blue-400 underline font-bold cursor-pointer"
+                      >
+                        Privacy Policy
+                      </button>. *
+                    </span>
+                  </label>
+                  {errors.subscriptionAgreement && (
+                    <span className="text-[9px] text-red-500 font-bold block mt-1">
+                      {errors.subscriptionAgreement}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* GCash Reference */}
               {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
@@ -2475,29 +2527,33 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </label>
               </div>
 
-              {/* Fee Breakdown */}
-              <div className="border-t border-dashed border-slate-300 dark:border-zinc-800 pt-3 space-y-1 font-mono text-xs">
-                <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>Plan Base Price:</span>
-                  <span className="text-slate-900 dark:text-slate-200">₱{planBasePrice.toLocaleString()}.00</span>
-                </div>
-                {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
-                  <div className="flex justify-between text-emerald-700 dark:text-emerald-400 font-bold">
-                    <span>GCash Fee:</span>
-                    <span>+₱{gcashFee}.00</span>
+              {/* Fee Breakdown (Only shown when Total Price > 0) */}
+              {totalPrice > 0 && (
+                <div className="border-t border-dashed border-slate-300 dark:border-zinc-800 pt-3 space-y-1 font-mono text-xs">
+                  {planBasePrice > 0 && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>Plan Base Price:</span>
+                      <span className="text-slate-900 dark:text-slate-200">₱{planBasePrice.toLocaleString()}.00</span>
+                    </div>
+                  )}
+                  {paymentMethod === 'GCash' && selectedPlan !== 'No Subscription' && (
+                    <div className="flex justify-between text-emerald-700 dark:text-emerald-400 font-bold">
+                      <span>GCash Fee:</span>
+                      <span>+₱{gcashFee}.00</span>
+                    </div>
+                  )}
+                  {addIdCard && (
+                    <div className="flex justify-between text-blue-700 dark:text-blue-400 font-bold">
+                      <span>Card Printing Fee:</span>
+                      <span>+₱{cardFee}.00</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-sm text-slate-900 dark:text-white pt-1.5 border-t border-slate-200 dark:border-zinc-800">
+                    <span>Invoice Total:</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 text-base">₱{totalPrice.toLocaleString()}.00</span>
                   </div>
-                )}
-                {addIdCard && (
-                  <div className="flex justify-between text-blue-700 dark:text-blue-400 font-bold">
-                    <span>Card Printing Fee:</span>
-                    <span>+₱{cardFee}.00</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-sm text-slate-900 dark:text-white pt-1.5 border-t border-slate-200 dark:border-zinc-800">
-                  <span>Invoice Total:</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 text-base">₱{totalPrice.toLocaleString()}.00</span>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -2509,33 +2565,51 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <CheckCircle className="w-5 h-5" />
                 </div>
                 <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
-                  Intake Successful
+                  {selectedPlan === 'No Subscription' && !addIdCard ? 'Profile Saved Successfully' : 'Intake Successful'}
                 </h4>
                 <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
-                  The member profile has been registered and verified in the database.
+                  {selectedPlan === 'No Subscription' && !addIdCard
+                    ? 'Member profile registered and verified in database without an active subscription.'
+                    : 'The member subscription and payment have been verified and recorded.'}
                 </p>
               </div>
 
-              <div className="w-full flex justify-center pt-2">
-                <OfficialReceipt
-                  ref={receiptRef}
-                  variant="inline"
-                  data={{
-                    receiptType: 'subscription',
-                    receiptNo: finishedIds.receipt_no,
-                    customerName: getCombinedFullName(),
-                    planType: selectedPlan === 'No Subscription' ? 'No Subscription (Profile Only)' : selectedPlan,
-                    basePrice: planBasePrice,
-                    gcashFee: appliedGcashFee,
-                    cardFee: appliedCardFee,
-                    paymentMethod: paymentMethod,
-                    gcashRefNo: gcashReference,
-                    transactionDate: finishedIds.transaction_date,
-                    processedBy: 'WOLF PALOMAR STAFF',
-                    qrValue: finishedIds.receipt_no
-                  }}
-                />
-              </div>
+              {/* Render Receipt ONLY for paid plans / paid card issuance */}
+              {(selectedPlan !== 'No Subscription' || addIdCard) ? (
+                <div className="w-full flex justify-center pt-2">
+                  <OfficialReceipt
+                    ref={receiptRef}
+                    variant="inline"
+                    data={{
+                      receiptType: 'subscription',
+                      receiptNo: finishedIds.receipt_no,
+                      customerName: getCombinedFullName(),
+                      planType: selectedPlan,
+                      basePrice: planBasePrice,
+                      gcashFee: appliedGcashFee,
+                      cardFee: appliedCardFee,
+                      paymentMethod: paymentMethod,
+                      gcashRefNo: gcashReference,
+                      transactionDate: finishedIds.transaction_date,
+                      processedBy: 'WOLF PALOMAR STAFF',
+                      qrValue: finishedIds.receipt_no
+                    }}
+                  />
+                </div>
+              ) : (
+                /* Clean Summary Card for Profile-Only */
+                <div className="p-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-center space-y-2 max-w-sm mx-auto shadow-sm">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Member Profile Created</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white block">{getCombinedFullName()}</span>
+                  </div>
+                  <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Assigned Member ID</span>
+                    <span className="text-sm font-mono font-black text-blue-600 dark:text-blue-400 block mt-0.5">{finishedIds.member_id}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-mono">No subscription invoice generated for this profile.</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -2571,10 +2645,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>Processing...</span>
+                      <span>{selectedPlan === 'No Subscription' ? 'Saving...' : 'Processing...'}</span>
                     </>
                   ) : (
-                    <span>Confirm Checkout</span>
+                    <span>{selectedPlan === 'No Subscription' ? 'Save Profile' : 'Confirm Checkout'}</span>
                   )}
                 </button>
               ) : step === 1 && intakeMode === 'Manual' ? (
@@ -2591,25 +2665,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             </>
           ) : (
             <div className="w-full flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => receiptRef.current?.handleDownloadJpg()}
-                  className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-                >
-                  <Download className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Download Image</span>
-                </button>
+              {(selectedPlan !== 'No Subscription' || addIdCard) ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => receiptRef.current?.handleDownloadJpg()}
+                    className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Download Image</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => receiptRef.current?.handlePrint()}
-                  className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-                >
-                  <Printer className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Print Receipt</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => receiptRef.current?.handlePrint()}
+                    className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Print Receipt</span>
+                  </button>
+                </div>
+              ) : (
+                <div />
+              )}
 
               <button 
                 type="button"
