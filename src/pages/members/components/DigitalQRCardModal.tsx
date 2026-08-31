@@ -20,7 +20,7 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
   onOpenPrintModal,
 }) => {
   // Format switch state: QR vs Manual Template
-  const [selectedFormat, setSelectedCardFormat] = useState<'QR' | 'Manual'>('QR');
+  const [selectedFormat] = useState<'QR' | 'Manual'>('QR');
 
   const issueDate = useMemo<string>(() => {
     if (card?.issued_at) {
