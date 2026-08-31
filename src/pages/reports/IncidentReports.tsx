@@ -1,5 +1,5 @@
-//src/pages/reports/IncidentReports.tsx
-import React, { useState, useEffect, useContext, useRef  } from 'react';
+// src/pages/reports/IncidentReports.tsx
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation } from 'react-router-dom'; 
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -84,9 +84,17 @@ export const IncidentReports: React.FC = () => {
   const { user } = useAuthStore();
   const { setActions } = useContext(HeaderActionsContext);
   
+  // Safe, case-insensitive role check
+  const roleString = String(
+    user?.app_metadata?.role || 
+    user?.user_metadata?.role || 
+    (user as any)?.role || 
+    ''
+  ).toLowerCase().trim();
+
   const isAdmin = 
-    user?.app_metadata?.role === 'Admin' || 
-    user?.user_metadata?.role === 'Admin' || 
+    roleString === 'admin' || 
+    roleString === 'superadmin' || 
     isSuperAdmin(user?.email);
 
   // Mount Guard Ref
@@ -185,7 +193,7 @@ export const IncidentReports: React.FC = () => {
     );
   });
 
-  // centralize top action controls
+  // Centralize top action controls
   useEffect(() => {
     setActions(
       <>
@@ -225,19 +233,18 @@ export const IncidentReports: React.FC = () => {
     );
   }, [isAdmin, reports, allMembers]);
 
-   useEffect(() => {
+  useEffect(() => {
     if (location.state?.openIncidentId && reports.length > 0) {
       const target = reports.find((r) => r.id === location.state.openIncidentId);
       if (target) {
         setSelectedReport(target);
         setIsDetailModalOpen(true);
-        // Clear navigation state so it doesn't re-open on browser refresh
         window.history.replaceState({}, document.title);
       }
     }
   }, [location.state, reports]);
 
-  // Fetch Gym Profile contacts safely without hardcoded ID constraints
+  // Fetch Gym Profile contacts
   const fetchEmergencyContacts = async () => {
     try {
       const { data, error } = await supabase
@@ -260,7 +267,7 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  // Fetch Incident Reports
+  // Fetch Incident Reports: Admins get ALL reports, Staff get only their own
   const fetchIncidentReports = async () => {
     try {
       if (isMountedRef.current) setLoading(true);
@@ -303,12 +310,15 @@ export const IncidentReports: React.FC = () => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
+            const report = newRecord as IncidentReport;
+            if (!isAdmin && report.created_by !== user?.id) return;
             setReports((prev) => {
-              if (prev.some((r) => r.id === newRecord.id)) return prev;
-              return [newRecord as IncidentReport, ...prev];
+              if (prev.some((r) => r.id === report.id)) return prev;
+              return [report, ...prev];
             });
           } else if (eventType === 'UPDATE') {
             const updated = newRecord as IncidentReport;
+            if (!isAdmin && updated.created_by !== user?.id) return;
             setReports((prev) =>
               prev.map((r) => (r.id === updated.id ? updated : r))
             );
@@ -327,7 +337,7 @@ export const IncidentReports: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, user]);
+  }, [isAdmin, user?.id]);
 
   const recordAuditLog = async (action: string, details: string) => {
     try {
@@ -416,6 +426,10 @@ export const IncidentReports: React.FC = () => {
   };
 
   const openCreateModal = () => {
+    if (isAdmin) {
+      toast.info('Only staff personnel are authorized to submit incident reports.');
+      return;
+    }
     setIsEditing(false);
     setFormTitle('');
     setFormDescription('');
@@ -506,14 +520,13 @@ export const IncidentReports: React.FC = () => {
   // Triggered when a report is selected
   const handleSelectReport = async (report: IncidentReport) => {
     if (selectedReport?.id === report.id) {
-      // Toggle unselect behavior
       setSelectedReport(null);
       setIsDetailModalOpen(false);
     } else {
       setSelectedReport(report);
       setIsDetailModalOpen(true);
       
-      // Automatically mark as Reviewed (Read) when clicked by an admin
+      // Mark as Reviewed (Read) automatically when opened by an admin
       if (isAdmin && report.status === 'Unread' && !report.is_archived) {
         await updateStatus(report.id, 'Read');
       }
@@ -530,7 +543,6 @@ export const IncidentReports: React.FC = () => {
     setPendingDelete(report);
     setShowUndoToast(true);
 
-    // Optimistically hide item from local list
     setReports(prev => prev.filter(r => r.id !== report.id));
     if (selectedReport?.id === report.id) {
       setSelectedReport(null);
@@ -551,7 +563,6 @@ export const IncidentReports: React.FC = () => {
       await recordAuditLog('INCIDENT_DELETED', `Deleted incident report "${pendingDelete.title}".`);
     } catch {
       toast.error('Deletion failure. Restoring report file.');
-      // Fallback: put it back on connection error
       setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     } finally {
       setPendingDelete(null);
@@ -561,7 +572,6 @@ export const IncidentReports: React.FC = () => {
 
   const undoDelete = () => {
     if (!pendingDelete) return;
-    // Restore file safely
     setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     setPendingDelete(null);
     setShowUndoToast(false);
@@ -593,7 +603,6 @@ export const IncidentReports: React.FC = () => {
         setSelectedReport(prev => prev ? { ...prev, status, read_at: status === 'Read' ? new Date().toISOString() : null } : null);
       }
       
-      // Preserve local state with silent sync
       setReports(prev => prev.map(r => r.id === id ? { ...r, status, read_at: status === 'Read' ? new Date().toISOString() : null } : r));
     } catch {
       toast.error('Failed to change status attributes.');
@@ -762,7 +771,6 @@ export const IncidentReports: React.FC = () => {
               {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
             </span>
             
-            {/* Desktop Only Close Button to allow Unselecting */}
             {!isModalContext && (
               <button
                 onClick={() => setSelectedReport(null)}
@@ -796,11 +804,11 @@ export const IncidentReports: React.FC = () => {
           </p>
         </div>
 
-        {/* Actions panel depending on roles */}
+        {/* Actions panel according to Role */}
         <div className="border-t border-slate-100 dark:border-white/5 pt-4">
           {isAdmin ? (
             <div className="space-y-3.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Admin Controls</h4>
               <div className="flex flex-wrap gap-2">
                 {report.status === 'Unread' ? (
                   <button
@@ -849,12 +857,12 @@ export const IncidentReports: React.FC = () => {
 
               <div className="p-3.5 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/10 rounded-xl flex items-start gap-2 text-xs text-blue-600 dark:text-blue-300">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Adjusting status keeps staff informed. Archived files can be reviewed at any time by selecting "Archived" filter.</span>
+                <span>Marking reports as reviewed updates the status for staff. Archived incidents can always be retrieved via the "Archived" filter.</span>
               </div>
             </div>
           ) : (
             <div className="space-y-3.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Staff Actions</h4>
               {report.status === 'Unread' && !report.is_archived ? (
                 <div className="flex gap-2">
                   <button
@@ -876,7 +884,7 @@ export const IncidentReports: React.FC = () => {
               ) : (
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
-                  <span>This report has already been reviewed or archived by administrators and can no longer be edited or deleted by staff personnel.</span>
+                  <span>This incident report has been reviewed or archived by gym management and is now locked from further edits or deletion.</span>
                 </div>
               )}
             </div>
@@ -889,7 +897,7 @@ export const IncidentReports: React.FC = () => {
   return (
     <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-24 lg:pb-8">
 
-      {/* 2. Main Dashboard Workspace (Flexbox with pure CSS transitions to eliminate column wrapping jank) */}
+      {/* Main Dashboard Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
         
         {/* Left Column: Directory List Section */}
@@ -900,11 +908,11 @@ export const IncidentReports: React.FC = () => {
               : "w-full max-w-5xl mx-auto"
           }`}
         >
-          {/* Soft Warning at >= 10 unread reports */}
-          {stats.unread >= 10 && (
+          {/* Queue Alert for Admins if >= 10 unread */}
+          {isAdmin && stats.unread >= 10 && (
             <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-[11px] flex items-center gap-2 font-medium animate-slide-up">
               <AlertTriangle className="w-4 h-4 shrink-0 animate-bounce text-amber-500" />
-              <span>Queue Alert: You have {stats.unread} unread incident reports. Please process them to clear the pipeline.</span>
+              <span>Queue Alert: You have {stats.unread} unread incident reports requiring admin review.</span>
             </div>
           )}
           
@@ -979,44 +987,48 @@ export const IncidentReports: React.FC = () => {
             </div>
           </div>
 
-          {/* Bulk Select Action Bar (Only visible when checkbox is checked) */}
+          {/* Bulk Select Action Bar */}
           {selectedIds.length > 0 && (
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold animate-scale-up">
               <span className="text-blue-600 dark:text-blue-400 font-mono">
                 {selectedIds.length} Selected
               </span>
               <div className="flex gap-1 flex-wrap">
-                <button
-                  onClick={() => handleBulkAction('Read')}
-                  title="Mark as Read"
-                  className="px-2 py-1 bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-green-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
-                >
-                  Read
-                </button>
-                <button
-                  onClick={() => handleBulkAction('Unread')}
-                  title="Reopen selected"
-                  className="px-2 py-1 bg-slate-500/10 text-slate-600 border border-slate-500/20 hover:bg-slate-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
-                >
-                  Unread
-                </button>
-                <button
-                  onClick={() => handleBulkAction('Archive')}
-                  title="Archive selected"
-                  className="px-2 py-1 bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
-                >
-                  Archive
-                </button>
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() => handleBulkAction('Read')}
+                      title="Mark as Read"
+                      className="px-2 py-1 bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-green-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                    >
+                      Read
+                    </button>
+                    <button
+                      onClick={() => handleBulkAction('Unread')}
+                      title="Reopen selected"
+                      className="px-2 py-1 bg-slate-500/10 text-slate-600 border border-slate-500/20 hover:bg-slate-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                    >
+                      Unread
+                    </button>
+                    <button
+                      onClick={() => handleBulkAction('Archive')}
+                      title="Archive selected"
+                      className="px-2 py-1 bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                    >
+                      Archive
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => handleBulkAction('Delete')}
                   title="Delete selected"
-                  className="px-2 py-1 bg-red-500/10 text-red-650 border border-red-500/20 hover:bg-red-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                  className="px-2 py-1 bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
                 >
                   Delete
                 </button>
                 <button
                   onClick={() => setSelectedIds([])}
-                  className="p-1 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1044,14 +1056,15 @@ export const IncidentReports: React.FC = () => {
               </div>
               <h3 className="font-heading text-xs uppercase tracking-widest text-slate-800 dark:text-slate-200">No incident reports</h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                Reports submitted by your staff matching your active filters will appear here.
+                {isAdmin 
+                  ? "Reports submitted by your staff matching your active filters will appear here." 
+                  : "You haven't submitted any incident reports matching the active filters."}
               </p>
             </div>
           ) : (
             <div className="space-y-6">
               {Object.entries(getGroupedReports()).map(([dateLabel, groupReports]) => (
                 <div key={dateLabel} className="space-y-3 relative">
-                  {/* Timeline separators showing dynamic day records */}
                   <div className="flex items-center gap-2 py-1 select-none">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#123c73] dark:bg-[#bf0202]" />
                     <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
@@ -1110,7 +1123,7 @@ export const IncidentReports: React.FC = () => {
                           </div>
 
                           <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
-                            <span className="font-semibold text-slate-700 dark:text-slate-355">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
                               {report.staff_name}
                             </span>
                             <span>•</span>
@@ -1118,7 +1131,7 @@ export const IncidentReports: React.FC = () => {
                               {new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                             </span>
                             <span>•</span>
-                            <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-455'}`}>
+                            <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}>
                               {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
                             </span>
                           </div>
@@ -1208,7 +1221,7 @@ export const IncidentReports: React.FC = () => {
 
       </div>
 
-      {/* Reusable universal countdown timer for deleted items */}
+      {/* Reusable Countdown Toast */}
       <UndoToast
         isOpen={showUndoToast}
         message={`Incident report "${pendingDelete?.title}" deleted.`}
@@ -1251,7 +1264,7 @@ export const IncidentReports: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Emergency contacts modal panel */}
+      {/* Emergency Contacts Modal */}
       <AnimatePresence>
         {showContactsModal && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -1382,9 +1395,9 @@ export const IncidentReports: React.FC = () => {
                 </button>
               </div>
 
-              {/* Main Modal Layout: 2-Column Split */}
+              {/* Main Modal Layout */}
               <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-0 overflow-hidden">
-                {/* Left Pane: Search & List (5 cols) */}
+                {/* Left Pane: Search & List */}
                 <div className="md:col-span-5 border-r border-slate-200 dark:border-white/5 p-4 flex flex-col gap-3 min-h-0 bg-slate-50/30 dark:bg-black/10">
                   <div className="relative shrink-0">
                     <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
@@ -1458,7 +1471,7 @@ export const IncidentReports: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Pane: Selected Member Profile & Emergency Dossier (7 cols) */}
+                {/* Right Pane: Selected Member Profile */}
                 <div className="md:col-span-7 p-5 flex flex-col min-h-0 overflow-y-auto space-y-4">
                   {selectedEmergencyMember ? (
                     <div className="space-y-4">
@@ -1488,7 +1501,7 @@ export const IncidentReports: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* EMERGENCY CONTACT HIGHLIGHT BOX (Red / Urgent Alert Styling) */}
+                      {/* Emergency Contact Highlight Box */}
                       <div className="p-4 bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/30 rounded-2xl space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 font-heading">
@@ -1655,7 +1668,7 @@ export const IncidentReports: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* 4. Accessible New / Edit Modal Form */}
+      {/* Staff New / Edit Modal Form */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up max-h-[90vh] flex flex-col">
