@@ -10,7 +10,7 @@ import {
   endOfMonth, 
   subMonths, 
   startOfYear, 
-  endOfYear 
+  endOfYear
 } from 'date-fns';
 import { 
   FileSpreadsheet, 
@@ -59,71 +59,13 @@ interface ReportCategoryMeta {
   icon: React.ElementType;
 }
 
-const REPORT_CATEGORIES: ReportCategoryMeta[] = [
-  {
-    id: 'bir',
-    title: 'BIR Official Sales & Tax Register',
-    shortLabel: 'BIR Sales & Tax',
-    badge: 'BIR Form 2551Q / Non-VAT',
-    description: 'Compliant Philippine Bureau of Internal Revenue sales book and official receipt ledger with breakdown of gross revenue, VAT-exempt transactions, and payment methods.',
-    legalPurpose: 'Mandatory bookkeeping ledger for BIR quarterly percentage tax filing, audit inspection, and official receipt verification.',
-    columns: ['OR / Ref #', 'Date & Time', 'Customer Name', 'TIN', 'Transaction Type', 'Gross Sales (₱)', 'VAT-Exempt (₱)', 'Net Sales (₱)', 'Payment Method', 'Status'],
-    filePrefix: 'BIR_Official_Tax_Register',
-    icon: ShieldCheck
-  },
-  {
-    id: 'sales',
-    title: 'Product Inventory & POS Sales Register',
-    shortLabel: 'POS & Inventory',
-    badge: 'Stock Velocity & POS',
-    description: 'Itemized retail sales ledger capturing unit prices, barcode identities, quantity velocities, gross sales per item, and current shelf stock levels.',
-    legalPurpose: 'Point-of-sale inventory audit, shrinkage monitoring, merchandise margin analysis, and reorder planning.',
-    columns: ['Barcode ID', 'Product Name', 'Unit Price (₱)', 'Units Sold', 'Gross Sales (₱)', 'Stock Remaining', 'Status'],
-    filePrefix: 'Product_Sales_Inventory',
-    icon: FileSpreadsheet
-  },
-  {
-    id: 'attendance',
-    title: 'Gym Attendance & Facility Pass Log',
-    shortLabel: 'Attendance Passes',
-    badge: 'Logbook & Foot Traffic',
-    description: 'Comprehensive physical and digital check-in logbook tracking member entries, walk-in day passes, cashier collections, and peak facility usage hours.',
-    legalPurpose: 'Facility utilization verification, front-desk collection reconciliation, and physical safety occupancy tracking.',
-    columns: ['Slip / Log #', 'Check-In Date', 'Customer Name', 'Access Category', 'Entry Fee (₱)', 'Payment Method', 'Payment Ref'],
-    filePrefix: 'Gym_Attendance_Log',
-    icon: Calendar
-  },
-  {
-    id: 'subscriptions',
-    title: 'Membership Subscriptions & Contracts',
-    shortLabel: 'Memberships',
-    badge: 'Contract & Membership',
-    description: 'Active gym membership contracts, subscription intakes, recurring renewal revenue, plan packages, and active client terms.',
-    legalPurpose: 'Membership recurring revenue reporting, contract expiration audit, and customer account status validation.',
-    columns: ['Contract ID', 'Member Name', 'Plan Name', 'Contract Price (₱)', 'Start Date', 'End Date', 'Payment Method', 'Status'],
-    filePrefix: 'Membership_Contracts',
-    icon: Award
-  },
-  {
-    id: 'combined',
-    title: 'Consolidated Operations & Financial Summary',
-    shortLabel: 'Combined Financial',
-    badge: 'Executive Summary',
-    description: 'Unified financial timeline combining retail point-of-sale proceeds, logbook day passes, and membership subscriptions into an executive financial statement.',
-    legalPurpose: 'Executive management review, daily cash-up reconciliation, and multi-stream revenue growth analytics.',
-    columns: ['Date', 'POS Sales (₱)', 'Logbook Passes (₱)', 'Total Revenue (₱)', 'Transactions Count'],
-    filePrefix: 'Consolidated_Financial_Summary',
-    icon: TrendingUp
-  }
-];
-
 export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   isOpen,
   onClose,
   initialType = 'bir',
-  birData = [],
-  topProducts = [],
-  revenueTimeline = []
+  birData: _birData = [],
+  topProducts: _topProducts = [],
+  revenueTimeline: _revenueTimeline = []
 }) => {
   const normalizedInitial = (initialType === 'inventory' ? 'sales' : initialType) as ReportCategoryType;
   const [reportType, setReportType] = useState<ReportCategoryType>(normalizedInitial);
@@ -133,11 +75,35 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   const [isLoadingLive, setIsLoadingLive] = useState(false);
   const [previewTab, setPreviewTab] = useState<'showcase' | 'details'>('showcase');
 
+  // VAT configuration from system rates
+  const [vatPercentage, setVatPercentage] = useState<number>(12);
+
   // Live category datasets loaded from Supabase
-  const [liveBirData, setLiveBirData] = useState<BirReportItem[]>(birData);
+  const [liveBirData, setLiveBirData] = useState<any[]>([]);
   const [liveSalesData, setLiveSalesData] = useState<any[]>([]);
   const [liveAttendanceData, setLiveAttendanceData] = useState<any[]>([]);
   const [liveSubsData, setLiveSubsData] = useState<any[]>([]);
+  const [liveCombinedData, setLiveCombinedData] = useState<any[]>([]);
+
+  // Fetch VAT percentage from rates_config on load
+  useEffect(() => {
+    const fetchVatConfig = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('rates_config')
+          .select('vat_percentage, vat_enabled')
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && data && data.vat_percentage !== null && data.vat_percentage !== undefined) {
+          setVatPercentage(Number(data.vat_percentage));
+        }
+      } catch (err) {
+        console.warn('Could not load rates_config VAT percentage:', err);
+      }
+    };
+    fetchVatConfig();
+  }, []);
 
   // Sync initialType whenever the modal opens or selected type changes
   useEffect(() => {
@@ -147,9 +113,67 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
     }
   }, [isOpen, initialType]);
 
+  const reportCategories: ReportCategoryMeta[] = useMemo(() => [
+    {
+      id: 'bir',
+      title: 'BIR Official Sales & Tax Register',
+      shortLabel: 'BIR Sales & Tax',
+      badge: 'BIR Form 2551Q / Non-VAT',
+      description: `Compliant Philippine Bureau of Internal Revenue sales book and official receipt ledger with breakdown of gross revenue, VAT-exempt transactions, ${vatPercentage}% VAT computation, and net sales.`,
+      legalPurpose: 'Mandatory bookkeeping ledger for BIR quarterly percentage tax filing, audit inspection, and official receipt verification.',
+      columns: ['OR / Ref #', 'Date & Time', 'Customer Name', 'Transaction Type', 'Gross Sales (₱)', 'VAT-Exempt (₱)', `VAT (${vatPercentage}%) (₱)`, 'Net Sales (₱)', 'Payment Method', 'Status'],
+      filePrefix: 'BIR_Official_Tax_Register',
+      icon: ShieldCheck
+    },
+    {
+      id: 'sales',
+      title: 'Product Inventory & POS Sales Register',
+      shortLabel: 'POS & Inventory',
+      badge: 'Stock Velocity & POS',
+      description: 'Itemized retail sales ledger capturing unit prices, barcode identities, quantity velocities, gross sales per item, and current shelf stock levels.',
+      legalPurpose: 'Point-of-sale inventory audit, shrinkage monitoring, merchandise margin analysis, and reorder planning.',
+      columns: ['Barcode ID', 'Product Name', 'Unit Price (₱)', 'Units Sold', 'Gross Sales (₱)', 'Stock Remaining'],
+      filePrefix: 'Product_Sales_Inventory',
+      icon: FileSpreadsheet
+    },
+    {
+      id: 'attendance',
+      title: 'Gym Attendance & Facility Pass Log',
+      shortLabel: 'Attendance Passes',
+      badge: 'Logbook & Foot Traffic',
+      description: 'Comprehensive check-in logbook aggregating member and walk-in visits into a unified customer pass summary with visit counts and total fees.',
+      legalPurpose: 'Facility utilization verification, front-desk collection reconciliation, and physical safety occupancy tracking.',
+      columns: ['Customer Name', 'Access Category', 'Total Visits (Qty)', 'Total Fees Paid (₱)', 'Latest Check-In', 'Payment Method'],
+      filePrefix: 'Gym_Attendance_Log',
+      icon: Calendar
+    },
+    {
+      id: 'subscriptions',
+      title: 'Membership Subscriptions & Contracts',
+      shortLabel: 'Memberships',
+      badge: 'Contract & Membership',
+      description: 'Gym membership contracts, subscription intakes, recurring renewal revenue, plan packages, and active client terms.',
+      legalPurpose: 'Membership recurring revenue reporting, contract expiration audit, and customer account validation.',
+      columns: ['Contract ID', 'Member Name', 'Plan Name', 'Contract Price (₱)', 'Start Date', 'End Date', 'Payment Method'],
+      filePrefix: 'Membership_Contracts',
+      icon: Award
+    },
+    {
+      id: 'combined',
+      title: 'Consolidated Operations & Financial Summary',
+      shortLabel: 'Combined Financial',
+      badge: 'Executive Summary',
+      description: 'Unified financial timeline combining retail point-of-sale proceeds, logbook day passes, and membership subscriptions into an executive financial statement.',
+      legalPurpose: 'Executive management review, daily cash-up reconciliation, and multi-stream revenue growth analytics.',
+      columns: ['Date', 'Sales (₱)', 'Logbook (₱)', 'Subscription (₱)', 'Total Revenue (₱)', 'Transaction Count'],
+      filePrefix: 'Consolidated_Financial_Summary',
+      icon: TrendingUp
+    }
+  ], [vatPercentage]);
+
   const selectedCategoryMeta = useMemo(() => {
-    return REPORT_CATEGORIES.find(c => c.id === reportType) || REPORT_CATEGORIES[0];
-  }, [reportType]);
+    return reportCategories.find(c => c.id === reportType) || reportCategories[0];
+  }, [reportType, reportCategories]);
 
   const loadCategoryData = useCallback(async () => {
     if (!isOpen) return;
@@ -158,6 +182,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       const startIso = `${startDate}T00:00:00`;
       const endIso = `${endDate}T23:59:59.999`;
 
+      // ─── 1. BIR TAX REGISTER ───
       if (reportType === 'bir') {
         const [salesRes, attRes, subsRes] = await Promise.all([
           supabase.from('sales').select('*').is('deleted_at', null).gte('created_at', startIso).lte('created_at', endIso),
@@ -165,58 +190,60 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           supabase.from('subscriptions').select('*, members(full_name, phone)').is('voided_at', null).gte('created_at', startIso).lte('created_at', endIso)
         ]);
 
-        const items: BirReportItem[] = [];
+        const items: any[] = [];
+        const vatRate = vatPercentage > 0 ? vatPercentage / 100 : 0.12;
+
         (salesRes.data || []).forEach((s: any) => {
           const gross = Number(s.total_amount || 0);
+          const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
+          const net = gross - vatAmt;
           items.push({
             receipt_no: s.receipt_no || `SLS-${String(s.id).slice(0, 6)}`,
             date: s.created_at,
             customer_name: s.product_name || 'POS Customer',
-            tin_number: s.tin_number || 'N/A',
             transaction_type: 'Product Sale',
             gross_sales: gross,
             vat_exempt_sales: gross,
-            vatable_sales: 0,
-            vat_amount: 0,
-            net_sales: gross,
+            vat_amount: vatAmt,
+            net_sales: net,
             payment_method: s.payment_method || 'Cash',
-            payment_ref: s.payment_ref || undefined,
+            payment_ref: s.reference_number || s.payment_ref || undefined,
             status: 'Valid'
           });
         });
 
         (attRes.data || []).filter((a: any) => Number(a.entry_fee || 0) > 0).forEach((a: any) => {
           const gross = Number(a.entry_fee || 0);
+          const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
+          const net = gross - vatAmt;
           items.push({
             receipt_no: a.receipt_number || `LOG-${String(a.id).slice(0, 6)}`,
             date: a.check_in_time,
             customer_name: a.customer_name || 'Walk-In Guest',
-            tin_number: 'N/A',
             transaction_type: 'Walk-In Entry',
             gross_sales: gross,
             vat_exempt_sales: gross,
-            vatable_sales: 0,
-            vat_amount: 0,
-            net_sales: gross,
+            vat_amount: vatAmt,
+            net_sales: net,
             payment_method: a.payment_method || 'Cash',
-            payment_ref: a.payment_ref || undefined,
+            payment_ref: a.gcash_ref_no || a.payment_ref || undefined,
             status: 'Valid'
           });
         });
 
         (subsRes.data || []).forEach((sub: any) => {
           const gross = Number(sub.price || 0);
+          const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
+          const net = gross - vatAmt;
           items.push({
             receipt_no: sub.receipt_number || `SUB-${String(sub.id).slice(0, 6)}`,
             date: sub.created_at,
             customer_name: sub.members?.full_name || 'Member',
-            tin_number: 'N/A',
             transaction_type: 'Gym Subscription',
             gross_sales: gross,
             vat_exempt_sales: gross,
-            vatable_sales: 0,
-            vat_amount: 0,
-            net_sales: gross,
+            vat_amount: vatAmt,
+            net_sales: net,
             payment_method: sub.payment_method || 'Cash',
             payment_ref: undefined,
             status: 'Valid'
@@ -224,7 +251,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         });
 
         items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setLiveBirData(items.length > 0 ? items : birData);
+        setLiveBirData(items);
+
+      // ─── 2. POS & INVENTORY SALES REGISTER ───
       } else if (reportType === 'sales') {
         const [salesRes, prodRes] = await Promise.all([
           supabase.from('sales').select('*').is('deleted_at', null).gte('created_at', startIso).lte('created_at', endIso),
@@ -235,9 +264,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         const allProds = prodRes.data || [];
 
         const prodMap: Record<string, { barcode: string; name: string; price: number; stock: number; sold: number; revenue: number }> = {};
+        
+        // Populate all existing products
         allProds.forEach(p => {
           prodMap[p.id] = {
-            barcode: p.barcode_id || `BC-${p.id.slice(0, 4)}`,
+            barcode: p.barcode_id || p.manufacturer_barcode || `BC-${String(p.id).slice(0, 6)}`,
             name: p.product_name,
             price: Number(p.selling_price || 0),
             stock: Number(p.stock_quantity ?? p.stock ?? 0),
@@ -246,44 +277,97 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           };
         });
 
+        // Parse all sales in the date range
         allSales.forEach(s => {
-          let itemsList: any[] = [];
-          if (Array.isArray(s.items)) itemsList = s.items;
-          else if (typeof s.items === 'string') {
-            try { itemsList = JSON.parse(s.items); } catch { itemsList = []; }
-          }
+          const itemsParsed: { id?: string; name: string; barcode?: string; qty: number; unitPrice: number; subtotal: number }[] = [];
 
-          if (itemsList.length > 0) {
-            itemsList.forEach((i: any) => {
-              const pid = i.product_id || i.id;
-              if (pid && prodMap[pid]) {
-                const qty = Number(i.quantity || i.qty || 1);
-                prodMap[pid].sold += qty;
-                prodMap[pid].revenue += Number(i.subtotal || (i.price * qty) || 0);
-              }
-            });
-          } else if (s.product_name) {
-            const found = allProds.find(p => p.product_name.toLowerCase() === s.product_name.toLowerCase());
-            if (found && prodMap[found.id]) {
-              prodMap[found.id].sold += 1;
-              prodMap[found.id].revenue += Number(s.total_amount || 0);
+          if (s.items) {
+            let rawItems = s.items;
+            if (typeof rawItems === 'string') {
+              try { rawItems = JSON.parse(rawItems); } catch { rawItems = []; }
+            }
+            if (Array.isArray(rawItems) && rawItems.length > 0) {
+              rawItems.forEach((i: any) => {
+                const pid = i.productId || i.product_id || i.id;
+                const pname = (i.productName || i.product_name || i.name || i.title || '').trim();
+                const qty = Number(i.quantity || i.qty || 1) || 1;
+                const price = Number(i.price || i.selling_price || i.unit_price || 0);
+                const sub = Number(i.subtotal || (price * qty) || 0);
+                itemsParsed.push({ id: pid, name: pname, barcode: i.barcode_id || i.barcode, qty, unitPrice: price, subtotal: sub });
+              });
             }
           }
+
+          if (itemsParsed.length === 0 && s.product_name) {
+            const rawStr = String(s.product_name).trim();
+            const parts = rawStr.split(',').map(p => p.trim()).filter(Boolean);
+            const totalAmount = Number(s.total_amount || 0);
+            const fallbackQty = Number(s.quantity || 1) || 1;
+
+            parts.forEach(part => {
+              const match = part.match(/^(.*?)\s*\(([0-9]+)x\)$/i);
+              if (match) {
+                const name = match[1].trim();
+                const qty = parseInt(match[2], 10) || 1;
+                itemsParsed.push({ name, qty, unitPrice: 0, subtotal: 0 });
+              } else {
+                itemsParsed.push({ name: part, qty: fallbackQty, unitPrice: 0, subtotal: totalAmount });
+              }
+            });
+
+            if (itemsParsed.length > 0 && totalAmount > 0) {
+              const totalUnits = itemsParsed.reduce((sum, it) => sum + it.qty, 0) || 1;
+              itemsParsed.forEach(it => {
+                if (it.subtotal === 0) {
+                  it.subtotal = (totalAmount / totalUnits) * it.qty;
+                  it.unitPrice = it.subtotal / it.qty;
+                }
+              });
+            }
+          }
+
+          // Aggregate into prodMap
+          itemsParsed.forEach(item => {
+            let target: { barcode: string; name: string; price: number; stock: number; sold: number; revenue: number } | undefined = undefined;
+
+            if (item.id && prodMap[item.id]) {
+              target = prodMap[item.id];
+            } else if (item.name) {
+              const cleanItemName = item.name.toLowerCase().trim();
+              const foundKey = Object.keys(prodMap).find(k => {
+                const pName = prodMap[k].name.toLowerCase().trim();
+                return pName === cleanItemName || cleanItemName.includes(pName) || pName.includes(cleanItemName);
+              });
+              if (foundKey) {
+                target = prodMap[foundKey];
+              }
+            }
+
+            if (target) {
+              target.sold += item.qty;
+              target.revenue += item.subtotal > 0 ? item.subtotal : (target.price * item.qty);
+            } else if (item.name) {
+              const fallbackKey = `c-${item.name.toLowerCase().trim()}`;
+              if (!prodMap[fallbackKey]) {
+                prodMap[fallbackKey] = {
+                  barcode: item.barcode || 'PR-0000',
+                  name: item.name,
+                  price: item.unitPrice || (item.qty > 0 ? item.subtotal / item.qty : 0),
+                  stock: 0,
+                  sold: 0,
+                  revenue: 0
+                };
+              }
+              prodMap[fallbackKey].sold += item.qty;
+              prodMap[fallbackKey].revenue += item.subtotal > 0 ? item.subtotal : (prodMap[fallbackKey].price * item.qty);
+            }
+          });
         });
 
-        const list = Object.values(prodMap).sort((a, b) => b.revenue - a.revenue);
-        if (list.length === 0 && topProducts.length > 0) {
-          setLiveSalesData(topProducts.map(p => ({
-            barcode: p.barcode_id,
-            name: p.product_name,
-            price: p.selling_price,
-            stock: p.current_stock,
-            sold: p.total_sold,
-            revenue: p.total_revenue
-          })));
-        } else {
-          setLiveSalesData(list);
-        }
+        const list = Object.values(prodMap).sort((a, b) => b.revenue - a.revenue || b.sold - a.sold);
+        setLiveSalesData(list);
+
+      // ─── 3. ATTENDANCE PASSES (AGGREGATED BY CUSTOMER NAME) ───
       } else if (reportType === 'attendance') {
         const { data } = await supabase
           .from('attendance')
@@ -293,30 +377,131 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           .lte('check_in_time', endIso)
           .order('check_in_time', { ascending: false });
 
-        setLiveAttendanceData(data || []);
+        const rawList = data || [];
+        const aggregatedMap = new Map<string, {
+          customer_name: string;
+          customer_type: string;
+          visits_count: number;
+          total_fees: number;
+          latest_checkin: string;
+          payment_method: string;
+        }>();
+
+        rawList.forEach((a: any) => {
+          const rawName = (a.customer_name || 'Walk-In Guest').trim();
+          const key = rawName.toLowerCase();
+
+          if (!aggregatedMap.has(key)) {
+            aggregatedMap.set(key, {
+              customer_name: rawName,
+              customer_type: a.customer_type || 'Walk-In',
+              visits_count: 0,
+              total_fees: 0,
+              latest_checkin: a.check_in_time,
+              payment_method: a.payment_method || 'Cash'
+            });
+          }
+
+          const entry = aggregatedMap.get(key)!;
+          entry.visits_count += 1;
+          entry.total_fees += Number(a.entry_fee || 0);
+
+          if (new Date(a.check_in_time).getTime() > new Date(entry.latest_checkin).getTime()) {
+            entry.latest_checkin = a.check_in_time;
+            entry.payment_method = a.payment_method || entry.payment_method;
+          }
+          if (a.customer_type === 'Existing Member' || a.customer_type === 'Member' || a.customer_type === 'New Membership') {
+            entry.customer_type = 'Member';
+          }
+        });
+
+        const aggregatedList = Array.from(aggregatedMap.values()).sort((a, b) => b.visits_count - a.visits_count || b.total_fees - a.total_fees);
+        setLiveAttendanceData(aggregatedList);
+
+      // ─── 4. MEMBERSHIP SUBSCRIPTIONS ───
       } else if (reportType === 'subscriptions') {
         const { data } = await supabase
           .from('subscriptions')
-          .select('*, members(full_name, phone, status)')
+          .select('*, members(full_name, phone)')
           .is('voided_at', null)
           .gte('created_at', startIso)
           .lte('created_at', endIso)
           .order('created_at', { ascending: false });
 
         setLiveSubsData(data || []);
+
+      // ─── 5. CONSOLIDATED OPERATIONS & FINANCIAL SUMMARY ───
+      } else if (reportType === 'combined') {
+        const [salesRes, attRes, subsRes] = await Promise.all([
+          supabase.from('sales').select('created_at, total_amount').is('deleted_at', null).gte('created_at', startIso).lte('created_at', endIso),
+          supabase.from('attendance').select('check_in_time, entry_fee').is('deleted_at', null).gte('check_in_time', startIso).lte('check_in_time', endIso),
+          supabase.from('subscriptions').select('created_at, price').is('voided_at', null).gte('created_at', startIso).lte('created_at', endIso)
+        ]);
+
+        const salesList = salesRes.data || [];
+        const attList = attRes.data || [];
+        const subsList = subsRes.data || [];
+
+        const dayMap = new Map<string, {
+          date: string;
+          sales: number;
+          logbook: number;
+          subscription: number;
+          totalRevenue: number;
+          transactionCount: number;
+        }>();
+
+        salesList.forEach((s: any) => {
+          const dKey = format(new Date(s.created_at), 'yyyy-MM-dd');
+          if (!dayMap.has(dKey)) {
+            dayMap.set(dKey, { date: dKey, sales: 0, logbook: 0, subscription: 0, totalRevenue: 0, transactionCount: 0 });
+          }
+          const row = dayMap.get(dKey)!;
+          const amt = Number(s.total_amount || 0);
+          row.sales += amt;
+          row.totalRevenue += amt;
+          row.transactionCount += 1;
+        });
+
+        attList.forEach((a: any) => {
+          const dKey = format(new Date(a.check_in_time), 'yyyy-MM-dd');
+          if (!dayMap.has(dKey)) {
+            dayMap.set(dKey, { date: dKey, sales: 0, logbook: 0, subscription: 0, totalRevenue: 0, transactionCount: 0 });
+          }
+          const row = dayMap.get(dKey)!;
+          const amt = Number(a.entry_fee || 0);
+          row.logbook += amt;
+          row.totalRevenue += amt;
+          row.transactionCount += 1;
+        });
+
+        subsList.forEach((sub: any) => {
+          const dKey = format(new Date(sub.created_at), 'yyyy-MM-dd');
+          if (!dayMap.has(dKey)) {
+            dayMap.set(dKey, { date: dKey, sales: 0, logbook: 0, subscription: 0, totalRevenue: 0, transactionCount: 0 });
+          }
+          const row = dayMap.get(dKey)!;
+          const amt = Number(sub.price || 0);
+          row.subscription += amt;
+          row.totalRevenue += amt;
+          row.transactionCount += 1;
+        });
+
+        const combinedList = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+        setLiveCombinedData(combinedList);
       }
     } catch (err) {
       console.warn('Error loading live export dataset:', err);
     } finally {
       setIsLoadingLive(false);
     }
-  }, [isOpen, reportType, startDate, endDate, birData, topProducts]);
+  }, [isOpen, reportType, startDate, endDate, vatPercentage]);
 
   useEffect(() => {
     loadCategoryData();
   }, [loadCategoryData]);
 
-  // Presets
+  // Quick Preset Filters
   const handleQuickPreset = (preset: 'today' | 'week' | 'month' | 'last_month' | 'year') => {
     const now = new Date();
     let s = now;
@@ -370,13 +555,13 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         secondary: `${units} Units Sold`
       };
     } else if (reportType === 'attendance') {
-      const gross = liveAttendanceData.reduce((acc, a) => acc + Number(a.entry_fee || 0), 0);
-      const walkins = liveAttendanceData.filter(a => a.customer_type === 'Walk-In').length;
+      const gross = liveAttendanceData.reduce((acc, a) => acc + Number(a.total_fees || 0), 0);
+      const totalVisits = liveAttendanceData.reduce((acc, a) => acc + Number(a.visits_count || 1), 0);
       return {
         count: liveAttendanceData.length,
         totalValue: gross,
         label: 'Pass Collections',
-        secondary: `${walkins} Walk-In / ${liveAttendanceData.length - walkins} Members`
+        secondary: `${totalVisits} Total Check-Ins (${liveAttendanceData.length} Unique Guests)`
       };
     } else if (reportType === 'subscriptions') {
       const gross = liveSubsData.reduce((acc, s) => acc + Number(s.price || 0), 0);
@@ -384,18 +569,19 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         count: liveSubsData.length,
         totalValue: gross,
         label: 'Subscription Revenue',
-        secondary: `${liveSubsData.length} Active Contracts`
+        secondary: `${liveSubsData.length} Membership Contracts`
       };
     } else {
-      const gross = revenueTimeline.reduce((acc, r) => acc + r.totalRevenue, 0);
+      const gross = liveCombinedData.reduce((acc, r) => acc + r.totalRevenue, 0);
+      const totalTx = liveCombinedData.reduce((acc, r) => acc + r.transactionCount, 0);
       return {
-        count: revenueTimeline.length,
+        count: liveCombinedData.length,
         totalValue: gross,
         label: 'Consolidated Revenue',
-        secondary: `${revenueTimeline.reduce((acc, r) => acc + r.transactionsCount, 0)} Total Tx`
+        secondary: `${totalTx} Total Transactions Across Streams`
       };
     }
-  }, [reportType, liveBirData, liveSalesData, liveAttendanceData, liveSubsData, revenueTimeline]);
+  }, [reportType, liveBirData, liveSalesData, liveAttendanceData, liveSubsData, liveCombinedData]);
 
   // ─── 1. EXPORT TO CSV (EXCEL COMPATIBLE) ───
   const handleExportCSV = async () => {
@@ -411,32 +597,30 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       csvContent += `Compliance Standard: ${selectedCategoryMeta.badge}\n\n`;
 
       if (reportType === 'bir') {
-        csvContent += `"Date / Time","Receipt / Ref #","Customer Name","TIN","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales","Net Sales","Payment Method","Payment Ref","Status"\n`;
+        csvContent += `"Receipt / Ref #","Date / Time","Customer Name","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales (PHP)","VAT (${vatPercentage}%) (PHP)","Net Sales (PHP)","Payment Method","Status"\n`;
         liveBirData.forEach(item => {
-          csvContent += `"${item.date}","${item.receipt_no}","${item.customer_name}","${item.tin_number || 'N/A'}","${item.transaction_type}","${item.gross_sales.toFixed(2)}","${item.vat_exempt_sales.toFixed(2)}","${item.net_sales.toFixed(2)}","${item.payment_method}","${item.payment_ref || ''}","${item.status}"\n`;
+          csvContent += `"${item.receipt_no}","${item.date}","${item.customer_name}","${item.transaction_type}","${item.gross_sales.toFixed(2)}","${item.vat_exempt_sales.toFixed(2)}","${item.vat_amount.toFixed(2)}","${item.net_sales.toFixed(2)}","${item.payment_method}","${item.status}"\n`;
         });
       } else if (reportType === 'sales') {
-        csvContent += `"Barcode ID","Product Name","Unit Selling Price (PHP)","Total Units Sold","Total Gross Revenue (PHP)","Current Stock","Status"\n`;
+        csvContent += `"Barcode ID","Product Name","Unit Selling Price (PHP)","Units Sold","Gross Sales (PHP)","Current Stock"\n`;
         liveSalesData.forEach(p => {
-          const status = p.stock <= 0 ? 'OUT OF STOCK' : p.stock <= 5 ? 'LOW STOCK' : 'IN STOCK';
-          csvContent += `"${p.barcode}","${p.name}","${p.price.toFixed(2)}","${p.sold}","${p.revenue.toFixed(2)}","${p.stock}","${status}"\n`;
+          csvContent += `"${p.barcode}","${p.name}","${p.price.toFixed(2)}","${p.sold}","${p.revenue.toFixed(2)}","${p.stock}"\n`;
         });
       } else if (reportType === 'attendance') {
-        csvContent += `"Slip / Log #","Check-In Date","Customer Name","Access Category","Entry Fee (PHP)","Payment Method","Payment Ref"\n`;
+        csvContent += `"Customer Name","Access Category","Total Visits (Qty)","Total Fees Paid (PHP)","Latest Check-In","Payment Method"\n`;
         liveAttendanceData.forEach((a: any) => {
-          const slip = a.receipt_number || (a.id ? `ATT-${String(a.id).slice(0, 6)}` : 'N/A');
-          csvContent += `"${slip}","${a.check_in_time}","${a.customer_name || 'Guest'}","${a.customer_type || 'Walk-In'}","${Number(a.entry_fee || 0).toFixed(2)}","${a.payment_method || 'Cash'}","${a.gcash_ref_no || a.payment_ref || ''}"\n`;
+          csvContent += `"${a.customer_name}","${a.customer_type}","${a.visits_count}","${Number(a.total_fees || 0).toFixed(2)}","${a.latest_checkin}","${a.payment_method}"\n`;
         });
       } else if (reportType === 'subscriptions') {
-        csvContent += `"Contract ID","Member Name","Plan Name","Price (PHP)","Start Date","End Date","Payment Method","Status"\n`;
+        csvContent += `"Contract ID","Member Name","Plan Name","Contract Price (PHP)","Start Date","End Date","Payment Method"\n`;
         liveSubsData.forEach((s: any) => {
           const cid = s.receipt_number || (s.id ? `SUB-${String(s.id).slice(0, 6)}` : 'N/A');
-          csvContent += `"${cid}","${s.members?.full_name || 'Member'}","${s.plan_type ? s.plan_type.toUpperCase() : 'Standard Plan'}","${Number(s.price || 0).toFixed(2)}","${s.start_date || s.created_at}","${s.end_date || 'Ongoing'}","${s.payment_method || 'Cash'}","${s.status || 'Active'}"\n`;
+          csvContent += `"${cid}","${s.members?.full_name || 'Member'}","${s.plan_type ? s.plan_type.toUpperCase() : 'Standard Plan'}","${Number(s.price || 0).toFixed(2)}","${s.start_date || s.created_at}","${s.end_date || 'Ongoing'}","${s.payment_method || 'Cash'}"\n`;
         });
       } else {
-        csvContent += `"Date","POS Product Sales (PHP)","Logbook Passes (PHP)","Total Revenue (PHP)","Transaction Count"\n`;
-        revenueTimeline.forEach(r => {
-          csvContent += `"${r.date}","${r.salesRevenue.toFixed(2)}","${r.logbookRevenue.toFixed(2)}","${r.totalRevenue.toFixed(2)}","${r.transactionsCount}"\n`;
+        csvContent += `"Date","Sales (PHP)","Logbook (PHP)","Subscription (PHP)","Total Revenue (PHP)","Transaction Count"\n`;
+        liveCombinedData.forEach(r => {
+          csvContent += `"${r.date}","${r.sales.toFixed(2)}","${r.logbook.toFixed(2)}","${r.subscription.toFixed(2)}","${r.totalRevenue.toFixed(2)}","${r.transactionCount}"\n`;
         });
       }
 
@@ -456,13 +640,12 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
     }
   };
 
-  // ─── 2. EXPORT TO OFFICIAL PDF REPORT (MATCHING DATA SHOWCASE) ───
+  // ─── 2. EXPORT TO OFFICIAL PDF REPORT ───
   const handleExportPDF = async () => {
     try {
       setIsExporting(true);
       const pdfDoc = await PDFDocument.create();
-      // Landscape A4 for full data showcase width
-      let page = pdfDoc.addPage([841.89, 595.28]);
+      let page = pdfDoc.addPage([841.89, 595.28]); // Landscape A4
       const { width, height } = page.getSize();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -525,11 +708,10 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         font: fontBold,
         color: rgb(0.07, 0.23, 0.45),
       });
-      page.drawText(`Audit Scope: ${categoryStats.secondary}`, { x: width - 260, y: y - 23, size: 7.5, font, color: rgb(0.3, 0.3, 0.3) });
+      page.drawText(`Scope: ${categoryStats.secondary}`, { x: width - 260, y: y - 23, size: 7.5, font, color: rgb(0.3, 0.3, 0.3) });
 
       y -= 40;
 
-      // Draw Specific Column Headers and Rows per Report Type
       const drawTableHeaders = (headers: { label: string; x: number }[]) => {
         page.drawRectangle({
           x: 25,
@@ -553,18 +735,19 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         return false;
       };
 
+      // BIR PDF
       if (reportType === 'bir') {
         const headers = [
           { label: 'OR / REF #', x: 30 },
           { label: 'DATE & TIME', x: 130 },
-          { label: 'CUSTOMER NAME', x: 225 },
-          { label: 'TIN', x: 350 },
-          { label: 'TYPE', x: 420 },
-          { label: 'GROSS (PHP)', x: 500 },
-          { label: 'VAT-EXEMPT', x: 580 },
-          { label: 'NET SALES', x: 655 },
-          { label: 'PAYMENT', x: 725 },
-          { label: 'STATUS', x: 785 },
+          { label: 'CUSTOMER NAME', x: 235 },
+          { label: 'TYPE', x: 375 },
+          { label: 'GROSS (PHP)', x: 460 },
+          { label: 'VAT-EXEMPT', x: 540 },
+          { label: `VAT (${vatPercentage}%)`, x: 615 },
+          { label: 'NET SALES', x: 685 },
+          { label: 'PAYMENT', x: 745 },
+          { label: 'STATUS', x: 790 },
         ];
         drawTableHeaders(headers);
 
@@ -573,27 +756,28 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           if (idx % 2 === 1) {
             page.drawRectangle({ x: 25, y: y - 3, width: width - 50, height: 13, color: rgb(0.97, 0.98, 0.99) });
           }
-          page.drawText(String(row.receipt_no).slice(0, 16), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(String(row.receipt_no).slice(0, 15), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
           page.drawText(String(row.date).slice(0, 16), { x: 130, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.customer_name).slice(0, 22), { x: 225, y, size: 6.5, font, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(String(row.tin_number || 'N/A').slice(0, 12), { x: 350, y, size: 6.5, font, color: rgb(0.4, 0.4, 0.4) });
-          page.drawText(String(row.transaction_type).slice(0, 14), { x: 420, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
-          page.drawText(row.gross_sales.toFixed(2), { x: 500, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(row.vat_exempt_sales.toFixed(2), { x: 580, y, size: 6.5, font, color: rgb(0.4, 0.4, 0.4) });
-          page.drawText(row.net_sales.toFixed(2), { x: 655, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(String(row.payment_method), { x: 725, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.status), { x: 785, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(String(row.customer_name).slice(0, 22), { x: 235, y, size: 6.5, font, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(String(row.transaction_type).slice(0, 14), { x: 375, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
+          page.drawText(row.gross_sales.toFixed(2), { x: 460, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(row.vat_exempt_sales.toFixed(2), { x: 540, y, size: 6.5, font, color: rgb(0.4, 0.4, 0.4) });
+          page.drawText(row.vat_amount.toFixed(2), { x: 615, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(row.net_sales.toFixed(2), { x: 685, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(String(row.payment_method), { x: 745, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(String(row.status), { x: 790, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
           y -= 13;
         });
+
+      // POS SALES PDF
       } else if (reportType === 'sales') {
         const headers = [
           { label: 'BARCODE ID', x: 30 },
-          { label: 'PRODUCT NAME', x: 140 },
-          { label: 'UNIT PRICE (PHP)', x: 360 },
-          { label: 'UNITS SOLD', x: 470 },
-          { label: 'GROSS SALES (PHP)', x: 570 },
-          { label: 'STOCK REMAINING', x: 690 },
-          { label: 'STATUS', x: 785 },
+          { label: 'PRODUCT NAME', x: 150 },
+          { label: 'UNIT PRICE (PHP)', x: 400 },
+          { label: 'UNITS SOLD', x: 520 },
+          { label: 'GROSS SALES (PHP)', x: 630 },
+          { label: 'STOCK REMAINING', x: 740 },
         ];
         drawTableHeaders(headers);
 
@@ -602,25 +786,24 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           if (idx % 2 === 1) {
             page.drawRectangle({ x: 25, y: y - 3, width: width - 50, height: 13, color: rgb(0.97, 0.98, 0.99) });
           }
-          page.drawText(String(row.barcode).slice(0, 16), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(String(row.name).slice(0, 36), { x: 140, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(row.price.toFixed(2), { x: 360, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(`${row.sold} units`, { x: 470, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
-          page.drawText(row.revenue.toFixed(2), { x: 570, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(`${row.stock} in stock`, { x: 690, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          const statusText = row.stock <= 0 ? 'OUT OF STOCK' : 'ACTIVE';
-          page.drawText(statusText, { x: 785, y, size: 6.5, font: fontBold, color: row.stock <= 0 ? rgb(0.8, 0.1, 0.1) : rgb(0.06, 0.6, 0.35) });
+          page.drawText(String(row.barcode).slice(0, 18), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(String(row.name).slice(0, 42), { x: 150, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(row.price.toFixed(2), { x: 400, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(`${row.sold} units`, { x: 520, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(row.revenue.toFixed(2), { x: 630, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(`${row.stock} in stock`, { x: 740, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
           y -= 13;
         });
+
+      // ATTENDANCE PASSES PDF
       } else if (reportType === 'attendance') {
         const headers = [
-          { label: 'SLIP / LOG #', x: 30 },
-          { label: 'CHECK-IN DATE', x: 140 },
-          { label: 'CUSTOMER / MEMBER NAME', x: 260 },
-          { label: 'ACCESS CATEGORY', x: 440 },
-          { label: 'ENTRY FEE (PHP)', x: 560 },
-          { label: 'PAYMENT METHOD', x: 670 },
-          { label: 'PAYMENT REF', x: 760 },
+          { label: 'CUSTOMER / MEMBER NAME', x: 30 },
+          { label: 'ACCESS CATEGORY', x: 250 },
+          { label: 'TOTAL VISITS (QTY)', x: 410 },
+          { label: 'TOTAL FEES PAID (PHP)', x: 540 },
+          { label: 'LATEST CHECK-IN', x: 680 },
+          { label: 'PAYMENT METHOD', x: 770 },
         ];
         drawTableHeaders(headers);
 
@@ -629,26 +812,25 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           if (idx % 2 === 1) {
             page.drawRectangle({ x: 25, y: y - 3, width: width - 50, height: 13, color: rgb(0.97, 0.98, 0.99) });
           }
-          const slip = row.receipt_number || `ATT-${String(row.id).slice(0, 6)}`;
-          page.drawText(slip.slice(0, 16), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(String(row.check_in_time).slice(0, 16), { x: 140, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.customer_name || 'Guest').slice(0, 26), { x: 260, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(String(row.customer_type || 'Walk-In'), { x: 440, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
-          page.drawText(Number(row.entry_fee || 0).toFixed(2), { x: 560, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
-          page.drawText(String(row.payment_method || 'Cash'), { x: 670, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.gcash_ref_no || row.payment_ref || 'CASH').slice(0, 12), { x: 760, y, size: 6.5, font, color: rgb(0.4, 0.4, 0.4) });
+          page.drawText(String(row.customer_name).slice(0, 32), { x: 30, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(String(row.customer_type || 'Walk-In'), { x: 250, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
+          page.drawText(`${row.visits_count} visits`, { x: 410, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(Number(row.total_fees || 0).toFixed(2), { x: 540, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(String(row.latest_checkin).slice(0, 16), { x: 680, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(String(row.payment_method || 'Cash'), { x: 770, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
           y -= 13;
         });
+
+      // MEMBERSHIPS PDF (STATUS REMOVED)
       } else if (reportType === 'subscriptions') {
         const headers = [
           { label: 'CONTRACT ID', x: 30 },
-          { label: 'MEMBER NAME', x: 140 },
-          { label: 'PLAN NAME', x: 280 },
-          { label: 'PRICE (PHP)', x: 420 },
-          { label: 'START DATE', x: 520 },
-          { label: 'END DATE', x: 610 },
-          { label: 'PAYMENT', x: 700 },
-          { label: 'STATUS', x: 780 },
+          { label: 'MEMBER NAME', x: 150 },
+          { label: 'PLAN NAME', x: 320 },
+          { label: 'PRICE (PHP)', x: 480 },
+          { label: 'START DATE', x: 590 },
+          { label: 'END DATE', x: 680 },
+          { label: 'PAYMENT', x: 770 },
         ];
         drawTableHeaders(headers);
 
@@ -659,35 +841,38 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           }
           const cid = row.receipt_number || `SUB-${String(row.id).slice(0, 6)}`;
           page.drawText(cid.slice(0, 16), { x: 30, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(String(row.members?.full_name || 'Member').slice(0, 22), { x: 140, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(String(row.plan_type ? row.plan_type.toUpperCase() : 'Monthly Pass').slice(0, 18), { x: 280, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
-          page.drawText(Number(row.price || 0).toFixed(2), { x: 420, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
-          page.drawText(String(row.start_date || row.created_at).slice(0, 10), { x: 520, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.end_date || 'Ongoing').slice(0, 10), { x: 610, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.payment_method || 'Cash'), { x: 700, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
-          page.drawText(String(row.status || 'Active'), { x: 780, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(String(row.members?.full_name || 'Member').slice(0, 24), { x: 150, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(String(row.plan_type ? row.plan_type.toUpperCase() : 'Monthly Pass').slice(0, 22), { x: 320, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) });
+          page.drawText(Number(row.price || 0).toFixed(2), { x: 480, y, size: 6.5, font: fontBold, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(String(row.start_date || row.created_at).slice(0, 10), { x: 590, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(String(row.end_date || 'Ongoing').slice(0, 10), { x: 680, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(String(row.payment_method || 'Cash'), { x: 770, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
           y -= 13;
         });
+
+      // CONSOLIDATED SUMMARY PDF
       } else {
         const headers = [
           { label: 'DATE', x: 30 },
-          { label: 'POS SALES (PHP)', x: 180 },
-          { label: 'LOGBOOK PASSES (PHP)', x: 360 },
-          { label: 'TOTAL REVENUE (PHP)', x: 550 },
-          { label: 'TRANSACTIONS COUNT', x: 720 },
+          { label: 'SALES (PHP)', x: 160 },
+          { label: 'LOGBOOK (PHP)', x: 300 },
+          { label: 'SUBSCRIPTION (PHP)', x: 440 },
+          { label: 'TOTAL REVENUE (PHP)', x: 590 },
+          { label: 'TRANSACTION COUNT', x: 725 },
         ];
         drawTableHeaders(headers);
 
-        revenueTimeline.forEach((row, idx) => {
+        liveCombinedData.forEach((row, idx) => {
           if (checkPageBreak()) drawTableHeaders(headers);
           if (idx % 2 === 1) {
             page.drawRectangle({ x: 25, y: y - 3, width: width - 50, height: 13, color: rgb(0.97, 0.98, 0.99) });
           }
-          page.drawText(row.label || row.date, { x: 30, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
-          page.drawText(row.salesRevenue.toFixed(2), { x: 180, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(row.logbookRevenue.toFixed(2), { x: 360, y, size: 6.5, font, color: rgb(0.06, 0.6, 0.35) });
-          page.drawText(row.totalRevenue.toFixed(2), { x: 550, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
-          page.drawText(`${row.transactionsCount} entries`, { x: 720, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
+          page.drawText(row.date, { x: 30, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+          page.drawText(row.sales.toFixed(2), { x: 160, y, size: 6.5, font, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(row.logbook.toFixed(2), { x: 300, y, size: 6.5, font, color: rgb(0.06, 0.6, 0.35) });
+          page.drawText(row.subscription.toFixed(2), { x: 440, y, size: 6.5, font, color: rgb(0.5, 0.2, 0.7) });
+          page.drawText(row.totalRevenue.toFixed(2), { x: 590, y, size: 6.5, font: fontBold, color: rgb(0.07, 0.23, 0.45) });
+          page.drawText(`${row.transactionCount} transactions`, { x: 725, y, size: 6.5, font, color: rgb(0.3, 0.3, 0.3) });
           y -= 13;
         });
       }
@@ -743,7 +928,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             <span className="text-[10px] text-slate-500 font-mono">5 Formats Available</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 select-none">
-            {REPORT_CATEGORIES.map(cat => {
+            {reportCategories.map(cat => {
               const Icon = cat.icon;
               const isSelected = reportType === cat.id;
               return (
@@ -848,22 +1033,24 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-zinc-900 text-slate-700 dark:text-slate-300 font-body">
-                    {reportType === 'bir' && liveBirData.slice(0, 4).map((row, idx) => (
+                    {/* BIR TABLE PREVIEW (TIN REMOVED) */}
+                    {reportType === 'bir' && liveBirData.slice(0, 5).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <td className="p-2.5 font-mono text-xs font-bold text-[#123c73] dark:text-blue-400">{row.receipt_no}</td>
                         <td className="p-2.5 whitespace-nowrap text-slate-500">{String(row.date).slice(0, 16)}</td>
                         <td className="p-2.5 font-medium">{row.customer_name}</td>
-                        <td className="p-2.5 font-mono text-slate-400">{row.tin_number || 'N/A'}</td>
                         <td className="p-2.5"><span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-[10px]">{row.transaction_type}</span></td>
                         <td className="p-2.5 font-bold">₱{row.gross_sales.toFixed(2)}</td>
                         <td className="p-2.5 text-slate-500">₱{row.vat_exempt_sales.toFixed(2)}</td>
+                        <td className="p-2.5 text-slate-500">₱{row.vat_amount.toFixed(2)}</td>
                         <td className="p-2.5 font-bold">₱{row.net_sales.toFixed(2)}</td>
                         <td className="p-2.5">{row.payment_method}</td>
                         <td className="p-2.5 text-emerald-600 dark:text-emerald-400 font-bold">{row.status}</td>
                       </tr>
                     ))}
 
-                    {reportType === 'sales' && liveSalesData.slice(0, 4).map((row, idx) => (
+                    {/* POS & INVENTORY TABLE PREVIEW (STATUS ACTIVE REMOVED) */}
+                    {reportType === 'sales' && liveSalesData.slice(0, 5).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <td className="p-2.5 font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{row.barcode}</td>
                         <td className="p-2.5 font-bold">{row.name}</td>
@@ -871,27 +1058,23 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                         <td className="p-2.5 font-extrabold text-emerald-600 dark:text-emerald-400">{row.sold} units</td>
                         <td className="p-2.5 font-bold">₱{row.revenue.toFixed(2)}</td>
                         <td className="p-2.5 font-mono">{row.stock} in stock</td>
-                        <td className="p-2.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${row.stock <= 0 ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'}`}>
-                            {row.stock <= 0 ? 'OUT OF STOCK' : 'ACTIVE'}
-                          </span>
-                        </td>
                       </tr>
                     ))}
 
-                    {reportType === 'attendance' && liveAttendanceData.slice(0, 4).map((row, idx) => (
+                    {/* ATTENDANCE PASSES TABLE PREVIEW (AGGREGATED VISITS) */}
+                    {reportType === 'attendance' && liveAttendanceData.slice(0, 5).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
-                        <td className="p-2.5 font-mono text-xs font-bold text-[#123c73] dark:text-blue-400">{row.receipt_number || `ATT-${String(row.id).slice(0, 6)}`}</td>
-                        <td className="p-2.5 text-slate-500 whitespace-nowrap">{String(row.check_in_time).slice(0, 16)}</td>
-                        <td className="p-2.5 font-bold">{row.customer_name || 'Guest'}</td>
-                        <td className="p-2.5"><span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold">{row.customer_type || 'Walk-In'}</span></td>
-                        <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">₱{Number(row.entry_fee || 0).toFixed(2)}</td>
+                        <td className="p-2.5 font-bold">{row.customer_name}</td>
+                        <td className="p-2.5"><span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[10px] font-bold">{row.customer_type}</span></td>
+                        <td className="p-2.5 font-extrabold text-[#123c73] dark:text-blue-400">{row.visits_count} visits</td>
+                        <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">₱{Number(row.total_fees || 0).toFixed(2)}</td>
+                        <td className="p-2.5 text-slate-500 whitespace-nowrap">{String(row.latest_checkin).slice(0, 16)}</td>
                         <td className="p-2.5">{row.payment_method || 'Cash'}</td>
-                        <td className="p-2.5 font-mono text-slate-400">{row.gcash_ref_no || row.payment_ref || 'N/A'}</td>
                       </tr>
                     ))}
 
-                    {reportType === 'subscriptions' && liveSubsData.slice(0, 4).map((row, idx) => (
+                    {/* SUBSCRIPTIONS TABLE PREVIEW (STATUS REMOVED) */}
+                    {reportType === 'subscriptions' && liveSubsData.slice(0, 5).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <td className="p-2.5 font-mono text-xs font-bold text-purple-600 dark:text-purple-400">{row.receipt_number || `SUB-${String(row.id).slice(0, 6)}`}</td>
                         <td className="p-2.5 font-bold">{row.members?.full_name || 'Member'}</td>
@@ -900,17 +1083,18 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                         <td className="p-2.5 text-slate-500">{String(row.start_date || row.created_at).slice(0, 10)}</td>
                         <td className="p-2.5 text-slate-500">{String(row.end_date || 'Ongoing').slice(0, 10)}</td>
                         <td className="p-2.5">{row.payment_method || 'Cash'}</td>
-                        <td className="p-2.5 text-emerald-600 dark:text-emerald-400 font-bold">{row.status || 'Active'}</td>
                       </tr>
                     ))}
 
-                    {reportType === 'combined' && revenueTimeline.slice(0, 4).map((row, idx) => (
+                    {/* CONSOLIDATED FINANCIAL SUMMARY */}
+                    {reportType === 'combined' && liveCombinedData.slice(0, 5).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
-                        <td className="p-2.5 font-bold">{row.label || row.date}</td>
-                        <td className="p-2.5 font-mono">₱{row.salesRevenue.toFixed(2)}</td>
-                        <td className="p-2.5 font-mono">₱{row.logbookRevenue.toFixed(2)}</td>
+                        <td className="p-2.5 font-bold">{row.date}</td>
+                        <td className="p-2.5 font-mono">₱{row.sales.toFixed(2)}</td>
+                        <td className="p-2.5 font-mono">₱{row.logbook.toFixed(2)}</td>
+                        <td className="p-2.5 font-mono">₱{row.subscription.toFixed(2)}</td>
                         <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">₱{row.totalRevenue.toFixed(2)}</td>
-                        <td className="p-2.5">{row.transactionsCount} entries</td>
+                        <td className="p-2.5">{row.transactionCount} transactions</td>
                       </tr>
                     ))}
                   </tbody>

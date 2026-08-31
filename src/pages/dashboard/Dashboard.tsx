@@ -19,7 +19,8 @@ import type {
   ExpiringMemberItem, 
   LowStockProductItem, 
   ActivityFeedItem, 
-  BirReportItem 
+  BirReportItem,
+  SubscriptionPlanBreakdown
 } from './types';
 import { fetchDashboardData } from './dashboardService';
 import { TopSummaryCards } from './components/TopSummaryCards';
@@ -67,6 +68,7 @@ export const Dashboard: React.FC = () => {
   const [lowStockItems, setLowStockItems] = useState<LowStockProductItem[]>([]);
   const [activityItems, setActivityItems] = useState<ActivityFeedItem[]>([]);
   const [birReportItems, setBirReportItems] = useState<BirReportItem[]>([]);
+  const [subscriptionBreakdown, setSubscriptionBreakdown] = useState<SubscriptionPlanBreakdown | undefined>(undefined);
 
   // Load Data
   const loadData = useCallback(async () => {
@@ -81,6 +83,7 @@ export const Dashboard: React.FC = () => {
       setLowStockItems(data.lowStockItems);
       setActivityItems(data.activityItems);
       setBirReportItems(data.birReportItems);
+      setSubscriptionBreakdown(data.subscriptionBreakdown);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -207,6 +210,7 @@ export const Dashboard: React.FC = () => {
           topProducts={topProducts}
           attendanceHourly={attendanceHourly}
           birReportItems={birReportItems}
+          subscriptionBreakdown={subscriptionBreakdown}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           timeRange={timeRange}
@@ -220,7 +224,11 @@ export const Dashboard: React.FC = () => {
             <MembershipOverviewSection
               metrics={metrics}
               expiringMembers={expiringSoonList}
-              onRenewMember={() => navigate('/logbook')}
+              onRenewMember={(member) => {
+                navigate(`/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`, {
+                  state: { renewMemberId: member.member_id, memberName: member.full_name, triggerRenew: true }
+                });
+              }}
             />
             <InventoryAlertsSection
               lowStockItems={lowStockItems}

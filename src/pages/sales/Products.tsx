@@ -410,6 +410,31 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
         };
 
         if (isEditing && selectedProductId) {
+          const targetProduct = products.find(p => p.id === selectedProductId);
+          const changes: string[] = [];
+          if (targetProduct) {
+            if (targetProduct.product_name !== nameClean) {
+              changes.push(`Name: "${targetProduct.product_name}" -> "${nameClean}"`);
+            }
+            const oldPrice = Number(targetProduct.selling_price || 0);
+            if (oldPrice !== priceNum) {
+              changes.push(`Price: ₱${oldPrice.toFixed(2)} -> ₱${priceNum.toFixed(2)}`);
+            }
+            const oldStock = Number(targetProduct.stock_quantity ?? 0);
+            if (targetProduct.has_stock_limit !== formHasStockLimit) {
+              changes.push(`Stock Type: ${targetProduct.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${formHasStockLimit ? 'Limited' : 'Unlimited'}`);
+            } else if (formHasStockLimit && oldStock !== stockQty) {
+              changes.push(`Stock Count: ${oldStock} -> ${stockQty}`);
+            }
+            const oldAlert = targetProduct.low_stock_alert ?? null;
+            if (oldAlert !== alertQty) {
+              changes.push(`Low Stock Alert: ${oldAlert ?? 'None'} -> ${alertQty ?? 'None'}`);
+            }
+            if (targetProduct.status !== formStatus) {
+              changes.push(`Status: ${targetProduct.status} -> ${formStatus}`);
+            }
+          }
+
           const { error } = await supabase
             .from('products')
             .update(productPayload)
@@ -418,10 +443,14 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           if (error) throw error;
           toast.success('Product updated.');
 
+          const auditDetails = changes.length > 0
+            ? `Updated product "${nameClean}": ${changes.join(', ')}`
+            : `Updated product details for "${nameClean}".`;
+
           try {
             await logAudit(
               'PRODUCT_UPDATED',
-              `Updated product parameters for "${nameClean}".`,
+              auditDetails,
               selectedProductId
             );
           } catch (auditError) {

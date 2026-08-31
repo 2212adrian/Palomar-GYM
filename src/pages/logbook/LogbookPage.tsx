@@ -29,6 +29,7 @@ import { createPortal } from 'react-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -39,7 +40,6 @@ import { HeaderActionsContext } from '../../routes';
 import { LogbookRecordAttendance } from './components/LogbookRecordAttendance';
 import { LogbookRecycleBin } from './components/LogbookRecycleBin';
 import { LogbookReportCompiler } from './components/LogbookReportCompiler';
-import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 
 // Unified Official Receipt & TimelineCard
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
@@ -339,42 +339,136 @@ export const LogbookPage: React.FC = () => {
     }
 
     try {
-      // 2. Always fetch fresh server data in background
-      const { data, error } = await supabase.rpc('get_sanitized_logbook', {
-        target_date: dateStr
-      });
+      // 2. Try RPC for sanitized DTO first
+      let mappedLogs: LogRecord[] | null = null;
 
-      if (error) {
-        console.error('Error executing get_sanitized_logbook RPC:', error);
-        return;
+      try {
+        const { data, error } = await supabase.rpc('get_sanitized_logbook', {
+          target_date: dateStr
+        });
+
+        if (!error && data) {
+          mappedLogs = (data || []).map((row: any) => ({
+            id: String(row.id),
+            timestamp: row.timestamp,
+            memberId: row.member_id || null,
+            customerName: row.customer_name,
+            customerType: row.customer_type,
+            categoryOrPlan: row.category_or_plan,
+            paymentMethod: row.payment_method,
+            amountPaid: Number(row.amount_paid || 0),
+            basePrice: Number(row.base_price || 0),
+            gcashFee: Number(row.gcash_fee || 0),
+            cardFee: Number(row.card_fee || 0),
+            gcashRefNo: row.gcash_ref_no,
+            referenceNumber: row.gcash_ref_no,
+            paymentRef: row.gcash_ref_no,
+            paymentStatus: (row.payment_status === 'Promo' || row.payment_status === 'Unpaid' ? row.payment_status : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
+            status: 'Active',
+            isSubscription: Boolean(row.is_subscription),
+            deletable: Boolean(row.deletable)
+          }));
+        } else if (error) {
+          const isOfflineErr = error?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
+          if (!isOfflineErr) {
+            console.warn('RPC get_sanitized_logbook fallback triggered:', error.message || error);
+          }
+        }
+      } catch (rpcErr: any) {
+        const isOfflineErr = rpcErr?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
+        if (!isOfflineErr) {
+          console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
+        }
       }
 
-      const mappedLogs: LogRecord[] = (data || []).map((row: any) => ({
-        id: String(row.id),
-        timestamp: row.timestamp,
-        memberId: row.member_id || null,
-        customerName: row.customer_name,
-        customerType: row.customer_type,
-        categoryOrPlan: row.category_or_plan,
-        paymentMethod: row.payment_method,
-        amountPaid: Number(row.amount_paid || 0),
-        basePrice: Number(row.base_price || 0),
-        gcashFee: Number(row.gcash_fee || 0),
-        cardFee: Number(row.card_fee || 0),
-        gcashRefNo: row.gcash_ref_no,
-        referenceNumber: row.gcash_ref_no,
-        paymentRef: row.gcash_ref_no,
-        paymentStatus: (row.payment_status === 'Promo' || row.payment_status === 'Unpaid' ? row.payment_status : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
-        status: 'Active',
-        isSubscription: Boolean(row.is_subscription),
-        deletable: Boolean(row.deletable)
-      }));
+      // 3. If RPC was not available or errored, attempt direct table query fallback
+      if (!mappedLogs && (typeof navigator === 'undefined' || navigator.onLine)) {
+        try {
+          const startOfDay = new Date(`${dateStr}T00:00:00+08:00`).toISOString();
+          const endOfDay = new Date(`${dateStr}T23:59:59.999+08:00`).toISOString();
 
-      setLogs(mappedLogs);
-      sessionStorage.setItem(cacheKey, JSON.stringify(mappedLogs));
+          const [attRes, rcptRes] = await Promise.allSettled([
+            supabase
+              .from('attendance')
+              .select('*')
+              .is('deleted_at', null)
+              .gte('check_in_time', startOfDay)
+              .lte('check_in_time', endOfDay)
+              .order('check_in_time', { ascending: false }),
+            supabase
+              .from('receipts')
+              .select('*')
+              .gte('created_at', startOfDay)
+              .lte('created_at', endOfDay)
+              .order('created_at', { ascending: false })
+          ]);
 
+          const rawAttendance = attRes.status === 'fulfilled' && !attRes.value.error ? (attRes.value.data || []) : [];
+          const rawReceipts = rcptRes.status === 'fulfilled' && !rcptRes.value.error ? (rcptRes.value.data || []) : [];
+
+          const fallbackList: LogRecord[] = [];
+
+          rawAttendance.forEach((a: any) => {
+            const entryFee = Number(a.entry_fee || 0);
+            fallbackList.push({
+              id: String(a.id),
+              timestamp: a.check_in_time,
+              memberId: a.member_id || null,
+              customerName: a.customer_name || 'Anonymous',
+              customerType: a.customer_type || 'Walk-In',
+              categoryOrPlan: a.plan_name || 'Regular Pass',
+              paymentMethod: a.payment_method || 'Cash',
+              amountPaid: entryFee,
+              basePrice: Number(a.base_price || (entryFee - (Number(a.gcash_fee) || 0))),
+              gcashFee: Number(a.gcash_fee || 0),
+              cardFee: Number(a.card_fee || 0),
+              gcashRefNo: a.gcash_ref_no || '',
+              referenceNumber: a.gcash_ref_no || '',
+              paymentRef: a.gcash_ref_no || '',
+              paymentStatus: entryFee > 0 ? 'Paid' : 'Promo',
+              status: 'Active',
+              isSubscription: false,
+              deletable: true
+            });
+          });
+
+          rawReceipts.forEach((r: any) => {
+            const amt = Number(r.amount || 0);
+            fallbackList.push({
+              id: `rcpt-${r.id}`,
+              timestamp: r.created_at,
+              memberId: r.member_id || null,
+              customerName: r.customer_name || 'Member',
+              customerType: r.customer_type || 'New Membership',
+              categoryOrPlan: r.item_description || 'Subscription',
+              paymentMethod: r.payment_method || 'Cash',
+              amountPaid: amt,
+              basePrice: Number(r.base_price || amt),
+              gcashFee: Number(r.gcash_fee || 0),
+              cardFee: Number(r.card_fee || 0),
+              gcashRefNo: r.gcash_ref_no || '',
+              referenceNumber: r.gcash_ref_no || '',
+              paymentRef: r.gcash_ref_no || '',
+              paymentStatus: 'Paid',
+              status: 'Active',
+              isSubscription: true,
+              deletable: false
+            });
+          });
+
+          fallbackList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          mappedLogs = fallbackList;
+        } catch (directErr) {
+          // Direct table query also failed (e.g. offline)
+        }
+      }
+
+      if (mappedLogs) {
+        setLogs(mappedLogs);
+        sessionStorage.setItem(cacheKey, JSON.stringify(mappedLogs));
+      }
     } catch (err) {
-      console.error('Logbook fetch error:', err);
+      // General error guard
     } finally {
       if (!isBackground) {
         setLoadingLogs(false);
@@ -413,9 +507,6 @@ export const LogbookPage: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   
   const [selectedReceiptLog, setSelectedReceiptLog] = useState<LogRecord | null>(null);
-
-  const itemsPerPage = useResponsiveItemsPerPage();
-  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (location.state && (location.state as any).openAttendanceModal) {
@@ -461,15 +552,34 @@ export const LogbookPage: React.FC = () => {
   }, [dayLogs, ledgerSearch, customerFilter, paymentFilter]);
 
   const totalItems = filteredLogs.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-  const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const [visibleCount, setVisibleCount] = useState<number>(25);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Reset lazy load count on filter/date changes
+  useEffect(() => {
+    setVisibleCount(25);
+  }, [dateStr, ledgerSearch, customerFilter, paymentFilter]);
+
+  // Lazy loading intersection observer
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && visibleCount < filteredLogs.length) {
+        setVisibleCount(prev => Math.min(prev + 20, filteredLogs.length));
+      }
+    }, { threshold: 0.1, rootMargin: '300px' });
+
+    observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+    };
+  }, [visibleCount, filteredLogs.length]);
 
   const paginatedLogs = useMemo(() => {
-    const startIdx = (clampedPage - 1) * itemsPerPage;
-    return filteredLogs.slice(startIdx, startIdx + itemsPerPage);
-  }, [filteredLogs, clampedPage, itemsPerPage]);
-
-  const startIndex = (clampedPage - 1) * itemsPerPage;
+    return filteredLogs.slice(0, visibleCount);
+  }, [filteredLogs, visibleCount]);
 
   const totalCollectedToday = useMemo(() => {
     return dayLogs.reduce((acc, log) => {
@@ -548,7 +658,7 @@ export const LogbookPage: React.FC = () => {
 
     setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
     setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
-    setCurrentPage(1);
+    setVisibleCount(25);
   };
 
   const handleTriggerCollectPayment = (log: LogRecord) => {
@@ -558,6 +668,11 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
     toast.success(`Payment logged for ${log.customerName}`);
+    logAudit(
+      'PAYMENT_COLLECTED',
+      `Collected payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Unpaid" to "Paid" via ${log.paymentMethod || 'Cash'}.`,
+      log.id
+    ).catch(e => console.warn('Payment collect audit log failed:', e));
   };
 
   const handleTriggerUndoPayment = (log: LogRecord) => {
@@ -567,6 +682,11 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
     toast.info(`Undone payment. Set back to Unpaid.`);
+    logAudit(
+      'PAYMENT_UNDONE',
+      `Reverted payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Paid" to "Unpaid".`,
+      log.id
+    ).catch(e => console.warn('Payment undo audit log failed:', e));
   };
 
   const commitDelete = useCallback(async (targetLog: LogRecord | null) => {
@@ -582,6 +702,12 @@ export const LogbookPage: React.FC = () => {
 
       if (error) throw error;
       toast.success('Check-in log moved to Recycle Bin.');
+
+      await logAudit(
+        'LOGBOOK_REMOVED',
+        `Moved attendance check-in for "${targetLog.customerName}" (${targetLog.customerType} - ${targetLog.categoryOrPlan}, ₱${Number(targetLog.amountPaid || 0).toFixed(2)}) to Recycle Bin.`,
+        targetLog.id
+      );
     } catch (err: any) {
       console.error('Failed to commit deletion to database:', err);
       toast.error(err.message || 'Failed to move check-in log to Recycle Bin.');
@@ -1049,6 +1175,30 @@ export const LogbookPage: React.FC = () => {
                       </div>
                     ))}
 
+                    {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
+                    {totalItems > 0 && (
+                      <div ref={loadMoreRef} className="py-2 text-center text-xs text-slate-500 font-medium">
+                        {visibleCount < totalItems ? (
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-[#161920]/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                            <span className="text-[11px] text-slate-500 font-semibold">
+                              Showing <strong className="text-slate-900 dark:text-white font-bold">{Math.min(visibleCount, totalItems)}</strong> of <strong className="text-slate-900 dark:text-white font-bold">{totalItems}</strong> records (Scroll down for more)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setVisibleCount(totalItems)}
+                              className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer px-2 py-0.5"
+                            >
+                              Load All Records
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="py-2 text-[11px] text-slate-400 font-medium">
+                            ✓ All {totalItems} attendance records loaded for this day.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* ─── QUICK ACTION HORIZONTAL CHECK-IN BUTTON ─── */}
                     <motion.button
                       whileHover={{ scale: 1.01 }}
@@ -1070,52 +1220,6 @@ export const LogbookPage: React.FC = () => {
               })()}
             </AnimatePresence>
           </div>
-
-          {/* Pagination controls */}
-          {totalItems > 0 && totalPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 py-2 text-xs font-body animate-fade-in">
-              <span className="text-slate-500">
-                Showing <span className="font-semibold text-(--color-text)">{startIndex + 1}</span> to{' '}
-                <span className="font-semibold text-(--color-text)">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
-                <span className="font-semibold text-(--color-text)">{totalItems}</span> entries
-              </span>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={clampedPage === 1}
-                  className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer inline-flex items-center justify-center h-7 w-7"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setCurrentPage(page)}
-                    className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] ${
-                      clampedPage === page
-                        ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
-                        : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={clampedPage === totalPages}
-                  className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer inline-flex items-center justify-center h-7 w-7"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* VIEW 2: MEMBERS */}

@@ -1,7 +1,7 @@
 // src/pages/members/MembersList.tsx
 
 import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
@@ -34,6 +34,7 @@ import { StaffPlansConsole, IntakeWizardModal } from './components/SubscriptionP
 import { DigitalQRCardModal } from './components/DigitalQRCardModal';
 import { ManualCardTemplateModal } from './components/ManualCardTemplateModal';
 import { MemberCardPrintModal } from './components/MemberCardPrintModal';
+import { MemberAvatar } from '../../components/ui/MemberAvatar';
 import { toast } from 'react-toastify';
 
 interface MembersListProps {
@@ -52,7 +53,9 @@ type FilterChip =
 export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = false }) => {
   const { setActions } = useContext(HeaderActionsContext);
   const location = useLocation();
+  const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const hasTriggeredRenewRef = useRef<boolean>(false);
 
   const isPlansPath = useMemo(() => {
     return location.pathname.includes('/plans');
@@ -187,6 +190,45 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   useEffect(() => {
     setMobilePage(1);
   }, [searchQuery, activeChip]);
+
+  // Handle Automatic Renew from Dashboard or external redirection
+  useEffect(() => {
+    if (loading || members.length === 0 || hasTriggeredRenewRef.current) return;
+
+    const searchParams = new URLSearchParams(location.search);
+    const renewMemberId = searchParams.get('renewMemberId') || (location.state as any)?.renewMemberId;
+    const memberName = searchParams.get('memberName') || (location.state as any)?.memberName;
+
+    if (renewMemberId || memberName) {
+      const targetMember = members.find(m => 
+        (renewMemberId && (m.member_id === renewMemberId || m.id === renewMemberId)) ||
+        (memberName && m.full_name?.toLowerCase().trim() === memberName.toLowerCase().trim())
+      );
+
+      if (targetMember) {
+        hasTriggeredRenewRef.current = true;
+        setSearchQuery(targetMember.full_name || targetMember.member_id);
+
+        const now = Date.now();
+        const memberActiveSubs = subscriptions.filter(s => {
+          if (s.member_id !== targetMember.member_id || s.status === 'Voided') return false;
+          if (!s.end_date) return false;
+          const endMs = new Date(s.end_date).getTime();
+          return endMs >= now;
+        });
+
+        if (memberActiveSubs.length > 1) {
+          toast.warning(`Cannot auto-renew: ${targetMember.full_name} has ${memberActiveSubs.length} active subscriptions. Please manage contracts individually.`);
+          navigate('/members/list', { replace: true, state: {} });
+        } else {
+          setWizardPrefillMember(targetMember);
+          setIsWizardOpen(true);
+          toast.info(`Opening renewal wizard for ${targetMember.full_name}`);
+          navigate('/members/list', { replace: true, state: {} });
+        }
+      }
+    }
+  }, [loading, members, subscriptions, location.search, location.state, navigate]);
 
   /**
    * Resolves currently active subscription for a member where start_date <= now <= end_date
@@ -515,9 +557,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       sortable: true,
       render: (item) => (
         <div className="flex items-center gap-3.5 py-1.5 text-left">
-          <div className="w-10 h-10 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shadow-xs shrink-0">
-            {(item.full_name || 'M')[0]}
-          </div>
+          <MemberAvatar
+            src={item.image_url || item.avatar_url}
+            name={item.full_name}
+            size={64}
+            roundedClassName="rounded-2xl"
+            className="shadow-sm"
+          />
           <div className="min-w-0">
             <span className="font-bold block text-sm text-(--color-text) truncate">{item.full_name}</span>
             <span className="text-xs text-slate-400 font-mono block mt-0.5 leading-none truncate">
@@ -1113,9 +1159,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                   className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 accent-[#123c73] shrink-0 cursor-pointer"
                                 />
 
-                                <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shadow-xs shrink-0">
-                                  {(member.full_name || 'M')[0]}
-                                </div>
+                                <MemberAvatar
+                                  src={member.image_url || member.avatar_url}
+                                  name={member.full_name}
+                                  size={64}
+                                  roundedClassName="rounded-2xl"
+                                  className="shadow-sm"
+                                />
 
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">

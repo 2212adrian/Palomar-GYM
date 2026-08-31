@@ -34,7 +34,6 @@ const CATEGORIES = [
   { id: 'members', label: 'Members' },
   { id: 'payments', label: 'Payments & Rates' },
   { id: 'incidents', label: 'Incident Reports' },
-  { id: 'settings', label: 'Settings & Profile' },
   { id: 'backups', label: 'Backups' },
   { id: 'security', label: 'Security & Users' },
   { id: 'auth', label: 'Authentication' }
@@ -142,10 +141,9 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('incident')) return 'incidents';
     if (act.includes('check_in') || act.includes('check_out') || act.includes('logbook') || act.includes('attendance')) return 'attendance';
     if (act.includes('member') || act.includes('online_registration') || act.includes('online_reg') || act.includes('enroll')) return 'members';
-    if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('security') || act.includes('account')) return 'security';
-    if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('rates') || act.includes('revenue_goal')) return 'payments';
+    if (act.includes('profile') || act.includes('user') || act.includes('role') || act.includes('deactivate') || act.includes('restore') || act.includes('security') || act.includes('account') || act.includes('permission') || act.includes('gym')) return 'security';
+    if (act.includes('payment') || act.includes('fee') || act.includes('charge') || act.includes('invoice') || act.includes('rates') || act.includes('revenue_goal') || act.includes('config') || act.includes('settings')) return 'payments';
     if (act.includes('backup') || act.includes('snapshot')) return 'backups';
-    if (act.includes('config') || act.includes('settings') || act.includes('gym') || act.includes('permission') || act.includes('dashboard')) return 'settings';
     return 'all';
   };
 
@@ -202,6 +200,72 @@ export const AuditLogs: React.FC = () => {
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const renderFormattedAuditDetails = (details: string) => {
+    if (!details) return <span className="text-slate-400">System action executed.</span>;
+
+    // Check if there are "->" or "changed from X to Y" patterns
+    const hasArrowChange = details.includes('->') || details.includes(' -> ') || details.includes('changed from');
+
+    if (!hasArrowChange) {
+      return <span>{details}</span>;
+    }
+
+    // Split on commas or newlines if it's multiple change items
+    const parts = details.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
+
+    return (
+      <div className="space-y-1.5 mt-1">
+        {parts.map((part, idx) => {
+          if (part.includes('->') || part.includes('changed from')) {
+            let label = '';
+            let beforeVal = '';
+            let afterVal = '';
+
+            if (part.includes('->')) {
+              const colonIdx = part.indexOf(':');
+              if (colonIdx > -1 && colonIdx < part.indexOf('->')) {
+                label = part.substring(0, colonIdx).trim();
+                const rest = part.substring(colonIdx + 1).trim();
+                const [b, a] = rest.split('->');
+                beforeVal = (b || '').trim().replace(/^"|"$/g, '');
+                afterVal = (a || '').trim().replace(/^"|"$/g, '');
+              } else {
+                const [b, a] = part.split('->');
+                beforeVal = (b || '').trim().replace(/^"|"$/g, '');
+                afterVal = (a || '').trim().replace(/^"|"$/g, '');
+              }
+            } else if (part.includes('changed from')) {
+              const [prefix, rest] = part.split('changed from');
+              label = prefix.trim();
+              const [b, a] = (rest || '').split('to');
+              beforeVal = (b || '').trim().replace(/^"|"$/g, '');
+              afterVal = (a || '').trim().replace(/^"|"$/g, '');
+            }
+
+            return (
+              <div key={idx} className="flex flex-wrap items-center gap-1.5 text-xs">
+                {label && <span className="font-bold text-slate-700 dark:text-slate-300">{label}:</span>}
+                <span className="px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-semibold line-through text-[11px]">
+                  {beforeVal || 'None'}
+                </span>
+                <span className="text-slate-400 font-bold">➜</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
+                  {afterVal || 'None'}
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <div key={idx} className="text-xs text-slate-600 dark:text-slate-300">
+              {part}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const summaryMetrics = useMemo(() => {
@@ -690,13 +754,13 @@ export const AuditLogs: React.FC = () => {
                                 )}
                               </div>
                               
-                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed break-words">
+                              <div className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed break-words">
                                 <span className="font-bold text-slate-800 dark:text-slate-200 mr-1.5 break-all">{group.actor_username}</span>
                                 {itemCount > 1 
                                   ? `recorded ${itemCount} events in a 5-minute interval`
-                                  : representative.details || 'System action executed.'
+                                  : renderFormattedAuditDetails(representative.details)
                                 }
-                              </p>
+                              </div>
                               
                               <span className="text-[10px] text-slate-500 block font-semibold mt-1">
                                 {latestTimestamp.toLocaleTimeString('en-US', {
@@ -767,9 +831,9 @@ export const AuditLogs: React.FC = () => {
                                 </div>
                                 <div className="space-y-1 sm:col-span-2">
                                   <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px] block">Metadata & Details</span>
-                                  <span className="text-slate-700 dark:text-slate-200 font-normal leading-relaxed block bg-(--bg-page) p-3 rounded-lg border border-(--border-color) font-mono text-[11px] whitespace-pre-wrap text-left select-all break-words">
-                                    {representative.details || 'No extended metadata payload registered.'}
-                                  </span>
+                                  <div className="text-slate-700 dark:text-slate-200 font-normal leading-relaxed block bg-(--bg-page) p-3 rounded-lg border border-(--border-color) text-xs whitespace-pre-wrap text-left select-all break-words">
+                                    {renderFormattedAuditDetails(representative.details || 'No extended metadata payload registered.')}
+                                  </div>
                                 </div>
                               </div>
                             )}

@@ -41,7 +41,6 @@ import { TimelineBar } from '../../components/ui/TimelineBar';
 import { HeaderActionsContext } from '../../routes';
 import { SalesDialog } from './components/SalesDialog';
 import { Products } from './Products'; 
-import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { SalesRecycleBin } from './components/SalesRecycleBin';
 
 // Separated Modular Components
@@ -281,9 +280,6 @@ export const Sales: React.FC = () => {
   const [ratesConfig, setRatesConfig] = useState<any>(null);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
-  const itemsPerPage = useResponsiveItemsPerPage();
-  const [currentPage, setCurrentPage] = useState(1);
-
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
@@ -379,22 +375,69 @@ export const Sales: React.FC = () => {
     }
 
     try {
-      // 2. Always fetch fresh server data in background
-      const { data, error } = await supabase.rpc('get_sanitized_sales', {
-        target_date: dateStr
-      });
+      // 2. Try RPC for sanitized DTO first
+      let freshTransactions: any[] | null = null;
 
-      if (error) {
-        console.error('Error executing get_sanitized_sales RPC:', error);
-        return;
+      try {
+        const { data, error } = await supabase.rpc('get_sanitized_sales', {
+          target_date: dateStr
+        });
+
+        if (!error && data) {
+          freshTransactions = data;
+        } else if (error) {
+          const isOfflineErr = error?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
+          if (!isOfflineErr) {
+            console.warn('RPC get_sanitized_sales fallback triggered:', error.message || error);
+          }
+        }
+      } catch (rpcErr: any) {
+        const isOfflineErr = rpcErr?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
+        if (!isOfflineErr) {
+          console.warn('RPC get_sanitized_sales invocation error:', rpcErr);
+        }
       }
 
-      const freshTransactions = data || [];
-      setTransactions(freshTransactions);
-      sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
+      // 3. Fallback to direct table query if RPC is not available or errored
+      if (!freshTransactions && (typeof navigator === 'undefined' || navigator.onLine)) {
+        try {
+          const startOfDay = new Date(`${dateStr}T00:00:00+08:00`).toISOString();
+          const endOfDay = new Date(`${dateStr}T23:59:59.999+08:00`).toISOString();
 
+          const { data: salesData, error: salesErr } = await supabase
+            .from('sales')
+            .select('*')
+            .is('deleted_at', null)
+            .gte('created_at', startOfDay)
+            .lte('created_at', endOfDay)
+            .order('created_at', { ascending: false });
+
+          if (!salesErr && salesData) {
+            freshTransactions = salesData.map((s: any) => ({
+              id: String(s.id),
+              created_at: s.created_at,
+              receipt_no: s.receipt_no || String(s.id),
+              items: s.items || [],
+              product_name: s.product_name || 'Multiple Items',
+              payment_method: s.payment_method,
+              amount_received: s.amount_received,
+              change_calculated: s.change_calculated,
+              total_amount: s.total_amount,
+              gcash_fee_applied: s.gcash_fee_applied || 0,
+              reference_number: s.reference_number
+            }));
+          }
+        } catch (directErr) {
+          // Direct query failed
+        }
+      }
+
+      if (freshTransactions) {
+        setTransactions(freshTransactions);
+        sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
+      }
     } catch (err) {
-      console.error('Error loading sales ledger:', err);
+      // General error guard
     } finally {
       if (!isBackground) {
         setLoadingTransactions(false);
@@ -464,7 +507,6 @@ export const Sales: React.FC = () => {
       }
       setSelectedDayIndex(fallbackIndex);
     }
-    setCurrentPage(1);
   }, [currentWeekStart, role]);
 
   const dayTransactions = useMemo(() => transactions, [transactions]);
@@ -491,15 +533,34 @@ export const Sales: React.FC = () => {
   }, [dayTransactions, ledgerSearch, paymentFilter]);
 
   const totalItems = filteredDayTransactions.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-  const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const [visibleCount, setVisibleCount] = useState<number>(25);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Reset lazy load count on filter/date changes
+  useEffect(() => {
+    setVisibleCount(25);
+  }, [dateStr, ledgerSearch, paymentFilter]);
+
+  // Lazy loading intersection observer
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && visibleCount < filteredDayTransactions.length) {
+        setVisibleCount(prev => Math.min(prev + 20, filteredDayTransactions.length));
+      }
+    }, { threshold: 0.1, rootMargin: '300px' });
+
+    observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+    };
+  }, [visibleCount, filteredDayTransactions.length]);
 
   const paginatedTransactions = useMemo(() => {
-    const startIdx = (clampedPage - 1) * itemsPerPage;
-    return filteredDayTransactions.slice(startIdx, startIdx + itemsPerPage);
-  }, [filteredDayTransactions, clampedPage, itemsPerPage]);
-
-  const startIndex = (clampedPage - 1) * itemsPerPage;
+    return filteredDayTransactions.slice(0, visibleCount);
+  }, [filteredDayTransactions, visibleCount]);
 
   const dailyRevenue = useMemo(() => {
     return dayTransactions.reduce((acc, t) => acc + (Number(t.total_amount) || 0), 0);
@@ -598,7 +659,7 @@ export const Sales: React.FC = () => {
 
       setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
       setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
-      setCurrentPage(1);
+      setVisibleCount(25);
 
       const itemsList = newTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || newTx.productName;
       const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
@@ -1033,6 +1094,30 @@ export const Sales: React.FC = () => {
                       </div>
                     ))}
 
+                    {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
+                    {totalItems > 0 && (
+                      <div ref={loadMoreRef} className="py-2 text-center text-xs text-slate-500 font-medium">
+                        {visibleCount < totalItems ? (
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-[#161920]/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                            <span className="text-[11px] text-slate-500 font-semibold">
+                              Showing <strong className="text-slate-900 dark:text-white font-bold">{Math.min(visibleCount, totalItems)}</strong> of <strong className="text-slate-900 dark:text-white font-bold">{totalItems}</strong> sales records (Scroll down for more)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setVisibleCount(totalItems)}
+                              className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer px-2 py-0.5"
+                            >
+                              Load All Sales
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="py-2 text-[11px] text-slate-400 font-medium">
+                            ✓ All {totalItems} sales records loaded for this day.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* ─── QUICK ACTION HORIZONTAL CREATE NEW SALE BUTTON ─── */}
                     <motion.button
                       whileHover={{ scale: 1.01 }}
@@ -1051,52 +1136,6 @@ export const Sales: React.FC = () => {
               })()}
             </AnimatePresence>
           </div>
-
-          {/* CARD MULTI-ITEM AUTOMATED PAGINATION CONTROLS */}
-          {totalItems > 0 && totalPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 py-2 text-xs font-body animate-fade-in">
-              <span className="text-slate-500 dark:text-slate-400">
-                Showing <span className="font-semibold text-slate-900 dark:text-white">{startIndex + 1}</span> to{' '}
-                <span className="font-semibold text-slate-900 dark:text-white">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
-                <span className="font-semibold text-slate-900 dark:text-white">{totalItems}</span> entries
-              </span>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={clampedPage === 1}
-                  className="p-1.5 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer inline-flex items-center justify-center"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-1.5 rounded-lg font-mono font-semibold transition-all cursor-pointer ${
-                      clampedPage === page
-                        ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
-                        : 'border border-(--border-color) text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-neutral-800'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={clampedPage === totalPages}
-                  className="p-1.5 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer inline-flex items-center justify-center"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* --- VIEW 2: PRODUCTS INVENTORY --- */}

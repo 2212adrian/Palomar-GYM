@@ -27,6 +27,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
 import { supabase } from '../../../lib/supabase/client';
+import { logAudit } from '../../../lib/supabase/audit';
 import { createPortal } from 'react-dom';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
@@ -812,6 +813,16 @@ export const LogbookRecordAttendance: React.FC<LogbookRecordAttendanceProps> = (
         .single();
 
       if (error) throw error;
+
+      try {
+        await logAudit(
+          'ATTENDANCE_CHECKIN',
+          `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Promo/Free'}.`,
+          inserted.id
+        );
+      } catch (auditErr) {
+        console.warn('Background logbook audit failed:', auditErr);
+      }
 
       const checkInRecord = {
         id: String(inserted.id),

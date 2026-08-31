@@ -235,6 +235,14 @@ export const memberService = {
   update: async (id: string, updates: Partial<Member>, user: string): Promise<Member> => {
     if (!id) throw new Error('Member ID is required for update.');
 
+    let findQuery = supabase.from('members').select('*');
+    if (isUUID(id)) {
+      findQuery = findQuery.eq('id', id);
+    } else {
+      findQuery = findQuery.eq('member_id', id);
+    }
+    const { data: previousData } = await findQuery.maybeSingle();
+
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
     if ('avatar_url' in updates && !('image_url' in updates)) {
       payload.image_url = updates.avatar_url;
@@ -260,7 +268,36 @@ export const memberService = {
       avatar_url: updated.image_url || updated.avatar_url || null
     };
 
-    await writeAudit('MEMBER_UPDATED', 'Members', user, memberObj.member_id, undefined, `Updated parameters for ${memberObj.full_name}`);
+    const changes: string[] = [];
+    if (previousData) {
+      if (updates.full_name && updates.full_name !== previousData.full_name) {
+        changes.push(`Name: "${previousData.full_name}" -> "${updates.full_name}"`);
+      }
+      if (updates.phone && updates.phone !== previousData.phone) {
+        changes.push(`Phone: "${previousData.phone || 'None'}" -> "${updates.phone}"`);
+      }
+      if (updates.email !== undefined && updates.email !== previousData.email) {
+        changes.push(`Email: "${previousData.email || 'None'}" -> "${updates.email || 'None'}"`);
+      }
+      if (updates.emergency_contact_name && updates.emergency_contact_name !== previousData.emergency_contact_name) {
+        changes.push(`Emergency Contact: "${previousData.emergency_contact_name || 'None'}" -> "${updates.emergency_contact_name}"`);
+      }
+      if (updates.emergency_contact_phone && updates.emergency_contact_phone !== previousData.emergency_contact_phone) {
+        changes.push(`Emergency Phone: "${previousData.emergency_contact_phone || 'None'}" -> "${updates.emergency_contact_phone}"`);
+      }
+      if (updates.status && updates.status !== previousData.status) {
+        changes.push(`Status: "${previousData.status}" -> "${updates.status}"`);
+      }
+      if (updates.notes !== undefined && updates.notes !== previousData.notes) {
+        changes.push(`Notes updated`);
+      }
+    }
+
+    const auditDetail = changes.length > 0 
+      ? `Updated member profile for "${memberObj.full_name}": ${changes.join(', ')}`
+      : `Updated profile parameters for "${memberObj.full_name}".`;
+
+    await writeAudit('MEMBER_UPDATED', 'Members', user, memberObj.member_id, undefined, auditDetail);
     return memberObj;
   },
 

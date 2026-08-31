@@ -26,9 +26,16 @@ export interface LogRecord {
   categoryOrPlan: string;
   paymentMethod: 'Cash' | 'GCash' | 'Promo' | string;
   amountPaid: number;
+  basePrice?: number;
+  gcashFee?: number;
+  cardFee?: number;
+  gcashRefNo?: string;
+  referenceNumber?: string;
+  paymentRef?: string;
   paymentStatus: 'Paid' | 'Promo' | 'Unpaid';
   status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended';
   isSubscription?: boolean;
+  deletable?: boolean;
 }
 
 export interface SaleRecord {

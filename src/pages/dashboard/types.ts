@@ -60,6 +60,34 @@ export interface ExpiringMemberItem {
   end_date: string;
   daysRemaining: number;
   status: 'Active' | 'Expiring' | 'Expired';
+  subscriptionCount?: number;
+  activeSubscriptionsCount?: number;
+}
+
+export interface SubscriptionBreakdownPoint {
+  date: string;
+  label: string;
+  monthly: number;
+  yearly: number;
+  total: number;
+  monthlyRevenue: number;
+  yearlyRevenue: number;
+}
+
+export interface SubscriptionPlanBreakdown {
+  monthlyCount: number;
+  yearlyCount: number;
+  otherCount: number;
+  totalSubscribers: number;
+  activeMonthlyCount: number;
+  activeYearlyCount: number;
+  activeTotalCount: number;
+  monthlyRevenue: number;
+  yearlyRevenue: number;
+  totalRevenue: number;
+  monthlyPercentage: number;
+  yearlyPercentage: number;
+  timeline: SubscriptionBreakdownPoint[];
 }
 
 export interface LowStockProductItem {

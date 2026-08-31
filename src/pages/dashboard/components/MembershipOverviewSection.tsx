@@ -129,12 +129,33 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
                     {member.daysRemaining === 0 ? 'Today' : `${member.daysRemaining}d left`}
                   </span>
 
-                  <button
-                    onClick={() => onRenewMember?.(member) || navigate('/logbook')}
-                    className="px-2.5 py-1 text-[11px] font-bold bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white rounded-lg transition-all active:scale-95 cursor-pointer"
-                  >
-                    Renew
-                  </button>
+                  {member.activeSubscriptionsCount && member.activeSubscriptionsCount > 1 ? (
+                    <button
+                      type="button"
+                      disabled
+                      title="Cannot auto-renew: Member has multiple active subscriptions"
+                      className="px-2.5 py-1 text-[11px] font-bold bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg cursor-not-allowed opacity-70"
+                    >
+                      Multiple Plans
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      id={`btn-renew-member-${member.id}`}
+                      onClick={() => {
+                        if (onRenewMember) {
+                          onRenewMember(member);
+                        } else {
+                          navigate(`/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`, {
+                            state: { renewMemberId: member.member_id, memberName: member.full_name, triggerRenew: true }
+                          });
+                        }
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white rounded-lg transition-all active:scale-95 cursor-pointer"
+                    >
+                      Renew
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

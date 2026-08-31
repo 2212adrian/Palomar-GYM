@@ -31,8 +31,15 @@ import {
   Package,
   Flame,
   AlertOctagon,
-  AlertTriangle
+  AlertTriangle,
+  UserSearch,
+  Phone,
+  Copy,
+  MapPin,
+  HeartPulse,
+  ShieldAlert
 } from 'lucide-react';
+import type { Member } from '../../types/members';
 
 interface IncidentReport {
   id: string;
@@ -108,6 +115,11 @@ export const IncidentReports: React.FC = () => {
   // Navigation States
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showContactsModal, setShowContactsModal] = useState(false);
+  const [showMemberLookupModal, setShowMemberLookupModal] = useState(false);
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [allMembers, setAllMembers] = useState<Member[]>([]);
+  const [selectedEmergencyMember, setSelectedEmergencyMember] = useState<Member | null>(null);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Emergency Contacts State
@@ -135,23 +147,75 @@ export const IncidentReports: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = useResponsiveItemsPerPage();
 
+  // Load members for emergency lookup
+  const fetchMembersForLookup = async () => {
+    try {
+      setLoadingMembers(true);
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .is('deleted_at', null)
+        .order('full_name', { ascending: true });
+      if (error) throw error;
+      if (isMountedRef.current) {
+        setAllMembers((data as Member[]) || []);
+      }
+    } catch (err) {
+      console.error('Failed to load members for emergency lookup:', err);
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingMembers(false);
+      }
+    }
+  };
+
+  // Filtered members for emergency lookup
+  const filteredEmergencyMembers = allMembers.filter(m => {
+    if (!memberSearchTerm.trim()) return true;
+    const term = memberSearchTerm.toLowerCase().trim();
+    return (
+      m.full_name?.toLowerCase().includes(term) ||
+      m.member_id?.toLowerCase().includes(term) ||
+      m.phone?.toLowerCase().includes(term) ||
+      m.email?.toLowerCase().includes(term) ||
+      m.emergency_contact_name?.toLowerCase().includes(term) ||
+      m.emergency_contact_phone?.toLowerCase().includes(term) ||
+      m.parent_name?.toLowerCase().includes(term) ||
+      m.parent_phone?.toLowerCase().includes(term)
+    );
+  });
+
   // centralize top action controls
   useEffect(() => {
     setActions(
       <>
         <button
+          onClick={() => {
+            setShowMemberLookupModal(true);
+            fetchMembersForLookup();
+          }}
+          title="Emergency member lookup & contact info"
+          aria-label="Lookup Member"
+          className="px-3.5 py-2.5 bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 rounded-xl transition-all active:scale-95 cursor-pointer inline-flex items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
+        >
+          <UserSearch className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <span>Lookup Members</span>
+        </button>
+
+        <button
           onClick={() => setShowContactsModal(true)}
           title="Escalated emergency contact directory"
-          aria-label="Emergency Escalation Contacts"
-          className="p-3 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center justify-center shrink-0"
+          aria-label="Emergency Contacts"
+          className="px-3.5 py-2.5 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 cursor-pointer inline-flex items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
         >
           <PhoneCall className="w-4 h-4 text-blue-500" />
+          <span>Emergency Contacts</span>
         </button>
 
         {!isAdmin && (
           <button
             onClick={openCreateModal}
-            className="flex items-center gap-2 px-5 py-3 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0"
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
             New Report
@@ -159,7 +223,7 @@ export const IncidentReports: React.FC = () => {
         )}
       </>
     );
-  }, [isAdmin, reports]);
+  }, [isAdmin, reports, allMembers]);
 
    useEffect(() => {
     if (location.state?.openIncidentId && reports.length > 0) {
@@ -1252,6 +1316,339 @@ export const IncidentReports: React.FC = () => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContactsModal(false);
+                    setShowMemberLookupModal(true);
+                    fetchMembersForLookup();
+                  }}
+                  className="w-full py-2.5 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <UserSearch className="w-4 h-4" />
+                  <span>Looking for Member Info? Open Member Lookup</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Emergency Member Lookup Modal */}
+        {showMemberLookupModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowMemberLookupModal(false);
+                setSelectedEmergencyMember(null);
+              }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 15, scale: 0.95 }}
+              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-4xl shadow-2xl relative z-10 overflow-hidden max-h-[90vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-black/20 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <UserSearch className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-sm font-bold tracking-wider uppercase text-slate-900 dark:text-slate-100">
+                      Emergency Member Lookup
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Instantly locate member personal, medical, and emergency contact records
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowMemberLookupModal(false);
+                    setSelectedEmergencyMember(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg transition-colors cursor-pointer"
+                  title="Close lookup dialog"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Main Modal Layout: 2-Column Split */}
+              <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-0 overflow-hidden">
+                {/* Left Pane: Search & List (5 cols) */}
+                <div className="md:col-span-5 border-r border-slate-200 dark:border-white/5 p-4 flex flex-col gap-3 min-h-0 bg-slate-50/30 dark:bg-black/10">
+                  <div className="relative shrink-0">
+                    <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={memberSearchTerm}
+                      onChange={(e) => setMemberSearchTerm(e.target.value)}
+                      placeholder="Search member name, ID, phone..."
+                      className="w-full pl-9 pr-8 py-2 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    />
+                    {memberSearchTerm && (
+                      <button
+                        onClick={() => setMemberSearchTerm('')}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-1 shrink-0 flex items-center justify-between">
+                    <span>{filteredEmergencyMembers.length} Members Found</span>
+                    {loadingMembers && <span className="animate-pulse text-emerald-500">Loading...</span>}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    {filteredEmergencyMembers.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-slate-400 space-y-1">
+                        <User className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 opacity-60 mb-2" />
+                        <p className="font-semibold">No member matches found</p>
+                        <p className="text-[11px]">Try searching by partial name, ID number, or phone.</p>
+                      </div>
+                    ) : (
+                      filteredEmergencyMembers.map((m) => {
+                        const isSelected = selectedEmergencyMember?.id === m.id;
+                        return (
+                          <div
+                            key={m.id}
+                            onClick={() => setSelectedEmergencyMember(m)}
+                            className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-900 dark:text-emerald-100 shadow-xs'
+                                : 'bg-white dark:bg-[#1e232d] border-slate-200/80 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-bold text-xs truncate">{m.full_name}</div>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase shrink-0 ${
+                                m.status === 'Active' 
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              }`}>
+                                {m.status}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center justify-between">
+                              <span>{m.member_id}</span>
+                              <span>{m.phone}</span>
+                            </div>
+                            {m.emergency_contact_name && (
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
+                                <ShieldAlert className="w-3 h-3 text-rose-500 shrink-0" />
+                                <span className="truncate">ICE: {m.emergency_contact_name} ({m.relationship || 'Contact'})</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Pane: Selected Member Profile & Emergency Dossier (7 cols) */}
+                <div className="md:col-span-7 p-5 flex flex-col min-h-0 overflow-y-auto space-y-4">
+                  {selectedEmergencyMember ? (
+                    <div className="space-y-4">
+                      {/* Identity Card Header */}
+                      <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl border border-slate-200/80 dark:border-white/5 flex items-start gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading font-black text-lg shrink-0 shadow-xs">
+                          {selectedEmergencyMember.full_name?.charAt(0) || 'M'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <h4 className="font-bold text-base text-slate-900 dark:text-white truncate">
+                              {selectedEmergencyMember.full_name}
+                            </h4>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                              selectedEmergencyMember.status === 'Active' 
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                            }`}>
+                              {selectedEmergencyMember.status} Member
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-400 font-mono mt-0.5">
+                            ID: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedEmergencyMember.member_id}</span>
+                            {selectedEmergencyMember.gender && <span> • {selectedEmergencyMember.gender}</span>}
+                            {selectedEmergencyMember.birthday && <span> • Born: {selectedEmergencyMember.birthday}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* EMERGENCY CONTACT HIGHLIGHT BOX (Red / Urgent Alert Styling) */}
+                      <div className="p-4 bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/30 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 font-heading">
+                            <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                            <span>Primary Emergency Contact (In Case of Emergency)</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+                          <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Contact Name</span>
+                            <span className="font-bold text-slate-900 dark:text-slate-100 text-sm mt-0.5 block truncate">
+                              {selectedEmergencyMember.emergency_contact_name || 'Not Provided'}
+                            </span>
+                            <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                              Relationship: {selectedEmergencyMember.relationship || 'Not Specified'}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Emergency Phone</span>
+                            {selectedEmergencyMember.emergency_contact_phone ? (
+                              <div className="flex items-center justify-between gap-1.5 mt-1">
+                                <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm truncate">
+                                  {selectedEmergencyMember.emergency_contact_phone}
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <a
+                                    href={`tel:${selectedEmergencyMember.emergency_contact_phone}`}
+                                    className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer inline-flex items-center"
+                                    title="Call Emergency Contact"
+                                  >
+                                    <Phone className="w-3.5 h-3.5" />
+                                  </a>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(selectedEmergencyMember.emergency_contact_phone || '');
+                                      toast.success('Phone copied to clipboard');
+                                    }}
+                                    className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
+                                    title="Copy Phone"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs mt-1 block italic">No phone recorded</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Minor / Parent Guardian Info */}
+                        {(selectedEmergencyMember.parent_name || selectedEmergencyMember.parent_phone) && (
+                          <div className="pt-2 border-t border-rose-500/20 text-xs">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                              Parent / Guardian (Minor Member Record)
+                            </span>
+                            <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20 flex items-center justify-between gap-2 flex-wrap">
+                              <div>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{selectedEmergencyMember.parent_name || 'Parent'}</span>
+                                {selectedEmergencyMember.parent_relationship && (
+                                  <span className="text-[11px] text-slate-400 ml-1.5">({selectedEmergencyMember.parent_relationship})</span>
+                                )}
+                              </div>
+                              {selectedEmergencyMember.parent_phone && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-xs">{selectedEmergencyMember.parent_phone}</span>
+                                  <a
+                                    href={`tel:${selectedEmergencyMember.parent_phone}`}
+                                    className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700"
+                                    title="Call Parent"
+                                  >
+                                    <Phone className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Primary Contact & Location */}
+                      <div className="p-4 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 text-xs">
+                        <h5 className="font-heading font-bold text-[11px] uppercase tracking-wider text-slate-400">
+                          Direct Member Contacts & Residence
+                        </h5>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Member Mobile</span>
+                              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{selectedEmergencyMember.phone || 'None'}</span>
+                            </div>
+                            {selectedEmergencyMember.phone && (
+                              <a
+                                href={`tel:${selectedEmergencyMember.phone}`}
+                                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer"
+                                title="Call Member"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-center justify-between">
+                            <div className="min-w-0 pr-1">
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Email Address</span>
+                              <span className="text-slate-900 dark:text-slate-100 font-medium truncate block">
+                                {selectedEmergencyMember.email || 'None registered'}
+                              </span>
+                            </div>
+                            {selectedEmergencyMember.email && (
+                              <a
+                                href={`mailto:${selectedEmergencyMember.email}`}
+                                className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 rounded-lg"
+                                title="Email Member"
+                              >
+                                <Mail className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {selectedEmergencyMember.address && (
+                          <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-start gap-2 text-xs">
+                            <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Home Address</span>
+                              <span className="text-slate-700 dark:text-slate-300">{selectedEmergencyMember.address}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Medical & Notes */}
+                      <div className="p-4 bg-slate-50 dark:bg-black/20 border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-heading">
+                          <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Medical, Physical or Account Notes</span>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-[#161920] p-3 rounded-xl border border-slate-200/60 dark:border-white/5">
+                          {selectedEmergencyMember.notes || 'No health conditions, allergies, or special instructions recorded on member file.'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400 space-y-3">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                        <UserSearch className="w-7 h-7 text-slate-400" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300">No Member Selected</h4>
+                        <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                          Select a member from the left list to view their complete emergency dossier and contact information.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

@@ -20,7 +20,9 @@ import type {
   LowStockProductItem, 
   ActivityFeedItem, 
   BirReportItem, 
-  TimeRangeFilter 
+  TimeRangeFilter,
+  SubscriptionPlanBreakdown,
+  SubscriptionBreakdownPoint
 } from './types';
 
 export const formatPHP = (amount: number): string => {
@@ -158,6 +160,12 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       const memberName = sub.members?.full_name || sub.member_id || 'Member';
       const memberPhone = sub.members?.phone || 'N/A';
 
+      const memberSubs = subscriptions.filter(s => s.member_id === sub.member_id && !s.voided_at && s.status !== 'Voided');
+      const activeSubs = memberSubs.filter(s => {
+        if (!s.end_date) return false;
+        return new Date(s.end_date).getTime() >= now.getTime();
+      });
+
       if (diff >= 0 && diff <= 7) {
         expiringSoonList.push({
           id: sub.id,
@@ -167,7 +175,9 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           plan_type: sub.plan_type ? `${sub.plan_type.toUpperCase()} PLAN` : 'MONTHLY PASS',
           end_date: format(end, 'MMM dd, yyyy'),
           daysRemaining: diff,
-          status: 'Expiring'
+          status: 'Expiring',
+          subscriptionCount: memberSubs.length,
+          activeSubscriptionsCount: activeSubs.length
         });
       } else if (diff < 0) {
         expiredCount++;
@@ -703,6 +713,195 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       newMembersThisMonth
     };
 
+    // --- Subscription Plan Breakdown (Monthly vs Yearly) ---
+    let monthlyCount = 0;
+    let yearlyCount = 0;
+    let monthlyRevenue = 0;
+    let yearlyRevenue = 0;
+
+    let activeMonthlyCount = 0;
+    let activeYearlyCount = 0;
+    let activeTotalCount = 0;
+
+    const subscriptionTimeline: SubscriptionBreakdownPoint[] = [];
+
+    const isYearlyPlan = (sub: any): boolean => {
+      const type = (sub.plan_type || '').toLowerCase();
+      const name = (sub.plan_name || '').toLowerCase();
+      return type.includes('year') || type.includes('annual') || name.includes('year') || name.includes('annual');
+    };
+
+    subscriptions.forEach(sub => {
+      if (sub.voided_at || sub.status === 'Voided') return;
+      const isYearly = isYearlyPlan(sub);
+      const price = Number(sub.price || 0);
+
+      // Active status
+      if (sub.end_date) {
+        const end = parseISO(sub.end_date);
+        const start = sub.start_date ? parseISO(sub.start_date) : (sub.created_at ? parseISO(sub.created_at) : now);
+        if (start <= now && end >= now) {
+          activeTotalCount++;
+          if (isYearly) activeYearlyCount++;
+          else activeMonthlyCount++;
+        }
+      }
+
+      // Range filter
+      const created = sub.created_at ? parseISO(sub.created_at) : (sub.start_date ? parseISO(sub.start_date) : null);
+      if (created && created >= rangeStartDate && created <= now) {
+        if (isYearly) {
+          yearlyCount++;
+          yearlyRevenue += price;
+        } else {
+          monthlyCount++;
+          monthlyRevenue += price;
+        }
+      }
+    });
+
+    const totalSubscribers = monthlyCount + yearlyCount;
+    const totalRevenue = monthlyRevenue + yearlyRevenue;
+    const monthlyPercentage = totalSubscribers > 0 ? Math.round((monthlyCount / totalSubscribers) * 100) : (activeTotalCount > 0 ? Math.round((activeMonthlyCount / activeTotalCount) * 100) : 75);
+    const yearlyPercentage = totalSubscribers > 0 ? 100 - monthlyPercentage : (activeTotalCount > 0 ? 100 - monthlyPercentage : 25);
+
+    if (timeRange === 'today') {
+      for (let h = 6; h <= 21; h++) {
+        const hStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0);
+        const hEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 59, 59);
+        const label = format(hStart, 'ha');
+
+        const subList = subscriptions.filter(sub => {
+          if (sub.voided_at || sub.status === 'Voided') return false;
+          const d = new Date(sub.created_at || sub.start_date);
+          return d >= hStart && d <= hEnd;
+        });
+
+        let mCount = 0;
+        let yCount = 0;
+        let mRev = 0;
+        let yRev = 0;
+
+        subList.forEach(sub => {
+          const isYearly = isYearlyPlan(sub);
+          const price = Number(sub.price || 0);
+          if (isYearly) {
+            yCount++;
+            yRev += price;
+          } else {
+            mCount++;
+            mRev += price;
+          }
+        });
+
+        subscriptionTimeline.push({
+          date: `${format(now, 'yyyy-MM-dd')} ${h}:00`,
+          label,
+          monthly: mCount,
+          yearly: yCount,
+          total: mCount + yCount,
+          monthlyRevenue: mRev,
+          yearlyRevenue: yRev
+        });
+      }
+    } else if (timeRange === 'year') {
+      for (let m = 11; m >= 0; m--) {
+        const monthDate = subDays(now, m * 30);
+        const mStart = startOfMonth(monthDate);
+        const mEnd = endOfMonth(monthDate);
+        const label = format(monthDate, 'MMM yyyy');
+
+        const subList = subscriptions.filter(sub => {
+          if (sub.voided_at || sub.status === 'Voided') return false;
+          const d = new Date(sub.created_at || sub.start_date);
+          return d >= mStart && d <= mEnd;
+        });
+
+        let mCount = 0;
+        let yCount = 0;
+        let mRev = 0;
+        let yRev = 0;
+
+        subList.forEach(sub => {
+          const isYearly = isYearlyPlan(sub);
+          const price = Number(sub.price || 0);
+          if (isYearly) {
+            yCount++;
+            yRev += price;
+          } else {
+            mCount++;
+            mRev += price;
+          }
+        });
+
+        subscriptionTimeline.push({
+          date: format(monthDate, 'yyyy-MM'),
+          label,
+          monthly: mCount,
+          yearly: yCount,
+          total: mCount + yCount,
+          monthlyRevenue: mRev,
+          yearlyRevenue: yRev
+        });
+      }
+    } else {
+      const daysToShow = timeRange === 'week' ? 7 : 30;
+
+      for (let i = daysToShow - 1; i >= 0; i--) {
+        const targetDate = subDays(now, i);
+        const dateKey = format(targetDate, 'yyyy-MM-dd');
+        const label = daysToShow <= 7 ? format(targetDate, 'EEE (MMM d)') : format(targetDate, 'MMM d');
+
+        const subList = subscriptions.filter(sub => {
+          if (sub.voided_at || sub.status === 'Voided') return false;
+          return isSameDay(new Date(sub.created_at || sub.start_date), targetDate);
+        });
+
+        let mCount = 0;
+        let yCount = 0;
+        let mRev = 0;
+        let yRev = 0;
+
+        subList.forEach(sub => {
+          const isYearly = isYearlyPlan(sub);
+          const price = Number(sub.price || 0);
+          if (isYearly) {
+            yCount++;
+            yRev += price;
+          } else {
+            mCount++;
+            mRev += price;
+          }
+        });
+
+        subscriptionTimeline.push({
+          date: dateKey,
+          label,
+          monthly: mCount,
+          yearly: yCount,
+          total: mCount + yCount,
+          monthlyRevenue: mRev,
+          yearlyRevenue: yRev
+        });
+      }
+    }
+
+    const subscriptionBreakdown: SubscriptionPlanBreakdown = {
+      monthlyCount: monthlyCount || (hasRealData ? 0 : 28),
+      yearlyCount: yearlyCount || (hasRealData ? 0 : 7),
+      otherCount: 0,
+      totalSubscribers: totalSubscribers || (hasRealData ? 0 : 35),
+      activeMonthlyCount: activeMonthlyCount || (hasRealData ? 0 : 42),
+      activeYearlyCount: activeYearlyCount || (hasRealData ? 0 : 12),
+      activeTotalCount: activeTotalCount || (hasRealData ? 0 : 54),
+      monthlyRevenue: monthlyRevenue || (hasRealData ? 0 : 25200),
+      yearlyRevenue: yearlyRevenue || (hasRealData ? 0 : 56000),
+      totalRevenue: totalRevenue || (hasRealData ? 0 : 81200),
+      monthlyPercentage,
+      yearlyPercentage,
+      timeline: subscriptionTimeline
+    };
+
     return {
       metrics,
       attendanceHourly,
@@ -711,7 +910,8 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       expiringSoonList,
       lowStockItems,
       activityItems: activityItems.slice(0, 20),
-      birReportItems
+      birReportItems,
+      subscriptionBreakdown
     };
   } catch (error) {
     console.error('Error fetching dashboard metrics from Supabase:', error);
