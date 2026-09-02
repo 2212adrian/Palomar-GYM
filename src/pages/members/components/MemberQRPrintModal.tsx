@@ -15,26 +15,32 @@ interface MemberQRPrintModalProps {
   onClose: () => void;
 }
 
-export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({ 
-  selectedIds, 
-  members, 
-  onClose 
+export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
+  selectedIds,
+  members,
+  onClose,
 }) => {
-  const [printCollection, setPrintCollection] = useState<{ id: string; qty: number }[]>(() => {
-    return selectedIds.map(id => ({ id, qty: 1 }));
+  const [printCollection, setPrintCollection] = useState<
+    { id: string; qty: number }[]
+  >(() => {
+    return selectedIds.map((id) => ({ id, qty: 1 }));
   });
 
   const targets = useMemo(() => {
-    return members.filter(m => printCollection.some(item => item.id === m.id));
+    return members.filter((m) =>
+      printCollection.some((item) => item.id === m.id)
+    );
   }, [members, printCollection]);
 
   const updateQty = (id: string, delta: number) => {
-    setPrintCollection(prev => prev.map(item => {
-      if (item.id === id) {
-        return { ...item, qty: Math.max(1, item.qty + delta) };
-      }
-      return item;
-    }));
+    setPrintCollection((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          return { ...item, qty: Math.max(1, item.qty + delta) };
+        }
+        return item;
+      })
+    );
   };
 
   const executePrint = () => {
@@ -42,8 +48,8 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
     if (!printWindow) return;
 
     let elementsMarkup = '';
-    targets.forEach(m => {
-      const collectionItem = printCollection.find(item => item.id === m.id);
+    targets.forEach((m) => {
+      const collectionItem = printCollection.find((item) => item.id === m.id);
       const qty = collectionItem ? collectionItem.qty : 1;
       const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(m.member_id)}`;
 
@@ -141,25 +147,39 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
             <QrCode className="w-5 h-5 text-(--color-primary-light)" />
             <span>QR BATCH PRINT MANAGER</span>
           </h3>
-          <button type="button" onClick={onClose} className="p-1 rounded bg-slate-100 dark:bg-neutral-900 border text-slate-400 hover:text-slate-200 cursor-pointer">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded bg-slate-100 dark:bg-neutral-900 border text-slate-400 hover:text-slate-200 cursor-pointer"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <p className="text-[11px] leading-relaxed">
-          Configure printable layouts and quantities for selected access cards. QR sheets generate standard sizes optimized for print layouts.
+          Configure printable layouts and quantities for selected access cards.
+          QR sheets generate standard sizes optimized for print layouts.
         </p>
 
         <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-          {targets.map(m => {
-            const currentItem = printCollection.find(item => item.id === m.id);
+          {targets.map((m) => {
+            const currentItem = printCollection.find(
+              (item) => item.id === m.id
+            );
             const qty = currentItem ? currentItem.qty : 1;
 
             return (
-              <div key={m.id} className="p-3 bg-slate-100 dark:bg-zinc-900 rounded-xl border flex items-center justify-between gap-3 text-left">
+              <div
+                key={m.id}
+                className="p-3 bg-slate-100 dark:bg-zinc-900 rounded-xl border flex items-center justify-between gap-3 text-left"
+              >
                 <div className="min-w-0 flex-1">
-                  <h5 className="font-bold text-slate-900 dark:text-white truncate">{m.full_name}</h5>
-                  <span className="text-[10px] font-mono text-slate-400 mt-0.5 block">{m.member_id}</span>
+                  <h5 className="font-bold text-slate-900 dark:text-white truncate">
+                    {m.full_name}
+                  </h5>
+                  <span className="text-[10px] font-mono text-slate-400 mt-0.5 block">
+                    {m.member_id}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0 select-none">
@@ -170,7 +190,9 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
                   >
                     -
                   </button>
-                  <span className="w-8 text-center font-mono font-bold text-slate-900 dark:text-white">{qty}</span>
+                  <span className="w-8 text-center font-mono font-bold text-slate-900 dark:text-white">
+                    {qty}
+                  </span>
                   <button
                     type="button"
                     onClick={() => updateQty(m.id, 1)}

@@ -56,7 +56,7 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
-      <form 
+      <form
         onSubmit={onSave}
         className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-lg shadow-2xl p-6 md:p-8 space-y-4 max-h-[90vh] overflow-y-auto"
       >
@@ -64,9 +64,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           <h3 className="text-sm font-heading font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">
             {isEditing ? 'EDIT MEMBER PROFILE' : 'ENROLL NEW MEMBER'}
           </h3>
-          <button 
-            type="button" 
-            onClick={onClose} 
+          <button
+            type="button"
+            onClick={onClose}
             className="p-1 rounded-lg bg-slate-100 dark:bg-neutral-900 border text-slate-400 hover:text-slate-200 cursor-pointer animate-fade-in"
           >
             <X className="w-4 h-4" />
@@ -77,7 +77,11 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
         <div className="flex flex-col items-center gap-3 animate-fade-in">
           <div className="relative w-20 h-20 rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden bg-slate-100 dark:bg-neutral-900 flex items-center justify-center shadow-inner">
             {formImageUrl ? (
-              <img src={formImageUrl} alt="" className="w-full h-full object-cover" />
+              <img
+                src={formImageUrl}
+                alt=""
+                className="w-full h-full object-cover"
+              />
             ) : (
               <Users className="w-8 h-8 text-slate-400" />
             )}
@@ -94,19 +98,21 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           >
             Upload Photo
           </button>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={onFileUpload} 
-            accept="image/*" 
-            className="hidden" 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={onFileUpload}
+            accept="image/*"
+            className="hidden"
           />
         </div>
 
         {/* Grid Fields */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left text-xs font-semibold">
           <div className="space-y-1 sm:col-span-2">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Member Code ID</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Member Code ID
+            </label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -127,7 +133,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1 sm:col-span-2">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Full Name</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Full Name
+            </label>
             <input
               type="text"
               value={formFullName}
@@ -139,7 +147,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Phone Number</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Phone Number
+            </label>
             <input
               type="text"
               value={formPhone}
@@ -150,7 +160,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Email Address</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Email Address
+            </label>
             <input
               type="email"
               value={formEmail}
@@ -161,7 +173,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Membership Plan</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Membership Plan
+            </label>
             <select
               value={formPlan}
               onChange={(e) => setFormPlan(e.target.value)}
@@ -175,7 +189,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">Plan Expiration Date</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              Plan Expiration Date
+            </label>
             <input
               type="date"
               value={formExpiryDate}
@@ -186,7 +202,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           </div>
 
           <div className="space-y-1 sm:col-span-2">
-            <label className="text-slate-400 font-bold block uppercase text-[10px]">System Status</label>
+            <label className="text-slate-400 font-bold block uppercase text-[10px]">
+              System Status
+            </label>
             <select
               value={formStatus}
               onChange={(e) => setFormStatus(e.target.value)}

@@ -2,12 +2,22 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { 
-  X, Camera, Upload, CheckCircle2, AlertCircle, 
-  RotateCcw, SwitchCamera, Sparkles, Loader2
+import {
+  X,
+  Camera,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  RotateCcw,
+  SwitchCamera,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { compressImageTo1024, uploadMemberProfilePhoto } from '../../../lib/supabase/memberStorage';
+import {
+  compressImageTo1024,
+  uploadMemberProfilePhoto,
+} from '../../../lib/supabase/memberStorage';
 
 interface MemberPhotoCaptureModalProps {
   isOpen: boolean;
@@ -18,7 +28,9 @@ interface MemberPhotoCaptureModalProps {
   currentPhotoUrl?: string | null;
 }
 
-export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = ({
+export const MemberPhotoCaptureModal: React.FC<
+  MemberPhotoCaptureModalProps
+> = ({
   isOpen,
   onClose,
   onPhotoSaved,
@@ -26,7 +38,7 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
   memberId = 'member',
 }) => {
   const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
-  
+
   // Camera Stream States
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
@@ -55,51 +67,61 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
   }, [videoStream]);
 
   // Start Camera Stream
-  const startCamera = useCallback(async (deviceId?: string) => {
-    stopCamera();
-    setCameraError(null);
-    setIsCameraStarting(true);
+  const startCamera = useCallback(
+    async (deviceId?: string) => {
+      stopCamera();
+      setCameraError(null);
+      setIsCameraStarting(true);
 
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera access is not supported by your browser or environment.');
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            'Camera access is not supported by your browser or environment.'
+          );
+        }
+
+        // Enumerate camera devices
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
+        setCameras(videoDevices);
+
+        const constraints: MediaStreamConstraints = {
+          video: deviceId
+            ? { deviceId: { exact: deviceId } }
+            : {
+                facingMode: 'user', // Prefer selfie / front camera by default
+                width: { ideal: 640 },
+                height: { ideal: 640 },
+              },
+          audio: false,
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        setVideoStream(stream);
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(console.warn);
+        }
+      } catch (err: any) {
+        console.warn('Failed to access camera:', err);
+        setCameraError(
+          err.message ||
+            'Could not access camera. Please check browser permissions.'
+        );
+      } finally {
+        setIsCameraStarting(false);
       }
-
-      // Enumerate camera devices
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
-      setCameras(videoDevices);
-
-      const constraints: MediaStreamConstraints = {
-        video: deviceId
-          ? { deviceId: { exact: deviceId } }
-          : {
-              facingMode: 'user', // Prefer selfie / front camera by default
-              width: { ideal: 640 },
-              height: { ideal: 640 },
-            },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      setVideoStream(stream);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(console.warn);
-      }
-    } catch (err: any) {
-      console.warn('Failed to access camera:', err);
-      setCameraError(err.message || 'Could not access camera. Please check browser permissions.');
-    } finally {
-      setIsCameraStarting(false);
-    }
-  }, [stopCamera]);
+    },
+    [stopCamera]
+  );
 
   // Switch between connected cameras
   const handleSwitchCamera = () => {
     if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex((c) => c.deviceId === selectedCameraId);
+    const currentIndex = cameras.findIndex(
+      (c) => c.deviceId === selectedCameraId
+    );
     const nextIndex = (currentIndex + 1) % cameras.length;
     const nextDeviceId = cameras[nextIndex].deviceId;
     setSelectedCameraId(nextDeviceId);
@@ -107,15 +129,24 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
   };
 
   // Process raw image file or dataUrl: compress to <= 64KB
-   const processImage = async (source: File | Blob | string, originalSize = 0) => {
+  const processImage = async (
+    source: File | Blob | string,
+    originalSize = 0
+  ) => {
     setIsProcessing(true);
     try {
-      const { blob, dataUrl, sizeBytes } = await compressImageTo1024(source, 1024, 0.85);
+      const { blob, dataUrl, sizeBytes } = await compressImageTo1024(
+        source,
+        1024,
+        0.85
+      );
       setCompressedBlob(blob);
       setPreviewDataUrl(dataUrl);
       setCompressedSizeBytes(sizeBytes);
-      setOriginalSizeBytes(originalSize || (source instanceof Blob ? source.size : 0));
-      
+      setOriginalSizeBytes(
+        originalSize || (source instanceof Blob ? source.size : 0)
+      );
+
       // Stop camera if photo is taken
       stopCamera();
     } catch (err: any) {
@@ -138,7 +169,7 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
     const width = video.videoWidth || 640;
     const height = video.videoHeight || 640;
     const minSide = Math.min(width, height);
-    
+
     // Crop center square
     canvas.width = 480;
     canvas.height = 480;
@@ -151,7 +182,17 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
 
     const sx = (width - minSide) / 2;
     const sy = (height - minSide) / 2;
-    ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      video,
+      sx,
+      sy,
+      minSide,
+      minSide,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
 
     const rawDataUrl = canvas.toDataURL('image/jpeg', 0.9);
     processImage(rawDataUrl, Math.round(rawDataUrl.length * 0.75));
@@ -186,16 +227,18 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
     setIsUploading(true);
     try {
       const sourceToUpload = compressedBlob || previewDataUrl!;
-      const { publicUrl, sizeBytes, isBase64Fallback } = await uploadMemberProfilePhoto(
-        sourceToUpload,
-        memberId
-      );
+      const { publicUrl, sizeBytes, isBase64Fallback } =
+        await uploadMemberProfilePhoto(sourceToUpload, memberId);
 
       const sizeKb = (sizeBytes / 1024).toFixed(1);
       if (isBase64Fallback) {
-        toast.info(`Photo saved (${sizeKb} KB). Run migration SQL to activate cloud bucket storage.`);
+        toast.info(
+          `Photo saved (${sizeKb} KB). Run migration SQL to activate cloud bucket storage.`
+        );
       } else {
-        toast.success(`Profile photo verified & uploaded (${sizeKb} KB / 64 KB limit).`);
+        toast.success(
+          `Profile photo verified & uploaded (${sizeKb} KB / 64 KB limit).`
+        );
       }
 
       onPhotoSaved(publicUrl);
@@ -381,7 +424,9 @@ export const MemberPhotoCaptureModal: React.FC<MemberPhotoCaptureModalProps> = (
                 {isCameraStarting ? (
                   <div className="flex flex-col items-center gap-2 text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                    <span className="text-[11px] font-mono">Initializing camera...</span>
+                    <span className="text-[11px] font-mono">
+                      Initializing camera...
+                    </span>
                   </div>
                 ) : cameraError ? (
                   <div className="p-4 text-center space-y-2">

@@ -1,31 +1,32 @@
 // src/pages/system/PermissionsSettings.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Camera, 
-  Bell, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  RefreshCw, 
-  Video, 
-  VideoOff, 
+import {
+  Camera,
+  Bell,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  RefreshCw,
+  Video,
+  VideoOff,
   Send,
   HelpCircle,
   ShieldCheck,
-  Smartphone
+  Smartphone,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { 
-  getCameraPermissionStatus, 
-  getNotificationPermissionStatus, 
-  requestCameraPermission, 
+import {
+  getCameraPermissionStatus,
+  getNotificationPermissionStatus,
+  requestCameraPermission,
   requestNotificationPermission,
-  type PermissionState 
+  type PermissionState,
 } from '../../lib/permissions';
 
 export const PermissionsSettings: React.FC = () => {
   const [cameraStatus, setCameraStatus] = useState<PermissionState>('prompt');
-  const [notificationStatus, setNotificationStatus] = useState<PermissionState>('prompt');
+  const [notificationStatus, setNotificationStatus] =
+    useState<PermissionState>('prompt');
   const [checking, setChecking] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -56,7 +57,9 @@ export const PermissionsSettings: React.FC = () => {
     if (status === 'granted') {
       toast.success('Camera permission enabled successfully!');
     } else if (status === 'denied') {
-      toast.error('Camera permission was blocked by the browser. Check your site permissions.');
+      toast.error(
+        'Camera permission was blocked by the browser. Check your site permissions.'
+      );
     }
   };
 
@@ -68,17 +71,21 @@ export const PermissionsSettings: React.FC = () => {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Palomar Gym Management', {
           body: 'Notifications are active and verified.',
-          icon: '/favicon.ico'
+          icon: '/favicon.ico',
         });
       }
     } else if (status === 'denied') {
-      toast.error('Push notification permission was blocked. Check your browser settings.');
+      toast.error(
+        'Push notification permission was blocked. Check your browser settings.'
+      );
     }
   };
 
   const startCameraPreview = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 } },
+      });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -94,7 +101,7 @@ export const PermissionsSettings: React.FC = () => {
 
   const stopCameraPreview = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
     if (videoRef.current) {
@@ -111,7 +118,7 @@ export const PermissionsSettings: React.FC = () => {
     if (Notification.permission === 'granted') {
       new Notification('Palomar Gym System Alert', {
         body: 'System notification verification successful. Real-time alerts are operational.',
-        icon: '/favicon.ico'
+        icon: '/favicon.ico',
       });
       toast.success('Test notification triggered.');
     } else {
@@ -162,7 +169,8 @@ export const PermissionsSettings: React.FC = () => {
             Device & Hardware Permissions
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage browser hardware access for camera (QR scanning, member photos) and push notifications.
+            Manage browser hardware access for camera (QR scanning, member
+            photos) and push notifications.
           </p>
         </div>
 
@@ -172,14 +180,15 @@ export const PermissionsSettings: React.FC = () => {
           disabled={checking}
           className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer shadow-xs"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`}
+          />
           <span>Re-check Status</span>
         </button>
       </div>
 
       {/* Permissions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        
         {/* CAMERA CARD */}
         <div className="p-5 rounded-2xl bg-(--bg-card) border border-(--border-color) shadow-xs flex flex-col justify-between space-y-4">
           <div className="space-y-3">
@@ -195,7 +204,8 @@ export const PermissionsSettings: React.FC = () => {
                 Camera Access
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                Required for scanning member QR passes, barcode scanning in POS, and capturing new member profile photos.
+                Required for scanning member QR passes, barcode scanning in POS,
+                and capturing new member profile photos.
               </p>
             </div>
 
@@ -206,7 +216,10 @@ export const PermissionsSettings: React.FC = () => {
                   Camera is Blocked in Browser
                 </p>
                 <p className="text-[11px] opacity-90 leading-normal">
-                  To turn it back on, click the <strong>Site Settings / Lock icon</strong> in your browser's address bar, change <strong>Camera</strong> to <em>"Allow"</em>, then click Re-check.
+                  To turn it back on, click the{' '}
+                  <strong>Site Settings / Lock icon</strong> in your browser's
+                  address bar, change <strong>Camera</strong> to{' '}
+                  <em>"Allow"</em>, then click Re-check.
                 </p>
               </div>
             )}
@@ -226,13 +239,19 @@ export const PermissionsSettings: React.FC = () => {
                 type="button"
                 onClick={previewActive ? stopCameraPreview : startCameraPreview}
                 className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 ${
-                  previewActive 
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white' 
+                  previewActive
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
                     : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700'
                 }`}
               >
-                {previewActive ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
-                <span>{previewActive ? 'Stop Live Preview' : 'Test Camera Preview'}</span>
+                {previewActive ? (
+                  <VideoOff className="w-4 h-4" />
+                ) : (
+                  <Video className="w-4 h-4" />
+                )}
+                <span>
+                  {previewActive ? 'Stop Live Preview' : 'Test Camera Preview'}
+                </span>
               </button>
             )}
           </div>
@@ -240,12 +259,12 @@ export const PermissionsSettings: React.FC = () => {
           {/* Camera Preview Box */}
           {previewActive && (
             <div className="mt-3 relative rounded-xl overflow-hidden bg-black aspect-video border border-zinc-700">
-              <video 
-                ref={videoRef} 
-                className="w-full h-full object-cover mirror" 
-                autoPlay 
-                playsInline 
-                muted 
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover mirror"
+                autoPlay
+                playsInline
+                muted
               />
               <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-emerald-600/90 text-white text-[10px] font-heading font-black uppercase">
                 Live Feed OK
@@ -269,7 +288,8 @@ export const PermissionsSettings: React.FC = () => {
                 Push Notifications
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                Receive instant browser alerts for incident reports, low stock items, and expiring member subscriptions.
+                Receive instant browser alerts for incident reports, low stock
+                items, and expiring member subscriptions.
               </p>
             </div>
 
@@ -280,7 +300,9 @@ export const PermissionsSettings: React.FC = () => {
                   Notifications Blocked
                 </p>
                 <p className="text-[11px] opacity-90 leading-normal">
-                  To receive alert notifications, click the <strong>Site Settings / Lock icon</strong> in the address bar and switch <strong>Notifications</strong> to <em>"Allow"</em>.
+                  To receive alert notifications, click the{' '}
+                  <strong>Site Settings / Lock icon</strong> in the address bar
+                  and switch <strong>Notifications</strong> to <em>"Allow"</em>.
                 </p>
               </div>
             )}
@@ -307,7 +329,6 @@ export const PermissionsSettings: React.FC = () => {
             )}
           </div>
         </div>
-
       </div>
 
       {/* Guide Note */}
@@ -318,7 +339,10 @@ export const PermissionsSettings: React.FC = () => {
             Browser Security & Permissions Behavior
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-            Once a permission is explicitly blocked or allowed in your browser, web standards require modifying it through the browser address bar icon or system device settings. The status shown above automatically reflects your live browser permissions state.
+            Once a permission is explicitly blocked or allowed in your browser,
+            web standards require modifying it through the browser address bar
+            icon or system device settings. The status shown above automatically
+            reflects your live browser permissions state.
           </p>
         </div>
       </div>

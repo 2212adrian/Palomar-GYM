@@ -3,7 +3,8 @@
 export type MemberStatus = 'Active' | 'Suspended';
 export type SubscriptionStatus = 'Active' | 'Expired' | 'Inactive' | 'Voided';
 export type CardStatus = 'Active' | 'Inactive';
-export type RegistrationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Expired';
+export type RegistrationStatus =
+  'Pending' | 'Approved' | 'Rejected' | 'Expired';
 export type PaymentStatus = 'Pending' | 'Paid' | 'Cancelled' | 'Refunded';
 export type PaymentMethod = 'Cash' | 'GCash';
 
@@ -19,7 +20,7 @@ export interface Member {
   gender: string;
   birthday?: string | null;
   emergency_contact_name?: string | null;
-  relationship?: string | null;  
+  relationship?: string | null;
   emergency_contact_phone?: string | null;
   address?: string | null;
   avatar_url?: string | null;
@@ -102,7 +103,7 @@ export interface Receipt {
   id: string;
   member_id?: string;
   customer_name: string;
-  customer_type: 'Walk-In' | 'Existing Member' | 'New Membership';
+  customer_type: 'Walk-In' | 'Existing Member' | 'New Membership' | 'Card';
   amount: number;
   base_price?: number;
   gcash_fee?: number;
@@ -117,15 +118,16 @@ export interface Receipt {
 export interface OnlineRegistration {
   id: string;
   full_name: string;
-  email?: string | null;             
+  email?: string | null;
   phone: string;
   gender: string;
   birthday: string;
   address?: string | null;
   emergency_contact_name: string;
-  relationship?: string | null;          
+  relationship?: string | null;
   emergency_contact_phone: string;
-  preferred_plan: 'Monthly Membership' | 'Yearly Membership' | 'monthly' | 'yearly';
+  preferred_plan:
+    'Monthly Membership' | 'Yearly Membership' | 'monthly' | 'yearly';
   status: 'Pending' | 'Approved' | 'Rejected';
   submitted_at: string;
   notes?: string | null;
@@ -146,7 +148,15 @@ export interface ActivityLog {
   id: string;
   timestamp: string;
   action: string;
-  category: 'Members' | 'Subscriptions' | 'Cards' | 'Receipts' | 'Registrations' | 'Attendance' | 'Settings' | 'System';
+  category:
+    | 'Members'
+    | 'Subscriptions'
+    | 'Cards'
+    | 'Receipts'
+    | 'Registrations'
+    | 'Attendance'
+    | 'Settings'
+    | 'System';
   performed_by: string;
   affected_id?: string;
   reason?: string;
@@ -180,7 +190,7 @@ export interface AttendanceRecord {
   id: string;
   member_id?: string;
   customer_name: string;
-  customer_type: 'Walk-In' | 'Existing Member' | 'New Membership';
+  customer_type: 'Walk-In' | 'Existing Member' | 'New Membership' | 'Card';
   check_in_time: string;
   plan_name?: string;
   entry_fee: number;

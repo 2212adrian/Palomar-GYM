@@ -18,14 +18,14 @@ export const Navbar: React.FC = () => {
           - Mobile (<768px): Full-width bottom dock
           - Tablet (768px - 1023px): Centered floating pill
          ========================================================= */}
-      <div className="lg:hidden fixed z-[200] transition-all duration-300
+      <div
+        className="lg:hidden fixed z-[200] transition-all duration-300
         /* Mobile: Sticky bottom attached dock */
         bottom-0 left-0 right-0 w-full pb-[env(safe-area-inset-bottom)] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800/80 shadow-lg
         /* Tablet: Centered floating pill */
         md:bottom-5 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-[440px] md:max-w-[calc(100vw-2rem)] md:pb-0 md:rounded-full md:border md:border-slate-200 dark:md:border-zinc-800 md:shadow-2xl"
       >
         <nav className="relative h-16 w-full flex items-center justify-between px-3">
-          
           {/* LEFT WING (50% width): Holds Sales & Logbook evenly spaced */}
           <div className="w-1/2 flex items-center justify-around pr-7">
             <Link
@@ -69,7 +69,9 @@ export const Navbar: React.FC = () => {
                   : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-red-600 dark:hover:bg-red-700 text-white shadow-slate-950/20'
               }`}
             >
-              <Scan className={`w-6 h-6 transition-transform duration-200 ${isScannerActive ? 'rotate-90 text-emerald-300' : ''}`} />
+              <Scan
+                className={`w-6 h-6 transition-transform duration-200 ${isScannerActive ? 'rotate-90 text-emerald-300' : ''}`}
+              />
             </Link>
           </div>
 
@@ -89,7 +91,6 @@ export const Navbar: React.FC = () => {
               </span>
             </Link>
           </div>
-
         </nav>
       </div>
 

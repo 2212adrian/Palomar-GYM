@@ -5,16 +5,14 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    'Missing Environment Variables, please contact the developer'
-  );
+  console.warn('Missing Environment Variables, please contact the developer');
 }
 
 // Custom chunking storage engine to handle large OAuth payloads cleanly
 const CHUNK_SIZE = 3000;
 
 function getRawCookie(name: string): string | null {
-  const encodedName = encodeURIComponent(name) + "=";
+  const encodedName = encodeURIComponent(name) + '=';
   const cookies = document.cookie.split(';');
   for (let i = 0; i < cookies.length; i++) {
     let c = cookies[i].trim();
@@ -91,7 +89,7 @@ const cookieStorage = {
       clearCookie(`${key}.${i}`);
       i++;
     }
-  }
+  },
 };
 
 const appStorage = {
@@ -127,44 +125,53 @@ const appStorage = {
       }
     }
     cookieStorage.removeItem(key);
-  }
+  },
 };
 
 // WebSocket Proxy to intercept connection attempts while offline
-const SafeWebSocket = typeof window !== 'undefined' ? new Proxy(window.WebSocket, {
-  construct(target, args) {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const mockSocket = {
-        readyState: 3, // CLOSED
-        onopen: null,
-        onerror: null,
-        onclose: null,
-        onmessage: null,
-        close() {},
-        send() {},
-        addEventListener() {},
-        removeEventListener() {},
-        dispatchEvent() { return true; },
-      };
+const SafeWebSocket =
+  typeof window !== 'undefined'
+    ? new Proxy(window.WebSocket, {
+        construct(target, args) {
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            const mockSocket = {
+              readyState: 3, // CLOSED
+              onopen: null,
+              onerror: null,
+              onclose: null,
+              onmessage: null,
+              close() {},
+              send() {},
+              addEventListener() {},
+              removeEventListener() {},
+              dispatchEvent() {
+                return true;
+              },
+            };
 
-      setTimeout(() => {
-        const errorEvent = new Event('error');
-        const closeEvent = new CloseEvent('close', { code: 1006, reason: 'Offline' });
-        if (typeof mockSocket.onerror === 'function') {
-          (mockSocket as any).onerror(errorEvent);
-        }
-        if (typeof mockSocket.onclose === 'function') {
-          (mockSocket as any).onclose(closeEvent);
-        }
-      }, 0);
+            setTimeout(() => {
+              const errorEvent = new Event('error');
+              const closeEvent = new CloseEvent('close', {
+                code: 1006,
+                reason: 'Offline',
+              });
+              if (typeof mockSocket.onerror === 'function') {
+                (mockSocket as any).onerror(errorEvent);
+              }
+              if (typeof mockSocket.onclose === 'function') {
+                (mockSocket as any).onclose(closeEvent);
+              }
+            }, 0);
 
-      return mockSocket;
-    }
-    return Reflect.construct(target, args);
-  }
-}) : undefined;
+            return mockSocket;
+          }
+          return Reflect.construct(target, args);
+        },
+      })
+    : undefined;
 
-const OFFLINE_STAFF_MESSAGE = 'No internet connection. Please check your Wi-Fi and try again.';
+const OFFLINE_STAFF_MESSAGE =
+  'No internet connection. Please check your Wi-Fi and try again.';
 
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
@@ -190,8 +197,8 @@ export const supabase = createClient(
       },
     },
     realtime: {
-      transport: SafeWebSocket as any
-    }
+      transport: SafeWebSocket as any,
+    },
   }
 );
 

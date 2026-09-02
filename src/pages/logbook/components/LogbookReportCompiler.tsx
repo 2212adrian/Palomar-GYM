@@ -1,11 +1,17 @@
 // src/pages/logbook/components/LogbookReportCompiler.tsx
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  format, startOfDay, endOfDay, 
-  startOfWeek, endOfWeek, 
-  startOfMonth, endOfMonth, 
-  subMonths, startOfYear, endOfYear 
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  startOfYear,
+  endOfYear,
 } from 'date-fns';
 import { X, Loader2 } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
@@ -26,9 +32,15 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
   onClose,
   logs = [],
 }) => {
-  const [startDate, setStartDate] = useState(format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'));
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'Walk-In' | 'Existing Member' | 'New Membership'>('all');
+  const [startDate, setStartDate] = useState(
+    format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd')
+  );
+  const [endDate, setEndDate] = useState(
+    format(endOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd')
+  );
+  const [categoryFilter, setCategoryFilter] = useState<
+    'all' | 'Walk-In' | 'Existing Member' | 'New Membership'
+  >('all');
   const [isCompiling, setIsCompiling] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [fetchedLogs, setFetchedLogs] = useState<any[]>([]);
@@ -54,38 +66,48 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
           .is('voided_at', null)
           .gte('created_at', startIso)
           .lte('created_at', endIso)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }),
       ]);
 
       const attList = (attRes.data || []).map((a: any) => ({
-        id: a.id ? String(a.id).slice(0, 8).toUpperCase() : `ATT-${Date.now().toString().slice(-4)}`,
+        id: a.id
+          ? String(a.id).slice(0, 8).toUpperCase()
+          : `ATT-${Date.now().toString().slice(-4)}`,
         timestamp: a.check_in_time,
         customerName: a.customer_name || 'Guest',
         customerType: a.customer_type || 'Walk-In',
-        categoryOrPlan: a.plan_name || (a.customer_type === 'Walk-In' ? 'Day Pass' : 'Member Check-in'),
+        categoryOrPlan:
+          a.plan_name ||
+          (a.customer_type === 'Walk-In' ? 'Day Pass' : 'Member Check-in'),
         paymentMethod: a.payment_method || 'Cash',
         amountPaid: Number(a.entry_fee || 0),
-        deleted_at: a.deleted_at
+        deleted_at: a.deleted_at,
       }));
 
       const subsList = (subsRes.data || []).map((s: any) => ({
-        id: s.id ? String(s.id).slice(0, 8).toUpperCase() : `SUB-${Date.now().toString().slice(-4)}`,
+        id: s.id
+          ? String(s.id).slice(0, 8).toUpperCase()
+          : `SUB-${Date.now().toString().slice(-4)}`,
         timestamp: s.created_at,
         customerName: s.members?.full_name || 'Member',
         customerType: 'New Membership',
         categoryOrPlan: s.plan_name || 'Membership Plan',
         paymentMethod: s.payment_method || 'Cash',
         amountPaid: Number(s.price || 0),
-        deleted_at: s.voided_at
+        deleted_at: s.voided_at,
       }));
 
-      const combined = [...attList, ...subsList].sort((a, b) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      const combined = [...attList, ...subsList].sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
 
       setFetchedLogs(combined);
     } catch (err) {
-      console.warn('Failed to load full range attendance logs, using local logs:', err);
+      console.warn(
+        'Failed to load full range attendance logs, using local logs:',
+        err
+      );
       if (logs && logs.length > 0) {
         setFetchedLogs(logs);
       }
@@ -100,7 +122,9 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
     }
   }, [isOpen, loadDateRangeData]);
 
-  const handleQuickPreset = (preset: 'day' | 'week' | 'month' | 'prev_month' | 'year') => {
+  const handleQuickPreset = (
+    preset: 'day' | 'week' | 'month' | 'prev_month' | 'year'
+  ) => {
     const now = new Date();
     let startRange = now;
     let endRange = now;
@@ -141,7 +165,7 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
       const rawDate = l.timestamp || l.check_in_time || l.created_at;
       const logDate = rawDate ? format(new Date(rawDate), 'yyyy-MM-dd') : '';
       const isWithinRange = logDate >= startDate && logDate <= endDate;
-      
+
       const itemCustomerType = (l.customerType || l.customer_type || '').trim();
       let isMatchingCategory = false;
       if (categoryFilter === 'all') {
@@ -149,9 +173,14 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
       } else if (categoryFilter === 'Walk-In') {
         isMatchingCategory = itemCustomerType.toLowerCase().includes('walk');
       } else if (categoryFilter === 'Existing Member') {
-        isMatchingCategory = itemCustomerType.toLowerCase().includes('exist') || itemCustomerType === 'Member';
+        isMatchingCategory =
+          itemCustomerType.toLowerCase().includes('exist') ||
+          itemCustomerType === 'Member';
       } else if (categoryFilter === 'New Membership') {
-        isMatchingCategory = itemCustomerType.toLowerCase().includes('new') || itemCustomerType.toLowerCase().includes('sub') || Boolean(l.isSubscription);
+        isMatchingCategory =
+          itemCustomerType.toLowerCase().includes('new') ||
+          itemCustomerType.toLowerCase().includes('sub') ||
+          Boolean(l.isSubscription);
       }
 
       return isWithinRange && isMatchingCategory;
@@ -159,7 +188,10 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
   }, [currentDataset, startDate, endDate, categoryFilter]);
 
   const totalRevenue = useMemo(() => {
-    return filteredLogs.reduce((acc, curr) => acc + (Number(curr.amountPaid || curr.entry_fee || 0)), 0);
+    return filteredLogs.reduce(
+      (acc, curr) => acc + Number(curr.amountPaid || curr.entry_fee || 0),
+      0
+    );
   }, [filteredLogs]);
 
   const handleCompilePdfReport = async () => {
@@ -173,7 +205,7 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
       const doc = await PDFDocument.create();
       const font = await doc.embedFont(StandardFonts.Helvetica);
       const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
-      
+
       let page = doc.addPage([612, 792]);
       const { height } = page.getSize();
       let rowY = height - 190;
@@ -188,37 +220,125 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
       });
 
       page.drawText('WOLF PALOMAR GYM - ATTENDANCE & LOGBOOK REPORT', {
-        x: 55, y: height - 55, size: 13, font: fontBold, color: rgb(1, 1, 1),
+        x: 55,
+        y: height - 55,
+        size: 13,
+        font: fontBold,
+        color: rgb(1, 1, 1),
       });
 
-      page.drawText(`Date Range: ${startDate} to ${endDate}  |  Category: ${categoryFilter.toUpperCase()}`, {
-        x: 55, y: height - 72, size: 8.5, font, color: rgb(0.85, 0.9, 1),
-      });
+      page.drawText(
+        `Date Range: ${startDate} to ${endDate}  |  Category: ${categoryFilter.toUpperCase()}`,
+        {
+          x: 55,
+          y: height - 72,
+          size: 8.5,
+          font,
+          color: rgb(0.85, 0.9, 1),
+        }
+      );
 
       // KPI Summary Box
       page.drawRectangle({
-        x: 40, y: height - 155, width: 532, height: 55,
-        color: rgb(0.95, 0.96, 0.98), borderColor: rgb(0.85, 0.88, 0.92), borderWidth: 1,
+        x: 40,
+        y: height - 155,
+        width: 532,
+        height: 55,
+        color: rgb(0.95, 0.96, 0.98),
+        borderColor: rgb(0.85, 0.88, 0.92),
+        borderWidth: 1,
       });
 
-      page.drawText('ACCUMULATED REVENUE', { x: 55, y: height - 120, size: 8, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
-      page.drawText(`PHP ${totalRevenue.toFixed(2)}`, { x: 55, y: height - 140, size: 13, font: fontBold, color: rgb(0.07, 0.24, 0.45) });
+      page.drawText('ACCUMULATED REVENUE', {
+        x: 55,
+        y: height - 120,
+        size: 8,
+        font: fontBold,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      page.drawText(`PHP ${totalRevenue.toFixed(2)}`, {
+        x: 55,
+        y: height - 140,
+        size: 13,
+        font: fontBold,
+        color: rgb(0.07, 0.24, 0.45),
+      });
 
-      page.drawText('TOTAL CHECK-INS / ENTRIES', { x: 250, y: height - 120, size: 8, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
-      page.drawText(`${filteredLogs.length} Records`, { x: 250, y: height - 140, size: 13, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText('TOTAL CHECK-INS / ENTRIES', {
+        x: 250,
+        y: height - 120,
+        size: 8,
+        font: fontBold,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      page.drawText(`${filteredLogs.length} Records`, {
+        x: 250,
+        y: height - 140,
+        size: 13,
+        font: fontBold,
+        color: rgb(0.2, 0.2, 0.2),
+      });
 
-      page.drawText('GENERATED DATE', { x: 440, y: height - 120, size: 8, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
-      page.drawText(format(new Date(), 'yyyy-MM-dd'), { x: 440, y: height - 140, size: 11, font, color: rgb(0.3, 0.3, 0.3) });
+      page.drawText('GENERATED DATE', {
+        x: 440,
+        y: height - 120,
+        size: 8,
+        font: fontBold,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      page.drawText(format(new Date(), 'yyyy-MM-dd'), {
+        x: 440,
+        y: height - 140,
+        size: 11,
+        font,
+        color: rgb(0.3, 0.3, 0.3),
+      });
 
       // Table Header
       const tableYStart = height - 180;
-      page.drawRectangle({ x: 40, y: tableYStart, width: 532, height: 20, color: rgb(0.07, 0.24, 0.45) });
+      page.drawRectangle({
+        x: 40,
+        y: tableYStart,
+        width: 532,
+        height: 20,
+        color: rgb(0.07, 0.24, 0.45),
+      });
 
-      page.drawText('ID / SLIP', { x: 45, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-      page.drawText('CUSTOMER NAME', { x: 130, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-      page.drawText('CATEGORY', { x: 270, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-      page.drawText('PAYMENT', { x: 400, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-      page.drawText('AMOUNT PAID', { x: 490, y: tableYStart + 6, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+      page.drawText('ID / SLIP', {
+        x: 45,
+        y: tableYStart + 6,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText('CUSTOMER NAME', {
+        x: 130,
+        y: tableYStart + 6,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText('CATEGORY', {
+        x: 270,
+        y: tableYStart + 6,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText('PAYMENT', {
+        x: 400,
+        y: tableYStart + 6,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText('AMOUNT PAID', {
+        x: 490,
+        y: tableYStart + 6,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
 
       rowY = tableYStart - 18;
 
@@ -226,17 +346,59 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
         if (rowY < 50) {
           page = doc.addPage([612, 792]);
           // Header on subsequent pages
-          page.drawRectangle({ x: 40, y: height - 40, width: 532, height: 18, color: rgb(0.07, 0.24, 0.45) });
-          page.drawText('ID / SLIP', { x: 45, y: height - 34, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-          page.drawText('CUSTOMER NAME', { x: 130, y: height - 34, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-          page.drawText('CATEGORY', { x: 270, y: height - 34, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-          page.drawText('PAYMENT', { x: 400, y: height - 34, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-          page.drawText('AMOUNT PAID', { x: 490, y: height - 34, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+          page.drawRectangle({
+            x: 40,
+            y: height - 40,
+            width: 532,
+            height: 18,
+            color: rgb(0.07, 0.24, 0.45),
+          });
+          page.drawText('ID / SLIP', {
+            x: 45,
+            y: height - 34,
+            size: 8,
+            font: fontBold,
+            color: rgb(1, 1, 1),
+          });
+          page.drawText('CUSTOMER NAME', {
+            x: 130,
+            y: height - 34,
+            size: 8,
+            font: fontBold,
+            color: rgb(1, 1, 1),
+          });
+          page.drawText('CATEGORY', {
+            x: 270,
+            y: height - 34,
+            size: 8,
+            font: fontBold,
+            color: rgb(1, 1, 1),
+          });
+          page.drawText('PAYMENT', {
+            x: 400,
+            y: height - 34,
+            size: 8,
+            font: fontBold,
+            color: rgb(1, 1, 1),
+          });
+          page.drawText('AMOUNT PAID', {
+            x: 490,
+            y: height - 34,
+            size: 8,
+            font: fontBold,
+            color: rgb(1, 1, 1),
+          });
           rowY = height - 58;
         }
 
         if (idx % 2 === 1) {
-          page.drawRectangle({ x: 40, y: rowY - 3, width: 532, height: 16, color: rgb(0.97, 0.98, 0.99) });
+          page.drawRectangle({
+            x: 40,
+            y: rowY - 3,
+            width: 532,
+            height: 16,
+            color: rgb(0.97, 0.98, 0.99),
+          });
         }
 
         const idStr = String(l.id || '').slice(0, 10);
@@ -245,11 +407,41 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
         const payStr = String(l.paymentMethod || 'Cash').slice(0, 12);
         const amt = Number(l.amountPaid || l.entry_fee || 0);
 
-        page.drawText(idStr, { x: 45, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(nameStr, { x: 130, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(typeStr, { x: 270, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(payStr, { x: 400, y: rowY, size: 7.5, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(`Php ${amt.toFixed(2)}`, { x: 490, y: rowY, size: 7.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+        page.drawText(idStr, {
+          x: 45,
+          y: rowY,
+          size: 7.5,
+          font,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+        page.drawText(nameStr, {
+          x: 130,
+          y: rowY,
+          size: 7.5,
+          font,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+        page.drawText(typeStr, {
+          x: 270,
+          y: rowY,
+          size: 7.5,
+          font,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+        page.drawText(payStr, {
+          x: 400,
+          y: rowY,
+          size: 7.5,
+          font,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+        page.drawText(`Php ${amt.toFixed(2)}`, {
+          x: 490,
+          y: rowY,
+          size: 7.5,
+          font: fontBold,
+          color: rgb(0.1, 0.1, 0.1),
+        });
         rowY -= 18;
       });
 
@@ -283,25 +475,31 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
       <div className="space-y-4 pt-2">
         {/* Quick Presets */}
         <div className="grid gap-1.5">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Preset Ranges</label>
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            Quick Preset Ranges
+          </label>
           <div className="grid grid-cols-5 gap-1 select-none">
-            {(['day', 'week', 'month', 'prev_month', 'year'] as const).map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => handleQuickPreset(preset)}
-                className="py-1.5 px-0.5 rounded-lg border border-[var(--border-color)] bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-[8px] sm:text-[9.5px] font-heading font-black tracking-wider uppercase cursor-pointer text-slate-600 dark:text-slate-300 text-center transition-colors"
-              >
-                {preset.replace('_', ' ')}
-              </button>
-            ))}
+            {(['day', 'week', 'month', 'prev_month', 'year'] as const).map(
+              (preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => handleQuickPreset(preset)}
+                  className="py-1.5 px-0.5 rounded-lg border border-[var(--border-color)] bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-[8px] sm:text-[9.5px] font-heading font-black tracking-wider uppercase cursor-pointer text-slate-600 dark:text-slate-300 text-center transition-colors"
+                >
+                  {preset.replace('_', ' ')}
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {/* Date Inputs */}
         <div className="grid grid-cols-2 gap-3">
           <div className="grid gap-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Start Date</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Start Date
+            </label>
             <input
               type="date"
               value={startDate}
@@ -310,7 +508,9 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
             />
           </div>
           <div className="grid gap-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">End Date</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              End Date
+            </label>
             <input
               type="date"
               value={endDate}
@@ -322,9 +522,13 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
 
         {/* Category Filters */}
         <div className="grid gap-1.5">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category Filter</label>
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            Category Filter
+          </label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(['all', 'Walk-In', 'Existing Member', 'New Membership'] as const).map((cat) => (
+            {(
+              ['all', 'Walk-In', 'Existing Member', 'New Membership'] as const
+            ).map((cat) => (
               <button
                 key={cat}
                 type="button"
@@ -345,17 +549,27 @@ export const LogbookReportCompiler: React.FC<LogbookReportCompilerProps> = ({
         <div className="p-4 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-[var(--border-color)] flex justify-between items-center animate-fade-in">
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Match Records</span>
-              {isLoadingData && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                Match Records
+              </span>
+              {isLoadingData && (
+                <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+              )}
             </div>
             <div className="text-lg font-heading text-[var(--color-primary)] mt-0.5">
               {filteredLogs.length} Checked In
             </div>
           </div>
           <div className="text-right">
-            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Revenue Collected</span>
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+              Revenue Collected
+            </span>
             <div className="text-sm font-sans font-extrabold text-(--color-text) mt-0.5">
-              ₱{totalRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₱
+              {totalRevenue.toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </div>
           </div>
         </div>

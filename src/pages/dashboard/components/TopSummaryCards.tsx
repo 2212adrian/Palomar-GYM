@@ -1,26 +1,29 @@
 import React from 'react';
-import { 
-  Users, 
-  UserCheck, 
-  DollarSign, 
-  Clock, 
-  AlertTriangle, 
+import {
+  Users,
+  UserCheck,
+  DollarSign,
+  Clock,
+  AlertTriangle,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
 } from 'lucide-react';
 import type { DashboardMetrics } from '../types';
 import { formatPHP, formatNumber } from '../dashboardService';
 
 interface TopSummaryCardsProps {
   metrics: DashboardMetrics;
-  onCardClick?: (target: 'members' | 'attendance' | 'sales' | 'expiring' | 'inventory') => void;
+  onCardClick?: (
+    target: 'members' | 'attendance' | 'sales' | 'expiring' | 'inventory'
+  ) => void;
 }
 
 export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
   metrics,
   onCardClick,
 }) => {
-  const attendanceDiff = metrics.todayAttendanceCount - metrics.yesterdayAttendanceCount;
+  const attendanceDiff =
+    metrics.todayAttendanceCount - metrics.yesterdayAttendanceCount;
   const isAttendanceUp = attendanceDiff >= 0;
 
   const revenueDiff = metrics.todayTotalRevenue - metrics.yesterdayTotalRevenue;
@@ -50,7 +53,9 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
             {formatNumber(metrics.activeMembersCount)}
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1 gap-1">
-            <span className="truncate">{metrics.totalMembersCount} registered</span>
+            <span className="truncate">
+              {metrics.totalMembersCount} registered
+            </span>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:translate-x-1 group-hover:text-[#123c73] dark:group-hover:text-blue-400 transition-all" />
           </div>
         </div>
@@ -65,12 +70,15 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
           <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
             <UserCheck className="w-4 h-4" />
           </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 ${
-            isAttendanceUp 
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' 
-              : 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
-          }`}>
-            {isAttendanceUp ? `+${attendanceDiff}` : `${attendanceDiff}`} vs yest
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 ${
+              isAttendanceUp
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                : 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+            }`}
+          >
+            {isAttendanceUp ? `+${attendanceDiff}` : `${attendanceDiff}`} vs
+            yest
           </span>
         </div>
 
@@ -82,7 +90,9 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
             {formatNumber(metrics.todayAttendanceCount)}
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1 gap-1">
-            <span className="truncate">Peak: {metrics.peakHourLabel.split(' - ')[0]}</span>
+            <span className="truncate">
+              Peak: {metrics.peakHourLabel.split(' - ')[0]}
+            </span>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:translate-x-1 group-hover:text-emerald-500 transition-all" />
           </div>
         </div>
@@ -97,11 +107,13 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
           <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
             <DollarSign className="w-4 h-4" />
           </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 ${
-            isRevenueUp 
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' 
-              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-          }`}>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 ${
+              isRevenueUp
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
             <TrendingUp className="w-3 h-3" /> Live
           </span>
         </div>
@@ -114,7 +126,9 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
             {formatPHP(metrics.todayTotalRevenue)}
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1 gap-1">
-            <span className="truncate">POS: {formatPHP(metrics.todaySalesRevenue)}</span>
+            <span className="truncate">
+              POS: {formatPHP(metrics.todaySalesRevenue)}
+            </span>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:translate-x-1 group-hover:text-indigo-500 transition-all" />
           </div>
         </div>
@@ -158,7 +172,9 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
             <AlertTriangle className="w-4 h-4" />
           </div>
           <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 px-2 py-0.5 rounded-md shrink-0">
-            {metrics.outOfStockCount > 0 ? `${metrics.outOfStockCount} Out` : 'Restock'}
+            {metrics.outOfStockCount > 0
+              ? `${metrics.outOfStockCount} Out`
+              : 'Restock'}
           </span>
         </div>
 

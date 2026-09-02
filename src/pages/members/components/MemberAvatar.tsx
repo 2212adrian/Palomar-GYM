@@ -135,7 +135,12 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
   const initial = (name || 'M').trim().charAt(0).toUpperCase() || 'M';
 
   const sizeStyle = size
-    ? { width: `${size}px`, height: `${size}px`, minWidth: `${size}px`, minHeight: `${size}px` }
+    ? {
+        width: `${size}px`,
+        height: `${size}px`,
+        minWidth: `${size}px`,
+        minHeight: `${size}px`,
+      }
     : undefined;
 
   return (
@@ -203,7 +208,9 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
   const [selectedCameraIndex, setSelectedCameraIndex] = useState<number>(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  const [previewResult, setPreviewResult] = useState<CompressResult | null>(null);
+  const [previewResult, setPreviewResult] = useState<CompressResult | null>(
+    null
+  );
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
@@ -237,37 +244,50 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
     }
   }, []);
 
-  const startCameraStream = useCallback(async (deviceId?: string) => {
-    stopCameraStream();
-    setCameraError(null);
+  const startCameraStream = useCallback(
+    async (deviceId?: string) => {
+      stopCameraStream();
+      setCameraError(null);
 
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera device access is not supported on this browser.');
-      }
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            'Camera device access is not supported on this browser.'
+          );
+        }
 
-      const constraints: MediaStreamConstraints = {
-        video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1024 }, height: { ideal: 1024 } }
-          : { facingMode: 'user', width: { ideal: 1024 }, height: { ideal: 1024 } },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(() => {});
+        const constraints: MediaStreamConstraints = {
+          video: deviceId
+            ? {
+                deviceId: { exact: deviceId },
+                width: { ideal: 1024 },
+                height: { ideal: 1024 },
+              }
+            : {
+                facingMode: 'user',
+                width: { ideal: 1024 },
+                height: { ideal: 1024 },
+              },
+          audio: false,
         };
-      }
 
-      await detectCameras();
-    } catch (err: any) {
-      setCameraError(getFriendlyCameraErrorMessage(err));
-    }
-  }, [stopCameraStream, detectCameras]);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().catch(() => {});
+          };
+        }
+
+        await detectCameras();
+      } catch (err: any) {
+        setCameraError(getFriendlyCameraErrorMessage(err));
+      }
+    },
+    [stopCameraStream, detectCameras]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -355,10 +375,10 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
 
       await supabase
         .from('members')
-        .update({ 
+        .update({
           avatar_url: publicUrl,
           image_url: publicUrl,
-          updated_at: new Date().toISOString() 
+          updated_at: new Date().toISOString(),
         })
         .or(`member_id.eq.${memberId},id.eq.${memberId}`);
 
@@ -382,10 +402,10 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
 
       await supabase
         .from('members')
-        .update({ 
+        .update({
           avatar_url: null,
           image_url: null,
-          updated_at: new Date().toISOString() 
+          updated_at: new Date().toISOString(),
         })
         .or(`member_id.eq.${memberId},id.eq.${memberId}`);
 
@@ -419,8 +439,8 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
         mode === 'view'
           ? 'MEMBER PHOTO'
           : mode === 'camera'
-          ? 'TAKE MEMBER PHOTO'
-          : 'PREVIEW PHOTO'
+            ? 'TAKE MEMBER PHOTO'
+            : 'PREVIEW PHOTO'
       }
     >
       <div className="space-y-3.5 text-left font-body">
@@ -436,8 +456,12 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
         {/* Member Header Info */}
         <div className="flex items-center justify-between p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl">
           <div>
-            <h4 className="font-extrabold text-sm text-(--color-text) leading-tight">{memberName}</h4>
-            <span className="text-xs text-slate-400 font-mono font-bold">{memberId}</span>
+            <h4 className="font-extrabold text-sm text-(--color-text) leading-tight">
+              {memberName}
+            </h4>
+            <span className="text-xs text-slate-400 font-mono font-bold">
+              {memberId}
+            </span>
           </div>
           <span className="px-3 py-1 rounded-full text-xs font-heading font-extrabold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
             Profile Photo

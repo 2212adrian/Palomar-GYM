@@ -1,6 +1,6 @@
 // src/constants/auth.ts
 
-export const SUPERADMIN_EMAIL = "wolf.palomar@gmail.com";
+export const SUPERADMIN_EMAIL = 'wolf.palomar@gmail.com';
 
 /**
  * Checks if a given email belongs to the Superadmin.

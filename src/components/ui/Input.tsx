@@ -12,8 +12,20 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, icon, error, shake, touched, isPopulated, rightElement, className = '', ...props }, ref) => {
-    
+  (
+    {
+      label,
+      icon,
+      error,
+      shake,
+      touched,
+      isPopulated,
+      rightElement,
+      className = '',
+      ...props
+    },
+    ref
+  ) => {
     // Semantic Border Classes
     // Red = incorrect, Green = valid input, Yellow = touched empty warning, Default/Blue on focus
     const getBorderClass = () => {

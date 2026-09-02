@@ -4,7 +4,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, CheckCircle2, ShieldAlert, User as UserIcon, Loader2 } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  ShieldAlert,
+  User as UserIcon,
+  Loader2,
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
@@ -15,24 +22,34 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 
-const confirmSchema = z.object({
-  password: z.string().min(6, { message: 'Password must be at least 6 characters' }).optional().or(z.literal('')),
-  confirmPassword: z.string().optional().or(z.literal('')),
-}).refine((data) => {
-  if (data.password && data.password !== data.confirmPassword) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
+const confirmSchema = z
+  .object({
+    password: z
+      .string()
+      .min(6, { message: 'Password must be at least 6 characters' })
+      .optional()
+      .or(z.literal('')),
+    confirmPassword: z.string().optional().or(z.literal('')),
+  })
+  .refine(
+    (data) => {
+      if (data.password && data.password !== data.confirmPassword) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    }
+  );
 
 type ConfirmFormValues = z.infer<typeof confirmSchema>;
 
 export const ConfirmSignUp: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, checkSession, logout, initialized } = useAuthStore() as any;
+  const { user, profile, checkSession, logout, initialized } =
+    useAuthStore() as any;
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -75,7 +92,7 @@ export const ConfirmSignUp: React.FC = () => {
       // 1. If password was provided, update their auth credentials
       if (data.password && data.password.trim() !== '') {
         const { error: passwordError } = await supabase.auth.updateUser({
-          password: data.password.trim()
+          password: data.password.trim(),
         });
         if (passwordError) throw passwordError;
       }
@@ -114,9 +131,13 @@ export const ConfirmSignUp: React.FC = () => {
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-white dark:bg-[#0f1012] p-4 text-center font-sans text-slate-900 dark:text-slate-100 font-body select-none">
         <Card>
           <div className="p-8 space-y-4 max-w-sm">
-            <h3 className="text-lg font-heading text-red-500 uppercase tracking-wider">Verification Expired</h3>
+            <h3 className="text-lg font-heading text-red-500 uppercase tracking-wider">
+              Verification Expired
+            </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-bold">
-              This verification link has already been used, is invalid, or has expired. Please request a new registration link from your administrator.
+              This verification link has already been used, is invalid, or has
+              expired. Please request a new registration link from your
+              administrator.
             </p>
             <Button onClick={() => navigate('/login')}>Return to Login</Button>
           </div>
@@ -129,7 +150,6 @@ export const ConfirmSignUp: React.FC = () => {
     <div className="relative w-full h-screen overflow-hidden bg-white dark:bg-[#0f1012] flex items-center justify-center p-4 text-slate-900 dark:text-slate-100 font-body select-none">
       <Card>
         <div className="flex flex-col justify-between h-full bg-transparent p-6 lg:bg-neutral-50/95 lg:dark:bg-[#141414]/95 lg:border lg:border-slate-200 lg:dark:border-white/5 lg:p-8 lg:rounded-4xl lg:shadow-2xl">
-          
           <div>
             <div className="text-center brand text-2xl font-heading tracking-[0.08em] mb-1 text-slate-900 dark:text-white">
               CONFIRM SIGNUP
@@ -146,13 +166,19 @@ export const ConfirmSignUp: React.FC = () => {
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                   {profile?.username || 'User'}
                 </h4>
-                <p className="text-[10px] font-mono text-slate-400 mt-0.5">{user?.email}</p>
+                <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                  {user?.email}
+                </p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit(onConfirmSubmit)} className="space-y-4">
+            <form
+              onSubmit={handleSubmit(onConfirmSubmit)}
+              className="space-y-4"
+            >
               <p className="text-center text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                Activate your account. You can optionally set a new secure password below, or leave it blank to maintain your current keys.
+                Activate your account. You can optionally set a new secure
+                password below, or leave it blank to maintain your current keys.
               </p>
 
               <Input
@@ -176,7 +202,11 @@ export const ConfirmSignUp: React.FC = () => {
                     className="field-visibility-toggle cursor-pointer"
                     aria-label="Toggle password visibility"
                   >
-                    {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                    {showPassword ? (
+                      <EyeOff className="w-4.5 h-4.5" />
+                    ) : (
+                      <Eye className="w-4.5 h-4.5" />
+                    )}
                   </button>
                 }
               />
@@ -187,7 +217,11 @@ export const ConfirmSignUp: React.FC = () => {
                 </div>
               )}
 
-              <Button type="submit" loading={isSubmitting} loadingLabel="ACTIVATING...">
+              <Button
+                type="submit"
+                loading={isSubmitting}
+                loadingLabel="ACTIVATING..."
+              >
                 Activate & Finish Signup
               </Button>
             </form>
@@ -200,7 +234,9 @@ export const ConfirmSignUp: React.FC = () => {
                 <span>ACTIVATION PROTOCOL</span>
               </div>
               <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                Confirming this page will permanently activate your registration. You will be redirected to the login panel to enter the system.
+                Confirming this page will permanently activate your
+                registration. You will be redirected to the login panel to enter
+                the system.
               </p>
             </div>
             <button
@@ -214,25 +250,35 @@ export const ConfirmSignUp: React.FC = () => {
               Cancel & Return to Login
             </button>
           </div>
-
         </div>
       </Card>
 
       {/* SUCCESS MODAL */}
       <Modal
         isOpen={showSuccessModal}
-        onClose={() => { setShowSuccessModal(false); navigate('/login', { replace: true }); }}
+        onClose={() => {
+          setShowSuccessModal(false);
+          navigate('/login', { replace: true });
+        }}
         title="Account Activated!"
       >
         <div className="space-y-6 font-body text-center animate-slide-up">
           <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Registration Complete</h4>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+              Registration Complete
+            </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-2 font-bold text-center">
-              Your account has been successfully verified and activated. Please log in using your newly configured credentials.
+              Your account has been successfully verified and activated. Please
+              log in using your newly configured credentials.
             </p>
           </div>
-          <Button onClick={() => { setShowSuccessModal(false); navigate('/login', { replace: true }); }}>
+          <Button
+            onClick={() => {
+              setShowSuccessModal(false);
+              navigate('/login', { replace: true });
+            }}
+          >
             Return to Login
           </Button>
         </div>

@@ -1,13 +1,35 @@
 // src/pages/members/components/MemberCardPrintModal.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, Printer, Search, CheckSquare, Square, ZoomIn, ZoomOut, Maximize2, 
-  ChevronDown, ChevronUp, Calendar, RefreshCw, CreditCard, QrCode,
-  Download, Loader2, Lock, ShieldCheck, Sparkles, AlertTriangle
+import {
+  X,
+  Printer,
+  Search,
+  CheckSquare,
+  Square,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  RefreshCw,
+  CreditCard,
+  QrCode,
+  Download,
+  Loader2,
+  Lock,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import type { Member, Subscription, MemberCard } from '../../../types/members';
-import { subscriptionService, cardService } from '../memberService';
+import {
+  subscriptionService,
+  cardService,
+  generateCardTokenUuid,
+} from '../memberService';
 import { toast } from 'react-toastify';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
@@ -18,7 +40,6 @@ import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
 
 export type CardFormatType = 'qr_digital' | 'manual_template';
 
-// Locked Grid Template Layout: 2 x 4 Grid (8 Cards per Letter Sheet)
 const CARD_TEMPLATE_8_PER_SHEET = {
   id: '8_per_sheet',
   name: '8 Cards / Letter Sheet (2 x 4 Grid)',
@@ -33,15 +54,19 @@ const CARD_TEMPLATE_8_PER_SHEET = {
   gapVerticalMm: 8,
 };
 
-const LETTER_PAPER = { width: 215.9, height: 279.4, name: 'Letter (8.5" x 11")' };
+const LETTER_PAPER = {
+  width: 215.9,
+  height: 279.4,
+  name: 'Letter (8.5" x 11")',
+};
 
 interface MemberCardPrintModalProps {
   members: Member[];
   initialSelectedIds?: string[];
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-// Helper to convert Uint8Array / ArrayBuffer to Base64 for Capacitor Filesystem
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -56,9 +81,13 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   members,
   initialSelectedIds = [],
   onClose,
+  onSuccess,
 }) => {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
+
+  // Persistent map of generated UUID tokens for members without an existing card in Supabase
+  const sessionTokensRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -66,7 +95,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       try {
         const [subsData, cardsData] = await Promise.all([
           subscriptionService.getAll(),
-          cardService.getAll()
+          cardService.getAll(),
         ]);
         if (isMounted) {
           setSubscriptions(subsData);
@@ -77,84 +106,128 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       }
     };
     loadData();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const getMemberCard = (memberId: string) => {
-    return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active' && c.card_type !== 'None');
+    return cards.find(
+      (c: MemberCard) =>
+        c.member_id === memberId &&
+        c.status === 'Active' &&
+        c.card_type !== 'None'
+    );
   };
 
   const getMemberSub = (memberId: string) => {
-    return subscriptions.find((s: Subscription) => s.member_id === memberId && s.status === 'Active');
+    return subscriptions.find(
+      (s: Subscription) => s.member_id === memberId && s.status === 'Active'
+    );
   };
 
-  // Check if active card exists in system
   const isCardIssued = (memberId: string) => {
     return Boolean(getMemberCard(memberId));
   };
 
-  const [cardFormat, setCardFormat] = useState<CardFormatType>('qr_digital');
-  
-  // DEFAULT CHECKED: Generate Fresh QR Tokens is ON by default when clicking print
-  const [rerollQrTokens, setRerollQrTokens] = useState<boolean>(true);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
-
-  // Reissue Confirmation Modal State
-  const [showReissueConfirmModal, setShowReissueConfirmModal] = useState<boolean>(false);
-  const [pendingAction, setPendingAction] = useState<'print' | 'download' | null>(null);
-
-  // Helper: Is member eligible for selection based on rerollQrTokens setting
-  const isMemberEligible = (memberId: string) => {
-    const hasActiveCard = isCardIssued(memberId);
-    if (!hasActiveCard) return true; // Always eligible if no card issued yet
-    return rerollQrTokens; // Eligible if re-issuing / fresh QR token generation is enabled
+  const isCardPaid = (memberId: string) => {
+    const card = getMemberCard(memberId);
+    return card?.payment_status === 'PAID';
   };
 
-  // Default selection: Preserve members selected in the member list
+  /**
+   * GUARANTEED UUID RESOLUTION:
+   * 1. If member has an active card in database, returns existing UUID token.
+   * 2. If member is unpaid/new, retrieves or creates a stable session UUID so the QR is NEVER a fallback string.
+   */
+  const getMemberQrUuid = (memberId: string): string => {
+    const existingCard = getMemberCard(memberId);
+    if (existingCard?.card_number && existingCard.card_number.length > 10) {
+      return existingCard.card_number;
+    }
+    if (!sessionTokensRef.current[memberId]) {
+      sessionTokensRef.current[memberId] = generateCardTokenUuid();
+    }
+    return sessionTokensRef.current[memberId];
+  };
+
+  const [cardFormat, setCardFormat] = useState<CardFormatType>('qr_digital');
+
+  // UNPAID MEMBERS OVERRIDE: Disabled by default
+  const [allowUnpaidPrinting, setAllowUnpaidPrinting] =
+    useState<boolean>(false);
+  // CARD REPLACEMENT OVERRIDE
+  const [allowReplacements] = useState<boolean>(true);
+
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+
+  // Unpaid Confirmation Modal State
+  const [showUnpaidConfirmModal, setShowUnpaidConfirmModal] =
+    useState<boolean>(false);
+  const [pendingAction, setPendingAction] = useState<
+    'print' | 'download' | null
+  >(null);
+
+  // Unpaid members are locked unless allowUnpaidPrinting is checked
+  const isMemberEligible = (memberId: string) => {
+    const isPaid = isCardPaid(memberId);
+    const hasCard = isCardIssued(memberId);
+
+    if (!isPaid && !allowUnpaidPrinting) {
+      return false;
+    }
+
+    if (hasCard && !allowReplacements) {
+      return false;
+    }
+
+    return true;
+  };
+
+  // Default selection: Prioritize PAID members without an active card
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
     if (initialSelectedIds.length > 0) {
-      return initialSelectedIds;
+      return initialSelectedIds.filter((id) => {
+        const m = members.find((mem) => mem.id === id);
+        return m ? isCardPaid(m.member_id) : true;
+      });
     }
-    return members.filter(m => !isCardIssued(m.member_id)).map(m => m.id);
+    return members
+      .filter((m) => isCardPaid(m.member_id) && !isCardIssued(m.member_id))
+      .map((m) => m.id);
   });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [zoom, setZoom] = useState<number>(100);
-  const [copiesPerMember,] = useState<number>(1);
+  const [copiesPerMember] = useState<number>(1);
   const [manualCardCount, setManualCardCount] = useState<number>(8);
-  const [activeMobileTab, setActiveMobileTab] = useState<'configure' | 'preview'>('configure');
+  const [activeMobileTab, setActiveMobileTab] = useState<
+    'configure' | 'preview'
+  >('configure');
 
-  // Accordion state for validity/replacement: COLLAPSED BY DEFAULT
   const [isExpiryConfigOpen, setIsExpiryConfigOpen] = useState(false);
-
-  // Locked Issue Date (Automatic to current date)
   const issueDate = useMemo(() => new Date().toISOString().split('T')[0], []);
-    
-  // Expiration Configuration Override - DEFAULT +3 YEARS (1095 Days)
+
   const [customExpireDate, setCustomExpireDate] = useState<string>(() => {
     const d = new Date();
-    d.setFullYear(d.getFullYear() + 3); // Exact +3 years
+    d.setFullYear(d.getFullYear() + 3);
     return d.toISOString().split('T')[0];
   });
 
   const [overrideDates, setOverrideDates] = useState<boolean>(true);
-
-  // Validation Flag: Expiration date cannot be earlier than issue date
   const isInvalidDate = customExpireDate < issueDate;
 
-  // Unselect all members upon closing modal
   const handleCloseModal = () => {
     setSelectedIds([]);
     onClose();
   };
 
-  // Helper to check active quick-add preset
   const getActivePresetDays = () => {
     if (!overrideDates) return null;
     const start = new Date(issueDate).getTime();
     const end = new Date(customExpireDate).getTime();
     const diffDays = Math.round((end - start) / (1000 * 3600 * 24));
-    
+
     if (diffDays >= 28 && diffDays <= 31) return 30;
     if (diffDays >= 360 && diffDays <= 366) return 365;
     if (diffDays >= 1090 && diffDays <= 1100) return 1095;
@@ -163,44 +236,46 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
 
   const activePresetDays = getActivePresetDays();
 
-  // Handle Fresh QR / Reissue Checkbox Toggle
-  const handleRerollToggle = (checked: boolean) => {
-    setRerollQrTokens(checked);
+  const handleToggleUnpaidOverride = (checked: boolean) => {
+    setAllowUnpaidPrinting(checked);
     if (!checked) {
-      // Automatically deselect members who already have active cards when reissuing is turned OFF
-      setSelectedIds(prev => prev.filter(id => {
-        const m = members.find(mem => mem.id === id);
-        return m ? !isCardIssued(m.member_id) : true;
-      }));
-      toast.info('Reissuing disabled: Active cardholders removed from selection.');
+      setSelectedIds((prev) =>
+        prev.filter((id) => {
+          const m = members.find((mem) => mem.id === id);
+          return m ? isCardPaid(m.member_id) : false;
+        })
+      );
+      toast.info('Unpaid members locked. Only paid members can be selected.');
     } else {
-      toast.success('Reissuing enabled: Active cardholders unlocked for replacement card print.');
+      toast.warn(
+        'Unpaid printing unlocked: You can now select members who have not paid yet.'
+      );
     }
   };
 
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return members.filter(m =>
-      q === '' ||
-      m.full_name.toLowerCase().includes(q) ||
-      m.member_id.toLowerCase().includes(q) ||
-      m.phone.toLowerCase().includes(q)
+    return members.filter(
+      (m) =>
+        q === '' ||
+        m.full_name.toLowerCase().includes(q) ||
+        m.member_id.toLowerCase().includes(q) ||
+        (m.phone && m.phone.toLowerCase().includes(q))
     );
   }, [members, searchQuery]);
 
   const selectedMembersList = useMemo(() => {
-    return members.filter(m => selectedIds.includes(m.id));
+    return members.filter((m) => selectedIds.includes(m.id));
   }, [members, selectedIds]);
 
-  // List of active cardholders selected who will be reissued
-  const reissuingMembers = useMemo(() => {
+  const unpaidSelectedMembers = useMemo(() => {
     if (cardFormat !== 'qr_digital') return [];
-    return selectedMembersList.filter(m => isCardIssued(m.member_id));
+    return selectedMembersList.filter((m) => !isCardPaid(m.member_id));
   }, [cardFormat, selectedMembersList, cards]);
 
   const expandedCardsList = useMemo(() => {
     const list: Member[] = [];
-    selectedMembersList.forEach(m => {
+    selectedMembersList.forEach((m) => {
       for (let i = 0; i < copiesPerMember; i++) {
         list.push(m);
       }
@@ -208,7 +283,6 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     return list;
   }, [selectedMembersList, copiesPerMember]);
 
-  // Effective Cards List depending on Card Format
   const effectiveCardsList = useMemo(() => {
     if (cardFormat === 'manual_template') {
       return Array.from({ length: manualCardCount }).map((_, idx) => ({
@@ -232,22 +306,25 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   }, [cardFormat, manualCardCount, expandedCardsList]);
 
   const template = CARD_TEMPLATE_8_PER_SHEET;
-  const totalPagesRequired = Math.ceil(effectiveCardsList.length / template.cardsPerPage) || 1;
+  const totalPagesRequired =
+    Math.ceil(effectiveCardsList.length / template.cardsPerPage) || 1;
 
   const zoomFactor = zoom / 100;
   const paperWidthMm = LETTER_PAPER.width;
   const paperHeightMm = LETTER_PAPER.height;
 
   const scaledWidthMm = paperWidthMm * zoomFactor;
-  const scaledHeightMm = (paperHeightMm * totalPagesRequired) * zoomFactor + (20 * totalPagesRequired * zoomFactor);
+  const scaledHeightMm =
+    paperHeightMm * totalPagesRequired * zoomFactor +
+    20 * totalPagesRequired * zoomFactor;
 
   const applyPresetDays = (days: number) => {
     setOverrideDates(true);
     const d = new Date(issueDate);
     if (days === 1095 || days === 3) {
-      d.setFullYear(d.getFullYear() + 3); // Exact +3 Years
+      d.setFullYear(d.getFullYear() + 3);
     } else if (days === 365 || days === 1) {
-      d.setFullYear(d.getFullYear() + 1); // Exact +1 Year
+      d.setFullYear(d.getFullYear() + 1);
     } else {
       d.setDate(d.getDate() + days);
     }
@@ -261,52 +338,89 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
   };
 
   const handleToggleMember = (member: Member) => {
-    const eligible = isMemberEligible(member.member_id);
-    if (!eligible) {
-      toast.info(`${member.full_name} already has an active card. Turn ON "Generate Fresh QR Tokens" below to reissue.`);
+    const isPaid = isCardPaid(member.member_id);
+    if (!isPaid && !allowUnpaidPrinting) {
+      toast.info(
+        `${member.full_name} has not paid for their card. Enable "Allow Printing for Unpaid Members" below to select.`
+      );
       return;
     }
-    setSelectedIds(prev =>
-      prev.includes(member.id) ? prev.filter(id => id !== member.id) : [...prev, member.id]
+    setSelectedIds((prev) =>
+      prev.includes(member.id)
+        ? prev.filter((id) => id !== member.id)
+        : [...prev, member.id]
     );
+  };
+
+  const handleSelectPaidAndReadyOnly = () => {
+    const paidIds = members
+      .filter((m) => isCardPaid(m.member_id))
+      .map((m) => m.id);
+    setSelectedIds(paidIds);
+    if (paidIds.length === 0) {
+      toast.info('No members found with paid card status.');
+    } else {
+      toast.success(`Selected ${paidIds.length} paid member(s).`);
+    }
+  };
+
+  const handleSelectNoCardsOnly = () => {
+    const noCardIds = members
+      .filter(
+        (m) =>
+          !isCardIssued(m.member_id) &&
+          (isCardPaid(m.member_id) || allowUnpaidPrinting)
+      )
+      .map((m) => m.id);
+    setSelectedIds(noCardIds);
+    if (noCardIds.length === 0) {
+      toast.info('No eligible unissued members found.');
+    } else {
+      toast.success(`Selected ${noCardIds.length} member(s) with no card.`);
+    }
   };
 
   const handleSelectAllEligible = () => {
     const eligibleIds = members
-      .filter(m => isMemberEligible(m.member_id))
-      .map(m => m.id);
+      .filter((m) => isMemberEligible(m.member_id))
+      .map((m) => m.id);
     setSelectedIds(eligibleIds);
   };
 
-  // Select only members who currently do not have a card issued yet
-  const handleSelectNoCardsOnly = () => {
-    const noCardIds = members
-      .filter(m => !isCardIssued(m.member_id) && isMemberEligible(m.member_id))
-      .map(m => m.id);
-    setSelectedIds(noCardIds);
-    if (noCardIds.length === 0) {
-      toast.info('All members in list already have an active card issued.');
-    } else {
-      toast.success(`Selected ${noCardIds.length} member(s) with no card issued.`);
-    }
-  };
-
-  // Update card storage records in Supabase when issuing
+  /**
+   * Persists cards to database using the EXACT printed UUID tokens
+   */
   const persistCardIssuance = async () => {
     if (cardFormat !== 'qr_digital') return;
-
     try {
       const expIso = new Date(customExpireDate).toISOString();
       for (const m of selectedMembersList) {
-        await cardService.issue(m.member_id, 'QR', 'Counter Staff', expIso);
+        const token = getMemberQrUuid(m.member_id);
+        const existing = getMemberCard(m.member_id);
+        const fee = existing?.card_fee_paid || 10;
+
+        await cardService.issue(
+          m.member_id,
+          'QR',
+          'Counter Staff',
+          expIso,
+          'PAID', // <-- Sets payment to PAID so it shows PAID • UNCLAIMED
+          existing?.claim_status === 'CLAIMED' ? 'CLAIMED' : 'UNCLAIMED',
+          fee,
+          undefined,
+          token
+        );
       }
     } catch (e) {
       console.error('Failed to persist card issuance in Supabase:', e);
     }
   };
 
-  // Helper to build high-res PDF bytes
-  const buildPdfDocument = async (): Promise<{ pdfBytes: Uint8Array; fileName: string }> => {
+  // Build High-Res 300 DPI PDF document
+  const buildPdfDocument = async (): Promise<{
+    pdfBytes: Uint8Array;
+    fileName: string;
+  }> => {
     const loadBase64Image = async (url: string): Promise<HTMLImageElement> => {
       const response = await fetch(url);
       const blob = await response.blob();
@@ -327,8 +441,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     const pdfDoc = await PDFDocument.create();
 
     const scale = 300 / 25.4; // 11.811 px per mm
-    const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);  // 2550 px
-    const sheetHeightPx = Math.round(LETTER_PAPER.height * scale); // 3300 px
+    const sheetWidthPx = Math.round(LETTER_PAPER.width * scale);
+    const sheetHeightPx = Math.round(LETTER_PAPER.height * scale);
 
     for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
       const pageCanvas = document.createElement('canvas');
@@ -341,69 +455,100 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
 
       const pageStartIndex = pageIdx * template.cardsPerPage;
-      const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+      const pageItems = effectiveCardsList.slice(
+        pageStartIndex,
+        pageStartIndex + template.cardsPerPage
+      );
 
       for (let idx = 0; idx < pageItems.length; idx++) {
         const m = pageItems[idx];
         const col = idx % template.cols;
         const row = Math.floor(idx / template.cols);
 
-        const cardX = (template.marginLeftMm + col * (template.cardWidthMm + template.gapHorizontalMm)) * scale;
-        const cardY = (template.marginTopMm + row * (template.cardHeightMm + template.gapVerticalMm)) * scale;
+        const cardX =
+          (template.marginLeftMm +
+            col * (template.cardWidthMm + template.gapHorizontalMm)) *
+          scale;
+        const cardY =
+          (template.marginTopMm +
+            row * (template.cardHeightMm + template.gapVerticalMm)) *
+          scale;
         const cardW = template.cardWidthMm * scale;
         const cardH = template.cardHeightMm * scale;
 
         if (cardFormat === 'manual_template') {
           ctx.save();
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
           else ctx.rect(cardX, cardY, cardW, cardH);
           ctx.clip();
           ctx.drawImage(cardTemplateImgObj, cardX, cardY, cardW, cardH);
           ctx.restore();
         } else {
           const sub = getMemberSub(m.member_id);
-          const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
-          const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
+          const activeSubExp = sub?.end_date
+            ? new Date(sub.end_date).toISOString().split('T')[0]
+            : 'NO ACTIVE PLAN';
+          const finalExpDate = overrideDates
+            ? customExpireDate
+            : sub?.end_date
+              ? activeSubExp
+              : customExpireDate;
           const isExp = new Date(finalExpDate) < new Date();
-          const card = getMemberCard(m.member_id);
-          const qrPayload = card?.card_number || m.member_id;
+
+          // STRICT UUID ENCODING: Always uses valid UUID token
+          const qrPayload = getMemberQrUuid(m.member_id);
           const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
           const qrImgObj = await loadBase64Image(qrRawUrl);
 
           ctx.save();
 
-          // 1. Black Card Background
+          // Black Card Background
           ctx.fillStyle = '#000000';
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(cardX, cardY, cardW, cardH, 3.5 * scale);
           else ctx.rect(cardX, cardY, cardW, cardH);
           ctx.fill();
           ctx.strokeStyle = '#1a1a1a';
           ctx.lineWidth = 1 * scale;
           ctx.stroke();
 
-          // Header Line
-ctx.fillStyle = '#dc2626';
-ctx.fillRect(cardX + cardW * 0.04, cardY + 6.8 * scale, cardW * 0.92, 0.35 * scale);
+          // Header Red Line
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(
+            cardX + cardW * 0.04,
+            cardY + 6.8 * scale,
+            cardW * 0.92,
+            0.35 * scale
+          );
 
-// Subtitle (MUAYTHAI BOXING)
-ctx.fillStyle = '#dc2626';
-ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
-ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
-
-          // Subtitle
+          // Subtitle (MUAYTHAI BOXING)
           ctx.fillStyle = '#dc2626';
           ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
-          ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
+          ctx.textAlign = 'center';
+          ctx.fillText(
+            'MUAYTHAI BOXING',
+            cardX + cardW / 2,
+            cardY + 10.2 * scale
+          );
 
           // Address & Contact
           ctx.fillStyle = '#ffffff';
           ctx.font = `600 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
-          ctx.fillText('6B Judge A. Roldan St., Navotas City, Metro Manila', cardX + cardW / 2, cardY + 12.3 * scale);
-          ctx.fillText('09098893819 / 09054380792', cardX + cardW / 2, cardY + 14.1 * scale);
+          ctx.fillText(
+            '6B Judge A. Roldan St., Navotas City, Metro Manila',
+            cardX + cardW / 2,
+            cardY + 12.3 * scale
+          );
+          ctx.fillText(
+            '09098893819 / 09054380792',
+            cardX + cardW / 2,
+            cardY + 14.1 * scale
+          );
 
-          // 3. QR Code Box
+          // QR Code Box
           const qrSize = 22 * scale;
           const qrX = cardX + 3.5 * scale;
           const qrY = cardY + 16.5 * scale;
@@ -415,23 +560,38 @@ ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
           ctx.fill();
 
           if (isExp) ctx.globalAlpha = 0.25;
-          ctx.drawImage(qrImgObj, qrX + 1.5 * scale, qrY + 1.5 * scale, qrSize - 3 * scale, qrSize - 3 * scale);
+          ctx.drawImage(
+            qrImgObj,
+            qrX + 1.5 * scale,
+            qrY + 1.5 * scale,
+            qrSize - 3 * scale,
+            qrSize - 3 * scale
+          );
           ctx.globalAlpha = 1.0;
 
           if (isExp) {
             ctx.fillStyle = 'rgba(220, 38, 38, 0.85)';
             ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
+            if (ctx.roundRect)
+              ctx.roundRect(qrX, qrY, qrSize, qrSize, 2 * scale);
             else ctx.rect(qrX, qrY, qrSize, qrSize);
             ctx.fill();
 
             ctx.fillStyle = '#ffffff';
             ctx.font = `900 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
-            ctx.fillText('EXPIRED', qrX + qrSize / 2, qrY + qrSize / 2 - 0.5 * scale);
-            ctx.fillText('BADGE', qrX + qrSize / 2, qrY + qrSize / 2 + 2 * scale);
+            ctx.fillText(
+              'EXPIRED',
+              qrX + qrSize / 2,
+              qrY + qrSize / 2 - 0.5 * scale
+            );
+            ctx.fillText(
+              'BADGE',
+              qrX + qrSize / 2,
+              qrY + qrSize / 2 + 2 * scale
+            );
           }
 
-          // 4. Details Section
+          // Details Section
           const detailsX = qrX + qrSize + 3 * scale;
           const detailsY = cardY + 16.5 * scale;
           const detailsW = cardX + cardW - detailsX - 3.5 * scale;
@@ -445,13 +605,25 @@ ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
 
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale, 1 * scale);
-          else ctx.rect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(
+              detailsX,
+              detailsY + 2.5 * scale,
+              detailsW,
+              5.2 * scale,
+              1 * scale
+            );
+          else
+            ctx.rect(detailsX, detailsY + 2.5 * scale, detailsW, 5.2 * scale);
           ctx.fill();
 
           ctx.fillStyle = '#000000';
           ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
-          ctx.fillText(m.full_name.toUpperCase().substring(0, 22), detailsX + 1.5 * scale, detailsY + 6 * scale);
+          ctx.fillText(
+            m.full_name.toUpperCase().substring(0, 22),
+            detailsX + 1.5 * scale,
+            detailsY + 6 * scale
+          );
 
           // CONTACT NUMBER
           ctx.fillStyle = '#ffffff';
@@ -460,13 +632,25 @@ ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
 
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale, 1 * scale);
-          else ctx.rect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(
+              detailsX,
+              detailsY + 10.5 * scale,
+              detailsW,
+              5.2 * scale,
+              1 * scale
+            );
+          else
+            ctx.rect(detailsX, detailsY + 10.5 * scale, detailsW, 5.2 * scale);
           ctx.fill();
 
           ctx.fillStyle = '#000000';
           ctx.font = `800 ${Math.round(2.1 * scale)}px Arial, sans-serif`;
-          ctx.fillText(m.phone || 'N/A', detailsX + 1.5 * scale, detailsY + 14 * scale);
+          ctx.fillText(
+            m.phone || 'N/A',
+            detailsX + 1.5 * scale,
+            detailsY + 14 * scale
+          );
 
           // DATES ROW
           const boxHalfW = (detailsW - 1.2 * scale) / 2;
@@ -474,42 +658,78 @@ ctx.fillText('MUAYTHAI BOXING', cardX + cardW / 2, cardY + 10.2 * scale);
           ctx.fillStyle = '#ffffff';
           ctx.font = `800 ${Math.round(1.5 * scale)}px Arial, sans-serif`;
           ctx.fillText('ISSUE DATE', detailsX, detailsY + 17.8 * scale);
-          ctx.fillText('EXPIRATION', detailsX + boxHalfW + 1.2 * scale, detailsY + 17.8 * scale);
+          ctx.fillText(
+            'EXPIRATION',
+            detailsX + boxHalfW + 1.2 * scale,
+            detailsY + 17.8 * scale
+          );
 
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
-          else ctx.rect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(
+              detailsX,
+              detailsY + 18.5 * scale,
+              boxHalfW,
+              4.8 * scale,
+              1 * scale
+            );
+          else
+            ctx.rect(detailsX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
           ctx.fill();
 
           ctx.fillStyle = '#000000';
           ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillText(new Date(issueDate).toLocaleDateString(), detailsX + boxHalfW / 2, detailsY + 21.8 * scale);
+          ctx.fillText(
+            new Date(issueDate).toLocaleDateString(),
+            detailsX + boxHalfW / 2,
+            detailsY + 21.8 * scale
+          );
 
-          // Vertical Dates Divider Line
-ctx.fillStyle = '#dc2626';
-ctx.fillRect(detailsX + boxHalfW + 0.45 * scale, detailsY + 17.5 * scale, 0.3 * scale, 6 * scale);
+          // Vertical Red Divider Line
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(
+            detailsX + boxHalfW + 0.45 * scale,
+            detailsY + 17.5 * scale,
+            0.3 * scale,
+            6 * scale
+          );
 
           const expX = detailsX + boxHalfW + 1.2 * scale;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale, 1 * scale);
+          if (ctx.roundRect)
+            ctx.roundRect(
+              expX,
+              detailsY + 18.5 * scale,
+              boxHalfW,
+              4.8 * scale,
+              1 * scale
+            );
           else ctx.rect(expX, detailsY + 18.5 * scale, boxHalfW, 4.8 * scale);
           ctx.fill();
 
           ctx.fillStyle = isExp ? '#dc2626' : '#000000';
           ctx.font = `800 ${Math.round(1.8 * scale)}px Arial, sans-serif`;
-          ctx.fillText(new Date(finalExpDate).toLocaleDateString(), expX + boxHalfW / 2, detailsY + 21.8 * scale);
+          ctx.fillText(
+            new Date(finalExpDate).toLocaleDateString(),
+            expX + boxHalfW / 2,
+            detailsY + 21.8 * scale
+          );
 
           const footerY = cardY + cardH - 5 * scale;
           ctx.fillStyle = '#dc2626';
-ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
+          ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
           ctx.fillStyle = '#ffffff';
           ctx.font = `800 ${Math.round(1.35 * scale)}px Arial, sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillText('NON-REFUNDABLE  •  NON-TRANSFERRABLE  •  BE RESPONSIBLE WITH EQUIPMENT', cardX + cardW / 2, footerY + 3.2 * scale);
+          ctx.fillText(
+            'NON-REFUNDABLE  •  NON-TRANSFERRABLE  •  BE RESPONSIBLE WITH EQUIPMENT',
+            cardX + cardW / 2,
+            footerY + 3.2 * scale
+          );
 
           ctx.restore();
         }
@@ -518,7 +738,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       const pngDataUrl = pageCanvas.toDataURL('image/png', 1.0);
       const embeddedPng = await pdfDoc.embedPng(pngDataUrl);
 
-      const pdfPage = pdfDoc.addPage([612, 792]); // Letter Size
+      const pdfPage = pdfDoc.addPage([612, 792]);
       pdfPage.drawImage(embeddedPng, {
         x: 0,
         y: 0,
@@ -535,14 +755,13 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
   const handlePrint = async () => {
     await persistCardIssuance();
-
+    onSuccess?.();
     if (Capacitor.isNativePlatform()) {
       setIsGeneratingPdf(true);
       try {
         const { pdfBytes, fileName } = await buildPdfDocument();
         const base64Data = arrayBufferToBase64(pdfBytes.buffer as ArrayBuffer);
 
-        // 1. Save PDF file to native device cache
         const file = await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
@@ -550,10 +769,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           recursive: true,
         });
 
-        // 2. Notify user that file is ready and saved
-        toast.success('Print PDF ready! Opening print options...');
+        toast.success('Print PDF ready! Opening printer selection...');
 
-        // 3. Open native share / print sheet
         await Share.share({
           title: `Print Member Credential Cards`,
           text: `Choose your printer or print service to print member cards layout sheet.`,
@@ -561,11 +778,10 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           dialogTitle: 'Print Member Cards',
         });
       } catch (err: any) {
-        // 4. Safely filter out standard user cancellations/dismissals on Android/iOS
         const errMsg = String(err?.message || err || '').toLowerCase();
-        const isUserCancel = 
-          err?.name === 'AbortError' || 
-          errMsg.includes('cancel') || 
+        const isUserCancel =
+          err?.name === 'AbortError' ||
+          errMsg.includes('cancel') ||
           errMsg.includes('dismiss') ||
           errMsg.includes('user canceled');
 
@@ -579,15 +795,18 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       return;
     }
 
-    // WEB BROWSER PRINT FALLBACK
+    // Web Browser Printing Fallback
     let pagesHtml = '';
 
     for (let pageIdx = 0; pageIdx < totalPagesRequired; pageIdx++) {
       const pageStartIndex = pageIdx * template.cardsPerPage;
-      const pageItems = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
+      const pageItems = effectiveCardsList.slice(
+        pageStartIndex,
+        pageStartIndex + template.cardsPerPage
+      );
 
       let cardsGridHtml = '';
-      pageItems.forEach(m => {
+      pageItems.forEach((m) => {
         if (cardFormat === 'manual_template') {
           cardsGridHtml += `
             <div class="card manual-card">
@@ -596,12 +815,17 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           `;
         } else {
           const sub = getMemberSub(m.member_id);
-          const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
-          const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
-          
+          const activeSubExp = sub?.end_date
+            ? new Date(sub.end_date).toISOString().split('T')[0]
+            : 'NO ACTIVE PLAN';
+          const finalExpDate = overrideDates
+            ? customExpireDate
+            : sub?.end_date
+              ? activeSubExp
+              : customExpireDate;
+
           const isExp = new Date(finalExpDate) < new Date();
-          const card = getMemberCard(m.member_id);
-          const qrPayload = card?.card_number || m.member_id;
+          const qrPayload = getMemberQrUuid(m.member_id);
           const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
           cardsGridHtml += `
@@ -677,7 +901,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       bottom: '0',
       width: '0',
       height: '0',
-      border: '0'
+      border: '0',
     });
     document.body.appendChild(iframe);
 
@@ -780,11 +1004,6 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
             .field-label { 
               position: static !important;
-              top: auto !important;
-              left: auto !important;
-              right: auto !important;
-              bottom: auto !important;
-              transform: none !important;
               display: block !important; 
               font-size: 4.5pt !important; 
               color: #ffffff !important; 
@@ -794,8 +1013,6 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               margin-bottom: 0.4mm !important; 
               line-height: 1 !important; 
               flex-shrink: 0 !important; 
-              opacity: 1 !important; 
-              visibility: visible !important; 
             }
 
             .field-box {
@@ -812,7 +1029,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               overflow: hidden !important; 
               text-overflow: ellipsis !important; 
               line-height: 1.1 !important; 
-              box-sizing: border-box !important;
+              box-sizing: border-box !important; 
             }
 
             .details {
@@ -863,11 +1080,11 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
-    toast.info('Generating high-resolution 300 DPI PDF file...');
+    toast.info('Generating PDF file...');
 
     try {
       await persistCardIssuance();
-
+      onSuccess?.();
       const { pdfBytes, fileName } = await buildPdfDocument();
 
       if (Capacitor.isNativePlatform()) {
@@ -876,26 +1093,27 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           path: fileName,
           data: base64Data,
           directory: Directory.Cache,
-          recursive: true
+          recursive: true,
         });
 
         await Share.share({
           title: `Member Cards PDF - ${fileName}`,
           text: `Official Member Cards PDF from Wolf Palomar Gym`,
           files: [file.uri],
-          dialogTitle: 'Save / Share PDF'
+          dialogTitle: 'Save / Share PDF',
         });
 
-        toast.success('Member Cards PDF ready for sharing/saving!');
+        toast.success('Member Cards PDF ready!');
         return;
       }
 
-      const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], {
+        type: 'application/pdf',
+      });
       try {
         saveAs(pdfBlob, fileName);
-        toast.success('300 DPI PDF downloaded successfully!');
+        toast.success('PDF downloaded successfully!');
       } catch (saveErr) {
-        console.warn('saveAs failed, attempting anchor fallback:', saveErr);
         const link = document.createElement('a');
         link.href = URL.createObjectURL(pdfBlob);
         link.download = fileName;
@@ -903,7 +1121,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
-        toast.success('300 DPI PDF downloaded successfully!');
+        toast.success('PDF downloaded successfully!');
       }
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
@@ -915,7 +1133,6 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
     }
   };
 
-  // Click Trigger for Print with Validation and Reissue Confirmation Check
   const handlePrintClick = () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -927,11 +1144,6 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         toast.error('Please select at least one member card to print.');
         return;
       }
-      const invalidMembers = selectedMembersList.filter(m => !isMemberEligible(m.member_id));
-      if (invalidMembers.length > 0) {
-        toast.error(`Cannot print: ${invalidMembers[0].full_name} has an active card. Enable Reissuing to print.`);
-        return;
-      }
     }
 
     if (cardFormat === 'manual_template' && manualCardCount < 1) {
@@ -939,15 +1151,17 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       return;
     }
 
-    if (reissuingMembers.length > 0) {
-      setPendingAction('print');
-      setShowReissueConfirmModal(true);
-    } else {
-      handlePrint();
+    setPendingAction('print');
+
+    // UNPAID VALIDATION PROMPT
+    if (unpaidSelectedMembers.length > 0) {
+      setShowUnpaidConfirmModal(true);
+      return;
     }
+
+    handlePrint();
   };
 
-  // Click Trigger for PDF Download with Validation and Reissue Confirmation Check
   const handleDownloadClick = () => {
     if (isInvalidDate) {
       toast.error('Expiration date cannot be earlier than the issue date.');
@@ -959,11 +1173,6 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         toast.error('Please select at least one member card.');
         return;
       }
-      const invalidMembers = selectedMembersList.filter(m => !isMemberEligible(m.member_id));
-      if (invalidMembers.length > 0) {
-        toast.error(`Cannot download PDF: ${invalidMembers[0].full_name} has an active card. Enable Reissuing first.`);
-        return;
-      }
     }
 
     if (cardFormat === 'manual_template' && manualCardCount < 1) {
@@ -971,33 +1180,43 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
       return;
     }
 
-    if (reissuingMembers.length > 0) {
-      setPendingAction('download');
-      setShowReissueConfirmModal(true);
-    } else {
+    setPendingAction('download');
+
+    // UNPAID VALIDATION PROMPT
+    if (unpaidSelectedMembers.length > 0) {
+      setShowUnpaidConfirmModal(true);
+      return;
+    }
+
+    handleDownloadPdf();
+  };
+
+  const handleConfirmUnpaidPrompt = () => {
+    setShowUnpaidConfirmModal(false);
+    if (pendingAction === 'print') {
+      handlePrint();
+    } else if (pendingAction === 'download') {
       handleDownloadPdf();
     }
-  };
-
-  // Execute Reissuance Action from Confirmation Modal
-  const handleConfirmReissue = async () => {
-    setShowReissueConfirmModal(false);
-    const action = pendingAction;
     setPendingAction(null);
-
-    if (action === 'print') {
-      await handlePrint();
-    } else if (action === 'download') {
-      await handleDownloadPdf();
-    }
   };
 
-  const isActionDisabled = isGeneratingPdf || isInvalidDate || (cardFormat === 'qr_digital' ? selectedMembersList.length === 0 : manualCardCount < 1);
+  const handleRefuseUnpaidPrompt = () => {
+    setShowUnpaidConfirmModal(false);
+    setPendingAction(null);
+    toast.info('Print cancelled. Please collect member payment first.');
+  };
+
+  const isActionDisabled =
+    isGeneratingPdf ||
+    isInvalidDate ||
+    (cardFormat === 'qr_digital'
+      ? selectedMembersList.length === 0
+      : manualCardCount < 1);
 
   return createPortal(
     <div className="fixed inset-0 z-[16000] bg-[var(--bg-page)] flex flex-col font-body text-[var(--color-text)] select-none animate-fade-in">
-      
-      {/* SCOPED STYLES FOR LIVE PREVIEW */}
+      {/* 1:1 EXACT SCOPED STYLES FOR LIVE PREVIEW */}
       <style>{`
         .card-sheet-container .page-sheet {
           width: ${paperWidthMm}mm;
@@ -1015,7 +1234,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         .card-sheet-container .card {
           width: ${template.cardWidthMm}mm;
           height: ${template.cardHeightMm}mm;
-          background-color: #000000;
+          background-color: #000000 !important;
           border-radius: 3.5mm;
           padding: 2mm 3mm;
           box-sizing: border-box;
@@ -1025,7 +1244,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           border: 1px solid #1a1a1a;
           position: relative;
           overflow: hidden;
-          color: #ffffff;
+          color: #ffffff !important;
           font-family: Arial, sans-serif;
           text-align: left;
           line-height: 1;
@@ -1070,7 +1289,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           font-size: 4.5pt !important; color: #ffffff !important; font-weight: 800 !important; letter-spacing: 0.3px; text-transform: uppercase; margin-bottom: 0.3mm !important; line-height: 1 !important; display: block !important; flex-shrink: 0 !important; opacity: 1 !important; visibility: visible !important;
         }
         .card-sheet-container .field-box {
-          background: #ffffff; color: #000000; border-radius: 1mm; padding: 0.6mm 1.2mm;
+          background: #ffffff !important; color: #000000 !important; border-radius: 1mm; padding: 0.6mm 1.2mm;
           font-family: Arial, sans-serif; font-size: 6pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; box-sizing: border-box;
         }
         .card-sheet-container .dates-row { display: flex; gap: 1mm; align-items: flex-end; }
@@ -1079,7 +1298,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         .card-sheet-container .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #dc2626; flex-shrink: 0; margin-bottom: 0.2mm; }
 
         .card-sheet-container .footer-text {
-          font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
+          font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff !important; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
         }
       `}</style>
 
@@ -1090,13 +1309,16 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
             <Printer className="w-5 h-5 animate-pulse" />
           </div>
           <div className="text-left">
-            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">PRINT MEMBER CREDENTIAL CARDS</h2>
+            <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">
+              PRINT MEMBER CREDENTIAL CARDS
+            </h2>
             <p className="text-[10px] text-slate-400 font-bold block mt-0.5">
-              Select members, set validity dates, print physical sheets or download official PDF files.
+              Select members, set validity dates, print physical sheets or
+              download official PDF files.
             </p>
           </div>
         </div>
-        <button 
+        <button
           onClick={handleCloseModal}
           className="p-1.5 bg-slate-100/5 hover:bg-slate-100/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer border border-(--border-color)"
           title="Close print portal"
@@ -1111,7 +1333,9 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           type="button"
           onClick={() => setActiveMobileTab('configure')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'configure' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'configure'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-slate-400'
           }`}
         >
           Configure
@@ -1120,7 +1344,9 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           type="button"
           onClick={() => setActiveMobileTab('preview')}
           className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center rounded-lg cursor-pointer ${
-            activeMobileTab === 'preview' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'
+            activeMobileTab === 'preview'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-slate-400'
           }`}
         >
           Layout Preview
@@ -1129,13 +1355,13 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
       {/* Main Grid Workspace */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden mt-2 md:mt-0">
-        
         {/* LEFT CONTROL SIDEBAR PANEL */}
-        <div className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-5 flex flex-col justify-between overflow-hidden h-full ${
-          activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
-        }`}>
+        <div
+          className={`lg:col-span-4 border-r border-(--border-color) bg-[var(--bg-card)] p-5 flex flex-col justify-between overflow-hidden h-full ${
+            activeMobileTab === 'configure' ? 'flex' : 'hidden md:flex'
+          }`}
+        >
           <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-hidden">
-            
             {/* Card Format Choice */}
             <div className="p-3 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-2 text-left shrink-0">
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -1182,7 +1408,9 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                  Manual templates use pre-printed physical design assets. Specify how many blank cards you need on your print sheet layout.
+                  Manual templates use pre-printed physical design assets.
+                  Specify how many blank cards you need on your print sheet
+                  layout.
                 </p>
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
@@ -1194,7 +1422,11 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                       min="1"
                       max="100"
                       value={manualCardCount}
-                      onChange={(e) => setManualCardCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      onChange={(e) =>
+                        setManualCardCount(
+                          Math.max(1, parseInt(e.target.value) || 1)
+                        )
+                      }
                       className="w-24 p-2 bg-[var(--bg-page)] border border-(--border-color) rounded-xl text-xs font-mono font-bold text-[var(--color-text)] outline-none focus:border-amber-500"
                     />
                     <div className="flex gap-1.5 flex-1 overflow-x-auto">
@@ -1220,14 +1452,26 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               <div className="p-3.5 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl flex flex-col flex-1 min-h-0 overflow-hidden gap-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-1.5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Members</h4>
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Select Members
+                    </h4>
                     <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300">
                       {selectedIds.length}/{members.length}
                     </span>
                   </div>
-                  
-                  {/* ACTION BUTTONS */}
+
+                  {/* ACTION FILTER BUTTONS */}
                   <div className="flex items-center gap-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleSelectPaidAndReadyOnly}
+                      className="px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                      title="Select only members with paid card fee"
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Paid</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={handleSelectNoCardsOnly}
@@ -1266,15 +1510,16 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter members..."
+                    placeholder="Search by Name or Member ID..."
                     className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-blue-500 transition-all font-medium"
                   />
                 </div>
 
                 {/* MEMBER SELECTION LIST */}
-                 <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 select-none">
-                  {filteredMembers.map(m => {
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 select-none">
+                  {filteredMembers.map((m) => {
                     const hasActiveCard = isCardIssued(m.member_id);
+                    const isPaid = isCardPaid(m.member_id);
                     const eligible = isMemberEligible(m.member_id);
                     const isSelected = selectedIds.includes(m.id);
 
@@ -1284,9 +1529,9 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                         onClick={() => handleToggleMember(m)}
                         className={`w-full py-2 px-2.5 rounded-xl flex items-center justify-between gap-2 transition-all box-border ${
                           !eligible
-                            ? 'opacity-50 cursor-not-allowed bg-slate-200/50 dark:bg-zinc-900/20 border border-transparent'
-                            : isSelected 
-                              ? 'bg-blue-500/10 border border-blue-500 text-[var(--color-text)] cursor-pointer shadow-xs' 
+                            ? 'opacity-40 cursor-not-allowed bg-slate-200/40 dark:bg-zinc-900/20 border border-transparent'
+                            : isSelected
+                              ? 'bg-blue-500/10 border border-blue-500 text-[var(--color-text)] cursor-pointer shadow-xs'
                               : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900/40 border border-transparent text-slate-700 dark:text-slate-300 cursor-pointer'
                         }`}
                       >
@@ -1299,25 +1544,27 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                             <Square className="w-4 h-4 shrink-0 text-slate-500" />
                           )}
                           <div className="min-w-0 text-left">
-                            <span className="font-semibold block truncate text-xs">{m.full_name}</span>
-                            <span className="font-mono text-[9px] text-slate-400">{m.member_id}</span>
+                            <span className="font-semibold block truncate text-xs">
+                              {m.full_name}
+                            </span>
+                            <span className="font-mono text-[9px] text-slate-400">
+                              {m.member_id}
+                            </span>
                           </div>
                         </div>
 
                         <div className="shrink-0 flex items-center">
-                          {hasActiveCard ? (
-                            rerollQrTokens ? (
-                              <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-blue-500/10 text-blue-500 border-blue-500/20 flex items-center gap-1">
-                                <ShieldCheck className="w-2.5 h-2.5" /> Reissue Ready
-                              </span>
-                            ) : (
-                              <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-slate-500/10 text-slate-400 border-slate-500/20">
-                                Card Active (Locked)
-                              </span>
-                            )
+                          {isPaid ? (
+                            <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                              <CheckCircle2 className="w-2.5 h-2.5" /> PAID
+                            </span>
+                          ) : hasActiveCard ? (
+                            <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-blue-500/10 text-blue-500 border-blue-500/20">
+                              HAS CARD
+                            </span>
                           ) : (
-                            <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-amber-500/10 text-amber-500 border-amber-500/20">
-                              No Card
+                            <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md border uppercase bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                              UNPAID
                             </span>
                           )}
                         </div>
@@ -1328,7 +1575,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               </div>
             )}
 
-            {/* Accordion: Card Validity & Replacement Configurator */}
+            {/* Accordion: Validity Date & Card Settings */}
             {cardFormat === 'qr_digital' && (
               <div className="flex flex-col gap-1.5 shrink-0">
                 <button
@@ -1338,18 +1585,21 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                 >
                   <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Card Validity & Replacement</span>
+                    <span>Card Validity & Permissions</span>
                   </div>
-                  {isExpiryConfigOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  {isExpiryConfigOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
                 </button>
 
                 {isExpiryConfigOpen && (
                   <div className="p-4 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-3 shrink-0 animate-slide-up text-left">
-                    
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
-                          Issue Date <span className="text-[8px] text-slate-500 font-normal">(Automatic)</span>
+                          Issue Date
                         </label>
                         <input
                           type="text"
@@ -1360,10 +1610,11 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                           className="w-full p-2 bg-[var(--bg-page)]/50 border border-(--border-color) rounded-xl text-xs font-mono font-bold text-slate-500 cursor-not-allowed outline-none select-none pointer-events-none"
                         />
                       </div>
-                                    
-                      {/* EXPIRATION DATE */}
+
                       <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Expiration Date</label>
+                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
+                          Expiration Date
+                        </label>
                         <input
                           type="date"
                           min={issueDate}
@@ -1372,43 +1623,36 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                             const val = e.target.value;
                             setOverrideDates(true);
                             if (val && val < issueDate) {
-                              toast.error('Expiration date cannot be earlier than Issue Date!');
+                              toast.error(
+                                'Expiration date cannot be earlier than Issue Date!'
+                              );
                               setCustomExpireDate(issueDate);
                             } else {
                               setCustomExpireDate(val);
                             }
                           }}
-                          onBlur={(e) => {
-                            if (!e.target.value || e.target.value < issueDate) {
-                              setCustomExpireDate(issueDate);
-                            }
-                          }}
                           className={`w-full p-2 bg-[var(--bg-page)] border rounded-xl text-xs font-mono font-bold outline-none transition-all ${
-                            isInvalidDate ? 'border-red-500 bg-red-500/10 text-red-500' : 'border-(--border-color) text-[var(--color-text)]'
+                            isInvalidDate
+                              ? 'border-red-500 bg-red-500/10 text-red-500'
+                              : 'border-(--border-color) text-[var(--color-text)]'
                           }`}
                         />
                       </div>
                     </div>
 
-                    {/* INLINE VALIDATION WARNING BOX */}
-                    {isInvalidDate && (
-                      <div className="p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 flex items-center gap-2 text-[10px] font-bold">
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
-                        <span>Expiration date cannot be earlier than Issue Date ({new Date(issueDate).toLocaleDateString()}). Printing is disabled.</span>
-                      </div>
-                    )}
-
-                    {/* QUICK PRESETS */}
+                    {/* Presets */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[8px] font-bold text-slate-400 uppercase mr-1">Quick Add:</span>
-                      
+                      <span className="text-[8px] font-bold text-slate-400 uppercase mr-1">
+                        Quick Add:
+                      </span>
+
                       <button
                         type="button"
                         onClick={() => applyPresetDays(30)}
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
                           activePresetDays === 30
                             ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                         }`}
                       >
                         +30D
@@ -1420,7 +1664,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
                           activePresetDays === 365
                             ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                         }`}
                       >
                         +1 Year
@@ -1432,7 +1676,7 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer flex items-center gap-1 ${
                           activePresetDays === 1095
                             ? 'bg-blue-600 text-white shadow-md font-extrabold border border-white/20'
-                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-700'
+                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                         }`}
                       >
                         <Sparkles className="w-2.5 h-2.5" /> +3 Years (Default)
@@ -1442,8 +1686,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                         type="button"
                         onClick={() => setOverrideDates(false)}
                         className={`px-2 py-1 rounded-lg text-[9px] font-heading font-bold uppercase cursor-pointer flex items-center gap-1 border ${
-                          !overrideDates 
-                            ? 'bg-blue-600 text-white border-transparent' 
+                          !overrideDates
+                            ? 'bg-blue-600 text-white border-transparent'
                             : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
                         }`}
                       >
@@ -1451,31 +1695,32 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                       </button>
                     </div>
 
-                    {/* Reroll QR Toggle */}
-                    <div className="pt-2 border-t border-(--border-color)">
+                    {/* UNPAID MEMBERS OVERRIDE CHECKBOX */}
+                    <div className="pt-2 border-t border-(--border-color) space-y-2">
                       <label className="flex items-start gap-2.5 cursor-pointer select-none">
                         <input
                           type="checkbox"
-                          checked={rerollQrTokens}
-                          onChange={(e) => handleRerollToggle(e.target.checked)}
-                          className="w-4 h-4 mt-0.5 rounded text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer shrink-0"
+                          checked={allowUnpaidPrinting}
+                          onChange={(e) =>
+                            handleToggleUnpaidOverride(e.target.checked)
+                          }
+                          className="w-4 h-4 mt-0.5 rounded text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer shrink-0"
                         />
                         <div className="min-w-0 text-left">
-                          <span className="text-[10px] font-bold text-[var(--color-text)] block leading-tight">
-                            Generate Fresh QR Tokens (Allow Reissuing)
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 block leading-tight">
+                            Allow Printing for Unpaid Members (Override)
                           </span>
                           <span className="text-[8px] text-slate-400 block mt-0.5 leading-relaxed">
-                            When <strong className="text-blue-500">ON</strong>, members with existing cards can be selected to receive a replacement card. Old cards will be automatically deactivated.
+                            Disabled by default. When enabled, unlocks members
+                            who have not paid their card fee yet.
                           </span>
                         </div>
                       </label>
                     </div>
-
                   </div>
                 )}
               </div>
             )}
-
           </div>
 
           {/* Action Row Panel for DESKTOP */}
@@ -1488,8 +1733,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                 className={`py-3 px-3 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border-none ${
                   isInvalidDate
                     ? 'bg-slate-600 cursor-not-allowed opacity-40'
-                    : cardFormat === 'manual_template' 
-                      ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer' 
+                    : cardFormat === 'manual_template'
+                      ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer'
                       : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                 }`}
               >
@@ -1523,16 +1768,17 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           </div>
         </div>
 
-        {/* RIGHT PREVIEW PANEL */}
-        <div className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative pb-28 md:pb-6 ${
-          activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
-        }`}>
-          
+        {/* RIGHT PREVIEW PANEL (1:1 PIXEL MATCHING) */}
+        <div
+          className={`lg:col-span-8 bg-[var(--bg-page)] p-6 flex flex-col justify-between overflow-hidden relative pb-28 md:pb-6 ${
+            activeMobileTab === 'preview' ? 'flex' : 'hidden md:flex'
+          }`}
+        >
           {/* Zoom floating toolbar */}
           <div className="absolute top-4 right-4 z-10 animate-fade-in">
             <div className="bg-[var(--bg-input)] border border-(--border-color) p-2 rounded-xl flex items-center justify-between gap-3 text-xs w-fit shadow-lg">
-              <button 
-                onClick={() => setZoom(prev => Math.max(50, prev - 25))}
+              <button
+                onClick={() => setZoom((prev) => Math.max(50, prev - 25))}
                 className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Zoom layout preview out"
               >
@@ -1541,15 +1787,15 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               <span className="font-mono font-bold text-[10px] tracking-wider text-[var(--color-text)] w-12 text-center select-none">
                 {zoom}%
               </span>
-              <button 
-                onClick={() => setZoom(prev => Math.min(150, prev + 25))}
+              <button
+                onClick={() => setZoom((prev) => Math.min(150, prev + 25))}
                 className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Zoom layout preview in"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
               <div className="w-px h-4 bg-white/10" />
-              <button 
+              <button
                 onClick={() => setZoom(100)}
                 className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
                 title="Reset zoom actual scale"
@@ -1563,9 +1809,14 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           <div className="flex-1 flex flex-col h-full bg-[var(--bg-card)] rounded-3xl p-5 border border-(--border-color) overflow-hidden shadow-xs card-sheet-container">
             <div className="flex justify-between items-center pb-4 border-b border-(--border-color) mb-4 shrink-0">
               <div className="text-left">
-                <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">Live Card Sheet Layout</h4>
+                <h4 className="text-xs font-heading uppercase tracking-widest text-[var(--color-text)]">
+                  Live Card Sheet Layout
+                </h4>
                 <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
-                  Format: {template.name} • Mode: {cardFormat === 'manual_template' ? 'Manual Template Asset' : 'Digital Dynamic QR'}
+                  Format: {template.name} •{' '}
+                  {cardFormat === 'manual_template'
+                    ? 'Manual Template Asset'
+                    : 'Digital Dynamic QR'}
                 </span>
               </div>
               <div className="text-right shrink-0">
@@ -1573,185 +1824,433 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                   {effectiveCardsList.length} Total Cards
                 </span>
                 <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
-                  Requires {totalPagesRequired} {totalPagesRequired === 1 ? 'Page' : 'Pages'}
+                  Requires {totalPagesRequired}{' '}
+                  {totalPagesRequired === 1 ? 'Page' : 'Pages'}
                 </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-auto p-4 flex flex-col items-center justify-start gap-6 no-scrollbar">
-              <div 
+              <div
                 style={{
                   width: `${scaledWidthMm}mm`,
                   height: `${scaledHeightMm}mm`,
                 }}
                 className="mx-auto relative shrink-0"
               >
-                <div 
-                  style={{ 
-                    transform: `scale(${zoomFactor})`, 
+                <div
+                  style={{
+                    transform: `scale(${zoomFactor})`,
                     transformOrigin: 'top left',
                     width: `${paperWidthMm}mm`,
-                    height: `${paperHeightMm * totalPagesRequired}mm` 
+                    height: `${paperHeightMm * totalPagesRequired}mm`,
                   }}
                   className="absolute top-0 left-0"
                 >
-                  {Array.from({ length: totalPagesRequired }).map((_, pageIdx) => {
-                    const pageStartIndex = pageIdx * template.cardsPerPage;
-                    const pageCards = effectiveCardsList.slice(pageStartIndex, pageStartIndex + template.cardsPerPage);
-                    return (
-                      <div 
-                        key={`page-${pageIdx}`}
-                        className="page-sheet bg-white shadow-2xl relative border border-slate-300 overflow-hidden mx-auto shrink-0 mb-6 origin-top animate-fade-in"
-                        style={{
-                          width: `${paperWidthMm}mm`,
-                          height: `${paperHeightMm}mm`,
-                        }}
-                      >
-                        <div 
-                          className="cards-grid"
+                  {Array.from({ length: totalPagesRequired }).map(
+                    (_, pageIdx) => {
+                      const pageStartIndex = pageIdx * template.cardsPerPage;
+                      const pageCards = effectiveCardsList.slice(
+                        pageStartIndex,
+                        pageStartIndex + template.cardsPerPage
+                      );
+                      return (
+                        <div
+                          key={`page-${pageIdx}`}
+                          className="page-sheet bg-white shadow-2xl relative border border-slate-300 overflow-hidden mx-auto shrink-0 mb-6 origin-top animate-fade-in"
                           style={{
-                            paddingTop: `${template.marginTopMm}mm`,
-                            paddingLeft: `${template.marginLeftMm}mm`,
-                            gridTemplateColumns: `repeat(${template.cols}, ${template.cardWidthMm}mm)`,
-                            gap: `${template.gapVerticalMm}mm ${template.gapHorizontalMm}mm`,
+                            width: `${paperWidthMm}mm`,
+                            height: `${paperHeightMm}mm`,
                           }}
                         >
-                          {pageCards.map((m, idx) => {
-                            if (cardFormat === 'manual_template') {
+                          <div
+                            className="cards-grid"
+                            style={{
+                              paddingTop: `${template.marginTopMm}mm`,
+                              paddingLeft: `${template.marginLeftMm}mm`,
+                              gridTemplateColumns: `repeat(${template.cols}, ${template.cardWidthMm}mm)`,
+                              gap: `${template.gapVerticalMm}mm ${template.gapHorizontalMm}mm`,
+                            }}
+                          >
+                            {pageCards.map((m, idx) => {
+                              if (cardFormat === 'manual_template') {
+                                return (
+                                  <div
+                                    key={`preview-${pageIdx}-${idx}`}
+                                    className="card manual-card"
+                                    style={{
+                                      width: `${template.cardWidthMm}mm`,
+                                      height: `${template.cardHeightMm}mm`,
+                                    }}
+                                  >
+                                    <img
+                                      src={cardTemplateImg}
+                                      alt="Manual Member Card Template"
+                                      className="template-img"
+                                    />
+                                  </div>
+                                );
+                              }
+
+                              const sub = getMemberSub(m.member_id);
+                              const activeSubExp = sub?.end_date
+                                ? new Date(sub.end_date)
+                                    .toISOString()
+                                    .split('T')[0]
+                                : 'NO ACTIVE PLAN';
+                              const finalExpDate = overrideDates
+                                ? customExpireDate
+                                : sub?.end_date
+                                  ? activeSubExp
+                                  : customExpireDate;
+                              const isExp = new Date(finalExpDate) < new Date();
+
+                              // STRICT UUID ENCODING: Always uses valid UUID token
+                              const qrPayload = getMemberQrUuid(m.member_id);
+                              const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
                               return (
                                 <div
-                                  key={`preview-${pageIdx}-${idx}`}
-                                  className="card manual-card"
+                                  key={`preview-${pageIdx}-${idx}-${m.id}`}
+                                  className="card"
                                   style={{
                                     width: `${template.cardWidthMm}mm`,
                                     height: `${template.cardHeightMm}mm`,
                                   }}
                                 >
-                                  <img 
-                                    src={cardTemplateImg} 
-                                    alt="Manual Member Card Template" 
-                                    className="template-img"
-                                  />
+                                  {/* CARD TOP HEADER */}
+                                  <div className="header">
+                                    <div className="gym-title">
+                                      WOLF PALOMAR GYM
+                                    </div>
+                                    <div className="header-red-line" />
+                                    <div className="gym-subtitle">
+                                      MUAYTHAI BOXING
+                                    </div>
+                                    <div className="gym-address">
+                                      6B Judge A. Roldan St., Navotas City,
+                                      Metro Manila
+                                    </div>
+                                    <div className="gym-contact">
+                                      09098893819 / 09054380792
+                                    </div>
+                                  </div>
+
+                                  {/* CARD MIDDLE GRID */}
+                                  <div
+                                    className="main-content"
+                                    style={{
+                                      display: 'flex',
+                                      gap: '2.5mm',
+                                      alignItems: 'center',
+                                      flex: 1,
+                                      minHeight: 0,
+                                      margin: '0.5mm 0',
+                                    }}
+                                  >
+                                    {/* QR Code Container */}
+                                    <div
+                                      className="qr-wrapper"
+                                      style={{
+                                        background: '#ffffff',
+                                        padding: '1.2mm',
+                                        borderRadius: '2mm',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '22mm',
+                                        height: '22mm',
+                                        flexShrink: 0,
+                                        position: 'relative',
+                                      }}
+                                    >
+                                      <img
+                                        src={qrImg}
+                                        alt="QR"
+                                        style={{
+                                          width: '100%',
+                                          height: '100%',
+                                          objectFit: 'contain',
+                                          opacity: isExp ? 0.25 : 1,
+                                        }}
+                                      />
+                                      {isExp && (
+                                        <div
+                                          className="expired-overlay"
+                                          style={{
+                                            position: 'absolute',
+                                            inset: 0,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            background:
+                                              'rgba(220, 38, 38, 0.85)',
+                                            color: '#ffffff',
+                                            fontSize: '5pt',
+                                            fontWeight: 900,
+                                            textTransform: 'uppercase',
+                                            textAlign: 'center',
+                                            borderRadius: '2mm',
+                                            lineHeight: 1.1,
+                                          }}
+                                        >
+                                          <span>EXPIRED</span>
+                                          <span>BADGE</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Dynamic Fields */}
+                                    <div
+                                      className="details"
+                                      style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        minWidth: 0,
+                                        height: '100%',
+                                        textAlign: 'left',
+                                      }}
+                                    >
+                                      {/* FULL NAME */}
+                                      <div
+                                        className="field-group"
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          position: 'static',
+                                          margin: 0,
+                                          padding: 0,
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            position: 'static',
+                                            top: 'auto',
+                                            left: 'auto',
+                                            display: 'block',
+                                            fontSize: '4.5pt',
+                                            color: '#ffffff',
+                                            fontWeight: 800,
+                                            textTransform: 'uppercase',
+                                            marginBottom: '0.3mm',
+                                            lineHeight: 1,
+                                          }}
+                                        >
+                                          FULL NAME
+                                        </span>
+                                        <div
+                                          className="field-box"
+                                          style={{
+                                            background: '#ffffff',
+                                            color: '#000000',
+                                            borderRadius: '1mm',
+                                            padding: '0.6mm 1.2mm',
+                                            fontSize: '6pt',
+                                            fontWeight: 800,
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            lineHeight: 1.1,
+                                          }}
+                                        >
+                                          {m.full_name.toUpperCase()}
+                                        </div>
+                                      </div>
+
+                                      {/* CONTACT NUMBER */}
+                                      <div
+                                        className="field-group"
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          position: 'static',
+                                          margin: 0,
+                                          padding: 0,
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            position: 'static',
+                                            top: 'auto',
+                                            left: 'auto',
+                                            display: 'block',
+                                            fontSize: '4.5pt',
+                                            color: '#ffffff',
+                                            fontWeight: 800,
+                                            textTransform: 'uppercase',
+                                            marginBottom: '0.3mm',
+                                            lineHeight: 1,
+                                          }}
+                                        >
+                                          CONTACT NUMBER
+                                        </span>
+                                        <div
+                                          className="field-box"
+                                          style={{
+                                            background: '#ffffff',
+                                            color: '#000000',
+                                            borderRadius: '1mm',
+                                            padding: '0.6mm 1.2mm',
+                                            fontSize: '6pt',
+                                            fontWeight: 800,
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            lineHeight: 1.1,
+                                          }}
+                                        >
+                                          {m.phone || 'N/A'}
+                                        </div>
+                                      </div>
+
+                                      {/* DATES ROW */}
+                                      <div
+                                        className="dates-row"
+                                        style={{
+                                          display: 'flex',
+                                          gap: '1mm',
+                                          alignItems: 'flex-end',
+                                        }}
+                                      >
+                                        <div
+                                          className="field-group"
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            flex: 1,
+                                            minWidth: 0,
+                                            position: 'static',
+                                            margin: 0,
+                                            padding: 0,
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              position: 'static',
+                                              top: 'auto',
+                                              left: 'auto',
+                                              display: 'block',
+                                              fontSize: '4.5pt',
+                                              color: '#ffffff',
+                                              fontWeight: 800,
+                                              textTransform: 'uppercase',
+                                              marginBottom: '0.3mm',
+                                              lineHeight: 1,
+                                            }}
+                                          >
+                                            ISSUE DATE
+                                          </span>
+                                          <div
+                                            className="field-box"
+                                            style={{
+                                              background: '#ffffff',
+                                              color: '#000000',
+                                              borderRadius: '1mm',
+                                              padding: '0.5mm 0.4mm',
+                                              fontSize: '5pt',
+                                              fontWeight: 800,
+                                              textAlign: 'center',
+                                              lineHeight: 1.1,
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                            }}
+                                          >
+                                            {new Date(
+                                              issueDate
+                                            ).toLocaleDateString()}
+                                          </div>
+                                        </div>
+
+                                        <div
+                                          className="vertical-red-divider"
+                                          style={{
+                                            width: '0.3mm',
+                                            height: '6mm',
+                                            backgroundColor: '#dc2626',
+                                            flexShrink: 0,
+                                            marginBottom: '0.2mm',
+                                          }}
+                                        />
+
+                                        <div
+                                          className="field-group"
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            flex: 1,
+                                            minWidth: 0,
+                                            position: 'static',
+                                            margin: 0,
+                                            padding: 0,
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              position: 'static',
+                                              top: 'auto',
+                                              left: 'auto',
+                                              display: 'block',
+                                              fontSize: '4.5pt',
+                                              color: '#ffffff',
+                                              fontWeight: 800,
+                                              textTransform: 'uppercase',
+                                              marginBottom: '0.3mm',
+                                              lineHeight: 1,
+                                            }}
+                                          >
+                                            EXPIRATION
+                                          </span>
+                                          <div
+                                            className="field-box"
+                                            style={{
+                                              background: '#ffffff',
+                                              color: isExp
+                                                ? '#dc2626'
+                                                : '#000000',
+                                              borderRadius: '1mm',
+                                              padding: '0.5mm 0.4mm',
+                                              fontSize: '5pt',
+                                              fontWeight: 800,
+                                              textAlign: 'center',
+                                              lineHeight: 1.1,
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                            }}
+                                          >
+                                            {new Date(
+                                              finalExpDate
+                                            ).toLocaleDateString()}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* FOOTER */}
+                                  <div>
+                                    <div className="red-line" />
+                                    <div className="footer-text">
+                                      NON-REFUNDABLE &nbsp;•&nbsp;
+                                      NON-TRANSFERRABLE &nbsp;•&nbsp; BE
+                                      RESPONSIBLE WITH EQUIPMENT
+                                    </div>
+                                  </div>
                                 </div>
                               );
-                            }
-
-                            const sub = getMemberSub(m.member_id);
-                            const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
-                            const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
-                            const isExp = new Date(finalExpDate) < new Date();
-                            const card = getMemberCard(m.member_id);
-                            const qrPayload = card?.card_number || m.member_id;
-                            const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
-
-                            return (
-                              <div 
-                                key={`preview-${pageIdx}-${idx}-${m.id}`}
-                                className="card"
-                                style={{
-                                  width: `${template.cardWidthMm}mm`,
-                                  height: `${template.cardHeightMm}mm`,
-                                }}
-                              >
-                                {/* CARD TOP HEADER */}
-                                <div className="header">
-                                  <div className="gym-title">WOLF PALOMAR GYM</div>
-                                  <div className="header-red-line" />
-                                  <div className="gym-subtitle">MUAYTHAI BOXING</div>
-                                  <div className="gym-address">6B Judge A. Roldan St., Navotas City, Metro Manila</div>
-                                  <div className="gym-contact">09098893819 / 09054380792</div>
-                                </div>
-
-                                {/* CARD MIDDLE GRID */}
-                                <div className="main-content" style={{ display: 'flex', gap: '2.5mm', alignItems: 'center', flex: 1, minHeight: 0, margin: '0.5mm 0' }}>
-                                  
-                                  {/* QR Code Container */}
-                                  <div className="qr-wrapper" style={{ background: '#ffffff', padding: '1.2mm', borderRadius: '2mm', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22mm', height: '22mm', flexShrink: 0, position: 'relative' }}>
-                                    <img 
-                                      src={qrImg} 
-                                      alt="QR" 
-                                      style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: isExp ? 0.25 : 1 }} 
-                                    />
-                                    {isExp && (
-                                      <div className="expired-overlay" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(220, 38, 38, 0.85)', color: '#ffffff', fontSize: '5pt', fontWeight: 900, textTransform: 'uppercase', textAlign: 'center', borderRadius: '2mm', lineHeight: 1.1 }}>
-                                        <span>EXPIRED</span>
-                                        <span>BADGE</span>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Dynamic Fields */}
-                                  <div className="details" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, height: '100%', textAlign: 'left' }}>
-                                    
-                                    {/* FULL NAME */}
-                                    <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>
-                                      <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
-                                        FULL NAME
-                                      </span>
-                                      <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.6mm 1.2mm', fontSize: '6pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
-                                        {m.full_name.toUpperCase()}
-                                      </div>
-                                    </div>
-
-                                    {/* CONTACT NUMBER */}
-                                    <div className="field-group" style={{ display: 'flex', flexDirection: 'column', position: 'static', margin: 0, padding: 0 }}>
-                                      <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
-                                        CONTACT NUMBER
-                                      </span>
-                                      <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.6mm 1.2mm', fontSize: '6pt', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>
-                                        {m.phone || 'N/A'}
-                                      </div>
-                                    </div>
-
-                                    {/* DATES ROW */}
-                                    <div className="dates-row" style={{ display: 'flex', gap: '1mm', alignItems: 'flex-end' }}>
-                                      <div className="field-group" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, position: 'static', margin: 0, padding: 0 }}>
-                                        <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
-                                          ISSUE DATE
-                                        </span>
-                                        <div className="field-box" style={{ background: '#ffffff', color: '#000000', borderRadius: '1mm', padding: '0.5mm 0.4mm', fontSize: '5pt', fontWeight: 800, textAlign: 'center', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                                          {new Date(issueDate).toLocaleDateString()}
-                                        </div>
-                                      </div>
-
-                                      <div className="vertical-red-divider" style={{ width: '0.3mm', height: '6mm', backgroundColor: '#dc2626', flexShrink: 0, marginBottom: '0.2mm' }} />
-
-                                      <div className="field-group" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, position: 'static', margin: 0, padding: 0 }}>
-                                        <span style={{ position: 'static', top: 'auto', left: 'auto', display: 'block', fontSize: '4.5pt', color: '#ffffff', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.3mm', lineHeight: 1 }}>
-                                          EXPIRATION
-                                        </span>
-                                        <div className="field-box" style={{ background: '#ffffff', color: isExp ? '#dc2626' : '#000000', borderRadius: '1mm', padding: '0.5mm 0.4mm', fontSize: '5pt', fontWeight: 800, textAlign: 'center', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                                          {new Date(finalExpDate).toLocaleDateString()}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                  </div>
-
-                                </div>
-
-                                {/* FOOTER */}
-                                <div>
-                                  <div className="red-line" />
-                                  <div className="footer-text">
-                                    NON-REFUNDABLE &nbsp;•&nbsp; NON-TRANSFERRABLE &nbsp;•&nbsp; BE RESPONSIBLE WITH EQUIPMENT
-                                  </div>
-                                </div>
-
-                              </div>
-                            );
-                          })}
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                  )}
                 </div>
               </div>
             </div>
           </div>
-
         </div>
-
       </div>
 
       {/* MOBILE PERSISTENT BOTTOM ACTION BAR */}
@@ -1764,8 +2263,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
             className={`py-3 px-3 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-heading tracking-wider uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md font-extrabold border-none ${
               isInvalidDate
                 ? 'bg-slate-600 cursor-not-allowed opacity-40'
-                : cardFormat === 'manual_template' 
-                  ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer' 
+                : cardFormat === 'manual_template'
+                  ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer'
                   : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
             }`}
           >
@@ -1798,9 +2297,9 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
         </div>
       </div>
 
-      {/* STRICT REISSUE OVERWRITE CONFIRMATION MODAL */}
-      {showReissueConfirmModal && (
-        <div className="fixed inset-0 z-[17000] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+      {/* UNPAID MEMBER CONFIRMATION WARNING MODAL */}
+      {showUnpaidConfirmModal && (
+        <div className="fixed inset-0 z-[17000] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-[var(--bg-card)] border border-(--border-color) rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-left">
             <div className="flex items-center gap-3 text-amber-500 border-b border-(--border-color) pb-3">
               <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 shrink-0">
@@ -1808,61 +2307,61 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
               </div>
               <div>
                 <h3 className="font-heading font-black text-sm uppercase tracking-wider text-[var(--color-text)]">
-                  Confirm Card Overwrite & Reissue
+                  Unpaid Member Card Warning
                 </h3>
-                <span className="text-[10px] text-amber-500 font-bold block mt-0.5">
-                  Previous Member Card Will Be Invalidated
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold block mt-0.5">
+                  Payment Status: Not Paid Yet
                 </span>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed font-medium">
-              You are reissuing cards for <strong className="text-amber-400">{reissuingMembers.length} member(s)</strong> who already have active issued cards. 
-              Generating new QR tokens will <strong className="text-rose-400 underline">permanently invalidate their previous physical cards upon scanner check-in</strong>.
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+              Are you sure you want to print card even though this member is not
+              paid yet?
             </p>
 
-            {/* List affected active members */}
+            {/* List affected unpaid members */}
             <div className="p-3 bg-[var(--bg-input)] border border-(--border-color) rounded-2xl space-y-1.5 max-h-36 overflow-y-auto no-scrollbar">
               <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
-                Affected Cardholders:
+                Unpaid Member(s) Selected ({unpaidSelectedMembers.length}):
               </span>
-              {reissuingMembers.map(m => (
-                <div key={m.id} className="flex items-center justify-between text-xs font-mono py-1 px-2 rounded-lg bg-[var(--bg-page)] border border-(--border-color)">
-                  <span className="font-bold text-[var(--color-text)] truncate mr-2">{m.full_name}</span>
-                  <span className="text-slate-400 text-[10px] shrink-0">{m.member_id}</span>
+              {unpaidSelectedMembers.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between text-xs font-mono py-1 px-2.5 rounded-lg bg-[var(--bg-page)] border border-(--border-color)"
+                >
+                  <span className="font-bold text-[var(--color-text)] truncate mr-2">
+                    {m.full_name}
+                  </span>
+                  <span className="text-amber-600 dark:text-amber-400 font-bold text-[10px] shrink-0">
+                    UNPAID
+                  </span>
                 </div>
               ))}
             </div>
 
-            <div className="p-2.5 bg-slate-800/60 border border-slate-700 rounded-xl text-[10px] font-mono font-bold text-slate-300 flex items-center justify-between">
-              <span>New Expiration Date:</span>
-              <span className="text-emerald-400 font-extrabold">{new Date(customExpireDate).toLocaleDateString()}</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowReissueConfirmModal(false);
-                  setPendingAction(null);
-                }}
-                className="py-2.5 px-4 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-heading font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-colors"
+                onClick={handleRefuseUnpaidPrompt}
+                className="py-2.5 px-4 bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 text-xs font-heading font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5"
               >
-                Cancel
+                <XCircle className="w-4 h-4 text-rose-500" />
+                <span>No, Refuse</span>
               </button>
 
               <button
                 type="button"
-                onClick={handleConfirmReissue}
-                className="py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-heading font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-colors shadow-lg"
+                onClick={handleConfirmUnpaidPrompt}
+                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-heading font-extrabold uppercase tracking-wider rounded-xl cursor-pointer transition-colors shadow-lg flex items-center justify-center gap-1.5"
               >
-                Overwrite & Continue
+                <CheckCircle2 className="w-4 h-4 text-white" />
+                <span>Yes, Confirm</span>
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>,
     document.body
   );

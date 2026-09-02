@@ -10,11 +10,9 @@ interface MembershipOverviewSectionProps {
   onRenewMember?: (member: ExpiringMemberItem) => void;
 }
 
-export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps> = ({
-  metrics,
-  expiringMembers,
-  onRenewMember,
-}) => {
+export const MembershipOverviewSection: React.FC<
+  MembershipOverviewSectionProps
+> = ({ metrics, expiringMembers, onRenewMember }) => {
   const navigate = useNavigate();
 
   return (
@@ -48,7 +46,9 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
           <div className="text-lg sm:text-xl font-black text-emerald-900 dark:text-emerald-100 font-heading mt-0.5">
             {formatNumber(metrics.activeMembersCount)}
           </div>
-          <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400 mt-1">Valid passes</span>
+          <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400 mt-1">
+            Valid passes
+          </span>
         </div>
 
         <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 flex flex-col justify-between">
@@ -58,7 +58,9 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
           <div className="text-lg sm:text-xl font-black text-amber-900 dark:text-amber-100 font-heading mt-0.5">
             {formatNumber(metrics.expiringSoonCount)}
           </div>
-          <span className="text-[10px] text-amber-700/80 dark:text-amber-400 mt-1">Needs follow-up</span>
+          <span className="text-[10px] text-amber-700/80 dark:text-amber-400 mt-1">
+            Needs follow-up
+          </span>
         </div>
 
         <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 flex flex-col justify-between">
@@ -68,7 +70,9 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
           <div className="text-lg sm:text-xl font-black text-rose-900 dark:text-rose-100 font-heading mt-0.5">
             {formatNumber(metrics.expiredCount)}
           </div>
-          <span className="text-[10px] text-rose-700/80 dark:text-rose-400 mt-1">Lapsed plans</span>
+          <span className="text-[10px] text-rose-700/80 dark:text-rose-400 mt-1">
+            Lapsed plans
+          </span>
         </div>
 
         <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 flex flex-col justify-between">
@@ -78,7 +82,9 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
           <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-heading mt-0.5">
             {formatNumber(metrics.newMembersThisMonth)}
           </div>
-          <span className="text-[10px] text-blue-600/80 dark:text-blue-400 mt-1">This month</span>
+          <span className="text-[10px] text-blue-600/80 dark:text-blue-400 mt-1">
+            This month
+          </span>
         </div>
       </div>
 
@@ -121,15 +127,20 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                    member.daysRemaining <= 1 
-                      ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse' 
-                      : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                  }`}>
-                    {member.daysRemaining === 0 ? 'Today' : `${member.daysRemaining}d left`}
+                  <span
+                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                      member.daysRemaining <= 1
+                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {member.daysRemaining === 0
+                      ? 'Today'
+                      : `${member.daysRemaining}d left`}
                   </span>
 
-                  {member.activeSubscriptionsCount && member.activeSubscriptionsCount > 1 ? (
+                  {member.activeSubscriptionsCount &&
+                  member.activeSubscriptionsCount > 1 ? (
                     <button
                       type="button"
                       disabled
@@ -146,9 +157,16 @@ export const MembershipOverviewSection: React.FC<MembershipOverviewSectionProps>
                         if (onRenewMember) {
                           onRenewMember(member);
                         } else {
-                          navigate(`/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`, {
-                            state: { renewMemberId: member.member_id, memberName: member.full_name, triggerRenew: true }
-                          });
+                          navigate(
+                            `/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`,
+                            {
+                              state: {
+                                renewMemberId: member.member_id,
+                                memberName: member.full_name,
+                                triggerRenew: true,
+                              },
+                            }
+                          );
                         }
                       }}
                       className="px-2.5 py-1 text-[11px] font-bold bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white rounded-lg transition-all active:scale-95 cursor-pointer"

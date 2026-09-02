@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-import { 
-  ChevronUp, 
-  ChevronDown, 
-  ArrowUpDown, 
-  ChevronLeft, 
-  ChevronRight, 
-  Search 
+import {
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Search,
 } from 'lucide-react';
 
 export interface Column<T> {
@@ -32,14 +32,14 @@ interface TableProps<T> {
   loading?: boolean;
   loadingLabel?: string;
   getRowClassName?: (item: T) => string;
-  onRowClick?: (item: T) => void; 
+  onRowClick?: (item: T) => void;
 }
 
 export function Table<T>({
   data,
   columns,
   searchKeys = [],
-  searchPlaceholder = "Search records...",
+  searchPlaceholder = 'Search records...',
   defaultSortKey = '',
   defaultSortDirection = 'asc',
   itemsPerPage: propItemsPerPage,
@@ -49,7 +49,9 @@ export function Table<T>({
 }: TableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<string>(defaultSortKey);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(
+    defaultSortDirection
+  );
   const [currentPage, setCurrentPage] = useState(1);
 
   const [viewportItemsPerPage, setViewportItemsPerPage] = useState(() => {
@@ -76,7 +78,8 @@ export function Table<T>({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const itemsPerPage = propItemsPerPage !== undefined ? propItemsPerPage : viewportItemsPerPage;
+  const itemsPerPage =
+    propItemsPerPage !== undefined ? propItemsPerPage : viewportItemsPerPage;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -85,7 +88,7 @@ export function Table<T>({
   const filteredData = useMemo(() => {
     if (!searchQuery || searchKeys.length === 0) return data;
     const lowerQuery = searchQuery.toLowerCase();
-    
+
     return data.filter((item: any) => {
       return searchKeys.some((key) => {
         const val = item[key];
@@ -97,7 +100,7 @@ export function Table<T>({
 
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
-    const colDef = columns.find(col => col.key === sortKey);
+    const colDef = columns.find((col) => col.key === sortKey);
     const dirMultiplier = sortDirection === 'asc' ? 1 : -1;
 
     return [...filteredData].sort((a: any, b: any) => {
@@ -110,7 +113,7 @@ export function Table<T>({
       if (typeof valA === 'string' && typeof valB === 'string') {
         return valA.localeCompare(valB) * dirMultiplier;
       }
-      
+
       if (valA < valB) return -1 * dirMultiplier;
       if (valA > valB) return 1 * dirMultiplier;
       return 0;
@@ -130,14 +133,16 @@ export function Table<T>({
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
-      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
       setSortDirection('asc');
     }
   };
 
-  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  const isDark =
+    typeof document !== 'undefined' &&
+    document.documentElement.classList.contains('dark');
 
   return (
     <div className="space-y-4">
@@ -157,15 +162,19 @@ export function Table<T>({
       )}
 
       <div className="border border-slate-200 dark:border-white/5 rounded-xl overflow-x-auto bg-slate-50/50 dark:bg-neutral-900/30">
-        <table className="w-full min-w-max border-collapse text-left text-sm">  
+        <table className="w-full min-w-max border-collapse text-left text-sm">
           <thead className="bg-slate-100 dark:bg-[#13161a] border-b border-slate-200 dark:border-white/5">
             <tr>
               {columns.map((col) => {
                 const isSortedColumn = sortKey === col.key;
-                
+
                 // Set native ARIA sort values [ascending | descending | none]
-                const ariaSort = col.sortable 
-                  ? (isSortedColumn ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none') 
+                const ariaSort = col.sortable
+                  ? isSortedColumn
+                    ? sortDirection === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'
                   : undefined;
 
                 return (
@@ -184,12 +193,21 @@ export function Table<T>({
                         <span className="text-slate-500 dark:text-slate-400">
                           {isSortedColumn ? (
                             sortDirection === 'asc' ? (
-                              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                              <ChevronUp
+                                className="w-3.5 h-3.5"
+                                aria-hidden="true"
+                              />
                             ) : (
-                              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                              <ChevronDown
+                                className="w-3.5 h-3.5"
+                                aria-hidden="true"
+                              />
                             )
                           ) : (
-                            <ArrowUpDown className="w-3 h-3 opacity-60" aria-hidden="true" />
+                            <ArrowUpDown
+                              className="w-3 h-3 opacity-60"
+                              aria-hidden="true"
+                            />
                           )}
                         </span>
                       </button>
@@ -206,12 +224,18 @@ export function Table<T>({
           <tbody className="divide-y divide-slate-200 dark:divide-white/5">
             {loading ? (
               Array.from({ length: 5 }).map((_, rIdx) => (
-                <tr key={`skeleton-row-${rIdx}`} className="border-b border-slate-200 dark:border-white/5">
+                <tr
+                  key={`skeleton-row-${rIdx}`}
+                  className="border-b border-slate-200 dark:border-white/5"
+                >
                   {columns.map((col, cIdx) => (
-                    <td key={`skeleton-cell-${cIdx}`} className="py-2.5 px-4 align-middle">
+                    <td
+                      key={`skeleton-cell-${cIdx}`}
+                      className="py-2.5 px-4 align-middle"
+                    >
                       <Skeleton
                         height={col.key === 'barcode_id' ? 32 : 18}
-                        width={col.key === 'select' ? 18 : "75%"}
+                        width={col.key === 'select' ? 18 : '75%'}
                         baseColor={isDark ? '#1e232d' : '#e2e8f0'}
                         highlightColor={isDark ? '#2d333f' : '#f1f5f9'}
                         borderRadius="6px"
@@ -222,17 +246,24 @@ export function Table<T>({
               ))
             ) : paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="p-8 text-center text-xs text-slate-400">
+                <td
+                  colSpan={columns.length}
+                  className="p-8 text-center text-xs text-slate-400"
+                >
                   No matching records found.
                 </td>
               </tr>
             ) : (
               paginatedData.map((item, rowIdx) => {
-                const rowStyleClass = getRowClassName ? getRowClassName(item) : '';
+                const rowStyleClass = getRowClassName
+                  ? getRowClassName(item)
+                  : '';
                 const isClickableRow = !!onRowClick;
 
                 // Handle keyboard enter/space triggered actions on the row
-                const handleRowKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                const handleRowKeyDown = (
+                  e: React.KeyboardEvent<HTMLTableRowElement>
+                ) => {
                   if (isClickableRow && (e.key === 'Enter' || e.key === ' ')) {
                     e.preventDefault();
                     onRowClick(item);
@@ -240,8 +271,8 @@ export function Table<T>({
                 };
 
                 return (
-                  <tr 
-                    key={rowIdx} 
+                  <tr
+                    key={rowIdx}
                     onClick={() => onRowClick?.(item)}
                     onKeyDown={handleRowKeyDown}
                     tabIndex={isClickableRow ? 0 : undefined}
@@ -251,8 +282,8 @@ export function Table<T>({
                     } ${rowStyleClass}`}
                   >
                     {columns.map((col) => (
-                      <td 
-                        key={col.key} 
+                      <td
+                        key={col.key}
                         className={`py-2.5 px-4 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap ${col.cellClassName || ''}`}
                       >
                         {col.render ? col.render(item) : (item as any)[col.key]}
@@ -270,15 +301,25 @@ export function Table<T>({
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 py-2 text-xs font-body">
           {/* Enhanced slate contrast color for body text */}
           <span className="text-slate-600 dark:text-slate-300">
-            Showing <span className="font-semibold text-slate-900 dark:text-white">{startIndex + 1}</span> to{' '}
-            <span className="font-semibold text-slate-900 dark:text-white">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
-            <span className="font-semibold text-slate-900 dark:text-white">{totalItems}</span> entries
+            Showing{' '}
+            <span className="font-semibold text-slate-900 dark:text-white">
+              {startIndex + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-slate-900 dark:text-white">
+              {Math.min(startIndex + itemsPerPage, totalItems)}
+            </span>{' '}
+            of{' '}
+            <span className="font-semibold text-slate-900 dark:text-white">
+              {totalItems}
+            </span>{' '}
+            entries
           </span>
 
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={clampedPage === 1}
               title="Previous page"
               aria-label="Previous page"
@@ -306,7 +347,9 @@ export function Table<T>({
 
             <button
               type="button"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+              }
               disabled={clampedPage === totalPages}
               title="Next page"
               aria-label="Next page"

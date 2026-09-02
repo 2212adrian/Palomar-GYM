@@ -1,25 +1,32 @@
 // src/pages/sales/Sales.tsx
-import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useContext,
+  useRef,
+  useCallback,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  format, 
-  startOfWeek, 
-  addDays, 
-  isToday, 
-  startOfDay, 
+import {
+  format,
+  startOfWeek,
+  addDays,
+  isToday,
+  startOfDay,
   getDay,
-  parseISO 
+  parseISO,
 } from 'date-fns';
-import { 
-  Plus, 
-  ChevronLeft, 
-  ChevronRight, 
-  RotateCcw, 
-  ShoppingBag, 
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  ShoppingBag,
   FileSpreadsheet,
   Printer,
   Search,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -28,19 +35,19 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { createPortal } from 'react-dom';
 
 // Supabase & Authentication Stores
-import { supabase } from '../../lib/supabase/client'; 
+import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
-import { UndoToast } from '../../components/ui/UndoToast'; 
-import { TabLoader } from '../../components/ui/TabLoader'; 
+import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
+import { TabLoader } from '../../components/ui/TabLoader';
 import { TimelineBar } from '../../components/ui/TimelineBar';
 import { HeaderActionsContext } from '../../routes';
 import { SalesDialog } from './components/SalesDialog';
-import { Products } from './Products'; 
+import { Products } from './Products';
 import { SalesRecycleBin } from './components/SalesRecycleBin';
 
 // Separated Modular Components
@@ -51,7 +58,9 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard } from '../../components/ui/TimelineCard';
 
 // ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
-const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neutral' }> = ({ trend }) => {
+const DynamicBanknoteIcon: React.FC<{
+  trend: 'increasing' | 'decreasing' | 'neutral';
+}> = ({ trend }) => {
   return (
     <motion.div
       key={trend}
@@ -59,8 +68,8 @@ const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neut
         trend === 'increasing'
           ? { scale: 0.4, rotate: -20, opacity: 0 }
           : trend === 'decreasing'
-          ? { scale: 0.4, rotate: 20, opacity: 0 }
-          : { scale: 1, rotate: 0, opacity: 1 }
+            ? { scale: 0.4, rotate: 20, opacity: 0 }
+            : { scale: 1, rotate: 0, opacity: 1 }
       }
       animate={
         trend === 'increasing'
@@ -71,34 +80,34 @@ const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neut
               filter: [
                 'drop-shadow(0 0 0px rgba(16,185,129,0))',
                 'drop-shadow(0 0 14px rgba(16,185,129,0.9))',
-                'drop-shadow(0 0 4px rgba(16,185,129,0.4))'
-              ]
+                'drop-shadow(0 0 4px rgba(16,185,129,0.4))',
+              ],
             }
           : trend === 'decreasing'
-          ? {
-              scale: [0.4, 1.55, 0.95, 1],
-              rotate: [20, -8, 3, 0],
-              opacity: [0, 1, 1, 1],
-              filter: [
-                'drop-shadow(0 0 0px rgba(239,68,68,0))',
-                'drop-shadow(0 0 14px rgba(239,68,68,0.9))',
-                'drop-shadow(0 0 4px rgba(239,68,68,0.4))'
-              ]
-            }
-          : {
-              scale: 1,
-              rotate: 0,
-              opacity: 1,
-              filter: 'drop-shadow(0 0 0px rgba(0,0,0,0))'
-            }
+            ? {
+                scale: [0.4, 1.55, 0.95, 1],
+                rotate: [20, -8, 3, 0],
+                opacity: [0, 1, 1, 1],
+                filter: [
+                  'drop-shadow(0 0 0px rgba(239,68,68,0))',
+                  'drop-shadow(0 0 14px rgba(239,68,68,0.9))',
+                  'drop-shadow(0 0 4px rgba(239,68,68,0.4))',
+                ],
+              }
+            : {
+                scale: 1,
+                rotate: 0,
+                opacity: 1,
+                filter: 'drop-shadow(0 0 0px rgba(0,0,0,0))',
+              }
       }
       transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
       className={`shrink-0 flex items-center justify-center ${
         trend === 'increasing'
           ? 'text-emerald-500 dark:text-emerald-400'
           : trend === 'decreasing'
-          ? 'text-rose-500 dark:text-rose-400'
-          : 'text-emerald-500 dark:text-emerald-400'
+            ? 'text-rose-500 dark:text-rose-400'
+            : 'text-emerald-500 dark:text-emerald-400'
       }`}
     >
       {trend === 'increasing' ? (
@@ -175,7 +184,7 @@ const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
       },
       onComplete() {
         prevValueRef.current = value;
-      }
+      },
     });
 
     return () => controls.stop();
@@ -187,13 +196,29 @@ const AnimatedCurrency: React.FC<{ value: number }> = ({ value }) => {
 const PAYMENT_FILTERS = [
   { label: 'All', value: 'All' },
   { label: 'Cash', value: 'Cash' },
-  { label: 'GCash', value: 'GCash' }
+  { label: 'GCash', value: 'GCash' },
 ];
 
 const isTransactionDeletable = (tx: any) => {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const txDate = tx.created_at ? format(new Date(tx.created_at), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  const txDate = tx.created_at
+    ? format(new Date(tx.created_at), 'yyyy-MM-dd')
+    : format(new Date(), 'yyyy-MM-dd');
   return txDate === todayStr;
+};
+
+// Formatter to produce clean human-readable product titles for the undo toast
+const formatSalesToastTitle = (tx: any) => {
+  if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+    const itemsSummary = tx.items
+      .map(
+        (i: any) =>
+          `${i.productName || i.product_name || 'Item'} (${i.quantity || 1}x)`
+      )
+      .join(', ');
+    return itemsSummary;
+  }
+  return tx.product_name || 'Product';
 };
 
 const TransactionSkeleton: React.FC = () => {
@@ -244,7 +269,7 @@ export const Sales: React.FC = () => {
   const { user, profile } = useAuthStore() as any;
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
-    return (profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff');
+    return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
   const handlePcViewTransition = (view: 'register' | 'inventory') => {
@@ -261,20 +286,27 @@ export const Sales: React.FC = () => {
     }
   }, [role, activeView, navigate]);
 
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 0 })
   );
-  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() =>
+    getDay(new Date())
+  );
 
   const selectedDate = useMemo(() => {
     return addDays(currentWeekStart, selectedDayIndex);
   }, [currentWeekStart, selectedDayIndex]);
 
-  const dateStr = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+  const dateStr = useMemo(
+    () => format(selectedDate, 'yyyy-MM-dd'),
+    [selectedDate]
+  );
 
   const [ledgerSearch, setLedgerSearch] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash'>('All');
-  
+  const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash'>(
+    'All'
+  );
+
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [ratesConfig, setRatesConfig] = useState<any>(null);
@@ -282,6 +314,8 @@ export const Sales: React.FC = () => {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
+
+  // Consolidated Stacked Deletion states
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
   const stagedDeletionsRef = useRef<any[]>([]);
   stagedDeletionsRef.current = stagedDeletions;
@@ -301,14 +335,16 @@ export const Sales: React.FC = () => {
 
   useEffect(() => {
     if (showLiveScanner) {
-      Html5Qrcode.getCameras().then((devices) => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-          if (!selectedCameraId) {
-            setSelectedCameraId(devices[0].id);
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          if (devices && devices.length > 0) {
+            setCameras(devices);
+            if (!selectedCameraId) {
+              setSelectedCameraId(devices[0].id);
+            }
           }
-        }
-      }).catch(console.warn);
+        })
+        .catch(console.warn);
     }
   }, [showLiveScanner]);
 
@@ -324,7 +360,8 @@ export const Sales: React.FC = () => {
       }
     };
     window.addEventListener('toggle-sales-view', handleSalesSlide);
-    return () => window.removeEventListener('toggle-sales-view', handleSalesSlide);
+    return () =>
+      window.removeEventListener('toggle-sales-view', handleSalesSlide);
   }, [navigate, role]);
 
   useEffect(() => {
@@ -334,7 +371,10 @@ export const Sales: React.FC = () => {
     };
     window.addEventListener('product-selection-change', handleSelectionChange);
     return () => {
-      window.removeEventListener('product-selection-change', handleSelectionChange);
+      window.removeEventListener(
+        'product-selection-change',
+        handleSelectionChange
+      );
     };
   }, []);
 
@@ -354,98 +394,115 @@ export const Sales: React.FC = () => {
   };
 
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
-  const fetchTransactions = useCallback(async (isBackground: boolean = false) => {
-    const cacheKey = `sales_sanitized_${dateStr}`;
+  const fetchTransactions = useCallback(
+    async (isBackground: boolean = false) => {
+      const cacheKey = `sales_sanitized_${dateStr}`;
 
-    // 1. Instant Cache Hydration
-    if (!isBackground) {
-      const cachedSession = sessionStorage.getItem(cacheKey);
-      if (cachedSession) {
-        try {
-          const parsed = JSON.parse(cachedSession);
-          if (Array.isArray(parsed)) {
-            setTransactions(parsed);
+      // 1. Instant Cache Hydration
+      if (!isBackground) {
+        const cachedSession = sessionStorage.getItem(cacheKey);
+        if (cachedSession) {
+          try {
+            const parsed = JSON.parse(cachedSession);
+            if (Array.isArray(parsed)) {
+              setTransactions(parsed);
+            }
+          } catch (e) {
+            console.error('Failed to parse cached sales session:', e);
           }
-        } catch (e) {
-          console.error('Failed to parse cached sales session:', e);
+        } else {
+          setLoadingTransactions(true);
         }
-      } else {
-        setLoadingTransactions(true);
       }
-    }
-
-    try {
-      // 2. Try RPC for sanitized DTO first
-      let freshTransactions: any[] | null = null;
 
       try {
-        const { data, error } = await supabase.rpc('get_sanitized_sales', {
-          target_date: dateStr
-        });
+        // 2. Try RPC for sanitized DTO first
+        let freshTransactions: any[] | null = null;
 
-        if (!error && data) {
-          freshTransactions = data;
-        } else if (error) {
-          const isOfflineErr = error?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
-          if (!isOfflineErr) {
-            console.warn('RPC get_sanitized_sales fallback triggered:', error.message || error);
-          }
-        }
-      } catch (rpcErr: any) {
-        const isOfflineErr = rpcErr?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
-        if (!isOfflineErr) {
-          console.warn('RPC get_sanitized_sales invocation error:', rpcErr);
-        }
-      }
-
-      // 3. Fallback to direct table query if RPC is not available or errored
-      if (!freshTransactions && (typeof navigator === 'undefined' || navigator.onLine)) {
         try {
-          const startOfDay = new Date(`${dateStr}T00:00:00+08:00`).toISOString();
-          const endOfDay = new Date(`${dateStr}T23:59:59.999+08:00`).toISOString();
+          const { data, error } = await supabase.rpc('get_sanitized_sales', {
+            target_date: dateStr,
+          });
 
-          const { data: salesData, error: salesErr } = await supabase
-            .from('sales')
-            .select('*')
-            .is('deleted_at', null)
-            .gte('created_at', startOfDay)
-            .lte('created_at', endOfDay)
-            .order('created_at', { ascending: false });
-
-          if (!salesErr && salesData) {
-            freshTransactions = salesData.map((s: any) => ({
-              id: String(s.id),
-              created_at: s.created_at,
-              receipt_no: s.receipt_no || String(s.id),
-              items: s.items || [],
-              product_name: s.product_name || 'Multiple Items',
-              payment_method: s.payment_method,
-              amount_received: s.amount_received,
-              change_calculated: s.change_calculated,
-              total_amount: s.total_amount,
-              gcash_fee_applied: s.gcash_fee_applied || 0,
-              reference_number: s.reference_number
-            }));
+          if (!error && data) {
+            freshTransactions = data;
+          } else if (error) {
+            const isOfflineErr =
+              error?.message?.includes('No internet connection') ||
+              (typeof navigator !== 'undefined' && !navigator.onLine);
+            if (!isOfflineErr) {
+              console.warn(
+                'RPC get_sanitized_sales fallback triggered:',
+                error.message || error
+              );
+            }
           }
-        } catch (directErr) {
-          // Direct query failed
+        } catch (rpcErr: any) {
+          const isOfflineErr =
+            rpcErr?.message?.includes('No internet connection') ||
+            (typeof navigator !== 'undefined' && !navigator.onLine);
+          if (!isOfflineErr) {
+            console.warn('RPC get_sanitized_sales invocation error:', rpcErr);
+          }
+        }
+
+        // 3. Fallback to direct table query if RPC is not available or errored
+        if (
+          !freshTransactions &&
+          (typeof navigator === 'undefined' || navigator.onLine)
+        ) {
+          try {
+            const startOfDay = new Date(
+              `${dateStr}T00:00:00+08:00`
+            ).toISOString();
+            const endOfDay = new Date(
+              `${dateStr}T23:59:59.999+08:00`
+            ).toISOString();
+
+            const { data: salesData, error: salesErr } = await supabase
+              .from('sales')
+              .select('*')
+              .is('deleted_at', null)
+              .gte('created_at', startOfDay)
+              .lte('created_at', endOfDay)
+              .order('created_at', { ascending: false });
+
+            if (!salesErr && salesData) {
+              freshTransactions = salesData.map((s: any) => ({
+                id: String(s.id),
+                created_at: s.created_at,
+                receipt_no: s.receipt_no || String(s.id),
+                items: s.items || [],
+                product_name: s.product_name || 'Multiple Items',
+                payment_method: s.payment_method,
+                amount_received: s.amount_received,
+                change_calculated: s.change_calculated,
+                total_amount: s.total_amount,
+                gcash_fee_applied: s.gcash_fee_applied || 0,
+                reference_number: s.reference_number,
+              }));
+            }
+          } catch (directErr) {
+            // Direct query failed
+          }
+        }
+
+        if (freshTransactions) {
+          setTransactions(freshTransactions);
+          sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
+        }
+      } catch (err) {
+        // General error guard
+      } finally {
+        if (!isBackground) {
+          setLoadingTransactions(false);
         }
       }
+    },
+    [dateStr]
+  );
 
-      if (freshTransactions) {
-        setTransactions(freshTransactions);
-        sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
-      }
-    } catch (err) {
-      // General error guard
-    } finally {
-      if (!isBackground) {
-        setLoadingTransactions(false);
-      }
-    }
-  }, [dateStr]);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('products')
@@ -457,7 +514,7 @@ export const Sales: React.FC = () => {
     } catch (err) {
       console.error('Error loading products list:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRatesConfig();
@@ -467,24 +524,32 @@ export const Sales: React.FC = () => {
     const channelId = `sales_rt_${dateStr}_${Date.now()}`;
     const salesChannel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
-        fetchTransactions(true);
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        () => {
+          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+          fetchTransactions(true);
+        }
+      )
       .subscribe();
 
     const productsChannel = supabase
       .channel(`products_rt_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        fetchProducts();
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => {
+          fetchProducts();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(productsChannel);
     };
-  }, [dateStr, fetchTransactions]);
+  }, [dateStr, fetchTransactions, fetchProducts]);
 
   const isTabSelectable = (date: Date) => {
     const today = new Date();
@@ -514,7 +579,8 @@ export const Sales: React.FC = () => {
   const filteredDayTransactions = useMemo(() => {
     return dayTransactions.filter((t: any) => {
       const q = ledgerSearch.toLowerCase().trim();
-      const matchesSearch = q === '' ||
+      const matchesSearch =
+        q === '' ||
         t.product_name?.toLowerCase().includes(q) ||
         t.receipt_no?.toLowerCase().includes(q) ||
         t.id?.toLowerCase().includes(q) ||
@@ -523,9 +589,13 @@ export const Sales: React.FC = () => {
 
       let matchesFilter = true;
       if (paymentFilter === 'Cash') {
-        matchesFilter = (t.payment_method || '').toLowerCase().includes('cash') && !(t.payment_method || '').toLowerCase().includes('gcash');
+        matchesFilter =
+          (t.payment_method || '').toLowerCase().includes('cash') &&
+          !(t.payment_method || '').toLowerCase().includes('gcash');
       } else if (paymentFilter === 'GCash') {
-        matchesFilter = (t.payment_method || '').toLowerCase().includes('gcash');
+        matchesFilter = (t.payment_method || '')
+          .toLowerCase()
+          .includes('gcash');
       }
 
       return matchesSearch && matchesFilter;
@@ -546,11 +616,19 @@ export const Sales: React.FC = () => {
     const el = loadMoreRef.current;
     if (!el) return;
 
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && visibleCount < filteredDayTransactions.length) {
-        setVisibleCount(prev => Math.min(prev + 20, filteredDayTransactions.length));
-      }
-    }, { threshold: 0.1, rootMargin: '300px' });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0].isIntersecting &&
+          visibleCount < filteredDayTransactions.length
+        ) {
+          setVisibleCount((prev) =>
+            Math.min(prev + 20, filteredDayTransactions.length)
+          );
+        }
+      },
+      { threshold: 0.1, rootMargin: '300px' }
+    );
 
     observer.observe(el);
     return () => {
@@ -563,10 +641,15 @@ export const Sales: React.FC = () => {
   }, [filteredDayTransactions, visibleCount]);
 
   const dailyRevenue = useMemo(() => {
-    return dayTransactions.reduce((acc, t) => acc + (Number(t.total_amount) || 0), 0);
+    return dayTransactions.reduce(
+      (acc, t) => acc + (Number(t.total_amount) || 0),
+      0
+    );
   }, [dayTransactions]);
 
-  const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
+  const [revenueTrend, setRevenueTrend] = useState<
+    'increasing' | 'decreasing' | 'neutral'
+  >('neutral');
   const prevRevenueRef = useRef<number>(dailyRevenue);
 
   useEffect(() => {
@@ -595,7 +678,13 @@ export const Sales: React.FC = () => {
   const itemsSoldToday = useMemo(() => {
     return dayTransactions.reduce((acc, tx) => {
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
-        return acc + tx.items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
+        return (
+          acc +
+          tx.items.reduce(
+            (sum: number, item: any) => sum + (Number(item.quantity) || 0),
+            0
+          )
+        );
       }
       return acc + (Number(tx.quantity) || 1);
     }, 0);
@@ -609,29 +698,33 @@ export const Sales: React.FC = () => {
           revenue: dailyRevenue,
           salesCount: dailyCount,
           itemsSold: itemsSoldToday,
-          revenueTrend
-        }
+          revenueTrend,
+        },
       })
     );
   }, [dailyRevenue, dailyCount, itemsSoldToday, revenueTrend]);
 
   const handleSaleSuccess = async (newTx: any) => {
     try {
-      const calculatedGcashFee = newTx.paymentMethod === 'GCash' ? (ratesConfig?.gcash_fee || 10.00) : 0.00;
+      const calculatedGcashFee =
+        newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
 
       // Inserting into sales automatically decrements inventory via DB trigger `tr_sales_deduct_stock_on_insert`
       const { data: insertedSale, error } = await supabase
         .from('sales')
-        .insert([{
-          items: newTx.items,
-          product_name: newTx.productName,
-          payment_method: newTx.paymentMethod,
-          amount_received: newTx.amountReceived,
-          change_calculated: newTx.changeCalculated,
-          total_amount: newTx.totalAmount,
-          gcash_fee_applied: calculatedGcashFee,
-          reference_number: newTx.referenceNumber || newTx.reference_number || null
-        }])
+        .insert([
+          {
+            items: newTx.items,
+            product_name: newTx.productName,
+            payment_method: newTx.paymentMethod,
+            amount_received: newTx.amountReceived,
+            change_calculated: newTx.changeCalculated,
+            total_amount: newTx.totalAmount,
+            gcash_fee_applied: calculatedGcashFee,
+            reference_number:
+              newTx.referenceNumber || newTx.reference_number || null,
+          },
+        ])
         .select()
         .single();
 
@@ -641,9 +734,12 @@ export const Sales: React.FC = () => {
         setNewlyAddedId(insertedSale.id);
         setTimeout(() => setNewlyAddedId(null), 2500);
 
-        setTransactions(prev => {
+        setTransactions((prev) => {
           const updated = [insertedSale, ...prev];
-          sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+          sessionStorage.setItem(
+            `sales_sanitized_${dateStr}`,
+            JSON.stringify(updated)
+          );
           return updated;
         });
       }
@@ -657,20 +753,29 @@ export const Sales: React.FC = () => {
       const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
       const todayIndex = getDay(today);
 
-      setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
-      setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
+      setCurrentWeekStart((prev) =>
+        prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart
+      );
+      setSelectedDayIndex((prev) => (prev === todayIndex ? prev : todayIndex));
       setVisibleCount(25);
 
-      const itemsList = newTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || newTx.productName;
+      const itemsList =
+        newTx.items
+          ?.map(
+            (i: any) => `${i.productName || i.product_name} (${i.quantity}x)`
+          )
+          .join(', ') || newTx.productName;
       const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
 
       logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id)
         .then(() => fetchProducts())
         .catch(console.error);
-
     } catch (err: any) {
       console.error('Error saving sale transaction:', err);
-      toast.error(err.message || 'Problem saving transaction. Please check your network connection.');
+      toast.error(
+        err.message ||
+          'Problem saving transaction. Please check your network connection.'
+      );
       throw err;
     }
   };
@@ -681,78 +786,145 @@ export const Sales: React.FC = () => {
       return;
     }
 
-    if (deletingIds.includes(tx.id)) return;
+    const strId = String(tx.id);
+    if (deletingIds.includes(strId)) return;
 
-    setDeletingIds(prev => [...prev, tx.id]);
+    setDeletingIds((prev) => [...prev, strId]);
 
     setTimeout(() => {
-      setStagedDeletions(prev => [...prev, tx]);
-      setTransactions(prev => {
-        const updated = prev.filter(t => t.id !== tx.id);
-        sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+      setStagedDeletions((prev) => [...prev, tx]);
+      setTransactions((prev) => {
+        const updated = prev.filter((t) => String(t.id) !== strId);
+        sessionStorage.setItem(
+          `sales_sanitized_${dateStr}`,
+          JSON.stringify(updated)
+        );
         return updated;
       });
-      setDeletingIds(prev => prev.filter(id => id !== tx.id));
+      setDeletingIds((prev) => prev.filter((id) => id !== strId));
     }, 380);
   };
 
-  const handleConfirmDelete = useCallback(async (stagedTx: any) => {
-    try {
-      const { error } = await supabase
-        .from('sales')
-        .delete()
-        .eq('id', stagedTx.id);
+  // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
+  const handleConfirmDelete = useCallback(
+    async (id: string) => {
+      const stagedTx = stagedDeletionsRef.current.find(
+        (t) => String(t.id) === String(id)
+      );
+      if (!stagedTx) return;
 
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+          .from('sales')
+          .delete()
+          .eq('id', stagedTx.id);
 
-      const itemsList = stagedTx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || stagedTx.product_name;
-      const auditDetails = `Moved sale transaction (₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)} via ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}) to Recycle Bin — Items: ${itemsList}`;
+        if (error) throw error;
 
-      await logAudit('SALE_REMOVED', auditDetails, stagedTx.id);
+        const itemsList =
+          stagedTx.items
+            ?.map(
+              (i: any) => `${i.productName || i.product_name} (${i.quantity}x)`
+            )
+            .join(', ') || stagedTx.product_name;
+        const auditDetails = `Moved sale transaction (₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)} via ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}) to Recycle Bin — Items: ${itemsList}`;
 
-      toast.success('This sale has been moved to your Recycle Bin.');
-    } catch (err: any) {
-      console.error('Failed to commit sale deletion to database:', err);
-      toast.error(err.message || 'There was a problem deleting this sale. Please try again.');
-      setTransactions(prev => {
-        const updated = [stagedTx, ...prev.filter(t => t.id !== stagedTx.id)].sort((a, b) => {
-          const dateA = a.created_at || a.createdAt || '';
-          const dateB = b.created_at || b.createdAt || '';
-          return dateB.localeCompare(dateA);
+        await logAudit('SALE_REMOVED', auditDetails, stagedTx.id);
+
+        toast.success('Sale moved to Recycle Bin.');
+      } catch (err: any) {
+        console.error('Failed to commit sale deletion to database:', err);
+        toast.error(
+          err.message ||
+            'There was a problem deleting this sale. Please try again.'
+        );
+        setTransactions((prev) => {
+          const updated = [
+            stagedTx,
+            ...prev.filter((t) => String(t.id) !== String(id)),
+          ].sort((a, b) => {
+            const dateA = a.created_at || a.createdAt || '';
+            const dateB = b.created_at || b.createdAt || '';
+            return dateB.localeCompare(dateA);
+          });
+          sessionStorage.setItem(
+            `sales_sanitized_${dateStr}`,
+            JSON.stringify(updated)
+          );
+          return updated;
         });
-        sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
-        return updated;
-      });
-    } finally {
-      setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
-      fetchProducts();
-    }
-  }, [dateStr]);
+      } finally {
+        setStagedDeletions((prev) =>
+          prev.filter((t) => String(t.id) !== String(id))
+        );
+        fetchProducts();
+      }
+    },
+    [dateStr, fetchProducts]
+  );
 
-  const handleUndoDelete = (stagedTx: any) => {
-    setDeletingIds(prev => prev.filter(id => id !== stagedTx.id));
-    setTransactions(prev => {
-      const updated = [stagedTx, ...prev].sort((a, b) => {
+  const handleUndoDelete = (id: string) => {
+    const stagedTx = stagedDeletionsRef.current.find(
+      (t) => String(t.id) === String(id)
+    );
+    if (!stagedTx) return;
+
+    setDeletingIds((prev) => prev.filter((item) => item !== String(id)));
+    setTransactions((prev) => {
+      const updated = [
+        stagedTx,
+        ...prev.filter((t) => String(t.id) !== String(id)),
+      ].sort((a, b) => {
         const dateA = a.created_at || a.createdAt || '';
         const dateB = b.created_at || b.createdAt || '';
         return dateB.localeCompare(dateA);
       });
-      sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+      sessionStorage.setItem(
+        `sales_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
       return updated;
     });
-    setStagedDeletions(prev => prev.filter(t => t.id !== stagedTx.id));
-    toast.info('Deletion canceled. The transaction has been put back.');
+    setStagedDeletions((prev) =>
+      prev.filter((t) => String(t.id) !== String(id))
+    );
+    toast.info('Sale transaction restored.');
   };
 
+  const handleConfirmAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToCommit = [...stagedDeletionsRef.current];
+    itemsToCommit.forEach((tx) => handleConfirmDelete(String(tx.id)));
+  };
+
+  const handleUndoAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToRestore = [...stagedDeletionsRef.current];
+    setDeletingIds([]);
+    setTransactions((prev) => {
+      const existingIds = new Set(itemsToRestore.map((i) => String(i.id)));
+      const filtered = prev.filter((item) => !existingIds.has(String(item.id)));
+      const updated = [...itemsToRestore, ...filtered].sort((a, b) => {
+        const dateA = a.created_at || a.createdAt || '';
+        const dateB = b.created_at || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+      sessionStorage.setItem(
+        `sales_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
+      return updated;
+    });
+    setStagedDeletions([]);
+    toast.info(`Restored all ${itemsToRestore.length} sale transactions.`);
+  };
+
+  // Clean up any staged deletes immediately if user leaves page
   useEffect(() => {
     return () => {
       if (stagedDeletionsRef.current.length > 0) {
-        stagedDeletionsRef.current.forEach(tx => {
-          supabase
-            .from('sales')
-            .delete()
-            .eq('id', tx.id)
-            .then();
+        stagedDeletionsRef.current.forEach((tx) => {
+          supabase.from('sales').delete().eq('id', tx.id).then();
         });
       }
     };
@@ -767,7 +939,9 @@ export const Sales: React.FC = () => {
               <Button
                 onClick={() => {
                   if (stagedDeletionsRef.current.length > 0) {
-                    stagedDeletionsRef.current.forEach(tx => handleConfirmDelete(tx));
+                    stagedDeletionsRef.current.forEach((tx) =>
+                      handleConfirmDelete(String(tx.id))
+                    );
                   }
                   setIsRecycleBinOpen(true);
                 }}
@@ -806,7 +980,11 @@ export const Sales: React.FC = () => {
         setActions(
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
             <Button
-              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-recovery'))}
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('trigger-product-recovery')
+                )
+              }
               variant="secondary"
               className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
@@ -815,7 +993,9 @@ export const Sales: React.FC = () => {
             </Button>
 
             <Button
-              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-print'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('trigger-product-print'))
+              }
               variant="secondary"
               className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
@@ -824,7 +1004,9 @@ export const Sales: React.FC = () => {
             </Button>
 
             <Button
-              onClick={() => window.dispatchEvent(new CustomEvent('trigger-product-create'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('trigger-product-create'))
+              }
               variant="primary"
               className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
@@ -837,7 +1019,47 @@ export const Sales: React.FC = () => {
     }
 
     return () => setActions(null);
-  }, [role, products, transactions, activeView, dailyRevenue, ratesConfig, selectedProductsCount, setActions, handleConfirmDelete]);
+  }, [
+    role,
+    products,
+    transactions,
+    activeView,
+    dailyRevenue,
+    ratesConfig,
+    selectedProductsCount,
+    setActions,
+    handleConfirmDelete,
+  ]);
+
+  const undoToastItems: UndoItem[] = useMemo(() => {
+    return stagedDeletions.map((tx) => {
+      const parsedItems =
+        tx.items && Array.isArray(tx.items) && tx.items.length > 0
+          ? tx.items.map((i: any) => ({
+              name: i.productName || i.product_name || 'Item',
+              qty: Number(i.quantity) || 1,
+              price: Number(i.price) || 0,
+            }))
+          : [
+              {
+                name: tx.product_name || 'Item',
+                qty: Number(tx.quantity) || 1,
+                price: Number(tx.total_amount) || 0,
+              },
+            ];
+
+      return {
+        id: String(tx.id),
+        title: formatSalesToastTitle(tx),
+        type: 'sale',
+        items: parsedItems,
+        paymentMethod: tx.payment_method || tx.paymentMethod || 'Cash',
+        amount: Number(tx.total_amount || 0),
+        timestamp: tx.created_at || tx.createdAt,
+        referenceNumber: tx.reference_number || tx.referenceNumber,
+      };
+    });
+  }, [stagedDeletions]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
@@ -861,9 +1083,13 @@ export const Sales: React.FC = () => {
                 <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
                   PRODUCTS
                 </span>
-                <motion.div 
-                  animate={{ x: [0, 4, 0] }} 
-                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                <motion.div
+                  animate={{ x: [0, 4, 0] }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.5,
+                    ease: 'easeInOut',
+                  }}
                 >
                   <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
                 </motion.div>
@@ -879,9 +1105,13 @@ export const Sales: React.FC = () => {
                 title="View Cashier Register"
                 className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
               >
-                <motion.div 
-                  animate={{ x: [0, -4, 0] }} 
-                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                <motion.div
+                  animate={{ x: [0, -4, 0] }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.5,
+                    ease: 'easeInOut',
+                  }}
                 >
                   <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
                 </motion.div>
@@ -896,19 +1126,22 @@ export const Sales: React.FC = () => {
 
       {/* --- TIMELINE CANVAS SCROLLER --- */}
       <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
-        
         {/* VIEW 1: CASHIER REGISTER */}
-        <div 
+        <div
           className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 animate-fade-in ${
-            activeView === 'register' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+            activeView === 'register'
+              ? 'h-auto'
+              : 'h-0 overflow-hidden pointer-events-none'
           }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
-            transform: activeView === 'register' ? 'none' : 'translate3d(-101%, 0, 0)',
+            transform:
+              activeView === 'register' ? 'none' : 'translate3d(-101%, 0, 0)',
             opacity: activeView === 'register' ? 1 : 0,
             pointerEvents: activeView === 'register' ? 'auto' : 'none',
-            transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+            transition:
+              'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)',
           }}
         >
           <TimelineBar
@@ -940,8 +1173,8 @@ export const Sales: React.FC = () => {
                 }
 
                 const hourlyGroups: { label: string; txs: any[] }[] = [];
-                
-                paginatedTransactions.forEach(tx => {
+
+                paginatedTransactions.forEach((tx) => {
                   const rawTime = tx.created_at || tx.createdAt;
                   let hourLabel = 'Unknown Time';
                   if (rawTime) {
@@ -952,8 +1185,10 @@ export const Sales: React.FC = () => {
                       console.error(e);
                     }
                   }
-                  
-                  const existingGroup = hourlyGroups.find(g => g.label === hourLabel);
+
+                  const existingGroup = hourlyGroups.find(
+                    (g) => g.label === hourLabel
+                  );
                   if (existingGroup) {
                     existingGroup.txs.push(tx);
                   } else {
@@ -962,7 +1197,8 @@ export const Sales: React.FC = () => {
                 });
 
                 if (totalItems === 0) {
-                  const hasFilter = ledgerSearch.trim() !== '' || paymentFilter !== 'All';
+                  const hasFilter =
+                    ledgerSearch.trim() !== '' || paymentFilter !== 'All';
                   const isSelectedDayToday = isToday(selectedDate);
 
                   return (
@@ -973,19 +1209,25 @@ export const Sales: React.FC = () => {
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
                       <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-455 dark:text-zinc-650 mb-4 animate-pulse">
-                        {hasFilter ? <Search className="w-8 h-8" /> : <ShoppingBag className="w-8 h-8" />}
+                        {hasFilter ? (
+                          <Search className="w-8 h-8" />
+                        ) : (
+                          <ShoppingBag className="w-8 h-8" />
+                        )}
                       </div>
                       <h3 className="font-heading text-sm text-(--color-text) tracking-wider uppercase">
-                        {hasFilter ? 'No sales match query' : 'NO TRANSACTIONS LOGGED'}
+                        {hasFilter
+                          ? 'No sales match query'
+                          : 'NO TRANSACTIONS LOGGED'}
                       </h3>
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
                         {hasFilter
                           ? 'Try modifying your search keywords or clear search filter.'
                           : isSelectedDayToday
-                          ? 'No purchases or entries recorded today. Click below to register a new sale.'
-                          : 'No purchases or entries recorded for this date slot.'}
+                            ? 'No purchases or entries recorded today. Click below to register a new sale.'
+                            : 'No purchases or entries recorded for this date slot.'}
                       </p>
-                      
+
                       {hasFilter ? (
                         <button
                           type="button"
@@ -1019,7 +1261,9 @@ export const Sales: React.FC = () => {
                     if (isTransactionDeletable(tx)) {
                       handleDeleteTransaction(tx);
                     } else {
-                      toast.warning('Rollback Lock: Only current day sales can be removed.');
+                      toast.warning(
+                        'Rollback Lock: Only current day sales can be removed.'
+                      );
                     }
                   }
                 };
@@ -1045,43 +1289,60 @@ export const Sales: React.FC = () => {
                                 <motion.div
                                   key={tx.id}
                                   layout
-                                  initial={{ 
-                                    opacity: 0, 
-                                    y: -15, 
-                                    scale: 0.96,
-                                    boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
-                                  }}
-                                  animate={isDeleting ? {
+                                  initial={{
                                     opacity: 0,
-                                    scale: 0.92,
-                                    y: -5,
-                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
-                                    filter: "brightness(0.9)"
-                                  } : {
-                                    opacity: 1, 
-                                    y: 0, 
-                                    scale: 1,
-                                    boxShadow: isNew 
-                                      ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
-                                      : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
+                                    y: -15,
+                                    scale: 0.96,
+                                    boxShadow:
+                                      '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
                                   }}
-                                  exit={{ 
-                                    opacity: 0, 
+                                  animate={
+                                    isDeleting
+                                      ? {
+                                          opacity: 0,
+                                          scale: 0.92,
+                                          y: -5,
+                                          boxShadow:
+                                            '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                                          filter: 'brightness(0.9)',
+                                        }
+                                      : {
+                                          opacity: 1,
+                                          y: 0,
+                                          scale: 1,
+                                          boxShadow: isNew
+                                            ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                            : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                                        }
+                                  }
+                                  exit={{
+                                    opacity: 0,
                                     scale: 0.9,
                                     y: -10,
-                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
+                                    boxShadow:
+                                      '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
                                   }}
-                                  transition={{ 
-                                    layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-                                    boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
-                                    opacity: { duration: isDeleting ? 0.38 : 0.3 }
+                                  transition={{
+                                    layout: {
+                                      duration: 0.35,
+                                      ease: [0.16, 1, 0.3, 1],
+                                    },
+                                    boxShadow: {
+                                      duration: isDeleting ? 0.15 : 1.5,
+                                      ease: 'easeOut',
+                                    },
+                                    opacity: {
+                                      duration: isDeleting ? 0.38 : 0.3,
+                                    },
                                   }}
                                   className="rounded-2xl transition-all overflow-hidden"
                                 >
                                   <TimelineCard
                                     mode="sale"
                                     data={tx}
-                                    canDelete={isTransactionDeletable(tx) && !isDeleting}
+                                    canDelete={
+                                      isTransactionDeletable(tx) && !isDeleting
+                                    }
                                     onSelectReceipt={setSelectedReceiptTx}
                                     onTriggerDelete={handleDeleteTransaction}
                                     onDragEnd={handleDragEnd}
@@ -1096,11 +1357,22 @@ export const Sales: React.FC = () => {
 
                     {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
                     {totalItems > 0 && (
-                      <div ref={loadMoreRef} className="py-2 text-center text-xs text-slate-500 font-medium">
+                      <div
+                        ref={loadMoreRef}
+                        className="py-2 text-center text-xs text-slate-500 font-medium"
+                      >
                         {visibleCount < totalItems ? (
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-[#161920]/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
                             <span className="text-[11px] text-slate-500 font-semibold">
-                              Showing <strong className="text-slate-900 dark:text-white font-bold">{Math.min(visibleCount, totalItems)}</strong> of <strong className="text-slate-900 dark:text-white font-bold">{totalItems}</strong> sales records (Scroll down for more)
+                              Showing{' '}
+                              <strong className="text-slate-900 dark:text-white font-bold">
+                                {Math.min(visibleCount, totalItems)}
+                              </strong>{' '}
+                              of{' '}
+                              <strong className="text-slate-900 dark:text-white font-bold">
+                                {totalItems}
+                              </strong>{' '}
+                              sales records (Scroll down for more)
                             </span>
                             <button
                               type="button"
@@ -1111,8 +1383,9 @@ export const Sales: React.FC = () => {
                             </button>
                           </div>
                         ) : (
-                          <div className="py-2 text-[11px] text-slate-400 font-medium">
-                            ✓ All {totalItems} sales records loaded for this day.
+                          <div className="py-1 text-[11px] text-slate-400 font-medium">
+                            ✓ All {totalItems} sales records loaded for this
+                            day.
                           </div>
                         )}
                       </div>
@@ -1140,23 +1413,26 @@ export const Sales: React.FC = () => {
 
         {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
-          <div 
+          <div
             className={`w-full pb-40 md:pb-12 max-w-full ${
-              activeView === 'inventory' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+              activeView === 'inventory'
+                ? 'h-auto'
+                : 'h-0 overflow-hidden pointer-events-none'
             }`}
             style={{
               gridColumn: 1,
               gridRow: 1,
-              transform: activeView === 'inventory' ? 'none' : 'translate3d(101%, 0, 0)',
+              transform:
+                activeView === 'inventory' ? 'none' : 'translate3d(101%, 0, 0)',
               opacity: activeView === 'inventory' ? 1 : 0,
               pointerEvents: activeView === 'inventory' ? 'auto' : 'none',
-              transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+              transition:
+                'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)',
             }}
           >
             <Products hideHeaderActions={true} />
           </div>
         )}
-
       </div>
 
       {/* CREATE TRANSACTION MODAL DIALOG */}
@@ -1190,16 +1466,28 @@ export const Sales: React.FC = () => {
             items: (selectedReceiptTx.items || []).map((item: any) => ({
               productName: item.productName || item.product_name,
               quantity: item.quantity,
-              price: item.price
+              price: item.price,
             })),
-            basePrice: selectedReceiptTx.items ? 0 : Number(selectedReceiptTx.total_amount || 0),
+            basePrice: selectedReceiptTx.items
+              ? 0
+              : Number(selectedReceiptTx.total_amount || 0),
             gcashFee: Number(selectedReceiptTx.gcash_fee_applied || 0),
-            paymentMethod: selectedReceiptTx.payment_method || selectedReceiptTx.paymentMethod || 'Cash',
-            amountReceived: selectedReceiptTx.amount_received !== null && selectedReceiptTx.amount_received !== undefined ? Number(selectedReceiptTx.amount_received) : undefined,
+            paymentMethod:
+              selectedReceiptTx.payment_method ||
+              selectedReceiptTx.paymentMethod ||
+              'Cash',
+            amountReceived:
+              selectedReceiptTx.amount_received !== null &&
+              selectedReceiptTx.amount_received !== undefined
+                ? Number(selectedReceiptTx.amount_received)
+                : undefined,
             changeDue: Number(selectedReceiptTx.change_calculated || 0),
-            gcashRefNo: selectedReceiptTx.reference_number || selectedReceiptTx.referenceNumber,
-            transactionDate: selectedReceiptTx.created_at || selectedReceiptTx.createdAt,
-            processedBy: 'Staff'
+            gcashRefNo:
+              selectedReceiptTx.reference_number ||
+              selectedReceiptTx.referenceNumber,
+            transactionDate:
+              selectedReceiptTx.created_at || selectedReceiptTx.createdAt,
+            processedBy: 'Staff',
           }}
         />
       )}
@@ -1218,83 +1506,78 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* DETACHED CONFIRMATION NOTIFIER (5-SECOND UNDO WINDOW) */}
-      <div className="fixed bottom-40 md:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col gap-2 w-[calc(100vw-24px)] md:w-auto items-center pointer-events-none">
-        <AnimatePresence mode="popLayout">
-          {stagedDeletions.map((stagedTx) => (
-            <UndoToast
-              key={stagedTx.id}
-              isOpen={true}
-              message={`Removing transaction ${stagedTx.receipt_no || stagedTx.id}...`}
-              duration={5}
-              onConfirm={() => handleConfirmDelete(stagedTx)}
-              onUndo={() => handleUndoDelete(stagedTx)}
-              onClose={() => handleConfirmDelete(stagedTx)}
-            />
-          ))}
-        </AnimatePresence>
-      </div>
+      {/* CONSOLIDATED STACKABLE UNDO TOAST (PAUSES ON HOVER/TOUCH + INNER ITEM ACTIONS) */}
+      <UndoToast
+        items={undoToastItems}
+        duration={5}
+        onUndoItem={handleUndoDelete}
+        onConfirmItem={handleConfirmDelete}
+        onUndoAll={handleUndoAll}
+        onConfirmAll={handleConfirmAll}
+      />
 
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
-      {activeView === 'register' && createPortal(
-        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
-          <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+      {activeView === 'register' &&
+        createPortal(
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <DynamicBanknoteIcon trend={revenueTrend} />
+                <span className="text-[11px]">
+                  <AnimatedCurrency value={dailyRevenue} />
+                </span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
+                <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-[11px] truncate">{dailyCount} Sales</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <DynamicBanknoteIcon trend={revenueTrend} />
-              <span className="text-[11px]">
-                <AnimatedCurrency value={dailyRevenue} />
-              </span>
+              {role === 'admin' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (stagedDeletionsRef.current.length > 0) {
+                        stagedDeletionsRef.current.forEach((tx) =>
+                          handleConfirmDelete(String(tx.id))
+                        );
+                      }
+                      setIsRecycleBinOpen(true);
+                    }}
+                    className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                    title="Recycle Bin"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsReportModalOpen(true)}
+                    className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                    title="Generate Report"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-all"
+                title="Create New Sale"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>NEW SALE</span>
+              </button>
             </div>
-            <span className="text-slate-300 dark:text-zinc-700">•</span>
-            <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
-              <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="text-[11px] truncate">{dailyCount} Sales</span>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {role === 'admin' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (stagedDeletionsRef.current.length > 0) {
-                      stagedDeletionsRef.current.forEach(tx => handleConfirmDelete(tx));
-                    }
-                    setIsRecycleBinOpen(true);
-                  }}
-                  className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                  title="Recycle Bin"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsReportModalOpen(true)}
-                  className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                  title="Generate Report"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsCreateModalOpen(true)}
-              className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-all"
-              title="Create New Sale"
-            >
-              <Plus className="w-4 h-4 shrink-0" />
-              <span>NEW SALE</span>
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

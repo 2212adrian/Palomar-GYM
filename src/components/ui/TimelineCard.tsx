@@ -2,10 +2,10 @@
 import React, { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
-import { 
-  Check, 
-  Clock, 
-  Printer, 
+import {
+  Check,
+  Clock,
+  Printer,
   Trash2,
   GraduationCap,
   User,
@@ -13,7 +13,8 @@ import {
   Crown,
   Banknote,
   Wallet,
-  Gift
+  Gift,
+  CreditCard,
 } from 'lucide-react';
 
 export interface LogRecord {
@@ -22,7 +23,8 @@ export interface LogRecord {
   checkOutTime?: string;
   memberId: string | null;
   customerName: string;
-  customerType: 'Walk-In' | 'Existing Member' | 'New Membership';
+  customerType:
+    'Walk-In' | 'Existing Member' | 'New Membership' | 'Card' | string;
   categoryOrPlan: string;
   paymentMethod: 'Cash' | 'GCash' | 'Promo' | string;
   amountPaid: number;
@@ -74,11 +76,20 @@ interface TimelineCardProps {
   onDragEnd: (_event: any, info: any, data: any) => void;
 }
 
-export type EntryCategory = 'walkin_student' | 'walkin_regular' | 'member' | 'new_subscription';
+export type EntryCategory =
+  'walkin_student' | 'walkin_regular' | 'member' | 'new_subscription' | 'card';
 
 export const getEntryCategory = (log: LogRecord): EntryCategory => {
-  const cType = log.customerType;
+  const cType = String(log.customerType || '');
   const plan = (log.categoryOrPlan || '').toLowerCase();
+
+  if (
+    cType === 'Card' ||
+    plan.includes('physical membership card') ||
+    plan.includes('card fee')
+  ) {
+    return 'card';
+  }
 
   if (
     cType === 'New Membership' ||
@@ -89,7 +100,7 @@ export const getEntryCategory = (log: LogRecord): EntryCategory => {
     return 'new_subscription';
   }
 
-  if (cType === 'Existing Member' || (cType as string) === 'Member') {
+  if (cType === 'Existing Member' || cType === 'Member') {
     return 'member';
   }
 
@@ -102,74 +113,102 @@ export const getEntryCategory = (log: LogRecord): EntryCategory => {
 
 export const getPaymentMethodInfo = (method: string) => {
   const normalized = (method || '').toLowerCase();
-  
+
   if (normalized.includes('gcash')) {
     return {
       type: 'gcash',
       label: 'GCash',
       icon: Wallet,
-      badgeClass: 'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-900/80 dark:text-blue-200 dark:border-blue-500 font-bold tracking-wider'
+      badgeClass:
+        'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-900/80 dark:text-blue-200 dark:border-blue-500 font-bold tracking-wider',
     };
   }
-  
+
   if (normalized.includes('cash')) {
     return {
       type: 'cash',
       label: 'Cash',
       icon: Banknote,
-      badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-900/80 dark:text-emerald-200 dark:border-emerald-500 font-bold tracking-wider'
+      badgeClass:
+        'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-900/80 dark:text-emerald-200 dark:border-emerald-500 font-bold tracking-wider',
     };
   }
-  
+
   return {
     type: 'Promo',
     label: 'Promo',
     icon: Gift,
-    badgeClass: 'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-900/80 dark:text-purple-200 dark:border-purple-500 font-bold tracking-wider'
+    badgeClass:
+      'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-900/80 dark:text-purple-200 dark:border-purple-500 font-bold tracking-wider',
   };
 };
 
 const CATEGORY_THEMES = {
+  card: {
+    label: 'CARD PURCHASE',
+    shortLabel: 'CARD',
+    icon: CreditCard,
+    bgClass:
+      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+    borderAccent: 'bg-amber-500 dark:bg-amber-400',
+    badgeClass:
+      'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-500 font-bold',
+    iconBoxClass:
+      'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-600',
+    priceTextClass: 'text-amber-700 dark:text-amber-400 font-black',
+  },
   walkin_student: {
     label: 'STUDENT WALK-IN',
     shortLabel: 'STUDENT',
     icon: GraduationCap,
-    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+    bgClass:
+      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-cyan-500 dark:bg-cyan-400',
-    badgeClass: 'bg-cyan-50 text-cyan-900 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-500 font-bold',
-    iconBoxClass: 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-600',
+    badgeClass:
+      'bg-cyan-50 text-cyan-900 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-500 font-bold',
+    iconBoxClass:
+      'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-600',
     priceTextClass: 'text-cyan-700 dark:text-cyan-400 font-black',
   },
   walkin_regular: {
     label: 'REGULAR WALK-IN',
     shortLabel: 'REGULAR',
     icon: User,
-    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+    bgClass:
+      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-purple-500 dark:bg-purple-400',
-    badgeClass: 'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
-    iconBoxClass: 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600',
+    badgeClass:
+      'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
+    iconBoxClass:
+      'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600',
     priceTextClass: 'text-purple-700 dark:text-purple-400 font-black',
   },
   member: {
     label: 'EXISTING MEMBER',
     shortLabel: 'MEMBER',
     icon: ShieldCheck,
-    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+    bgClass:
+      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-blue-500 dark:bg-blue-400',
-    badgeClass: 'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500 font-bold',
-    iconBoxClass: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
+    badgeClass:
+      'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500 font-bold',
+    iconBoxClass:
+      'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
     priceTextClass: 'text-blue-700 dark:text-blue-400 font-black',
   },
   new_subscription: {
     label: 'NEW MEMBERSHIP',
     shortLabel: 'SUBSCRIPTION',
     icon: Crown,
-    bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+    bgClass:
+      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
-    badgeClass: 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500 font-bold',
-    iconBoxClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
+    badgeClass:
+      'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500 font-bold',
+    iconBoxClass:
+      'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
     priceTextClass: 'text-emerald-700 dark:text-emerald-400 font-black',
-  }
+  },
 };
 
 const TimelineCardComponent: React.FC<TimelineCardProps> = ({
@@ -194,18 +233,23 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     const entryCategory = getEntryCategory(log);
     const theme = CATEGORY_THEMES[entryCategory];
     const paymentMethodInfo = getPaymentMethodInfo(log.paymentMethod);
-    const isPaid = log.paymentStatus === 'Paid' || log.paymentStatus === 'Promo';
-    const formattedInTime = log.timestamp ? format(parseISO(log.timestamp), 'hh:mm a') : 'N/A';
-    const planLabel = log.categoryOrPlan.replace('Pass', '').replace('Membership', '').trim() || log.categoryOrPlan;
+    const isPaid =
+      log.paymentStatus === 'Paid' || log.paymentStatus === 'Promo';
+    const formattedInTime = log.timestamp
+      ? format(parseISO(log.timestamp), 'hh:mm a')
+      : 'N/A';
+    const planLabel =
+      log.categoryOrPlan.replace('Pass', '').replace('Membership', '').trim() ||
+      log.categoryOrPlan;
 
-    return { 
-      log, 
-      entryCategory, 
-      theme, 
-      paymentMethodInfo, 
-      isPaid, 
-      formattedInTime, 
-      planLabel 
+    return {
+      log,
+      entryCategory,
+      theme,
+      paymentMethodInfo,
+      isPaid,
+      formattedInTime,
+      planLabel,
     };
   }, [mode, data]);
 
@@ -213,12 +257,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   const saleMeta = useMemo(() => {
     if (mode !== 'sale') return null;
     const tx = data as SaleRecord;
-    const totalUnits = tx.quantity || tx.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 1;
-    const formattedTime = tx.created_at || tx.createdAt ? format(parseISO(tx.created_at || tx.createdAt || ''), 'hh:mm a') : 'N/A';
-    const summaryHeader = tx.items && tx.items.length > 0
-      ? (tx.items[0].productName || tx.items[0].product_name) + (tx.items.length > 1 ? ` & ${tx.items.length - 1} other item${tx.items.length - 1 > 1 ? 's' : ''}` : '')
-      : (tx.product_name || tx.productName || 'Sales Transaction');
-    
+    const totalUnits =
+      tx.quantity ||
+      tx.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) ||
+      1;
+    const formattedTime =
+      tx.created_at || tx.createdAt
+        ? format(parseISO(tx.created_at || tx.createdAt || ''), 'hh:mm a')
+        : 'N/A';
+    const summaryHeader =
+      tx.items && tx.items.length > 0
+        ? (tx.items[0].productName || tx.items[0].product_name) +
+          (tx.items.length > 1
+            ? ` & ${tx.items.length - 1} other item${tx.items.length - 1 > 1 ? 's' : ''}`
+            : '')
+        : tx.product_name || tx.productName || 'Sales Transaction';
+
     const paymentMethodStr = (tx.payment_method || '').toLowerCase();
     const isGCash = paymentMethodStr.includes('gcash');
     const isCash = paymentMethodStr.includes('cash');
@@ -226,29 +280,37 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     const theme = isGCash
       ? {
           type: 'gcash',
-          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+          bgClass:
+            'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
           borderAccent: 'bg-blue-500 dark:bg-blue-400',
           badgeClass: 'bg-blue-600 text-white border border-blue-400 font-bold',
-          iconBoxClass: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
+          iconBoxClass:
+            'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
           priceTextClass: 'text-blue-700 dark:text-blue-400 font-black',
         }
       : isCash
-      ? {
-          type: 'cash',
-          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
-          borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
-          badgeClass: 'bg-emerald-700 text-white border border-emerald-500 dark:bg-emerald-800 dark:text-emerald-100 dark:border-emerald-400 font-bold',
-          iconBoxClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
-          priceTextClass: 'text-emerald-700 dark:text-emerald-400 font-black',
-        }
-      : {
-          type: 'other',
-          bgClass: 'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
-          borderAccent: 'bg-slate-400',
-          badgeClass: 'bg-slate-700 text-white border border-slate-400 font-bold',
-          iconBoxClass: 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
-          priceTextClass: 'text-slate-800 dark:text-slate-300 font-black',
-        };
+        ? {
+            type: 'cash',
+            bgClass:
+              'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+            borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
+            badgeClass:
+              'bg-emerald-700 text-white border border-emerald-500 dark:bg-emerald-800 dark:text-emerald-100 dark:border-emerald-400 font-bold',
+            iconBoxClass:
+              'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
+            priceTextClass: 'text-emerald-700 dark:text-emerald-400 font-black',
+          }
+        : {
+            type: 'other',
+            bgClass:
+              'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
+            borderAccent: 'bg-slate-400',
+            badgeClass:
+              'bg-slate-700 text-white border border-slate-400 font-bold',
+            iconBoxClass:
+              'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
+            priceTextClass: 'text-slate-800 dark:text-slate-300 font-black',
+          };
 
     const refNumber = tx.reference_number;
     const receivedAmount = Number(tx.amount_received || 0);
@@ -256,7 +318,20 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     const changeCalculated = Number(tx.change_calculated || 0);
     const gcashFeeApplied = Number(tx.gcash_fee_applied || 0);
 
-    return { tx, totalUnits, formattedTime, summaryHeader, isGCash, isCash, theme, refNumber, receivedAmount, totalAmount, changeCalculated, gcashFeeApplied };
+    return {
+      tx,
+      totalUnits,
+      formattedTime,
+      summaryHeader,
+      isGCash,
+      isCash,
+      theme,
+      refNumber,
+      receivedAmount,
+      totalAmount,
+      changeCalculated,
+      gcashFeeApplied,
+    };
   }, [mode, data]);
 
   const containerClasses = useMemo(() => {
@@ -276,14 +351,14 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     <div className="relative overflow-hidden rounded-2xl w-full">
       {/* Swipe background tracks */}
       <div className="absolute inset-0 rounded-2xl pointer-events-none select-none z-0 overflow-hidden bg-slate-200 dark:bg-[#0c0e12]">
-        <motion.div 
+        <motion.div
           style={{ opacity: receiptOpacity }}
           className="absolute inset-y-0 left-0 bg-blue-600 flex items-center pl-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
         >
           RECEIPT
         </motion.div>
-        
-        <motion.div 
+
+        <motion.div
           style={{ opacity: removeOpacity }}
           className="absolute inset-y-0 right-0 bg-rose-600 flex items-center justify-end pr-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
         >
@@ -306,7 +381,9 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
         {/* ATTENDANCE CARD */}
         {mode === 'attendance' && attendanceMeta && (
           <>
-            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${attendanceMeta.theme.borderAccent}`} />
+            <div
+              className={`absolute left-0 top-0 bottom-0 w-1.5 ${attendanceMeta.theme.borderAccent}`}
+            />
 
             <div className="flex items-center gap-2.5 sm:gap-4 w-full min-w-0 flex-1 pl-1.5">
               {/* Left Column: Time & Icon */}
@@ -314,12 +391,16 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                 <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 mb-1 leading-none tracking-tight">
                   {attendanceMeta.formattedInTime}
                 </span>
-                <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center relative border transition-transform duration-200 group-hover:scale-105 ${attendanceMeta.theme.iconBoxClass}`}>
+                <div
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center relative border transition-transform duration-200 group-hover:scale-105 ${attendanceMeta.theme.iconBoxClass}`}
+                >
                   <CategoryIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5 stroke-[2]" />
-                  
-                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-white border border-white dark:border-slate-900 shadow-sm ${
-                    attendanceMeta.isPaid ? 'bg-emerald-500' : 'bg-amber-500'
-                  }`}>
+
+                  <div
+                    className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-white border border-white dark:border-slate-900 shadow-sm ${
+                      attendanceMeta.isPaid ? 'bg-emerald-500' : 'bg-amber-500'
+                    }`}
+                  >
                     {attendanceMeta.isPaid ? (
                       <Check className="w-2.5 h-2.5 stroke-[3]" />
                     ) : (
@@ -332,7 +413,12 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
               {/* Center Info */}
               <div className="min-w-0 flex-1 text-left space-y-1 py-0.5">
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-wrap">
-                  {attendanceMeta.log.memberId ? (
+                  {attendanceMeta.entryCategory === 'card' &&
+                  attendanceMeta.log.customerName.includes('others') ? (
+                    <span className="font-mono text-[9px] sm:text-[10px] font-black text-amber-900 bg-amber-100 border-amber-300 dark:text-amber-200 dark:bg-amber-900/50 dark:border-amber-600 px-1.5 py-0.5 rounded border tracking-wider shrink-0">
+                      BATCH
+                    </span>
+                  ) : attendanceMeta.log.memberId ? (
                     <span className="font-mono text-[9px] sm:text-[10px] font-bold text-slate-800 bg-slate-100 border-slate-300 dark:text-zinc-100 dark:bg-zinc-800 dark:border-zinc-600 px-1.5 py-0.5 rounded border tracking-wider shrink-0">
                       #{attendanceMeta.log.memberId}
                     </span>
@@ -348,12 +434,16 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className={`px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${attendanceMeta.theme.badgeClass}`}>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${attendanceMeta.theme.badgeClass}`}
+                  >
                     <CategoryIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 stroke-[2]" />
                     <span>{attendanceMeta.theme.label}</span>
                   </span>
 
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold uppercase leading-none border shrink-0 ${attendanceMeta.paymentMethodInfo.badgeClass}`}>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold uppercase leading-none border shrink-0 ${attendanceMeta.paymentMethodInfo.badgeClass}`}
+                  >
                     <PaymentIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 stroke-[2]" />
                     <span>{attendanceMeta.paymentMethodInfo.label}</span>
                   </span>
@@ -363,9 +453,13 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
               {/* Price & Actions */}
               <div className="flex items-center gap-2 sm:gap-3 shrink-0 select-none pr-1">
                 <div className="text-right">
-                  <span className="text-[8px] font-heading font-bold tracking-widest text-slate-500 dark:text-slate-400 block leading-none uppercase">ENTRY FEE</span>
+                  <span className="text-[8px] font-heading font-bold tracking-widest text-slate-500 dark:text-slate-400 block leading-none uppercase">
+                    ENTRY FEE
+                  </span>
                   <div className="flex items-center justify-end gap-1 mt-0.5 leading-none">
-                    <span className={`text-xs sm:text-sm font-mono font-black tracking-tight ${attendanceMeta.theme.priceTextClass}`}>
+                    <span
+                      className={`text-xs sm:text-sm font-mono font-black tracking-tight ${attendanceMeta.theme.priceTextClass}`}
+                    >
                       ₱{attendanceMeta.log.amountPaid.toFixed(2)}
                     </span>
                   </div>
@@ -394,11 +488,13 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     {attendanceMeta.isPaid ? 'PAID' : 'COLLECT'}
                   </button>
                 ) : (
-                  <div className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase shrink-0 font-bold border select-none shadow-xs ${
-                    attendanceMeta.isPaid
-                      ? 'bg-emerald-500/15 text-emerald-800 border-emerald-400 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
-                      : 'bg-rose-500/15 text-rose-700 border-rose-400 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
-                  }`}>
+                  <div
+                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase shrink-0 font-bold border select-none shadow-xs ${
+                      attendanceMeta.isPaid
+                        ? 'bg-emerald-500/15 text-emerald-800 border-emerald-400 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
+                        : 'bg-rose-500/15 text-rose-700 border-rose-400 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
+                    }`}
+                  >
                     {attendanceMeta.isPaid ? 'PAID' : 'UNPAID'}
                   </div>
                 )}
@@ -438,16 +534,24 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
         {/* SALE CARD */}
         {mode === 'sale' && saleMeta && (
           <>
-            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${saleMeta.theme.borderAccent}`} />
+            <div
+              className={`absolute left-0 top-0 bottom-0 w-1.5 ${saleMeta.theme.borderAccent}`}
+            />
 
             <div className="flex items-center gap-3 sm:gap-4 w-full min-w-0 flex-1 pl-1.5">
               <div className="flex flex-col items-center justify-center shrink-0 select-none">
                 <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 mb-1 leading-none tracking-tight">
                   {saleMeta.formattedTime}
                 </span>
-                <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex flex-col items-center justify-center ${saleMeta.theme.iconBoxClass}`}>
-                  <span className="text-xs sm:text-sm font-heading font-bold leading-none">{saleMeta.totalUnits}</span>
-                  <span className="text-[7.5px] font-heading font-bold uppercase tracking-widest leading-none mt-0.5">PCS</span>
+                <div
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex flex-col items-center justify-center ${saleMeta.theme.iconBoxClass}`}
+                >
+                  <span className="text-xs sm:text-sm font-heading font-bold leading-none">
+                    {saleMeta.totalUnits}
+                  </span>
+                  <span className="text-[7.5px] font-heading font-bold uppercase tracking-widest leading-none mt-0.5">
+                    PCS
+                  </span>
                 </div>
               </div>
 
@@ -457,8 +561,14 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     {saleMeta.summaryHeader}
                   </h4>
 
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${saleMeta.theme.badgeClass}`}>
-                    {saleMeta.isGCash ? <Wallet className="w-3 h-3 stroke-[2]" /> : <Banknote className="w-3 h-3 stroke-[2]" />}
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${saleMeta.theme.badgeClass}`}
+                  >
+                    {saleMeta.isGCash ? (
+                      <Wallet className="w-3 h-3 stroke-[2]" />
+                    ) : (
+                      <Banknote className="w-3 h-3 stroke-[2]" />
+                    )}
                     <span>{saleMeta.tx.payment_method || 'Cash'}</span>
                   </span>
                 </div>
@@ -466,14 +576,18 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                 <div className="flex flex-wrap gap-1">
                   {saleMeta.tx.items && Array.isArray(saleMeta.tx.items) ? (
                     saleMeta.tx.items.map((item: any, idx: number) => (
-                      <span 
-                        key={idx} 
+                      <span
+                        key={idx}
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 text-[10px] font-sans font-bold border shrink-0"
                       >
-                        <span className={`font-heading font-bold text-[10px] ${saleMeta.theme.priceTextClass}`}>
+                        <span
+                          className={`font-heading font-bold text-[10px] ${saleMeta.theme.priceTextClass}`}
+                        >
                           {item.quantity}x
                         </span>
-                        <span className="truncate">{item.productName || item.product_name}</span>
+                        <span className="truncate">
+                          {item.productName || item.product_name}
+                        </span>
                       </span>
                     ))
                   ) : (
@@ -483,13 +597,18 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   )}
                 </div>
 
-                {(saleMeta.changeCalculated > 0 || saleMeta.gcashFeeApplied > 0) && (
+                {(saleMeta.changeCalculated > 0 ||
+                  saleMeta.gcashFeeApplied > 0) && (
                   <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono flex items-center gap-2 flex-wrap pt-0.5">
                     {saleMeta.changeCalculated > 0 && (
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">CHANGE: ₱{saleMeta.changeCalculated.toFixed(2)}</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                        CHANGE: ₱{saleMeta.changeCalculated.toFixed(2)}
+                      </span>
                     )}
                     {saleMeta.gcashFeeApplied > 0 && (
-                      <span className="text-sky-600 dark:text-sky-400 font-bold">+₱{saleMeta.gcashFeeApplied.toFixed(2)} FEE</span>
+                      <span className="text-sky-600 dark:text-sky-400 font-bold">
+                        +₱{saleMeta.gcashFeeApplied.toFixed(2)} FEE
+                      </span>
                     )}
                   </div>
                 )}
@@ -497,9 +616,13 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
 
               <div className="flex items-center gap-2 shrink-0 select-none pr-1">
                 <div className="text-right">
-                  <span className="text-[8px] font-heading font-bold tracking-widest text-slate-500 dark:text-slate-400 block leading-none uppercase">TOTAL SALE</span>
+                  <span className="text-[8px] font-heading font-bold tracking-widest text-slate-500 dark:text-slate-400 block leading-none uppercase">
+                    TOTAL SALE
+                  </span>
                   <div className="flex items-center justify-end gap-1 mt-0.5 leading-none">
-                    <span className={`text-xs sm:text-sm font-mono font-black tracking-tight ${saleMeta.theme.priceTextClass}`}>
+                    <span
+                      className={`text-xs sm:text-sm font-mono font-black tracking-tight ${saleMeta.theme.priceTextClass}`}
+                    >
                       ₱{saleMeta.totalAmount.toFixed(2)}
                     </span>
                   </div>

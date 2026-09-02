@@ -8,10 +8,10 @@ import { Button } from '../../components/ui/Button';
 import type { Column } from '../../components/ui/Table';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
-import { 
-  Database, 
-  ShieldAlert, 
-  RefreshCw, 
+import {
+  Database,
+  ShieldAlert,
+  RefreshCw,
   CheckCircle2,
   Calendar,
   Info,
@@ -19,7 +19,7 @@ import {
   Archive,
   PlusCircle,
   Lock,
-  ArrowLeftRight
+  ArrowLeftRight,
 } from 'lucide-react';
 
 export const DatabaseBackup: React.FC = () => {
@@ -28,8 +28,8 @@ export const DatabaseBackup: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
-const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
-  
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
+
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [backupNotes, setBackupNotes] = useState<string>('');
@@ -39,7 +39,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   const [restoreTarget, setRestoreTarget] = useState<any | null>(null);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(3);
-  
+
   // Password Verification State
   const [verifyPassword, setVerifyPassword] = useState<string>('');
 
@@ -92,7 +92,10 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   // Handle clicking outside of open dropdown to close it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setActiveDropdownId(null);
       }
     };
@@ -107,7 +110,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       const customNoteText = backupNotes.trim() || 'Manual recovery point';
       const { error } = await supabase.rpc('generate_database_backup', {
         custom_notes: customNoteText,
-        backup_type: 'manual'
+        backup_type: 'manual',
       });
 
       if (error) throw error;
@@ -134,13 +137,15 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   const handleArchiveBackup = async (backupId: string) => {
     try {
       const { error } = await supabase.rpc('archive_database_backup', {
-        target_backup_id: backupId
+        target_backup_id: backupId,
       });
 
       if (error) throw error;
 
-      const targetBackup = backups.find(b => b.id === backupId);
-      const backupLabel = targetBackup ? (targetBackup.notes || targetBackup.filename) : 'Backup';
+      const targetBackup = backups.find((b) => b.id === backupId);
+      const backupLabel = targetBackup
+        ? targetBackup.notes || targetBackup.filename
+        : 'Backup';
 
       // ─── AUDIT LOG: Backup Archived ─────────────────────────────────────────
       await logAudit(
@@ -162,13 +167,15 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   const handleUnarchiveBackup = async (backupId: string) => {
     try {
       const { error } = await supabase.rpc('unarchive_database_backup', {
-        target_backup_id: backupId
+        target_backup_id: backupId,
       });
 
       if (error) throw error;
 
-      const targetBackup = backups.find(b => b.id === backupId);
-      const backupLabel = targetBackup ? (targetBackup.notes || targetBackup.filename) : 'Backup';
+      const targetBackup = backups.find((b) => b.id === backupId);
+      const backupLabel = targetBackup
+        ? targetBackup.notes || targetBackup.filename
+        : 'Backup';
 
       // ─── AUDIT LOG: Backup Unarchived ───────────────────────────────────────
       await logAudit(
@@ -178,7 +185,9 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       );
       // ──────────────────────────────────────────────────────────────────────────
 
-      toast.success('Backup successfully unarchived (Returned to manual list).');
+      toast.success(
+        'Backup successfully unarchived (Returned to manual list).'
+      );
       setActiveDropdownId(null);
       fetchBackups();
     } catch (err: any) {
@@ -194,7 +203,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   // Perform actual system restore via database SQL function
   const handleConfirmRestore = async () => {
     if (!restoreTarget) return;
-    
+
     if (!verifyPassword.trim()) {
       toast.error('Please enter your password to authorize this action.');
       return;
@@ -204,9 +213,12 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       setIsRestoring(true);
 
       // 1. Password Verification via secure database-level RPC (Prevents client session/headers corruption)
-      const { data: isValidPassword, error: authError } = await supabase.rpc('verify_user_password', {
-        entered_password: verifyPassword
-      });
+      const { data: isValidPassword, error: authError } = await supabase.rpc(
+        'verify_user_password',
+        {
+          entered_password: verifyPassword,
+        }
+      );
 
       if (authError || !isValidPassword) {
         throw new Error('Authorization failed. Incorrect password.');
@@ -220,10 +232,13 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
 
       // 3. Automatic Pre-Restore Safety Backup
       toast.info('Generating Pre-Restore Safety Backup...');
-      const { error: safetyError } = await supabase.rpc('generate_database_backup', {
-        custom_notes: 'Pre-Restore Backup (Auto-Safety)',
-        backup_type: 'manual'
-      });
+      const { error: safetyError } = await supabase.rpc(
+        'generate_database_backup',
+        {
+          custom_notes: 'Pre-Restore Backup (Auto-Safety)',
+          backup_type: 'manual',
+        }
+      );
 
       if (safetyError) {
         throw new Error(`Auto-Safety backup failed: ${safetyError.message}`);
@@ -231,9 +246,12 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
 
       // 4. Rollback Overwrite Restoration
       toast.info('Restoring database snapshot...');
-      const { error: restoreError } = await supabase.rpc('restore_database_backup', { 
-        target_backup_id: restoreTarget.id 
-      });
+      const { error: restoreError } = await supabase.rpc(
+        'restore_database_backup',
+        {
+          target_backup_id: restoreTarget.id,
+        }
+      );
 
       if (restoreError) throw restoreError;
 
@@ -246,8 +264,10 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         restoreTarget.id
       );
       // ──────────────────────────────────────────────────────────────────────────
-      
-      toast.success('System temporarily restored. Please verify the integrity of the data.');
+
+      toast.success(
+        'System temporarily restored. Please verify the integrity of the data.'
+      );
       setIsRestoreModalOpen(false);
       setRestoreTarget(null);
       setVerifyPassword('');
@@ -264,10 +284,13 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
     try {
       setIsVerifying(true);
       toast.info('Reverting database back to original state...');
-      
-      const { error: restoreError } = await supabase.rpc('restore_database_backup', { 
-        target_backup_id: safetyBackupId 
-      });
+
+      const { error: restoreError } = await supabase.rpc(
+        'restore_database_backup',
+        {
+          target_backup_id: safetyBackupId,
+        }
+      );
 
       if (restoreError) throw restoreError;
 
@@ -280,7 +303,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         'Reverted the recent database restoration. All modified files returned to original state.'
       );
       // ──────────────────────────────────────────────────────────────────────────
-      
+
       toast.success('System successfully rolled back to your original state.');
       fetchBackups();
     } catch (err: any) {
@@ -294,8 +317,11 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   const handleCommitRestoration = async (safetyBackupId: string) => {
     try {
       setIsVerifying(true);
-      
-      const { error } = await supabase.from('database_backups').delete().eq('id', safetyBackupId);
+
+      const { error } = await supabase
+        .from('database_backups')
+        .delete()
+        .eq('id', safetyBackupId);
       if (error) throw error;
 
       // ─── AUDIT LOG: Restoration Committed ────────────────────────────────────
@@ -327,21 +353,27 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   };
 
   // Look for any existing auto-safety backup point
-  const safetyBackupPoint = backups.find(b => b.notes === 'Pre-Restore Backup (Auto-Safety)');
+  const safetyBackupPoint = backups.find(
+    (b) => b.notes === 'Pre-Restore Backup (Auto-Safety)'
+  );
 
   // Filter backups based on active select state
   const filteredBackups = backups.filter((b) => {
     // Hide safety backup from the general list to avoid cluttering human view
     if (b.notes === 'Pre-Restore Backup (Auto-Safety)') return false;
-    
+
     if (selectedTypeFilter === 'all') return true;
     return b.type === selectedTypeFilter;
   });
 
   // Calculate dynamic stats for KPI widget displays
-  const manualBackupsCount = backups.filter(b => b.type === 'manual' && b.notes !== 'Pre-Restore Backup (Auto-Safety)').length;
-  const autoBackupsCount = backups.filter(b => b.type === 'auto').length;
-  const archivedBackupsCount = backups.filter(b => b.type === 'archived').length;
+  const manualBackupsCount = backups.filter(
+    (b) => b.type === 'manual' && b.notes !== 'Pre-Restore Backup (Auto-Safety)'
+  ).length;
+  const autoBackupsCount = backups.filter((b) => b.type === 'auto').length;
+  const archivedBackupsCount = backups.filter(
+    (b) => b.type === 'archived'
+  ).length;
   const totalFilteredCount = filteredBackups.length;
 
   // Build the configuration for the three KPI widgets dynamically depending on selectedTypeFilter
@@ -350,102 +382,114 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       case 'auto':
         return {
           kpi1: {
-            title: "AUTOMATED DAILY FILES",
+            title: 'AUTOMATED DAILY FILES',
             value: `${autoBackupsCount} / 7`,
-            subtext: "Active daily rotation slots",
-            colorClass: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-            icon: <RefreshCw className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+            subtext: 'Active daily rotation slots',
+            colorClass: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+            icon: (
+              <RefreshCw className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+            ),
           },
           kpi2: {
-            title: "ROTATION PERIOD",
-            value: "7 DAY CYCLE",
-            subtext: "One snapshot saved daily",
-            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-            icon: <Calendar className="w-6 h-6 text-slate-400" />
+            title: 'ROTATION PERIOD',
+            value: '7 DAY CYCLE',
+            subtext: 'One snapshot saved daily',
+            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+            icon: <Calendar className="w-6 h-6 text-slate-400" />,
           },
           kpi3: {
-            title: "RETENTION POLICY",
-            value: "AUTO-DELETE",
-            subtext: "Oldest rotated out at limit",
-            colorClass: "bg-blue-500/10 text-blue-550 border-blue-500/20",
-            icon: <CheckCircle2 className="w-6 h-6 text-blue-400" />
-          }
+            title: 'RETENTION POLICY',
+            value: 'AUTO-DELETE',
+            subtext: 'Oldest rotated out at limit',
+            colorClass: 'bg-blue-500/10 text-blue-550 border-blue-500/20',
+            icon: <CheckCircle2 className="w-6 h-6 text-blue-400" />,
+          },
         };
       case 'manual':
         return {
           kpi1: {
-            title: "MANUAL CHECKPOINTS",
+            title: 'MANUAL CHECKPOINTS',
             value: `${manualBackupsCount} / 5`,
-            subtext: "Active custom-saved checkpoints",
-            colorClass: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />
+            subtext: 'Active custom-saved checkpoints',
+            colorClass:
+              'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />,
           },
           kpi2: {
-            title: "MANUAL ROTATION",
-            value: "LIMIT: 5 FILES",
-            subtext: "Oldest deleted if exceeded",
-            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-            icon: <RefreshCw className="w-6 h-6 text-slate-400" />
+            title: 'MANUAL ROTATION',
+            value: 'LIMIT: 5 FILES',
+            subtext: 'Oldest deleted if exceeded',
+            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+            icon: <RefreshCw className="w-6 h-6 text-slate-400" />,
           },
           kpi3: {
-            title: "RETENTION POLICY",
-            value: "PERMANENT",
-            subtext: "Exempt from auto daily rotation",
-            colorClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-            icon: <Lock className="w-6 h-6 text-emerald-400" />
-          }
+            title: 'RETENTION POLICY',
+            value: 'PERMANENT',
+            subtext: 'Exempt from auto daily rotation',
+            colorClass:
+              'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+            icon: <Lock className="w-6 h-6 text-emerald-400" />,
+          },
         };
       case 'archived':
         return {
           kpi1: {
-            title: "ARCHIVED SNAPSHOTS",
+            title: 'ARCHIVED SNAPSHOTS',
             value: `${archivedBackupsCount} / 3`,
-            subtext: "Checkpoints saved indefinitely",
-            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-            icon: <Archive className="w-6 h-6 text-amber-500" />
+            subtext: 'Checkpoints saved indefinitely',
+            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+            icon: <Archive className="w-6 h-6 text-amber-500" />,
           },
           kpi2: {
-            title: "ARCHIVE LIMIT",
-            value: "LIMIT: 3 FILES",
-            subtext: "Oldest deleted if exceeded",
-            colorClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-            icon: <RefreshCw className="w-6 h-6 text-slate-400" />
+            title: 'ARCHIVE LIMIT',
+            value: 'LIMIT: 3 FILES',
+            subtext: 'Oldest deleted if exceeded',
+            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+            icon: <RefreshCw className="w-6 h-6 text-slate-400" />,
           },
           kpi3: {
-            title: "RETENTION POLICY",
-            value: "LOCK PRESERVED",
-            subtext: "Bypasses automatic rotation",
-            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-            icon: <Lock className="w-6 h-6 text-amber-500" />
-          }
+            title: 'RETENTION POLICY',
+            value: 'LOCK PRESERVED',
+            subtext: 'Bypasses automatic rotation',
+            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+            icon: <Lock className="w-6 h-6 text-amber-500" />,
+          },
         };
       case 'all':
       default:
         return {
           kpi1: {
-            title: "TOTAL RECOVERY FILES",
+            title: 'TOTAL RECOVERY FILES',
             value: `${totalFilteredCount} ACTIVE`,
-            subtext: "Across all categories",
-            colorClass: "bg-slate-500/10 text-(--color-primary-light) border-slate-500/20",
-            icon: <Database className="w-6 h-6 text-(--color-primary-light)" />
+            subtext: 'Across all categories',
+            colorClass:
+              'bg-slate-500/10 text-(--color-primary-light) border-slate-500/20',
+            icon: <Database className="w-6 h-6 text-(--color-primary-light)" />,
           },
           kpi2: {
-            title: "MANUAL CHECKPOINTS",
+            title: 'MANUAL CHECKPOINTS',
             value: `${manualBackupsCount} / 5`,
-            subtext: "Manual storage usage",
-            colorClass: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />
+            subtext: 'Manual storage usage',
+            colorClass:
+              'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />,
           },
           kpi3: {
-            title: "ARCHIVED SNAPSHOTS",
+            title: 'ARCHIVED SNAPSHOTS',
             value: `${archivedBackupsCount} / 3`,
-            subtext: "Archived storage usage",
-            colorClass: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-            icon: <Archive className="w-6 h-6 text-amber-500" />
-          }
+            subtext: 'Archived storage usage',
+            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+            icon: <Archive className="w-6 h-6 text-amber-500" />,
+          },
         };
     }
-  }, [selectedTypeFilter, manualBackupsCount, autoBackupsCount, archivedBackupsCount, totalFilteredCount]);
+  }, [
+    selectedTypeFilter,
+    manualBackupsCount,
+    autoBackupsCount,
+    archivedBackupsCount,
+    totalFilteredCount,
+  ]);
 
   // Main UI Column definitions
   const columns: Column<any>[] = [
@@ -455,18 +499,28 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       sortable: true,
       render: (b) => {
         const dateObj = new Date(b.created_at);
-        const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        
+        const dateStr = dateObj.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        const timeStr = dateObj.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+
         return (
           <div className="flex items-center gap-3.5 py-1">
-            <div className={`p-2.5 rounded-xl border shrink-0 ${
-              b.type === 'archived'
-                ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
-                : b.type === 'manual'
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                  : 'bg-(--color-primary)/10 border-(--color-primary)/10 text-(--color-primary-light)'
-            }`}>
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 ${
+                b.type === 'archived'
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                  : b.type === 'manual'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                    : 'bg-(--color-primary)/10 border-(--color-primary)/10 text-(--color-primary-light)'
+              }`}
+            >
               <Database className="w-5.5 h-5.5" />
             </div>
             <div className="space-y-1">
@@ -494,7 +548,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             </div>
           </div>
         );
-      }
+      },
     },
     {
       key: 'type',
@@ -523,7 +577,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             AUTO
           </span>
         );
-      }
+      },
     },
     {
       key: 'created_at',
@@ -534,7 +588,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         const diffMins = Math.floor(diffMs / (1000 * 60));
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
         let friendlyAge = '';
         if (diffMins <= 5) {
           friendlyAge = 'Just now';
@@ -545,14 +599,14 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         } else {
           friendlyAge = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
         }
-        
+
         return (
           <div className="flex items-center gap-1.5 text-(--color-text) opacity-85 font-medium">
             <Calendar className="w-4 h-4 opacity-70" />
             <span className="text-xs">{friendlyAge}</span>
           </div>
         );
-      }
+      },
     },
     {
       key: 'size_bytes',
@@ -562,7 +616,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         <span className="text-xs text-(--color-text) font-mono font-medium opacity-85">
           {formatSize(b.size_bytes)}
         </span>
-      )
+      ),
     },
     {
       key: 'actions',
@@ -582,7 +636,9 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
           {/* 3-Dots Dropdown Trigger with Title & Label Attributes to satisfy Axe Diagnostics */}
           <div className="relative">
             <button
-              onClick={() => setActiveDropdownId(activeDropdownId === b.id ? null : b.id)}
+              onClick={() =>
+                setActiveDropdownId(activeDropdownId === b.id ? null : b.id)
+              }
               className="p-1.5 text-slate-400 hover:text-(--color-text) rounded-lg hover:bg-(--bg-input) transition-colors cursor-pointer"
               title="Backup Options"
               aria-label="Toggle backup options menu"
@@ -592,7 +648,7 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
 
             {/* Floating Dropdown Dialog (Removed Delete button option per requirements) */}
             {activeDropdownId === b.id && (
-              <div 
+              <div
                 ref={dropdownRef}
                 className="absolute right-0 mt-1.5 w-44 bg-(--bg-card) border border-(--border-color) rounded-xl shadow-2xl z-50 py-1.5 text-left animate-slide-up"
               >
@@ -617,13 +673,12 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             )}
           </div>
         </div>
-      )
-    }
+      ),
+    },
   ];
 
   return (
     <div className="space-y-8 font-body min-h-screen text-(--color-text) rounded-3xl">
-      
       {/* ⚠️ POST-RESTORE SYSTEM VERIFICATION FLOATING PORTAL CARD */}
       {safetyBackupPoint && (
         <div className="p-5 bg-amber-500/5 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-up shadow-lg">
@@ -636,7 +691,9 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
                 Backup Restored Successfully
               </h4>
               <p className="text-xs text-slate-400 font-semibold leading-relaxed">
-                Your backup has been restored. Please take a few moments to check your members, payments, schedules, and other records to make sure everything looks correct.
+                Your backup has been restored. Please take a few moments to
+                check your members, payments, schedules, and other records to
+                make sure everything looks correct.
               </p>
             </div>
           </div>
@@ -668,10 +725,11 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             SYSTEM BACKUPS
           </h2>
           <p className="text-sm text-slate-400 mt-1 font-medium">
-            Create and manage backups to protect your system data, settings, and accounts.
+            Create and manage backups to protect your system data, settings, and
+            accounts.
           </p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -685,7 +743,6 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
 
       {/* Dynamic KPI Info Widgets - Hidden on mobile viewports */}
       <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-5">
-        
         {/* KPI 1 */}
         <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi1.colorClass}`}>
@@ -763,9 +820,8 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             )}
           </div>
         </div>
-
       </div>
-      
+
       {/* Filter Options & Search Block */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-4 rounded-2xl border border-(--border-color)">
         <div className="relative flex-1 max-w-md">
@@ -778,7 +834,9 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Filter:
+          </span>
           {/* Accessible Select elements with titles to address edge warnings */}
           <select
             value={selectedTypeFilter}
@@ -814,9 +872,16 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       <div className="flex items-start gap-4 p-5 bg-amber-500/5 border border-amber-500/20 rounded-2xl text-xs text-amber-500 leading-normal max-w-full">
         <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
         <div className="space-y-1.5 text-left">
-          <p className="font-heading tracking-wider uppercase text-xs">Automated & Manual Backups Retention Rules</p>
+          <p className="font-heading tracking-wider uppercase text-xs">
+            Automated & Manual Backups Retention Rules
+          </p>
           <p className="text-[11px] font-semibold text-slate-400 opacity-90 leading-relaxed">
-            The system automatically saves a snapshot daily and keeps up to 7 automated recovery files (one for each of the last 7 days). You can save up to 5 manual backups and archive up to 3 checkpoints to preserve them indefinitely. Exceeding these limits will automatically rotate out the oldest file in that respective category.
+            The system automatically saves a snapshot daily and keeps up to 7
+            automated recovery files (one for each of the last 7 days). You can
+            save up to 5 manual backups and archive up to 3 checkpoints to
+            preserve them indefinitely. Exceeding these limits will
+            automatically rotate out the oldest file in that respective
+            category.
           </p>
         </div>
       </div>
@@ -832,11 +897,15 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
       >
         <div className="space-y-4 font-body text-left">
           <p className="text-xs text-slate-400 leading-normal font-semibold">
-            Specify a custom note below so you can identify why this backup was created (e.g., "Before changing Boxing subscription rates").
+            Specify a custom note below so you can identify why this backup was
+            created (e.g., "Before changing Boxing subscription rates").
           </p>
 
           <div className="grid gap-1.5 pt-1">
-            <label htmlFor="notesInput" className="text-xs font-bold uppercase tracking-wider text-slate-300">
+            <label
+              htmlFor="notesInput"
+              className="text-xs font-bold uppercase tracking-wider text-slate-300"
+            >
               Backup Notes (Optional)
             </label>
             <input
@@ -890,9 +959,12 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
             <div className="p-4 bg-red-500/5 border border-red-500/20 text-red-500 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
               <ShieldAlert className="w-8 h-8 shrink-0 text-red-500 mt-0.5" />
               <div className="space-y-1">
-                <span className="block font-heading tracking-wider uppercase text-[10px]">CRITICAL RESTORE WARNING</span>
+                <span className="block font-heading tracking-wider uppercase text-[10px]">
+                  CRITICAL RESTORE WARNING
+                </span>
                 <span className="block text-slate-300 font-semibold leading-relaxed">
-                  Restoring this backup will replace all current data. This action cannot be undone.
+                  Restoring this backup will replace all current data. This
+                  action cannot be undone.
                 </span>
               </div>
             </div>
@@ -902,14 +974,24 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
                 This process will restore the database to its exact state on:
               </p>
               <strong className="block text-xs text-(--color-text) font-extrabold bg-(--bg-page) p-3 rounded-lg border border-(--border-color)">
-                {new Date(restoreTarget.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}{' '}
-                at {new Date(restoreTarget.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                {new Date(restoreTarget.created_at).toLocaleDateString(
+                  'en-US',
+                  { month: 'long', day: 'numeric', year: 'numeric' }
+                )}{' '}
+                at{' '}
+                {new Date(restoreTarget.created_at).toLocaleTimeString(
+                  'en-US',
+                  { hour: 'numeric', minute: '2-digit', hour12: true }
+                )}
               </strong>
             </div>
 
             {/* Password input verification card */}
             <div className="grid gap-1.5 pt-1">
-              <label htmlFor="verifyPasswordInput" className="text-xs font-bold uppercase tracking-wider text-(--color-text) flex items-center gap-1.5">
+              <label
+                htmlFor="verifyPasswordInput"
+                className="text-xs font-bold uppercase tracking-wider text-(--color-text) flex items-center gap-1.5"
+              >
                 <Lock className="w-3.5 h-3.5 text-red-500" />
                 Confirm Admin Password
               </label>
@@ -939,26 +1021,26 @@ const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
               <Button
                 onClick={handleConfirmRestore}
                 loading={isRestoring}
-                disabled={countdown > 0 || isRestoring || !verifyPassword.trim()}
+                disabled={
+                  countdown > 0 || isRestoring || !verifyPassword.trim()
+                }
                 loadingLabel="RESTORING SYSTEM..."
                 className={`text-white font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer ${
                   countdown > 0 || !verifyPassword.trim()
-                    ? 'bg-slate-800 cursor-not-allowed border-slate-800 text-slate-500' 
+                    ? 'bg-slate-800 cursor-not-allowed border-slate-800 text-slate-500'
                     : 'bg-red-600 hover:bg-red-700 border-red-600'
                 }`}
               >
-                {isRestoring 
-                  ? 'Restoring system...' 
-                  : countdown > 0 
-                    ? `Confirm Restore (${countdown}s)` 
-                    : 'Confirm Restore'
-                }
+                {isRestoring
+                  ? 'Restoring system...'
+                  : countdown > 0
+                    ? `Confirm Restore (${countdown}s)`
+                    : 'Confirm Restore'}
               </Button>
             </div>
           </div>
         )}
       </Modal>
-
     </div>
   );
 };

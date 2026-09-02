@@ -1,5 +1,11 @@
 // src/components/layouts/SystemLayout.tsx
-import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  createContext,
+  useContext,
+  useRef,
+} from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -62,9 +68,17 @@ export const SystemLayout: React.FC = () => {
     const forceScrollToTop = () => {
       if (mainScrollRef.current) {
         mainScrollRef.current.scrollTop = 0;
-        mainScrollRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+        mainScrollRef.current.scrollTo({
+          top: 0,
+          left: 0,
+          behavior: 'instant' as ScrollBehavior,
+        });
       }
-      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'instant' as ScrollBehavior,
+      });
       if (document.documentElement) document.documentElement.scrollTop = 0;
       if (document.body) document.body.scrollTop = 0;
     };
@@ -118,7 +132,7 @@ export const SystemLayout: React.FC = () => {
     if (playIntro) {
       setCurtainHidden(false);
       setSlideOut(false);
-      
+
       const timer = setTimeout(() => {
         setSlideOut(true);
         sessionStorage.removeItem('playDashboardIntro');
@@ -138,7 +152,9 @@ export const SystemLayout: React.FC = () => {
     }
 
     // Immediately request necessary camera & notification permissions when authenticated
-    const hasPrompted = sessionStorage.getItem('palomar_initial_permissions_prompted');
+    const hasPrompted = sessionStorage.getItem(
+      'palomar_initial_permissions_prompted'
+    );
     if (!hasPrompted) {
       sessionStorage.setItem('palomar_initial_permissions_prompted', '1');
       setTimeout(() => {
@@ -153,9 +169,9 @@ export const SystemLayout: React.FC = () => {
     setLogoutResting(false);
     setCurtainHidden(false);
 
-    sessionStorage.removeItem('loginIntroPlayed'); 
-    sessionStorage.setItem('loginIntroDone', '0'); 
-    
+    sessionStorage.removeItem('loginIntroPlayed');
+    sessionStorage.setItem('loginIntroDone', '0');
+
     setTimeout(() => {
       setLogoutStarted(true);
     }, 20);
@@ -173,7 +189,6 @@ export const SystemLayout: React.FC = () => {
   return (
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
       <div className="relative h-[100dvh] overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
-        
         {/* TAB LOADING OVERLAY */}
         <TabLoader isVisible={isTabLoading} />
 
@@ -187,22 +202,22 @@ export const SystemLayout: React.FC = () => {
         />
 
         {/* RIGHT CONTAINER VIEWPORT */}
-        <div 
+        <div
           className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative"
           style={{ transform: 'translate3d(0, 0, 0)' }}
         >
           {/* Topbar wrapped in relative z-50 */}
           <div className="relative z-50 shrink-0">
-            <Topbar onMenuClick={() => setMobileDrawerOpen(prev => !prev)} />
+            <Topbar onMenuClick={() => setMobileDrawerOpen((prev) => !prev)} />
           </div>
 
           {/* Scrollable Main Content Pane */}
           <div className="flex-1 relative min-w-0 px-0 sm:px-2 md:px-3 pt-14 sm:pt-16 h-full flex flex-col min-h-0">
-            <main 
+            <main
               ref={mainScrollRef}
               className={`flex-1 pt-0 pb-6 sm:pb-8 px-2 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-hidden ${
-                isTabLoading 
-                  ? 'opacity-0 pointer-events-none' 
+                isTabLoading
+                  ? 'opacity-0 pointer-events-none'
                   : 'opacity-100 transition-opacity duration-300'
               }`}
             >
@@ -211,7 +226,6 @@ export const SystemLayout: React.FC = () => {
               </div>
             </main>
           </div>
-
         </div>
 
         {/* MOBILE BOTTOM NAVIGATION */}
@@ -222,16 +236,20 @@ export const SystemLayout: React.FC = () => {
           <div
             className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
               isLoggingOut
-                ? (logoutStarted ? "translate-x-0 scale-x-[-1]" : "-translate-x-[250%] scale-x-[-1]")
-                : (slideOut ? "translate-x-[250%] scale-x-100" : "translate-x-0 scale-x-100")
+                ? logoutStarted
+                  ? 'translate-x-0 scale-x-[-1]'
+                  : '-translate-x-[250%] scale-x-[-1]'
+                : slideOut
+                  ? 'translate-x-[250%] scale-x-100'
+                  : 'translate-x-0 scale-x-100'
             }`}
           >
             <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-              <div 
+              <div
                 className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  (isLoggingOut ? logoutResting : !slideOut) 
-                    ? "scale-x-100" 
-                    : "scale-x-[2.5] sm:scale-x-[8]"
+                  (isLoggingOut ? logoutResting : !slideOut)
+                    ? 'scale-x-100'
+                    : 'scale-x-[2.5] sm:scale-x-[8]'
                 }`}
               >
                 <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />

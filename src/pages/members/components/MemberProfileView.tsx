@@ -3,17 +3,54 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { 
-  X, ShieldAlert, UserCheck, UserX, Trash2, Lock, Pencil, Save,
-  ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
-  User, Clock, QrCode, CalendarCheck, Camera, CheckCircle2, AlertTriangle, Check
+import {
+  X,
+  ShieldAlert,
+  UserCheck,
+  UserX,
+  Trash2,
+  Lock,
+  Pencil,
+  Save,
+  ShieldCheck,
+  FileSignature,
+  Receipt as ReceiptIcon,
+  Eye,
+  AlertOctagon,
+  CreditCard,
+  RefreshCw,
+  User,
+  Clock,
+  QrCode,
+  CalendarCheck,
+  Camera,
+  CheckCircle2,
+  AlertTriangle,
+  Check,
+  Undo2,
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
-import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from '../memberService';
-import type { Member, Subscription, MemberCard, Receipt, AttendanceRecord, MembershipSettings } from '../../../types/members';
+import {
+  memberService,
+  subscriptionService,
+  cardService,
+  settingsService,
+  DEFAULT_SETTINGS,
+} from '../memberService';
+import type {
+  Member,
+  Subscription,
+  MemberCard,
+  Receipt,
+  AttendanceRecord,
+  MembershipSettings,
+} from '../../../types/members';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
-import { OfficialReceipt, type ReceiptData } from '../../../components/ui/OfficialReceipt';
+import {
+  OfficialReceipt,
+  type ReceiptData,
+} from '../../../components/ui/OfficialReceipt';
 import cardTemplateImg from '../../../assets/Member-Card-Template.webp';
 import { useAuthStore } from '../../../stores/authStore';
 import { isSuperAdmin } from '../../../constants/auth';
@@ -30,7 +67,7 @@ interface MemberProfileViewProps {
 export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   member,
   onClose,
-  onMutationSuccess
+  onMutationSuccess,
 }) => {
   const { user, profile } = useAuthStore() as any;
 
@@ -45,14 +82,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   // Local state to keep UI updated dynamically
   const [localMember, setLocalMember] = useState<Member>(member);
 
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'>('Overview');
+  const [activeTab, setActiveTab] = useState<
+    'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'
+  >('Overview');
   const [notes, setNotes] = useState(member.notes || '');
 
   // Custom Modal States
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [, setIsDigitalQrModalOpen] = useState(false);
-  const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
+  const [selectedReceiptData, setSelectedReceiptData] =
+    useState<ReceiptData | null>(null);
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
 
@@ -70,16 +110,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
   const [isUnbindModalOpen, setIsUnbindModalOpen] = useState(false);
 
-  // Physical Card Claim & Pay Fee Modal States
+  // Physical Card Claim & Undo Claim Modal States
   const [isMarkClaimModalOpen, setIsMarkClaimModalOpen] = useState(false);
+  const [isUndoClaimModalOpen, setIsUndoClaimModalOpen] = useState(false);
   const [claimNotesInput, setClaimNotesInput] = useState('');
   const [isClaimingInProfile, setIsClaimingInProfile] = useState(false);
+  const [isUndoingClaim, setIsUndoingClaim] = useState(false);
 
+  const [settings, setSettings] =
+    useState<MembershipSettings>(DEFAULT_SETTINGS);
   const [isPayCardModalOpen, setIsPayCardModalOpen] = useState(false);
   const [payCardMethod, setPayCardMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [payCardGcashRef, setPayCardGcashRef] = useState('');
-  const [payCardAmountPaid, setPayCardAmountPaid] = useState<number>(50);
+  const cardFeeAmount = settings.card_printing_fee || 10;
+  const [payCardAmountPaid, setPayCardAmountPaid] =
+    useState<number>(cardFeeAmount);
   const [isPayingCard, setIsPayingCard] = useState(false);
+
+  useEffect(() => {
+    if (settings.card_printing_fee) {
+      setPayCardAmountPaid(settings.card_printing_fee);
+    }
+  }, [settings.card_printing_fee]);
 
   // Inline Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
@@ -89,9 +141,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [editGender, setEditGender] = useState(member.gender || 'Male');
   const [editBirthday, setEditBirthday] = useState(member.birthday || '');
   const [editAddress, setEditAddress] = useState(member.address || '');
-  const [editEmergencyName, setEditEmergencyName] = useState(member.emergency_contact_name || '');
-  const [editRelationship, setEditRelationship] = useState(member.relationship || '');
-  const [editEmergencyPhone, setEditEmergencyPhone] = useState(member.emergency_contact_phone || '');
+  const [editEmergencyName, setEditEmergencyName] = useState(
+    member.emergency_contact_name || ''
+  );
+  const [editRelationship, setEditRelationship] = useState(
+    member.relationship || ''
+  );
+  const [editEmergencyPhone, setEditEmergencyPhone] = useState(
+    member.emergency_contact_phone || ''
+  );
   const [showSignatures, setShowSignatures] = useState(false);
 
   // Supabase Async Collections State
@@ -99,21 +157,35 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
-  const [selectedCardFormat, setSelectedCardFormat] = useState<'QR' | 'Manual'>('QR');
-  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [selectedCardFormat, setSelectedCardFormat] = useState<'QR' | 'Manual'>(
+    'QR'
+  );
 
   const loadProfileCollections = async () => {
     try {
-      const [subsData, cardsData, { data: rcptsData }, { data: attData }] = await Promise.all([
-        subscriptionService.getByMemberId(localMember.member_id),
-        cardService.getAll(),
-        supabase.from('receipts').select('*').eq('member_id', localMember.member_id).order('created_at', { ascending: false }),
-        supabase.from('attendance').select('*').eq('member_id', localMember.member_id).order('check_in_time', { ascending: false })
-      ]);
+      const [subsData, cardsData, { data: rcptsData }, { data: attData }] =
+        await Promise.all([
+          subscriptionService.getByMemberId(localMember.member_id),
+          cardService.getAll(),
+          supabase
+            .from('receipts')
+            .select('*')
+            .eq('member_id', localMember.member_id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('attendance')
+            .select('*')
+            .eq('member_id', localMember.member_id)
+            .order('check_in_time', { ascending: false }),
+        ]);
 
       const loadedSubs = subsData || [];
       setSubscriptions(loadedSubs);
-      setCards((cardsData || []).filter((c: MemberCard) => c.member_id === localMember.member_id));
+      setCards(
+        (cardsData || []).filter(
+          (c: MemberCard) => c.member_id === localMember.member_id
+        )
+      );
       setReceipts((rcptsData || []) as Receipt[]);
       setAttendance((attData || []) as AttendanceRecord[]);
     } catch (err) {
@@ -135,9 +207,26 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
     const channel = supabase
       .channel(`realtime-member-profile-${localMember.member_id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => loadProfileCollections())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => loadProfileCollections())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => loadProfileCollections())
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'receipts' },
+        () => loadProfileCollections()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions' },
+        () => loadProfileCollections()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => loadProfileCollections()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'member_cards' },
+        () => loadProfileCollections()
+      )
       .subscribe();
 
     return () => {
@@ -161,7 +250,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   }, [member]);
 
   useEffect(() => {
-    const handleSync = () => setRefreshKey(prev => prev + 1);
+    const handleSync = () => setRefreshKey((prev) => prev + 1);
     window.addEventListener('palomar_logbook_updated', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
@@ -170,32 +259,40 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     };
   }, []);
 
-  // Resolves the currently active subscription where start_date <= now <= end_date
+  // Resolves the currently active subscription
   const activeContract = useMemo(() => {
     const now = Date.now();
     return subscriptions.find((s: Subscription) => {
-      if (s.member_id !== localMember.member_id || s.status === 'Voided') return false;
+      if (s.member_id !== localMember.member_id || s.status === 'Voided')
+        return false;
       const startMs = new Date(s.start_date).getTime();
       const endMs = new Date(s.end_date).getTime();
       return startMs <= now && endMs >= now;
     });
   }, [subscriptions, localMember.member_id]);
 
-  // Resolves any scheduled renewal plan that starts in the future
+  // Resolves any scheduled renewal plan
   const queuedContract = useMemo(() => {
     const now = Date.now();
     return subscriptions.find((s: Subscription) => {
-      if (s.member_id !== localMember.member_id || s.status === 'Voided') return false;
+      if (s.member_id !== localMember.member_id || s.status === 'Voided')
+        return false;
       const startMs = new Date(s.start_date).getTime();
       return startMs > now;
     });
   }, [subscriptions, localMember.member_id]);
 
-  // Gets the latest subscription (active, scheduled, or expired) for fallback display
   const latestContract = useMemo(() => {
     const validSubs = subscriptions
-      .filter((s: Subscription) => s.member_id === localMember.member_id && s.status !== 'Voided')
-      .sort((a, b) => new Date(b.created_at || b.start_date).getTime() - new Date(a.created_at || a.start_date).getTime());
+      .filter(
+        (s: Subscription) =>
+          s.member_id === localMember.member_id && s.status !== 'Voided'
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.created_at || b.start_date).getTime() -
+          new Date(a.created_at || a.start_date).getTime()
+      );
     return validSubs[0];
   }, [subscriptions, localMember.member_id]);
 
@@ -213,21 +310,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const stats = useMemo(() => {
     return {
-      totalSpent: receipts.reduce((acc: number, curr: Receipt) => acc + Number(curr.amount || 0), 0),
+      totalSpent: receipts.reduce(
+        (acc: number, curr: Receipt) => acc + Number(curr.amount || 0),
+        0
+      ),
       totalVisits: attendance.length,
       cardReplacements: cards.filter((c: MemberCard) => !!c.replaced_at).length,
-      activeContract
+      activeContract,
     };
   }, [receipts, attendance, cards, activeContract]);
 
   const attendanceLogs = useMemo(() => {
-    return [...attendance].sort((a: AttendanceRecord, b: AttendanceRecord) => 
-      new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime()
+    return [...attendance].sort(
+      (a: AttendanceRecord, b: AttendanceRecord) =>
+        new Date(b.check_in_time).getTime() -
+        new Date(a.check_in_time).getTime()
     );
   }, [attendance]);
 
   const totalAttendanceValue = useMemo(() => {
-    return attendance.reduce((acc, curr) => acc + (Number(curr.entry_fee) || 0), 0);
+    return attendance.reduce(
+      (acc, curr) => acc + (Number(curr.entry_fee) || 0),
+      0
+    );
   }, [attendance]);
 
   const currentCard = useMemo(() => {
@@ -246,14 +351,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const handleConfirmReissueToken = async () => {
     try {
       if (currentCard) {
-        await cardService.replace(localMember.member_id, 'Card Reissued / Replacement', 'Admin Staff');
+        await cardService.replace(
+          localMember.member_id,
+          'Card Reissued / Replacement',
+          'Admin Staff'
+        );
         toast.success('Access card re-issued with fresh security token.');
       } else {
         await cardService.issue(localMember.member_id, 'QR', 'Admin Staff');
         toast.success('New digital QR credential token issued.');
       }
       setIsReissueModalOpen(false);
-      setRefreshKey(prev => prev + 1);
+      setRefreshKey((prev) => prev + 1);
       await loadProfileCollections();
       onMutationSuccess();
     } catch (err: any) {
@@ -261,21 +370,26 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Card Unbind Handler (Deactivates card so profile becomes "No Card Registered")
+  // Card Unbind Handler
   const handleConfirmUnbindCard = async () => {
     try {
       if (currentCard) {
         const { error } = await supabase
           .from('member_cards')
-          .update({ status: 'Deactivated', updated_at: new Date().toISOString() })
+          .update({
+            status: 'Deactivated',
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', currentCard.id);
 
         if (error) throw error;
 
-        toast.success(`Card ${currentCard.card_number} unbinded. Member now has no registered card.`);
+        toast.success(
+          `Card ${currentCard.card_number} unbinded. Member now has no registered card.`
+        );
       }
       setIsUnbindModalOpen(false);
-      setRefreshKey(prev => prev + 1);
+      setRefreshKey((prev) => prev + 1);
       await loadProfileCollections();
       onMutationSuccess();
     } catch (err: any) {
@@ -288,11 +402,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     if (!currentCard) return;
     setIsClaimingInProfile(true);
     try {
-      await cardService.markClaimed(localMember.member_id, user?.email || 'Admin Staff', claimNotesInput);
-      toast.success(`Physical card for ${localMember.full_name} marked as CLAIMED.`);
+      await cardService.markClaimed(
+        localMember.member_id,
+        user?.email || 'Admin Staff',
+        claimNotesInput
+      );
+      toast.success(
+        `Physical card for ${localMember.full_name} marked as CLAIMED.`
+      );
       setIsMarkClaimModalOpen(false);
       setClaimNotesInput('');
-      setRefreshKey(prev => prev + 1);
+      setRefreshKey((prev) => prev + 1);
       await loadProfileCollections();
       onMutationSuccess();
     } catch (err: any) {
@@ -302,12 +422,45 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
+  // Card Undo Claim Handler (Reverts claim back to UNCLAIMED)
+  const handleConfirmUndoClaim = async () => {
+    if (!currentCard) return;
+    setIsUndoingClaim(true);
+    try {
+      const { error } = await supabase
+        .from('member_cards')
+        .update({
+          claim_status: 'UNCLAIMED',
+          claimed_at: null,
+          claimed_by: null,
+          claim_notes: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('member_id', localMember.member_id)
+        .eq('status', 'Active');
+
+      if (error) throw error;
+
+      toast.info(
+        `Card for ${localMember.full_name} reverted to UNCLAIMED (Pending Pickup).`
+      );
+      setIsUndoClaimModalOpen(false);
+      setRefreshKey((prev) => prev + 1);
+      await loadProfileCollections();
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to revert card claim status.');
+    } finally {
+      setIsUndoingClaim(false);
+    }
+  };
+
   // Card Payment Handler
   const handleConfirmPayCard = async () => {
     if (!currentCard) return;
     setIsPayingCard(true);
     try {
-      const fee = 50;
+      const fee = cardFeeAmount;
       await cardService.payCard(
         localMember.member_id,
         fee,
@@ -316,9 +469,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         undefined,
         payCardMethod === 'GCash' ? payCardGcashRef : undefined
       );
-      toast.success(`Physical card fee (₱50.00) recorded and marked as PAID.`);
+      toast.success(
+        `Physical card fee (₱${fee.toFixed(2)}) recorded and marked as PAID.`
+      );
       setIsPayCardModalOpen(false);
-      setRefreshKey(prev => prev + 1);
+      setRefreshKey((prev) => prev + 1);
       await loadProfileCollections();
       onMutationSuccess();
     } catch (err: any) {
@@ -330,7 +485,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const getSubscriptionCreationTime = (sub: Subscription): number => {
     if (sub.created_at) {
-      const isoStr = typeof sub.created_at === 'string' ? sub.created_at.replace(' ', 'T') : sub.created_at;
+      const isoStr =
+        typeof sub.created_at === 'string'
+          ? sub.created_at.replace(' ', 'T')
+          : sub.created_at;
       const t = new Date(isoStr).getTime();
       if (!isNaN(t)) return t;
     }
@@ -343,7 +501,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const getVoidEligibility = (sub?: Subscription | null) => {
     if (!sub) {
-      return { eligible: false, reason: 'No subscription record selected for voiding.' };
+      return {
+        eligible: false,
+        reason: 'No subscription record selected for voiding.',
+      };
     }
 
     const createdTime = getSubscriptionCreationTime(sub);
@@ -353,20 +514,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     if (hoursDiff > 24) {
       return {
         eligible: false,
-        reason: 'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.'
+        reason:
+          'Subscriptions may only be voided within 24 hours of creation to preserve accounting records.',
       };
     }
 
-    const hasFacilityVisitsAfterSub = attendanceLogs.some((att: AttendanceRecord) => {
-      if (att.customer_type === 'New Membership' || att.customer_type === 'Walk-In') return false;
-      const checkInTime = new Date(att.check_in_time).getTime();
-      return checkInTime > (createdTime + 60000);
-    });
+    const hasFacilityVisitsAfterSub = attendanceLogs.some(
+      (att: AttendanceRecord) => {
+        if (
+          att.customer_type === 'New Membership' ||
+          att.customer_type === 'Walk-In'
+        )
+          return false;
+        const checkInTime = new Date(att.check_in_time).getTime();
+        return checkInTime > createdTime + 60000;
+      }
+    );
 
     if (hasFacilityVisitsAfterSub) {
       return {
         eligible: false,
-        reason: 'This subscription has already been used for facility visits and can no longer be voided.'
+        reason:
+          'This subscription has already been used for facility visits and can no longer be voided.',
       };
     }
 
@@ -389,19 +558,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     const today = new Date();
     let calculated = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < birthDate.getDate())
+    ) {
       calculated--;
     }
     return calculated >= 0 ? calculated : 0;
   }, [localMember.birthday, editBirthday, isEditing]);
 
-  const isMinor = useMemo(() => calculatedAge >= 12 && calculatedAge < 18, [calculatedAge]);
+  const isMinor = useMemo(
+    () => calculatedAge >= 12 && calculatedAge < 18,
+    [calculatedAge]
+  );
 
   const handleUpdateNotes = async () => {
     try {
       const trimmedNotes = notes.trim();
-      await memberService.update(localMember.id, { notes: trimmedNotes }, 'Admin Staff');
-      setLocalMember(prev => ({ ...prev, notes: trimmedNotes }));
+      await memberService.update(
+        localMember.id,
+        { notes: trimmedNotes },
+        'Admin Staff'
+      );
+      setLocalMember((prev) => ({ ...prev, notes: trimmedNotes }));
       toast.success('Internal notes saved.');
       onMutationSuccess();
     } catch (err: any) {
@@ -434,7 +613,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       };
 
       await memberService.update(localMember.id, updatedFields, 'Admin Staff');
-      setLocalMember(prev => ({ ...prev, ...updatedFields }));
+      setLocalMember((prev) => ({ ...prev, ...updatedFields }));
       toast.success('Member profile details updated successfully.');
       setIsEditing(false);
       onMutationSuccess();
@@ -447,8 +626,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const handleAvatarSaved = async (newUrl: string) => {
     try {
-      await memberService.update(localMember.id, { image_url: newUrl }, user?.email || 'Admin Staff');
-      setLocalMember(prev => ({ ...prev, image_url: newUrl, avatar_url: newUrl }));
+      await memberService.update(
+        localMember.id,
+        { image_url: newUrl },
+        user?.email || 'Admin Staff'
+      );
+      setLocalMember((prev) => ({
+        ...prev,
+        image_url: newUrl,
+        avatar_url: newUrl,
+      }));
       onMutationSuccess();
       toast.success('Member photo updated successfully.');
     } catch (err: any) {
@@ -460,8 +647,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
 
     try {
-      await memberService.update(localMember.id, { status: nextStatus }, 'Admin Staff');
-      setLocalMember(prev => ({ ...prev, status: nextStatus }));
+      await memberService.update(
+        localMember.id,
+        { status: nextStatus },
+        'Admin Staff'
+      );
+      setLocalMember((prev) => ({ ...prev, status: nextStatus }));
       toast.success(`Member status set to ${nextStatus}.`);
       onMutationSuccess();
       setIsStatusModalOpen(false);
@@ -477,8 +668,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
 
     try {
-      await memberService.archive(localMember.id, 'Profile archived by staff', 'Admin Staff');
-      toast.success(`Profile for ${localMember.full_name} moved to Recycle Bin.`);
+      await memberService.archive(
+        localMember.id,
+        'Profile archived by staff',
+        'Admin Staff'
+      );
+      toast.success(
+        `Profile for ${localMember.full_name} moved to Recycle Bin.`
+      );
       setIsDeleteModalOpen(false);
       onMutationSuccess();
       onClose();
@@ -503,10 +700,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       if (user?.email) {
         const { error } = await supabase.auth.signInWithPassword({
           email: user.email,
-          password: adminPassword.trim()
+          password: adminPassword.trim(),
         });
         if (error) {
-          toast.error('Admin password verification failed. Please check your password.');
+          toast.error(
+            'Admin password verification failed. Please check your password.'
+          );
           setIsVerifyingVoid(false);
           return;
         }
@@ -528,7 +727,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       await loadProfileCollections();
 
       window.dispatchEvent(new Event('palomar_logbook_updated'));
-      setRefreshKey(prev => prev + 1);
+      setRefreshKey((prev) => prev + 1);
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message || 'Failed to void subscription.');
@@ -539,32 +738,44 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const handleOpenReceipt = (receipt: Receipt) => {
     const payMethod = receipt.payment_method || 'Cash';
-    const isGCash = typeof payMethod === 'string' && payMethod.toLowerCase().includes('gcash');
+    const isGCash =
+      typeof payMethod === 'string' &&
+      payMethod.toLowerCase().includes('gcash');
 
-    const gcashFee = (receipt as any).gcash_fee 
-      ?? (receipt as any).gcashFee 
-      ?? (isGCash ? 10 : 0);
+    const gcashFee =
+      (receipt as any).gcash_fee ??
+      (receipt as any).gcashFee ??
+      (isGCash ? 10 : 0);
 
     const rawAmount = receipt.amount || 0;
-    
-    const cardFee = (receipt as any).card_fee 
-      ?? (receipt as any).cardFee 
-      ?? (rawAmount - ((receipt as any).base_price ?? (isGCash ? rawAmount - gcashFee : rawAmount)) > 0 
-          ? rawAmount - ((receipt as any).base_price ?? rawAmount) - gcashFee 
-          : 0);
 
-    const computedBasePrice = (receipt as any).base_price 
-      ?? (receipt as any).basePrice 
-      ?? (rawAmount - gcashFee - cardFee > 0 ? rawAmount - gcashFee - cardFee : rawAmount);
+    const cardFee =
+      (receipt as any).card_fee ??
+      (receipt as any).cardFee ??
+      (rawAmount -
+        ((receipt as any).base_price ??
+          (isGCash ? rawAmount - gcashFee : rawAmount)) >
+      0
+        ? rawAmount - ((receipt as any).base_price ?? rawAmount) - gcashFee
+        : 0);
 
-    const gcashRefNo = (receipt as any).gcash_ref_no 
-      ?? (receipt as any).gcashRefNo 
-      ?? (receipt as any).reference_number 
-      ?? (receipt as any).referenceNumber 
-      ?? '';
+    const computedBasePrice =
+      (receipt as any).base_price ??
+      (receipt as any).basePrice ??
+      (rawAmount - gcashFee - cardFee > 0
+        ? rawAmount - gcashFee - cardFee
+        : rawAmount);
+
+    const gcashRefNo =
+      (receipt as any).gcash_ref_no ??
+      (receipt as any).gcashRefNo ??
+      (receipt as any).reference_number ??
+      (receipt as any).referenceNumber ??
+      '';
 
     const data: ReceiptData = {
-      receiptType: receipt.customer_type === 'Walk-In' ? 'walkin' : 'subscription',
+      receiptType:
+        receipt.customer_type === 'Walk-In' ? 'walkin' : 'subscription',
       receiptNo: receipt.id,
       customerName: receipt.customer_name || localMember.full_name,
       customerType: receipt.customer_type,
@@ -588,143 +799,159 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString();
   }, [localMember.created_at]);
 
-  const receiptColumns = useMemo<Column<Receipt>[]>(() => [
-    {
-      key: 'id',
-      header: 'Receipt #',
-      sortable: true,
-      render: (r) => (
-        <span className="font-mono font-bold text-xs text-(--color-text)">
-          {r.id}
-        </span>
-      )
-    },
-    {
-      key: 'item_description',
-      header: 'Item / Plan',
-      sortable: true,
-      render: (r) => (
-        <span className="font-bold text-xs text-(--color-text)">
-          {r.item_description}
-        </span>
-      )
-    },
-    {
-      key: 'payment_method',
-      header: 'Payment',
-      sortable: true,
-      render: (r) => (
-        <div className="flex flex-col text-[10px]">
-          <span className="font-semibold text-slate-600 dark:text-slate-300">
-            {r.payment_method}
+  const receiptColumns = useMemo<Column<Receipt>[]>(
+    () => [
+      {
+        key: 'id',
+        header: 'Receipt #',
+        sortable: true,
+        render: (r) => (
+          <span className="font-mono font-bold text-xs text-(--color-text)">
+            {r.id}
           </span>
-          {r.gcash_ref_no && (
-            <span className="font-mono text-slate-400 text-[9px]">
-              Ref: {r.gcash_ref_no}
+        ),
+      },
+      {
+        key: 'item_description',
+        header: 'Item / Plan',
+        sortable: true,
+        render: (r) => (
+          <span className="font-bold text-xs text-(--color-text)">
+            {r.item_description}
+          </span>
+        ),
+      },
+      {
+        key: 'payment_method',
+        header: 'Payment',
+        sortable: true,
+        render: (r) => (
+          <div className="flex flex-col text-[10px]">
+            <span className="font-semibold text-slate-600 dark:text-slate-300">
+              {r.payment_method}
             </span>
-          )}
-        </div>
-      )
-    },
-    {
-      key: 'amount',
-      header: 'Amount',
-      sortable: true,
-      render: (r) => (
-        <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
-          ₱{Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
-      )
-    },
-    {
-      key: 'created_at',
-      header: 'Date',
-      sortable: true,
-      render: (r) => (
-        <span className="font-mono text-[10px] text-slate-400">
-          {new Date(r.created_at || Date.now()).toLocaleDateString()}
-        </span>
-      )
-    },
-    {
-      key: 'actions',
-      header: 'Action',
-      headerClassName: 'text-right',
-      cellClassName: 'text-right',
-      render: (r) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenReceipt(r);
-          }}
-          className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1"
-          title="View Official Receipt"
-        >
-          <Eye className="w-3 h-3" />
-          <span>View</span>
-        </button>
-      )
-    }
-  ], []);
+            {r.gcash_ref_no && (
+              <span className="font-mono text-slate-400 text-[9px]">
+                Ref: {r.gcash_ref_no}
+              </span>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'amount',
+        header: 'Amount',
+        sortable: true,
+        render: (r) => (
+          <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
+            ₱
+            {Number(r.amount).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        ),
+      },
+      {
+        key: 'created_at',
+        header: 'Date',
+        sortable: true,
+        render: (r) => (
+          <span className="font-mono text-[10px] text-slate-400">
+            {new Date(r.created_at || Date.now()).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        key: 'actions',
+        header: 'Action',
+        headerClassName: 'text-right',
+        cellClassName: 'text-right',
+        render: (r) => (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenReceipt(r);
+            }}
+            className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1"
+            title="View Official Receipt"
+          >
+            <Eye className="w-3 h-3" />
+            <span>View</span>
+          </button>
+        ),
+      },
+    ],
+    []
+  );
 
-  const attendanceColumns = useMemo<Column<AttendanceRecord>[]>(() => [
-    {
-      key: 'check_in_time',
-      header: 'Check-In Time',
-      sortable: true,
-      render: (att) => (
-        <span className="font-mono font-bold text-xs text-(--color-text)">
-          {new Date(att.check_in_time).toLocaleString()}
-        </span>
-      )
-    },
-    {
-      key: 'plan_name',
-      header: 'Pass / Plan',
-      sortable: true,
-      render: (att) => (
-        <span className="font-bold text-xs text-(--color-text)">
-          {att.plan_name || 'Standard Pass'}
-        </span>
-      )
-    },
-    {
-      key: 'payment_method',
-      header: 'Payment',
-      sortable: true,
-      render: (att) => (
-        <span className="font-semibold text-slate-600 dark:text-slate-300 text-xs">
-          {att.payment_method || 'Cash'}
-        </span>
-      )
-    },
-    {
-      key: 'entry_fee',
-      header: 'Entry Fee',
-      sortable: true,
-      render: (att) => (
-        <span className={`font-mono font-black text-xs ${
-          att.entry_fee > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-        }`}>
-          {att.entry_fee > 0 ? `₱${Number(att.entry_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'NO CHARGE (₱0)'}
-        </span>
-      )
-    },
-    {
-      key: 'staff_name',
-      header: 'Staff',
-      sortable: true,
-      render: (att) => (
-        <span className="font-mono text-xs text-slate-400">
-          {att.staff_name || 'System'}
-        </span>
-      )
-    }
-  ], []);
+  const attendanceColumns = useMemo<Column<AttendanceRecord>[]>(
+    () => [
+      {
+        key: 'check_in_time',
+        header: 'Check-In Time',
+        sortable: true,
+        render: (att) => (
+          <span className="font-mono font-bold text-xs text-(--color-text)">
+            {new Date(att.check_in_time).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        key: 'plan_name',
+        header: 'Pass / Plan',
+        sortable: true,
+        render: (att) => (
+          <span className="font-bold text-xs text-(--color-text)">
+            {att.plan_name || 'Standard Pass'}
+          </span>
+        ),
+      },
+      {
+        key: 'payment_method',
+        header: 'Payment',
+        sortable: true,
+        render: (att) => (
+          <span className="font-semibold text-slate-600 dark:text-slate-300 text-xs">
+            {att.payment_method || 'Cash'}
+          </span>
+        ),
+      },
+      {
+        key: 'entry_fee',
+        header: 'Entry Fee',
+        sortable: true,
+        render: (att) => (
+          <span
+            className={`font-mono font-black text-xs ${
+              att.entry_fee > 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-slate-400'
+            }`}
+          >
+            {att.entry_fee > 0
+              ? `₱${Number(att.entry_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : 'NO CHARGE (₱0)'}
+          </span>
+        ),
+      },
+      {
+        key: 'staff_name',
+        header: 'Staff',
+        sortable: true,
+        render: (att) => (
+          <span className="font-mono text-xs text-slate-400">
+            {att.staff_name || 'System'}
+          </span>
+        ),
+      },
+    ],
+    []
+  );
 
   return createPortal(
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -732,7 +959,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       className="fixed inset-0 z-40 flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
       onClick={onClose}
     >
-      <motion.div 
+      <motion.div
         initial={{ x: '100%', y: 0 }}
         animate={{ x: 0, y: 0 }}
         exit={{ x: '100%', y: 0 }}
@@ -740,7 +967,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-(--bg-card) border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
-        
         {/* COMPACT HEADER WITH CLICKABLE AVATAR */}
         <div className="p-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0">
           <div className="flex items-center justify-between gap-2">
@@ -748,9 +974,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               MEMBER PROFILE
             </span>
 
-            <button 
+            <button
               type="button"
-              onClick={onClose} 
+              onClick={onClose}
               className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs"
               title="Close panel"
             >
@@ -784,13 +1010,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <h3 className="text-base sm:text-lg font-bold text-(--color-text) leading-tight truncate">
                   {localMember.full_name}
                 </h3>
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-heading font-black uppercase tracking-wider border ${
-                  localMember.status === 'Active' 
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
-                    : localMember.status === 'Suspended'
-                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                    : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                }`}>{localMember.status || 'Active'}</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[9px] font-heading font-black uppercase tracking-wider border ${
+                    localMember.status === 'Active'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      : localMember.status === 'Suspended'
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                        : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                  }`}
+                >
+                  {localMember.status || 'Active'}
+                </span>
 
                 {isMinor && (
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
@@ -807,36 +1037,48 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           {/* STATS CAROUSEL */}
           <div className="flex sm:grid sm:grid-cols-4 gap-2.5 overflow-x-auto scrollbar-none pt-1">
             <div className="min-w-32.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Total Spent</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                Total Spent
+              </span>
               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block mt-1">
                 ₱{stats.totalSpent.toLocaleString()}
               </span>
             </div>
 
             <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Check-ins</span>
-              <span className="text-xs font-bold text-(--color-text) block mt-1">{stats.totalVisits} visits</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                Check-ins
+              </span>
+              <span className="text-xs font-bold text-(--color-text) block mt-1">
+                {stats.totalVisits} visits
+              </span>
             </div>
 
             <div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Active Plan</span>
-              <span className={`text-xs font-bold truncate block mt-1 ${
-                activeContract 
-                  ? 'text-emerald-600 dark:text-emerald-400' 
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                Active Plan
+              </span>
+              <span
+                className={`text-xs font-bold truncate block mt-1 ${
+                  activeContract
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : targetSubForDisplay?.status === 'Voided'
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {activeContract
+                  ? 'Active'
                   : targetSubForDisplay?.status === 'Voided'
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-rose-600 dark:text-rose-400'
-              }`}>
-                {activeContract 
-                  ? 'Active' 
-                  : targetSubForDisplay?.status === 'Voided' 
-                  ? 'Voided' 
-                  : 'Expired'}
+                    ? 'Voided'
+                    : 'Expired'}
               </span>
             </div>
 
             <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Reissued</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                Reissued
+              </span>
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1">
                 {stats.cardReplacements} cards
               </span>
@@ -846,13 +1088,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
         {/* STICKY HORIZONTAL TABS BAR */}
         <div className="sticky top-0 z-20 border-b border-(--border-color) bg-(--bg-card) px-3 sm:px-4 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none py-2 select-none shrink-0">
-          {['Overview', 'Contracts & Billing', 'Cards', 'Attendance', 'Notes'].map(tab => (
-            <button 
-              key={tab} 
+          {[
+            'Overview',
+            'Contracts & Billing',
+            'Cards',
+            'Attendance',
+            'Notes',
+          ].map((tab) => (
+            <button
+              key={tab}
               onClick={() => setActiveTab(tab as any)}
               className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
-                activeTab === tab 
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                activeTab === tab
+                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
                   : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >
@@ -863,34 +1111,34 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
         {/* TAB CONTENTS CONTAINER */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 pb-28 sm:pb-8">
-          
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
-              
               {/* RENEW / SUBSCRIBE BANNER */}
               {(!activeContract || queuedContract) && (
-                <div className={`p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs border ${
-                  expiredDaysText 
-                    ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400' 
-                    : queuedContract 
-                    ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400' 
-                    : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
-                }`}>
+                <div
+                  className={`p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs border ${
+                    expiredDaysText
+                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                      : queuedContract
+                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400'
+                        : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+                  }`}
+                >
                   <div className="space-y-0.5">
                     <span className="font-heading font-bold text-xs block">
-                      {expiredDaysText 
-                        ? `Subscription Expired (${expiredDaysText})` 
-                        : queuedContract 
-                        ? `Renewal Scheduled: ${queuedContract.plan_name}` 
-                        : 'No Active Subscription (Profile Only)'}
+                      {expiredDaysText
+                        ? `Subscription Expired (${expiredDaysText})`
+                        : queuedContract
+                          ? `Renewal Scheduled: ${queuedContract.plan_name}`
+                          : 'No Active Subscription (Profile Only)'}
                     </span>
                     <span className="text-xs text-slate-400 font-medium block">
-                      {expiredDaysText 
+                      {expiredDaysText
                         ? 'This contract expired. Renew to grant gym check-in access.'
-                        : queuedContract 
-                        ? `Scheduled to activate on ${new Date(queuedContract.start_date).toLocaleDateString()}.`
-                        : 'Enroll this member to grant gym facility check-in access.'}
+                        : queuedContract
+                          ? `Scheduled to activate on ${new Date(queuedContract.start_date).toLocaleDateString()}.`
+                          : 'Enroll this member to grant gym facility check-in access.'}
                     </span>
                   </div>
 
@@ -901,7 +1149,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
                     >
                       <CreditCard className="w-4 h-4" />
-                      <span>{expiredDaysText ? 'Renew Subscription' : 'Subscribe Plan'}</span>
+                      <span>
+                        {expiredDaysText
+                          ? 'Renew Subscription'
+                          : 'Subscribe Plan'}
+                      </span>
                     </button>
                   )}
                 </div>
@@ -911,7 +1163,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
                 <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
                   <h4 className="font-heading text-xs text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2 font-bold">
-                    <CreditCard className="w-4 h-4 text-blue-500" /> Physical Membership Card
+                    <CreditCard className="w-4 h-4 text-blue-500" /> Physical
+                    Membership Card
                   </h4>
                   {currentCard && currentCard.card_type !== 'None' && (
                     <span className="text-[10px] font-mono font-bold text-slate-400">
@@ -922,7 +1175,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                 {!currentCard || currentCard.card_type === 'None' ? (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                    <span className="text-slate-400">No security badge registered for this member.</span>
+                    <span className="text-slate-400">
+                      No security badge registered for this member.
+                    </span>
                     <button
                       type="button"
                       onClick={() => setActiveTab('Cards')}
@@ -935,27 +1190,36 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   <div className="space-y-3 text-xs">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Payment:</span>
+                        <span className="text-slate-400 font-medium">
+                          Payment:
+                        </span>
                         {currentCard.payment_status === 'PAID' ? (
                           <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> PAID (₱{currentCard.card_fee_paid || 50}.00)
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
+                            PAID (₱{currentCard.card_fee_paid || cardFeeAmount}
+                            .00)
                           </span>
                         ) : (
                           <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNPAID (₱0.00)
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
+                            UNPAID (₱0.00)
                           </span>
                         )}
                       </div>
 
                       <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Claim Status:</span>
+                        <span className="text-slate-400 font-medium">
+                          Claim Status:
+                        </span>
                         {currentCard.claim_status === 'CLAIMED' ? (
                           <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> CLAIMED & HANDED OVER
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
+                            CLAIMED & HANDED OVER
                           </span>
                         ) : currentCard.claim_status === 'UNCLAIMED' ? (
                           <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> PENDING PICKUP
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
+                            PENDING PICKUP
                           </span>
                         ) : (
                           <span className="font-mono font-medium text-slate-400">
@@ -968,25 +1232,51 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-(--border-color)">
                       <div className="text-[11px] text-slate-400">
                         {currentCard.claimed_at ? (
-                          <span>Claimed on {new Date(currentCard.claimed_at).toLocaleDateString()} {currentCard.claimed_by ? `by ${currentCard.claimed_by}` : ''}</span>
+                          <span>
+                            Claimed on{' '}
+                            {new Date(
+                              currentCard.claimed_at
+                            ).toLocaleDateString()}{' '}
+                            {currentCard.claimed_by
+                              ? `by ${currentCard.claimed_by}`
+                              : ''}
+                          </span>
                         ) : currentCard.payment_status === 'PAID' ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-medium">Card fee paid. Ready for handover at the front desk.</span>
+                          <span className="text-amber-600 dark:text-amber-400 font-medium">
+                            Card fee paid. Ready for handover at the front desk.
+                          </span>
                         ) : (
-                          <span>Card printing fee of ₱50.00 has not been paid yet.</span>
+                          <span>
+                            Card printing fee of ₱{cardFeeAmount}.00 has not
+                            been paid yet.
+                          </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
-                        {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED' && (
+                        {currentCard.payment_status === 'PAID' &&
+                          currentCard.claim_status === 'UNCLAIMED' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClaimNotesInput('');
+                                setIsMarkClaimModalOpen(true);
+                              }}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Mark as Claimed
+                            </button>
+                          )}
+
+                        {currentCard.claim_status === 'CLAIMED' && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setClaimNotesInput('');
-                              setIsMarkClaimModalOpen(true);
-                            }}
-                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            onClick={() => setIsUndoClaimModalOpen(true)}
+                            className="px-3 py-2 bg-slate-500/10 hover:bg-amber-500/20 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 border border-(--border-color) rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 transition-colors"
+                            title="Accidentally marked as claimed? Revert back to Unclaimed state"
                           >
-                            <Check className="w-3.5 h-3.5" /> Mark as Claimed
+                            <Undo2 className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Undo Claim</span>
                           </button>
                         )}
 
@@ -996,7 +1286,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             onClick={() => setIsPayCardModalOpen(true)}
                             className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
                           >
-                            <CreditCard className="w-3.5 h-3.5" /> Pay Card Fee (₱50)
+                            <CreditCard className="w-3.5 h-3.5" /> Pay Card Fee
+                            (₱{cardFeeAmount})
                           </button>
                         )}
 
@@ -1015,12 +1306,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
               {/* PERSONAL BIO & EMERGENCY CONTACT CARDS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
                 {/* Personal Bio Card */}
                 <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
                   <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
                     <h4 className="font-heading text-xs text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2 font-bold">
-                      <User className="w-4 h-4 text-blue-500" /> Personal Information
+                      <User className="w-4 h-4 text-blue-500" /> Personal
+                      Information
                     </h4>
                     {isEditing && (
                       <span className="text-[10px] font-mono font-bold bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full uppercase">
@@ -1033,48 +1324,67 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="space-y-2.5 text-xs">
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Full Name</span>
-                        <span className="text-(--color-text) font-bold">{localMember.full_name || 'N/A'}</span>
+                        <span className="text-(--color-text) font-bold">
+                          {localMember.full_name || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Gender / Age</span>
                         <span className="text-(--color-text) font-medium">
-                          {localMember.gender || 'N/A'} • {calculatedAge ? `${calculatedAge} yrs (${isMinor ? 'Minor' : 'Adult'})` : 'N/A'}
+                          {localMember.gender || 'N/A'} •{' '}
+                          {calculatedAge
+                            ? `${calculatedAge} yrs (${isMinor ? 'Minor' : 'Adult'})`
+                            : 'N/A'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Birthdate</span>
-                        <span className="text-(--color-text) font-mono">{localMember.birthday || 'N/A'}</span>
+                        <span className="text-(--color-text) font-mono">
+                          {localMember.birthday || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Contact Phone</span>
-                        <span className="text-(--color-text) font-mono">{localMember.phone || 'N/A'}</span>
+                        <span className="text-(--color-text) font-mono">
+                          {localMember.phone || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Email</span>
-                        <span className="text-(--color-text) truncate max-w-45">{localMember.email || 'N/A'}</span>
+                        <span className="text-(--color-text) truncate max-w-45">
+                          {localMember.email || 'N/A'}
+                        </span>
                       </div>
                       <div className="pt-1">
-                        <span className="text-slate-400 block mb-0.5">Home Address</span>
-                        <span className="text-(--color-text) font-medium leading-snug block">{localMember.address || 'N/A'}</span>
+                        <span className="text-slate-400 block mb-0.5">
+                          Home Address
+                        </span>
+                        <span className="text-(--color-text) font-medium leading-snug block">
+                          {localMember.address || 'N/A'}
+                        </span>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-3 text-xs">
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Full Name *</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Full Name *
+                        </label>
                         <input
                           type="text"
                           value={editFullName}
-                          onChange={e => setEditFullName(e.target.value)}
+                          onChange={(e) => setEditFullName(e.target.value)}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-slate-400 text-xs font-medium block mb-1">Gender</label>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            Gender
+                          </label>
                           <select
                             value={editGender}
-                            onChange={e => setEditGender(e.target.value)}
+                            onChange={(e) => setEditGender(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                           >
                             <option value="Male">Male</option>
@@ -1083,41 +1393,51 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           </select>
                         </div>
                         <div>
-                          <label className="text-slate-400 text-xs font-medium block mb-1">Birthday</label>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            Birthday
+                          </label>
                           <input
                             type="date"
                             value={editBirthday}
-                            onChange={e => setEditBirthday(e.target.value)}
+                            onChange={(e) => setEditBirthday(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           />
                         </div>
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Contact Phone *</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Contact Phone *
+                        </label>
                         <input
                           type="text"
                           value={editPhone}
-                          onChange={e => setEditPhone(e.target.value.replace(/\D/g, ''))}
+                          onChange={(e) =>
+                            setEditPhone(e.target.value.replace(/\D/g, ''))
+                          }
                           maxLength={11}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           placeholder="09171234567"
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Email Address</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Email Address
+                        </label>
                         <input
                           type="email"
                           value={editEmail}
-                          onChange={e => setEditEmail(e.target.value)}
+                          onChange={(e) => setEditEmail(e.target.value)}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Home Address</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Home Address
+                        </label>
                         <input
                           type="text"
                           value={editAddress}
-                          onChange={e => setEditAddress(e.target.value)}
+                          onChange={(e) => setEditAddress(e.target.value)}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
@@ -1128,47 +1448,60 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 {/* Emergency Contact Card */}
                 <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
                   <h4 className="font-heading text-xs text-rose-500 uppercase tracking-wider flex items-center gap-2 font-bold border-b border-(--border-color) pb-2.5">
-                    <ShieldAlert className="w-4 h-4 text-rose-500" /> Emergency Contact
+                    <ShieldAlert className="w-4 h-4 text-rose-500" /> Emergency
+                    Contact
                   </h4>
 
                   {!isEditing ? (
                     <div className="space-y-2.5 text-xs">
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Contact Person</span>
-                        <span className="text-(--color-text) font-bold">{localMember.emergency_contact_name || 'N/A'}</span>
+                        <span className="text-(--color-text) font-bold">
+                          {localMember.emergency_contact_name || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Relationship</span>
-                        <span className="text-(--color-text) font-medium">{localMember.relationship || 'N/A'}</span>
+                        <span className="text-(--color-text) font-medium">
+                          {localMember.relationship || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center py-1">
                         <span className="text-slate-400">Emergency Phone</span>
-                        <span className="text-(--color-text) font-mono">{localMember.emergency_contact_phone || 'N/A'}</span>
+                        <span className="text-(--color-text) font-mono">
+                          {localMember.emergency_contact_phone || 'N/A'}
+                        </span>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-3 text-xs">
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Contact Name</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Contact Name
+                        </label>
                         <input
                           type="text"
                           value={editEmergencyName}
-                          onChange={e => setEditEmergencyName(e.target.value)}
+                          onChange={(e) => setEditEmergencyName(e.target.value)}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Relationship</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Relationship
+                        </label>
                         <select
                           value={editRelationship}
-                          onChange={e => setEditRelationship(e.target.value)}
+                          onChange={(e) => setEditRelationship(e.target.value)}
                           className="w-full p-2.5 border border-(--border-color) bg-(--bg-card) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
                         >
                           <option value="">Select Relationship *</option>
                           <optgroup label="Immediate Family">
                             <option value="Mother">Mother</option>
                             <option value="Father">Father</option>
-                            <option value="Spouse / Partner">Spouse / Partner</option>
+                            <option value="Spouse / Partner">
+                              Spouse / Partner
+                            </option>
                             <option value="Husband">Husband</option>
                             <option value="Wife">Wife</option>
                             <option value="Brother">Brother</option>
@@ -1185,18 +1518,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             <option value="Relative">Other Relative</option>
                           </optgroup>
                           <optgroup label="Guardian & Other">
-                            <option value="Legal Guardian">Legal Guardian</option>
-                            <option value="Friend / Colleague">Friend / Colleague</option>
+                            <option value="Legal Guardian">
+                              Legal Guardian
+                            </option>
+                            <option value="Friend / Colleague">
+                              Friend / Colleague
+                            </option>
                             <option value="Other">Other</option>
                           </optgroup>
                         </select>
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">Emergency Phone</label>
+                        <label className="text-slate-400 text-xs font-medium block mb-1">
+                          Emergency Phone
+                        </label>
                         <input
                           type="text"
                           value={editEmergencyPhone}
-                          onChange={e => setEditEmergencyPhone(e.target.value.replace(/\D/g, ''))}
+                          onChange={(e) =>
+                            setEditEmergencyPhone(
+                              e.target.value.replace(/\D/g, '')
+                            )
+                          }
                           maxLength={11}
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           placeholder="09181234567"
@@ -1205,13 +1548,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </div>
                   )}
                 </div>
-
               </div>
 
               {/* SAVE EDITS BANNER */}
               {isEditing && (
                 <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
-                  <span className="text-xs font-semibold text-blue-500">Editing member profile details.</span>
+                  <span className="text-xs font-semibold text-blue-500">
+                    Editing member profile details.
+                  </span>
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button
                       type="button"
@@ -1236,7 +1580,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <div className="p-4 bg-(--bg-page) border border-amber-500/30 rounded-2xl space-y-3 shadow-xs">
                   <div className="flex items-center justify-between border-b border-(--border-color) pb-2.5">
                     <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-amber-500" /> Parent / Guardian Consent
+                      <ShieldCheck className="w-4 h-4 text-amber-500" /> Parent
+                      / Guardian Consent
                     </span>
                     <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-bold">
                       ✓ E-Consent Verified
@@ -1246,35 +1591,50 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                     <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                       <span className="text-slate-400">Parent Name</span>
-                      <span className="text-amber-600 dark:text-amber-300 font-bold">{extMember.parent_name || 'N/A'}</span>
+                      <span className="text-amber-600 dark:text-amber-300 font-bold">
+                        {extMember.parent_name || 'N/A'}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                       <span className="text-slate-400">Relationship</span>
-                      <span className="text-(--color-text) font-medium">{extMember.parent_relationship || 'Guardian'}</span>
+                      <span className="text-(--color-text) font-medium">
+                        {extMember.parent_relationship || 'Guardian'}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                       <span className="text-slate-400">Parent Phone</span>
-                      <span className="text-amber-600 dark:text-amber-300 font-mono font-bold">{extMember.parent_phone || 'N/A'}</span>
+                      <span className="text-amber-600 dark:text-amber-300 font-mono font-bold">
+                        {extMember.parent_phone || 'N/A'}
+                      </span>
                     </div>
                     {extMember.parent_email && (
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Parent Email</span>
-                        <span className="text-(--color-text) truncate max-w-40">{extMember.parent_email}</span>
+                        <span className="text-(--color-text) truncate max-w-40">
+                          {extMember.parent_email}
+                        </span>
                       </div>
                     )}
                   </div>
 
-                  {(extMember.applicant_signature || extMember.parent_signature) && (
+                  {(extMember.applicant_signature ||
+                    extMember.parent_signature) && (
                     <div className="pt-2 border-t border-(--border-color) space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400 font-bold">Digital Signatures</span>
+                        <span className="text-xs text-slate-400 font-bold">
+                          Digital Signatures
+                        </span>
                         <button
                           type="button"
                           onClick={() => setShowSignatures(!showSignatures)}
                           className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>{showSignatures ? 'Hide Signatures' : 'View Signatures'}</span>
+                          <span>
+                            {showSignatures
+                              ? 'Hide Signatures'
+                              : 'View Signatures'}
+                          </span>
                         </button>
                       </div>
 
@@ -1282,11 +1642,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fade-in">
                           <div>
                             <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                              <FileSignature className="w-3.5 h-3.5 text-blue-500" /> Applicant Signature
+                              <FileSignature className="w-3.5 h-3.5 text-blue-500" />{' '}
+                              Applicant Signature
                             </span>
                             {extMember.applicant_signature ? (
                               <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
-                                <img src={extMember.applicant_signature} alt="Applicant Signature" className="max-h-full max-w-full object-contain" />
+                                <img
+                                  src={extMember.applicant_signature}
+                                  alt="Applicant Signature"
+                                  className="max-h-full max-w-full object-contain"
+                                />
                               </div>
                             ) : (
                               <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
@@ -1297,11 +1662,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                           <div>
                             <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                              <FileSignature className="w-3.5 h-3.5 text-amber-500" /> Parent Signature
+                              <FileSignature className="w-3.5 h-3.5 text-amber-500" />{' '}
+                              Parent Signature
                             </span>
                             {extMember.parent_signature ? (
                               <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
-                                <img src={extMember.parent_signature} alt="Parent Signature" className="max-h-full max-w-full object-contain" />
+                                <img
+                                  src={extMember.parent_signature}
+                                  alt="Parent Signature"
+                                  className="max-h-full max-w-full object-contain"
+                                />
                               </div>
                             ) : (
                               <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
@@ -1313,18 +1683,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       )}
                     </div>
                   )}
-
                 </div>
               )}
-
             </div>
           )}
 
           {/* TAB 2: CONTRACTS & BILLING */}
           {activeTab === 'Contracts & Billing' && (
             <div className="space-y-6 text-left animate-fade-in">
-              
-              {/* SECTION 1: STATUS SUBSCRIPTION */}
+              {/* STATUS SUBSCRIPTION */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
                   <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
@@ -1332,21 +1699,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     STATUS SUBSCRIPTION
                   </span>
                   {targetSubForDisplay && (
-                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
-                      activeContract 
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                        activeContract
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                          : expiredDaysText
+                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                      }`}
+                    >
+                      {activeContract
+                        ? 'ACTIVE'
                         : expiredDaysText
-                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                    }`}>
-                      {activeContract ? 'ACTIVE' : expiredDaysText ? `EXPIRED (${expiredDaysText})` : 'INACTIVE'}
+                          ? `EXPIRED (${expiredDaysText})`
+                          : 'INACTIVE'}
                     </span>
                   )}
                 </div>
 
                 {!targetSubForDisplay ? (
                   <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center space-y-2">
-                    <p className="text-xs text-slate-400">No subscription contract found for this member.</p>
+                    <p className="text-xs text-slate-400">
+                      No subscription contract found for this member.
+                    </p>
                     <button
                       type="button"
                       onClick={() => setIsWizardOpen(true)}
@@ -1357,15 +1732,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    
-                    {/* CURRENT OR LATEST SUBSCRIPTION CARD */}
-                    <div className={`p-4 rounded-2xl space-y-2.5 shadow-xs relative overflow-hidden border ${
-                      activeContract
-                        ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/30'
-                        : expiredDaysText
-                        ? 'bg-rose-500/5 dark:bg-rose-500/10 border-rose-500/30'
-                        : 'bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/30'
-                    }`}>
+                    {/* CURRENT SUBSCRIPTION */}
+                    <div
+                      className={`p-4 rounded-2xl space-y-2.5 shadow-xs relative overflow-hidden border ${
+                        activeContract
+                          ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/30'
+                          : expiredDaysText
+                            ? 'bg-rose-500/5 dark:bg-rose-500/10 border-rose-500/30'
+                            : 'bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/30'
+                      }`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
                         <div className="flex items-center gap-2">
                           {activeContract ? (
@@ -1374,43 +1750,83 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             <Clock className="w-4 h-4 text-rose-500 shrink-0" />
                           )}
                           <h5 className="font-bold text-sm text-(--color-text)">
-                            {targetSubForDisplay.plan_name || (targetSubForDisplay.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')}
+                            {targetSubForDisplay.plan_name ||
+                              (targetSubForDisplay.plan_type === 'yearly'
+                                ? 'Yearly Membership'
+                                : 'Monthly Membership')}
                           </h5>
                         </div>
 
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider border ${
-                          activeContract
-                            ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                            : 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30'
-                        }`}>
-                          {activeContract ? 'Active Contract' : `Expired (${expiredDaysText})`}
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider border ${
+                            activeContract
+                              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                              : 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                          }`}
+                        >
+                          {activeContract
+                            ? 'Active Contract'
+                            : `Expired (${expiredDaysText})`}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Contract ID</span>
-                          <span className="font-mono text-xs font-bold text-(--color-text) block">{targetSubForDisplay.id}</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            Contract ID
+                          </span>
+                          <span className="font-mono text-xs font-bold text-(--color-text) block">
+                            {targetSubForDisplay.id}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Receipt #</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            Receipt #
+                          </span>
                           <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
                             {targetSubForDisplay.receipt_number || 'N/A'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Price Paid</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            Price Paid
+                          </span>
                           <span className="font-mono text-xs font-black text-(--color-text) block">
-                            ₱{Number(targetSubForDisplay.price || 0).toLocaleString()}.00 ({targetSubForDisplay.payment_method})
+                            ₱
+                            {Number(
+                              targetSubForDisplay.price || 0
+                            ).toLocaleString()}
+                            .00 ({targetSubForDisplay.payment_method})
                           </span>
                         </div>
                         <div className="col-span-2 sm:col-span-3 pt-1 border-t border-(--border-color) flex flex-wrap justify-between items-center text-[11px]">
                           <span className="text-slate-400 font-mono">
-                            Validity: <strong>{new Date(targetSubForDisplay.start_date).toLocaleDateString()}</strong> to <strong>{new Date(targetSubForDisplay.end_date).toLocaleDateString()}</strong>
+                            Validity:{' '}
+                            <strong>
+                              {new Date(
+                                targetSubForDisplay.start_date
+                              ).toLocaleDateString()}
+                            </strong>{' '}
+                            to{' '}
+                            <strong>
+                              {new Date(
+                                targetSubForDisplay.end_date
+                              ).toLocaleDateString()}
+                            </strong>
                           </span>
                           {activeContract ? (
                             <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                              {Math.max(0, Math.ceil((new Date(targetSubForDisplay.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} Days Remaining
+                              {Math.max(
+                                0,
+                                Math.ceil(
+                                  (new Date(
+                                    targetSubForDisplay.end_date
+                                  ).getTime() -
+                                    Date.now()) /
+                                    (1000 * 60 * 60 * 24)
+                                )
+                              )}{' '}
+                              Days Remaining
                             </span>
                           ) : (
                             <span className="font-bold text-rose-500 font-mono">
@@ -1424,8 +1840,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div className="p-2 bg-slate-500/10 rounded-xl text-[10px] font-mono flex items-center justify-between text-slate-400">
                         <span>Check-In Entry Benefit:</span>
                         <strong className="text-(--color-text) font-bold">
-                          {targetSubForDisplay.plan_type === 'yearly' 
-                            ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
+                          {targetSubForDisplay.plan_type === 'yearly'
+                            ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})`
                             : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
                         </strong>
                       </div>
@@ -1438,7 +1854,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           <div className="flex items-center gap-2">
                             <CalendarCheck className="w-4 h-4 text-blue-500 shrink-0" />
                             <h5 className="font-bold text-sm text-(--color-text)">
-                              Upcoming Queued Renewal: {queuedContract.plan_name || (queuedContract.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')}
+                              Upcoming Queued Renewal:{' '}
+                              {queuedContract.plan_name ||
+                                (queuedContract.plan_type === 'yearly'
+                                  ? 'Yearly Membership'
+                                  : 'Monthly Membership')}
                             </h5>
                           </div>
 
@@ -1449,34 +1869,61 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
                           <div>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Start</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                              Scheduled Start
+                            </span>
                             <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 block">
-                              {new Date(queuedContract.start_date).toLocaleDateString()}
+                              {new Date(
+                                queuedContract.start_date
+                              ).toLocaleDateString()}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Receipt #</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                              Receipt #
+                            </span>
                             <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
                               {queuedContract.receipt_number || 'N/A'}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block">Amount Paid</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                              Amount Paid
+                            </span>
                             <span className="font-mono text-xs font-black text-(--color-text) block">
-                              ₱{Number(queuedContract.price || 0).toLocaleString()}.00
+                              ₱
+                              {Number(
+                                queuedContract.price || 0
+                              ).toLocaleString()}
+                              .00
                             </span>
                           </div>
                           <div className="col-span-2 sm:col-span-3 pt-1 border-t border-(--border-color) flex justify-between items-center text-[11px] font-mono text-slate-400">
-                            <span>Scheduled Validity: <strong>{new Date(queuedContract.start_date).toLocaleDateString()}</strong> to <strong>{new Date(queuedContract.end_date).toLocaleDateString()}</strong></span>
-                            <span className="font-bold text-blue-500">Will activate automatically</span>
+                            <span>
+                              Scheduled Validity:{' '}
+                              <strong>
+                                {new Date(
+                                  queuedContract.start_date
+                                ).toLocaleDateString()}
+                              </strong>{' '}
+                              to{' '}
+                              <strong>
+                                {new Date(
+                                  queuedContract.end_date
+                                ).toLocaleDateString()}
+                              </strong>
+                            </span>
+                            <span className="font-bold text-blue-500">
+                              Will activate automatically
+                            </span>
                           </div>
                         </div>
 
                         <div className="p-2 bg-blue-500/10 rounded-xl text-[10px] font-mono flex items-center justify-between text-blue-600 dark:text-blue-400">
                           <span>Upcoming Entry Benefit:</span>
                           <strong className="font-bold">
-                            {queuedContract.plan_type === 'yearly' 
-                              ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})` 
+                            {queuedContract.plan_type === 'yearly'
+                              ? `Yearly Sub Entry (₱${settings.yearly_member_checkin_fee})`
                               : `Monthly Sub Entry (₱${settings.monthly_member_checkin_fee})`}
                           </strong>
                         </div>
@@ -1492,16 +1939,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center gap-2 transition-colors"
                         >
                           <CreditCard className="w-4 h-4" />
-                          <span>{activeContract ? 'Schedule Plan Renewal / Extension' : 'Renew Subscription'}</span>
+                          <span>
+                            {activeContract
+                              ? 'Schedule Plan Renewal / Extension'
+                              : 'Renew Subscription'}
+                          </span>
                         </button>
                       </div>
                     )}
-
                   </div>
                 )}
               </div>
 
-              {/* DANGER ZONE: VOID SUBSCRIPTION (ADMINISTRATOR ONLY) */}
+              {/* DANGER ZONE: VOID SUBSCRIPTION (ADMIN ONLY) */}
               {isAdmin && (activeContract || queuedContract) && (
                 <div className="pt-2 border-t border-(--border-color) space-y-3 select-none">
                   <div className="flex items-center gap-2">
@@ -1533,10 +1983,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl gap-3">
                         <div className="text-left space-y-0.5">
                           <span className="font-bold text-xs text-rose-400 block">
-                            Void {queuedContract ? 'Queued Renewal' : 'Active Subscription'}
+                            Void{' '}
+                            {queuedContract
+                              ? 'Queued Renewal'
+                              : 'Active Subscription'}
                           </span>
                           <span className="text-xs text-slate-400 block">
-                            Cancel contract ({subToVoid?.id}) and purge its specific receipt while keeping historical receipts safe.
+                            Cancel contract ({subToVoid?.id}) and purge its
+                            specific receipt while keeping historical receipts
+                            safe.
                           </span>
                         </div>
                         <button
@@ -1555,7 +2010,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 </div>
               )}
 
-              {/* SECTION 2: INVOICES & RECEIPTS TABLE */}
+              {/* INVOICES & RECEIPTS TABLE */}
               <div className="space-y-3 pt-4 border-t border-(--border-color)">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
@@ -1563,7 +2018,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     INVOICES & RECEIPTS
                   </span>
                   <span className="text-[10px] font-mono text-slate-400">
-                    {receipts.length} {receipts.length === 1 ? 'Record' : 'Records'}
+                    {receipts.length}{' '}
+                    {receipts.length === 1 ? 'Record' : 'Records'}
                   </span>
                 </div>
 
@@ -1581,355 +2037,419 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   />
                 )}
               </div>
-
             </div>
           )}
 
           {/* TAB 3: CARDS & DIGITAL CARD */}
-          {activeTab === 'Cards' && (() => {
-            const cardExpIso = currentCard?.expires_at 
-              || (currentCard?.issued_at 
-                ? new Date(new Date(currentCard.issued_at).setFullYear(new Date(currentCard.issued_at).getFullYear() + 3)).toISOString()
-                : null);
+          {activeTab === 'Cards' &&
+            (() => {
+              const cardExpIso =
+                currentCard?.expires_at ||
+                (currentCard?.issued_at
+                  ? new Date(
+                      new Date(currentCard.issued_at).setFullYear(
+                        new Date(currentCard.issued_at).getFullYear() + 3
+                      )
+                    ).toISOString()
+                  : null);
 
-            const cardExpDateStr = cardExpIso 
-              ? new Date(cardExpIso).toLocaleDateString() 
-              : '3 YEARS FROM ISSUE';
+              const cardExpDateStr = cardExpIso
+                ? new Date(cardExpIso).toLocaleDateString()
+                : '3 YEARS FROM ISSUE';
 
-            const cardExpDateOnly = cardExpIso ? cardExpIso.split('T')[0] : '2029-08-07';
+              const isCardExpired = cardExpIso
+                ? new Date(cardExpIso) < new Date()
+                : false;
 
-            const isCardExpired = cardExpIso ? new Date(cardExpIso) < new Date() : false;
+              const issueDateStr = currentCard?.issued_at
+                ? new Date(currentCard.issued_at).toLocaleDateString()
+                : new Date().toLocaleDateString();
 
-            const issueDateStr = currentCard?.issued_at 
-              ? new Date(currentCard.issued_at).toLocaleDateString() 
-              : new Date().toLocaleDateString();
+              const qrPayload =
+                currentCard?.card_number || localMember.member_id;
+              const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
-            const qrPayload = currentCard?.card_number || localMember.member_id;
-            const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+              const handleSwitchCardTypeInDb = async (
+                type: 'QR' | 'Manual'
+              ) => {
+                try {
+                  await cardService.issue(
+                    localMember.member_id,
+                    type,
+                    'Admin Staff'
+                  );
+                  toast.success(`Member security card format set to ${type}.`);
+                  setSelectedCardFormat(type);
+                  setRefreshKey((prev) => prev + 1);
+                  await loadProfileCollections();
+                  onMutationSuccess();
+                } catch (err: any) {
+                  toast.error(err.message || 'Failed to update card format.');
+                }
+              };
 
-            const handleSwitchCardTypeInDb = async (type: 'QR' | 'Manual') => {
-              try {
-                await cardService.issue(localMember.member_id, type, 'Admin Staff');
-                toast.success(`Member security card format set to ${type}.`);
-                setSelectedCardFormat(type);
-                setRefreshKey(prev => prev + 1);
-                await loadProfileCollections();
-                onMutationSuccess();
-              } catch (err: any) {
-                toast.error(err.message || 'Failed to update card format.');
-              }
-            };
-
-            return (
-              <div className="space-y-4 text-left animate-fade-in">
-                
-                {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
-                <div className="grid grid-cols-2 gap-2 bg-(--bg-page) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCardFormat('QR')}
-                    className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                      selectedCardFormat === 'QR'
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md'
-                        : 'text-slate-400 hover:text-(--color-text)'
-                    }`}
-                  >
-                    <QrCode className="w-4 h-4" />
-                    <span>Digital QR Card</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCardFormat('Manual')}
-                    className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                      selectedCardFormat === 'Manual'
-                        ? 'bg-amber-600 text-white shadow-md'
-                        : 'text-slate-400 hover:text-(--color-text)'
-                    }`}
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Manual Card</span>
-                  </button>
-                </div>
-
-                {currentCard ? (
-                  <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4 shadow-xs">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">
-                          REGISTERED CREDENTIAL TOKEN
-                        </span>
-                        <h5 className="text-xs sm:text-sm font-bold text-(--color-text) font-mono break-all">
-                          {qrPayload}
-                        </h5>
-                        <p className="text-xs text-slate-400 font-mono">
-                          Registered Format: <strong>{currentCard.card_type}</strong> • Version: {currentCard.version}.0
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2 w-full sm:w-auto">
-                        {currentCard.card_type !== selectedCardFormat && (
-                          <button
-                            type="button"
-                            onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
-                            className="flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none"
-                            title="Update registered card type in database"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span>Set as Registered</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => setIsDigitalQrModalOpen(true)}
-                          className="flex-1 sm:flex-initial min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
-                        >
-                          <Eye className="w-4 h-4" />
-                          <span>Print Card</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* DYNAMIC DISPLAY: DIGITAL QR CARD VS MANUAL TEMPLATE ASSET */}
-                    {selectedCardFormat === 'QR' ? (
-                      <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
-                        <div className="text-center space-y-0.5">
-                          <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
-                            WOLF PALOMAR GYM
-                          </h4>
-                          <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
-                          <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
-                            MUAYTHAI BOXING
-                          </div>
-                          <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
-                            6B Judge A. Roldan St., Navotas City, Metro Manila
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-3 pt-1">
-                          <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
-                            <img
-                              src={qrImg} 
-                              alt="Member QR Payload" 
-                              className="w-full h-full object-contain"
-                              style={{ opacity: isCardExpired ? 0.2 : 1 }}
-                            />
-                            {isCardExpired && (
-                              <div className="absolute inset-0 bg-red-600/90 rounded-xl flex flex-col items-center justify-center text-white text-[9px] font-black uppercase text-center leading-tight">
-                                <span>EXPIRED</span>
-                                <span>BADGE</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex-1 space-y-1.5 min-w-0">
-                            <div>
-                              <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
-                                FULL NAME
-                              </span>
-                              <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate uppercase">
-                                {localMember.full_name}
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
-                                CONTACT
-                              </span>
-                              <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate font-mono">
-                                {localMember.phone || 'N/A'}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                              <div>
-                                <span className="text-[8px] font-black text-zinc-400 uppercase block">ISSUED</span>
-                                <div className="bg-white text-black font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate">
-                                  {issueDateStr}
-                                </div>
-                              </div>
-
-                              <div>
-                                <span className="text-[8px] font-black text-zinc-400 uppercase block">EXPIRATION</span>
-                                <div className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
-                                  isCardExpired ? 'text-red-600' : 'text-black'
-                                }`}>
-                                  {cardExpDateStr}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-3 pt-2">
-                        <div className="w-full max-w-sm sm:max-w-md aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-black p-1.5 flex items-center justify-center">
-                          <img 
-                            src={cardTemplateImg} 
-                            alt="Manual Member Card Template Asset" 
-                            className="w-full h-full object-contain block"
-                          />
-                        </div>
-                        <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
-                          Manual Card Template Asset • Official Gym Print Layout
-                        </span>
-                      </div>
-                    )}
-
-                  </div>
-                ) : (
-                  <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 space-y-3">
-                    <p>No active security card assigned to this client yet.</p>
+              return (
+                <div className="space-y-4 text-left animate-fade-in">
+                  {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
+                  <div className="grid grid-cols-2 gap-2 bg-(--bg-page) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
                     <button
                       type="button"
-                      onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                      onClick={() => setSelectedCardFormat('QR')}
+                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        selectedCardFormat === 'QR'
+                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md'
+                          : 'text-slate-400 hover:text-(--color-text)'
+                      }`}
                     >
-                      Issue {selectedCardFormat} Security Card
+                      <QrCode className="w-4 h-4" />
+                      <span>Digital QR Card</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCardFormat('Manual')}
+                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        selectedCardFormat === 'Manual'
+                          ? 'bg-amber-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-(--color-text)'
+                      }`}
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>Manual Card</span>
                     </button>
                   </div>
-                )}
 
-                {/* PHYSICAL MEMBERSHIP CARD LIFECYCLE & CLAIM STATUS PANEL */}
-                {currentCard && (
-                  <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
-                      <h5 className="text-xs font-heading font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4 text-blue-500" />
-                        PHYSICAL CARD PAYMENT & CLAIM TRACKING
-                      </h5>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
-                        currentCard.payment_status === 'PAID' && currentCard.claim_status === 'CLAIMED'
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                          : currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED'
-                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                          : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
-                      }`}>
-                        {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'CLAIMED'
-                          ? '✓ PAID & CLAIMED'
-                          : currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED'
-                          ? '⚠ PAID • READY FOR PICKUP'
-                          : 'UNPAID'}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Payment Status Card */}
-                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Card Fee Payment (₱50.00)
-                        </span>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Status:</span>
-                          {currentCard.payment_status === 'PAID' ? (
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> PAID (₱{currentCard.card_fee_paid || 50}.00)
-                            </span>
-                          ) : (
-                            <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNPAID (₱0.00)
-                            </span>
-                          )}
-                        </div>
-                        {currentCard.receipt_number && (
-                          <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color)">
-                            <span className="text-slate-400 text-[11px]">Official Receipt:</span>
-                            <span className="font-mono text-[11px] font-bold text-blue-500">{currentCard.receipt_number}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Claim Status Card */}
-                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Handover & Claim State
-                        </span>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Claim Status:</span>
-                          {currentCard.claim_status === 'CLAIMED' ? (
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> RELEASED TO MEMBER
-                            </span>
-                          ) : currentCard.claim_status === 'UNCLAIMED' ? (
-                            <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNCLAIMED (At Front Desk)
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-mono">NOT APPLICABLE</span>
-                          )}
-                        </div>
-                        {currentCard.claimed_at && (
-                          <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color) text-[11px]">
-                            <span className="text-slate-400">Released On:</span>
-                            <span className="font-mono text-slate-300">
-                              {new Date(currentCard.claimed_at).toLocaleDateString()} {currentCard.claimed_by ? `(${currentCard.claimed_by})` : ''}
-                            </span>
-                          </div>
-                        )}
-                        {currentCard.claim_notes && (
-                          <p className="text-[10px] text-slate-400 italic pt-0.5">
-                            "{currentCard.claim_notes}"
+                  {currentCard ? (
+                    <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4 shadow-xs">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">
+                            REGISTERED CREDENTIAL TOKEN
+                          </span>
+                          <h5 className="text-xs sm:text-sm font-bold text-(--color-text) font-mono break-all">
+                            {qrPayload}
+                          </h5>
+                          <p className="text-xs text-slate-400 font-mono">
+                            Registered Format:{' '}
+                            <strong>{currentCard.card_type}</strong> • Version:{' '}
+                            {currentCard.version}.0
                           </p>
-                        )}
+                        </div>
+
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          {currentCard.card_type !== selectedCardFormat && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleSwitchCardTypeInDb(selectedCardFormat)
+                              }
+                              className="flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none"
+                              title="Update registered card type in database"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>Set as Registered</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setIsDigitalQrModalOpen(true)}
+                            className="flex-1 sm:flex-initial min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span>Print Card</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* DYNAMIC DISPLAY: DIGITAL QR CARD VS MANUAL TEMPLATE ASSET */}
+                      {selectedCardFormat === 'QR' ? (
+                        <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
+                          <div className="text-center space-y-0.5">
+                            <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
+                              WOLF PALOMAR GYM
+                            </h4>
+                            <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
+                            <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
+                              MUAYTHAI BOXING
+                            </div>
+                            <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
+                              6B Judge A. Roldan St., Navotas City, Metro Manila
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 pt-1">
+                            <div className="bg-white p-2 rounded-xl w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center relative shadow-md">
+                              <img
+                                src={qrImg}
+                                alt="Member QR Payload"
+                                className="w-full h-full object-contain"
+                                style={{ opacity: isCardExpired ? 0.2 : 1 }}
+                              />
+                              {isCardExpired && (
+                                <div className="absolute inset-0 bg-red-600/90 rounded-xl flex flex-col items-center justify-center text-white text-[9px] font-black uppercase text-center leading-tight">
+                                  <span>EXPIRED</span>
+                                  <span>BADGE</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-1.5 min-w-0">
+                              <div>
+                                <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                                  FULL NAME
+                                </span>
+                                <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate uppercase">
+                                  {localMember.full_name}
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-[9px] font-black text-zinc-400 uppercase block mb-0.5 tracking-wider">
+                                  CONTACT
+                                </span>
+                                <div className="bg-white text-black font-extrabold text-xs px-2.5 py-1 rounded-md truncate font-mono">
+                                  {localMember.phone || 'N/A'}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                                <div>
+                                  <span className="text-[8px] font-black text-zinc-400 uppercase block">
+                                    ISSUED
+                                  </span>
+                                  <div className="bg-white text-black font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate">
+                                    {issueDateStr}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <span className="text-[8px] font-black text-zinc-400 uppercase block">
+                                    EXPIRATION
+                                  </span>
+                                  <div
+                                    className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
+                                      isCardExpired
+                                        ? 'text-red-600'
+                                        : 'text-black'
+                                    }`}
+                                  >
+                                    {cardExpDateStr}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 pt-2">
+                          <div className="w-full max-w-sm sm:max-w-md aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-black p-1.5 flex items-center justify-center">
+                            <img
+                              src={cardTemplateImg}
+                              alt="Manual Member Card Template Asset"
+                              className="w-full h-full object-contain block"
+                            />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
+                            Manual Card Template Asset • Official Gym Print
+                            Layout
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 space-y-3">
+                      <p>
+                        No active security card assigned to this client yet.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSwitchCardTypeInDb(selectedCardFormat)
+                        }
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                      >
+                        Issue {selectedCardFormat} Security Card
+                      </button>
+                    </div>
+                  )}
+
+                  {/* PHYSICAL MEMBERSHIP CARD LIFECYCLE & CLAIM STATUS PANEL */}
+                  {currentCard && (
+                    <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
+                        <h5 className="text-xs font-heading font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <CreditCard className="w-4 h-4 text-blue-500" />
+                          PHYSICAL CARD PAYMENT & CLAIM TRACKING
+                        </h5>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                            currentCard.payment_status === 'PAID' &&
+                            currentCard.claim_status === 'CLAIMED'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                              : currentCard.payment_status === 'PAID' &&
+                                  currentCard.claim_status === 'UNCLAIMED'
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                          }`}
+                        >
+                          {currentCard.payment_status === 'PAID' &&
+                          currentCard.claim_status === 'CLAIMED'
+                            ? '✓ PAID & CLAIMED'
+                            : currentCard.payment_status === 'PAID' &&
+                                currentCard.claim_status === 'UNCLAIMED'
+                              ? '⚠ PAID • READY FOR PICKUP'
+                              : 'UNPAID'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        {/* Payment Status Card */}
+                        <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Card Fee Payment (₱{cardFeeAmount}.00)
+                          </span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Status:</span>
+                            {currentCard.payment_status === 'PAID' ? (
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
+                                PAID (₱
+                                {currentCard.card_fee_paid || cardFeeAmount}.00)
+                              </span>
+                            ) : (
+                              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
+                                UNPAID (₱0.00)
+                              </span>
+                            )}
+                          </div>
+                          {currentCard.receipt_number && (
+                            <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color)">
+                              <span className="text-slate-400 text-[11px]">
+                                Official Receipt:
+                              </span>
+                              <span className="font-mono text-[11px] font-bold text-blue-500">
+                                {currentCard.receipt_number}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Claim Status Card */}
+                        <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Handover & Claim State
+                          </span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">
+                              Claim Status:
+                            </span>
+                            {currentCard.claim_status === 'CLAIMED' ? (
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
+                                RELEASED TO MEMBER
+                              </span>
+                            ) : currentCard.claim_status === 'UNCLAIMED' ? (
+                              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
+                                UNCLAIMED (At Front Desk)
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-mono">
+                                NOT APPLICABLE
+                              </span>
+                            )}
+                          </div>
+                          {currentCard.claimed_at && (
+                            <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color) text-[11px]">
+                              <span className="text-slate-400">
+                                Released On:
+                              </span>
+                              <span className="font-mono text-slate-300">
+                                {new Date(
+                                  currentCard.claimed_at
+                                ).toLocaleDateString()}{' '}
+                                {currentCard.claimed_by
+                                  ? `(${currentCard.claimed_by})`
+                                  : ''}
+                              </span>
+                            </div>
+                          )}
+                          {currentCard.claim_notes && (
+                            <p className="text-[10px] text-slate-400 italic pt-0.5">
+                              "{currentCard.claim_notes}"
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* ACTION BUTTONS: CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
-                {currentCard && (
-                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                    {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED' ? (
-                      <button 
+                  {/* ACTION BUTTONS: CLAIM, UNDO CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
+                  {currentCard && (
+                    <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {currentCard.payment_status === 'PAID' &&
+                      currentCard.claim_status === 'UNCLAIMED' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClaimNotesInput('');
+                            setIsMarkClaimModalOpen(true);
+                          }}
+                          className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>Mark as Claimed</span>
+                        </button>
+                      ) : currentCard.claim_status === 'CLAIMED' ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsUndoClaimModalOpen(true)}
+                          className="min-h-[44px] px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                          title="Revert claim state back to Unclaimed"
+                        >
+                          <Undo2 className="w-4 h-4 text-amber-500" />
+                          <span>Undo Claim</span>
+                        </button>
+                      ) : currentCard.payment_status !== 'PAID' ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsPayCardModalOpen(true)}
+                          className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          <span>Pay Card Fee (₱{cardFeeAmount})</span>
+                        </button>
+                      ) : (
+                        <div className="min-h-[44px] px-3.5 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Claim Completed</span>
+                        </div>
+                      )}
+
+                      <button
                         type="button"
-                        onClick={() => {
-                          setClaimNotesInput('');
-                          setIsMarkClaimModalOpen(true);
-                        }} 
-                        className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                        onClick={() => setIsReissueModalOpen(true)}
+                        className="min-h-[44px] px-3.5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
                       >
-                        <Check className="w-4 h-4" />
-                        <span>Mark as Claimed</span>
+                        <RefreshCw className="w-4 h-4" />
+                        <span>Reissue Token</span>
                       </button>
-                    ) : currentCard.payment_status !== 'PAID' ? (
-                      <button 
+
+                      <button
                         type="button"
-                        onClick={() => setIsPayCardModalOpen(true)} 
-                        className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                        onClick={() => setIsUnbindModalOpen(true)}
+                        className="min-h-[44px] px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
                       >
-                        <CreditCard className="w-4 h-4" />
-                        <span>Pay Card Fee (₱50)</span>
+                        <Trash2 className="w-4 h-4" />
+                        <span>Unbind Card</span>
                       </button>
-                    ) : (
-                      <div className="min-h-[44px] px-3.5 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Claim Completed</span>
-                      </div>
-                    )}
-
-                    <button 
-                      type="button"
-                      onClick={() => setIsReissueModalOpen(true)} 
-                      className="min-h-[44px] px-3.5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      <span>Reissue Token</span>
-                    </button>
-
-                    <button 
-                      type="button"
-                      onClick={() => setIsUnbindModalOpen(true)} 
-                      className="min-h-[44px] px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span>Unbind Card</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           {/* TAB 4: ATTENDANCE */}
           {activeTab === 'Attendance' && (
@@ -1945,7 +2465,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     Visits: {attendance.length}
                   </span>
                   <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">
-                    Total: ₱{totalAttendanceValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Total: ₱
+                    {totalAttendanceValue.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </span>
                 </div>
               </div>
@@ -1959,7 +2483,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   data={attendanceLogs}
                   columns={attendanceColumns}
                   itemsPerPage={5}
-                  searchKeys={['plan_name', 'payment_method', 'staff_name', 'receipt_number', 'check_in_time']}
+                  searchKeys={[
+                    'plan_name',
+                    'payment_method',
+                    'staff_name',
+                    'receipt_number',
+                    'check_in_time',
+                  ]}
                   searchPlaceholder="Search visits by plan, staff, payment..."
                 />
               )}
@@ -1972,42 +2502,44 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               <label className="text-xs font-bold text-slate-400 uppercase block">
                 Internal Medical & Staff Remarks
               </label>
-              <textarea 
-                value={notes} 
-                onChange={e => setNotes(e.target.value)} 
-                rows={6} 
-                className="w-full p-3.5 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed" 
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={6}
+                className="w-full p-3.5 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed"
                 placeholder="Enter internal notes visible to reception staff..."
               />
-              <button 
-                onClick={handleUpdateNotes} 
+              <button
+                onClick={handleUpdateNotes}
                 className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md"
               >
                 <span>Save Notes</span>
               </button>
             </div>
           )}
-
         </div>
 
         {/* FOOTER ACTIONS */}
         <div className="p-3.5 sm:p-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl pb-20 sm:pb-4">
-          
           <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 font-mono">Status:</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
-                localMember.status === 'Active' 
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-              }`}>
+              <span className="text-xs font-bold text-slate-400 font-mono">
+                Status:
+              </span>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
+                  localMember.status === 'Active'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                }`}
+              >
                 {localMember.status || 'Active'}
               </span>
             </div>
 
-            <button 
+            <button
               type="button"
-              onClick={() => setIsStatusModalOpen(true)} 
+              onClick={() => setIsStatusModalOpen(true)}
               className={`min-h-[44px] px-4 py-2.5 rounded-xl cursor-pointer flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md active:scale-95 ${
                 localMember.status === 'Active'
                   ? 'bg-amber-500 hover:bg-amber-600 text-white'
@@ -2041,17 +2573,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   hasActiveSubscription
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : isEditing
-                    ? 'bg-blue-600 text-white shadow-md cursor-pointer'
-                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
+                      ? 'bg-blue-600 text-white shadow-md cursor-pointer'
+                      : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
                 }`}
               >
-                {hasActiveSubscription ? <Lock className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                {hasActiveSubscription ? (
+                  <Lock className="w-4 h-4" />
+                ) : (
+                  <Pencil className="w-4 h-4" />
+                )}
                 <span>{isEditing ? 'Cancel Edit' : 'Edit Details'}</span>
               </button>
 
               {hasActiveSubscription && (
                 <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
-                  🔒 Profile details are locked while an active subscription contract exists.
+                  🔒 Profile details are locked while an active subscription
+                  contract exists.
                 </div>
               )}
             </div>
@@ -2067,18 +2604,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
                 }`}
               >
-                {hasActiveSubscription ? <Lock className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                {hasActiveSubscription ? (
+                  <Lock className="w-4 h-4" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
                 <span>Delete Member</span>
               </button>
 
               {hasActiveSubscription && (
                 <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
-                  🔒 Member cannot be deleted while an active subscription contract exists.
+                  🔒 Member cannot be deleted while an active subscription
+                  contract exists.
                 </div>
               )}
             </div>
           </div>
-
         </div>
 
         {/* PROFILE PICTURE VIEW & CHANGE MODAL */}
@@ -2108,12 +2649,21 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         <Modal
           isOpen={isStatusModalOpen}
           onClose={() => setIsStatusModalOpen(false)}
-          title={localMember.status === 'Active' ? 'SUSPEND MEMBER' : 'ACTIVATE MEMBER'}
+          title={
+            localMember.status === 'Active'
+              ? 'SUSPEND MEMBER'
+              : 'ACTIVATE MEMBER'
+          }
         >
           <div className="space-y-4 text-left font-body">
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-              Are you sure you want to {localMember.status === 'Active' ? 'suspend' : 'activate'} membership profile for{' '}
-              <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+              Are you sure you want to{' '}
+              {localMember.status === 'Active' ? 'suspend' : 'activate'}{' '}
+              membership profile for{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {localMember.full_name}
+              </strong>
+              ?
             </p>
 
             <div className="flex gap-3 justify-end pt-2">
@@ -2128,10 +2678,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 type="button"
                 onClick={handleStatusToggleConfirm}
                 className={`px-5 py-2.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md ${
-                  localMember.status === 'Active' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                  localMember.status === 'Active'
+                    ? 'bg-amber-500 hover:bg-amber-600'
+                    : 'bg-emerald-500 hover:bg-emerald-600'
                 }`}
               >
-                Confirm {localMember.status === 'Active' ? 'Suspension' : 'Activation'}
+                Confirm{' '}
+                {localMember.status === 'Active' ? 'Suspension' : 'Activation'}
               </button>
             </div>
           </div>
@@ -2146,7 +2699,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           <div className="space-y-4 text-left font-body">
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
               Are you sure you want to delete profile for{' '}
-              <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {localMember.full_name}
+              </strong>
+              ?
             </p>
             <p className="text-xs text-slate-400 font-mono">
               This record will be moved to the Member Recycle Bin.
@@ -2184,12 +2740,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <span>Warning: Active Card Deactivation</span>
               </p>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Generating a fresh token will immediately <strong>deactivate {localMember.full_name}'s current card ({currentCard?.card_number || 'N/A'})</strong>.
+                Generating a fresh token will immediately{' '}
+                <strong>
+                  deactivate {localMember.full_name}'s current card (
+                  {currentCard?.card_number || 'N/A'})
+                </strong>
+                .
               </p>
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Are you sure you want to proceed with issuing a replacement card token for <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+              Are you sure you want to proceed with issuing a replacement card
+              token for{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {localMember.full_name}
+              </strong>
+              ?
             </p>
 
             <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
@@ -2225,12 +2791,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <span>Deactivate Credential Card</span>
               </p>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Unbinding will immediately revoke and deactivate card <strong>{currentCard?.card_number}</strong>. The profile will return to <strong>"No Card Registered"</strong> status.
+                Unbinding will immediately revoke and deactivate card{' '}
+                <strong>{currentCard?.card_number}</strong>. The profile will
+                return to <strong>"No Card Registered"</strong> status.
               </p>
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Are you sure you want to unbind the security card from <strong className="text-slate-900 dark:text-white font-bold">{localMember.full_name}</strong>?
+              Are you sure you want to unbind the security card from{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {localMember.full_name}
+              </strong>
+              ?
             </p>
 
             <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
@@ -2262,7 +2834,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           }}
           title="VOID SUBSCRIPTION CONTRACT"
         >
-          <form 
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               if (voidReason && adminPassword.trim() && !isVerifyingVoid) {
@@ -2274,27 +2846,39 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs space-y-1">
               <p className="font-bold flex items-center gap-1.5">
                 <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>This will cancel contract {targetVoidSub?.id} and purge its receipt ({targetVoidSub?.receipt_number || 'N/A'}). Past receipts will not be affected.</span>
+                <span>
+                  This will cancel contract {targetVoidSub?.id} and purge its
+                  receipt ({targetVoidSub?.receipt_number || 'N/A'}). Past
+                  receipts will not be affected.
+                </span>
               </p>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400 block">Reason for Voiding *</label>
+              <label className="text-xs font-bold text-slate-400 block">
+                Reason for Voiding *
+              </label>
               <select
                 value={voidReason}
                 onChange={(e) => setVoidReason(e.target.value)}
                 className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-medium"
               >
-                <option value="Wrong membership selected">Wrong membership selected</option>
+                <option value="Wrong membership selected">
+                  Wrong membership selected
+                </option>
                 <option value="Wrong member">Wrong member</option>
-                <option value="Duplicate registration">Duplicate registration</option>
+                <option value="Duplicate registration">
+                  Duplicate registration
+                </option>
                 <option value="Incorrect payment">Incorrect payment</option>
                 <option value="Other">Other</option>
               </select>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400 block">Additional Notes (Optional)</label>
+              <label className="text-xs font-bold text-slate-400 block">
+                Additional Notes (Optional)
+              </label>
               <textarea
                 value={voidNotes}
                 onChange={(e) => setVoidNotes(e.target.value)}
@@ -2305,7 +2889,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400 block">Admin Password Verification *</label>
+              <label className="text-xs font-bold text-slate-400 block">
+                Admin Password Verification *
+              </label>
               <div className="relative">
                 <input
                   type={showAdminPassword ? 'text' : 'password'}
@@ -2337,7 +2923,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={!voidReason || !adminPassword.trim() || isVerifyingVoid}
+                disabled={
+                  !voidReason || !adminPassword.trim() || isVerifyingVoid
+                }
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
               >
                 {isVerifyingVoid ? 'Verifying...' : 'Void Subscription'}
@@ -2359,22 +2947,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <span>Card Handover Verification</span>
               </p>
               <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                Confirm that the printed physical card has been handed over directly to <strong>{localMember.full_name}</strong>.
+                Confirm that the printed physical card has been handed over
+                directly to <strong>{localMember.full_name}</strong>.
               </p>
             </div>
 
             <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs space-y-1 font-mono">
               <div className="flex justify-between">
                 <span className="text-slate-400">Card Token:</span>
-                <span className="font-bold text-(--color-text)">{currentCard?.card_number || 'N/A'}</span>
+                <span className="font-bold text-(--color-text)">
+                  {currentCard?.card_number || 'N/A'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Fee Payment:</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">PAID (₱{currentCard?.card_fee_paid || 50}.00)</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  PAID (₱{currentCard?.card_fee_paid || 50}.00)
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Staff In-Charge:</span>
-                <span className="text-(--color-text)">{user?.email || 'Admin Staff'}</span>
+                <span className="text-(--color-text)">
+                  {user?.email || 'Admin Staff'}
+                </span>
               </div>
             </div>
 
@@ -2406,7 +3001,57 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                <span>{isClaimingInProfile ? 'Updating...' : 'Confirm Card Claimed'}</span>
+                <span>
+                  {isClaimingInProfile ? 'Updating...' : 'Confirm Card Claimed'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* UNDO CLAIM CONFIRMATION MODAL */}
+        <Modal
+          isOpen={isUndoClaimModalOpen}
+          onClose={() => setIsUndoClaimModalOpen(false)}
+          title="UNDO CARD CLAIM STATUS"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Revert Claimed Card State</span>
+              </p>
+              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                This will revert the physical card status for{' '}
+                <strong>{localMember.full_name}</strong> back to{' '}
+                <strong>PAID • UNCLAIMED (Pending Pickup)</strong> and clear
+                handover timestamps.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Was this card marked as claimed by mistake? Confirming will make
+              the card available for pickup/handover again at the front desk.
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsUndoClaimModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isUndoingClaim}
+                onClick={handleConfirmUndoClaim}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <Undo2 className="w-4 h-4" />
+                <span>
+                  {isUndoingClaim ? 'Reverting...' : 'Confirm Undo Claim'}
+                </span>
               </button>
             </div>
           </div>
@@ -2425,13 +3070,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 <span>Physical Card Printing Fee</span>
               </p>
               <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                Collect <strong>₱50.00</strong> card fee for <strong>{localMember.full_name}</strong>. Upon payment, status will update to <strong>PAID • UNCLAIMED</strong> ready for handover.
+                Collect <strong>₱{cardFeeAmount}.00</strong> card fee for{' '}
+                <strong>{localMember.full_name}</strong>. Upon payment, status
+                will update to <strong>PAID • UNCLAIMED</strong> ready for
+                handover.
               </p>
             </div>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-slate-400 font-bold block mb-1">Payment Method</label>
+                <label className="text-slate-400 font-bold block mb-1">
+                  Payment Method
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -2460,23 +3110,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
               {payCardMethod === 'Cash' ? (
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-bold block">Amount Tendered (₱)</label>
+                  <label className="text-slate-400 font-bold block">
+                    Amount Tendered (₱)
+                  </label>
                   <input
                     type="number"
                     value={payCardAmountPaid}
-                    onChange={(e) => setPayCardAmountPaid(Number(e.target.value) || 0)}
-                    min={50}
+                    onChange={(e) =>
+                      setPayCardAmountPaid(Number(e.target.value) || 0)
+                    }
+                    min={cardFeeAmount}
                     className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-sm text-(--color-text) outline-none"
                   />
-                  {payCardAmountPaid > 50 && (
+                  {payCardAmountPaid > cardFeeAmount && (
                     <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono pt-1">
-                      Change: ₱{(payCardAmountPaid - 50).toFixed(2)}
+                      Change: ₱{(payCardAmountPaid - cardFeeAmount).toFixed(2)}
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className="text-slate-400 font-bold block">GCash Reference Number (Optional)</label>
+                  <label className="text-slate-400 font-bold block">
+                    GCash Reference Number (Optional)
+                  </label>
                   <input
                     type="text"
                     value={payCardGcashRef}
@@ -2498,12 +3154,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </button>
               <button
                 type="button"
-                disabled={isPayingCard || (payCardMethod === 'Cash' && payCardAmountPaid < 50)}
+                disabled={
+                  isPayingCard ||
+                  (payCardMethod === 'Cash' &&
+                    payCardAmountPaid < cardFeeAmount)
+                }
                 onClick={handleConfirmPayCard}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
               >
                 <CreditCard className="w-4 h-4" />
-                <span>{isPayingCard ? 'Processing...' : 'Record Payment (₱50.00)'}</span>
+                <span>
+                  {isPayingCard
+                    ? 'Processing...'
+                    : `Record Payment (₱${cardFeeAmount}.00)`}
+                </span>
               </button>
             </div>
           </div>
@@ -2518,12 +3182,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             onClose={() => setIsWizardOpen(false)}
             onComplete={() => {
               setIsWizardOpen(false);
-              setRefreshKey(prev => prev + 1);
+              setRefreshKey((prev) => prev + 1);
               onMutationSuccess();
             }}
           />
         )}
-
       </motion.div>
     </motion.div>,
     document.body

@@ -5,18 +5,18 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  ShieldAlert, 
-  CheckCircle2, 
-  ArrowLeft, 
-  Sun, 
-  Moon, 
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldAlert,
+  CheckCircle2,
+  ArrowLeft,
+  Sun,
+  Moon,
   Loader2,
-  User as UserIcon 
+  User as UserIcon,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -35,16 +35,26 @@ interface RecoveryUserInfo {
 
 // --- Zod Validation Schemas ---
 const requestSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid authorized email address' }),
+  email: z
+    .string()
+    .email({ message: 'Please enter a valid authorized email address' }),
 });
 
-const resetPasswordSchema = z.object({
-  password: z.string().min(6, { message: 'Password must be at least 6 characters long' }),
-  confirmPassword: z.string().min(6, { message: 'Confirm password must be at least 6 characters long' }),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
+const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(6, { message: 'Password must be at least 6 characters long' }),
+    confirmPassword: z
+      .string()
+      .min(6, {
+        message: 'Confirm password must be at least 6 characters long',
+      }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 type RequestFormValues = z.infer<typeof requestSchema>;
 type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
@@ -53,7 +63,9 @@ function getInitialTheme(): 'dark' | 'light' {
   if (typeof window === 'undefined') return 'dark';
   const saved = localStorage.getItem('theme');
   if (saved === 'dark' || saved === 'light') return saved;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
 }
 
 // Memory tracking variable for the local blob URL to safely revoke it [2]
@@ -62,21 +74,24 @@ let activeLocalBlobUrl: string | null = null;
 export const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
-  
+
   // States to differentiate direct request mode vs active recovery state
   const checkSession = useAuthStore((state) => state.checkSession);
   const [isRecoveryState, setIsRecoveryState] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  
+
   // Profile extraction states
-  const [recoveryUser, setRecoveryUser] = useState<RecoveryUserInfo | null>(null);
+  const [recoveryUser, setRecoveryUser] = useState<RecoveryUserInfo | null>(
+    null
+  );
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>('');
 
   // Password visual controls
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
-  
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState<boolean>(false);
+
   // Modal State
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
@@ -125,23 +140,27 @@ export const ForgotPassword: React.FC = () => {
         }
 
         if (isVerifiedSession) {
-          const { data: { user } } = await supabase.auth.getUser();
-          
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
           if (user) {
             setIsRecoveryState(true);
             setRecoveryUser({
               id: user.id,
               email: user.email || '',
-              username: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+              username:
+                user.user_metadata?.full_name ||
+                user.email?.split('@')[0] ||
+                'User',
             });
 
             // Securely fetch and download private avatar files from the private bucket [2]
             const avatarPath = user.user_metadata?.avatar_url || '';
             if (avatarPath && !avatarPath.startsWith('http')) {
               try {
-                const { data: imageBlob, error: downloadError } = await supabase.storage
-                  .from('avatars')
-                  .download(avatarPath);
+                const { data: imageBlob, error: downloadError } =
+                  await supabase.storage.from('avatars').download(avatarPath);
 
                 if (!downloadError && imageBlob) {
                   if (activeLocalBlobUrl) {
@@ -152,13 +171,18 @@ export const ForgotPassword: React.FC = () => {
                   activeLocalBlobUrl = localUrl;
                 }
               } catch (err) {
-                console.warn('Failed to load private avatar in recovery view:', err);
+                console.warn(
+                  'Failed to load private avatar in recovery view:',
+                  err
+                );
               }
             } else if (avatarPath.startsWith('http')) {
               setLocalAvatarUrl(avatarPath);
             }
 
-            toast.success('Secure recovery session verified. Choose your new password.');
+            toast.success(
+              'Secure recovery session verified. Choose your new password.'
+            );
           }
         }
       } catch (err: any) {
@@ -201,7 +225,9 @@ export const ForgotPassword: React.FC = () => {
   const normaliseEmail = (val: string) => {
     if (val && !val.includes('@')) {
       // Standardize local username recovery requests to the preferred domain
-      setRequestValue('email', `${val.trim()}@palomargym.noemail`, { shouldValidate: true });
+      setRequestValue('email', `${val.trim()}@palomargym.noemail`, {
+        shouldValidate: true,
+      });
     }
   };
 
@@ -228,7 +254,7 @@ export const ForgotPassword: React.FC = () => {
   const onSetNewPasswordSubmit = async (data: ResetPasswordFormValues) => {
     try {
       setIsSubmitting(true);
-      
+
       // 1. Update the password on Supabase Auth
       const { error } = await supabase.auth.updateUser({
         password: data.password,
@@ -241,20 +267,25 @@ export const ForgotPassword: React.FC = () => {
           .from('profiles')
           .update({ status: 'active' })
           .eq('id', recoveryUser.id);
-          
+
         if (dbError) {
-          console.warn('Failed to update status to active on password update:', dbError.message);
+          console.warn(
+            'Failed to update status to active on password update:',
+            dbError.message
+          );
         }
       }
 
       // 3. Terminate all current and alternative device sessions globally [1.1.1, 1.1.2]
-      const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+      const { error: signOutError } = await supabase.auth.signOut({
+        scope: 'global',
+      });
       if (signOutError) {
         console.warn('Sign out other sessions warned:', signOutError.message);
       }
 
       // Syncs your local store to clear the user session from memory [2]
-      await checkSession(); 
+      await checkSession();
 
       setShowSuccessModal(true);
     } catch (err: any) {
@@ -272,11 +303,13 @@ export const ForgotPassword: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-[#f8fafc] dark:bg-[#0f1012] select-none flex items-center justify-center px-4 transition-colors duration-700 font-sans">
-      
       {/* Background Texture Overlay */}
-      <div 
-        className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" 
-        style={{ backgroundImage: `url(${axiomTexture})`, backgroundSize: '180px' }}
+      <div
+        className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none"
+        style={{
+          backgroundImage: `url(${axiomTexture})`,
+          backgroundSize: '180px',
+        }}
       />
 
       {/* Theme Swapper Toggle */}
@@ -286,18 +319,22 @@ export const ForgotPassword: React.FC = () => {
       >
         <span className="text-slate-700 dark:text-slate-300 text-[10px] font-heading tracking-widest flex items-center gap-1.5">
           {theme === 'dark' ? (
-            <><Sun className="w-3.5 h-3.5 text-amber-400" /><span>LIGHT</span></>
+            <>
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              <span>LIGHT</span>
+            </>
           ) : (
-            <><Moon className="w-3.5 h-3.5 text-indigo-400" /><span>DARK</span></>
+            <>
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              <span>DARK</span>
+            </>
           )}
         </span>
       </button>
 
       {/* System Access Card Wrapper */}
       <div className="w-full max-w-md relative z-10 animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
-        
         <div className="bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500">
-          
           {isInitializing ? (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
               <Loader2 className="w-8 h-8 animate-spin text-[#1b365d] dark:text-[#bf0202]" />
@@ -318,12 +355,15 @@ export const ForgotPassword: React.FC = () => {
                 {/* ── FLOW A: SET NEW PASSWORD ── */}
                 {isRecoveryState ? (
                   <div className="space-y-6 font-body">
-                    
                     {/* User Profile Info Card Header */}
                     <div className="flex flex-col items-center space-y-3 pb-6 border-b border-slate-200 dark:border-white/5 mb-2">
                       <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-100 dark:bg-[#13161a] border border-slate-200 dark:border-white/10 flex items-center justify-center shadow-inner relative">
                         {localAvatarUrl ? (
-                          <img src={localAvatarUrl} alt="Recovery Profile" className="w-full h-full object-cover" />
+                          <img
+                            src={localAvatarUrl}
+                            alt="Recovery Profile"
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <UserIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                         )}
@@ -338,9 +378,13 @@ export const ForgotPassword: React.FC = () => {
                       </div>
                     </div>
 
-                    <form onSubmit={handleResetSubmit(onSetNewPasswordSubmit)} className="space-y-4">
+                    <form
+                      onSubmit={handleResetSubmit(onSetNewPasswordSubmit)}
+                      className="space-y-4"
+                    >
                       <p className="text-center text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                        Confirm your new password. Saving will update your access on all devices.
+                        Confirm your new password. Saving will update your
+                        access on all devices.
                       </p>
 
                       <Input
@@ -358,7 +402,11 @@ export const ForgotPassword: React.FC = () => {
                             className="field-visibility-toggle cursor-pointer"
                             aria-label="Toggle password visibility"
                           >
-                            {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                            {showPassword ? (
+                              <EyeOff className="w-4.5 h-4.5" />
+                            ) : (
+                              <Eye className="w-4.5 h-4.5" />
+                            )}
                           </button>
                         }
                       />
@@ -378,7 +426,11 @@ export const ForgotPassword: React.FC = () => {
                             className="field-visibility-toggle cursor-pointer"
                             aria-label="Toggle password confirmation visibility"
                           >
-                            {showConfirmPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                            {showConfirmPassword ? (
+                              <EyeOff className="w-4.5 h-4.5" />
+                            ) : (
+                              <Eye className="w-4.5 h-4.5" />
+                            )}
                           </button>
                         }
                       />
@@ -389,17 +441,24 @@ export const ForgotPassword: React.FC = () => {
                         </div>
                       )}
 
-                      <Button type="submit" loading={isSubmitting} loadingLabel="UPDATING KEYS...">
+                      <Button
+                        type="submit"
+                        loading={isSubmitting}
+                        loadingLabel="UPDATING KEYS..."
+                      >
                         Save Password & Exit
                       </Button>
                     </form>
                   </div>
                 ) : (
-                  
                   // ── FLOW B: STANDARD REQUEST LINK ──
-                  <form onSubmit={handlePreRequestSubmit} className="space-y-4 font-body">
+                  <form
+                    onSubmit={handlePreRequestSubmit}
+                    className="space-y-4 font-body"
+                  >
                     <p className="text-center text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed font-bold">
-                      Enter your verified email. We will transmit a secure password-reset link [2].
+                      Enter your verified email. We will transmit a secure
+                      password-reset link [2].
                     </p>
 
                     <Input
@@ -418,7 +477,11 @@ export const ForgotPassword: React.FC = () => {
                       </div>
                     )}
 
-                    <Button type="submit" loading={isSubmitting} loadingLabel="DISPATCHING LINK...">
+                    <Button
+                      type="submit"
+                      loading={isSubmitting}
+                      loadingLabel="DISPATCHING LINK..."
+                    >
                       Send Reset Instructions
                     </Button>
                   </form>
@@ -433,13 +496,15 @@ export const ForgotPassword: React.FC = () => {
                     <span>VERIFICATION PROTOCOL</span>
                   </div>
                   <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">
-                    This terminal resets security keys dynamically via secure tokens. Verify the origin domain of links before entering your updated credentials.
+                    This terminal resets security keys dynamically via secure
+                    tokens. Verify the origin domain of links before entering
+                    your updated credentials.
                   </p>
                 </div>
 
                 <div className="flex items-center justify-center text-xs font-bold text-slate-400">
-                  <button 
-                    onClick={() => navigate('/login')} 
+                  <button
+                    onClick={() => navigate('/login')}
                     className="hover:text-slate-800 dark:hover:text-white hover:underline transition-all cursor-pointer flex items-center gap-1.5"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
@@ -448,35 +513,46 @@ export const ForgotPassword: React.FC = () => {
                 </div>
 
                 <div className="text-center text-[9px] text-slate-900 dark:text-slate-500 font-bold">
-                  © {new Date().getFullYear()} WOLF PALOMAR. All Rights Reserved.
+                  © {new Date().getFullYear()} WOLF PALOMAR. All Rights
+                  Reserved.
                 </div>
               </div>
             </>
           )}
-
         </div>
       </div>
 
       {/* ── SUCCESS MODAL: SYSTEM TERMINATION ACCESS RESTORED ── */}
       <Modal
         isOpen={showSuccessModal}
-        onClose={() => { setShowSuccessModal(false); navigate('/login', { replace: true }); }}
+        onClose={() => {
+          setShowSuccessModal(false);
+          navigate('/login', { replace: true });
+        }}
         title="Security Access Restored"
       >
         <div className="space-y-6 font-body text-center">
           <CheckCircle2 className="w-16 h-16 mx-auto text-emerald-500 dark:text-emerald-400 animate-bounce" />
           <div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Credentials Updated</h4>
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+              Credentials Updated
+            </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-2 font-bold">
-              Your password has been successfully updated. All other active system sessions on other devices have been terminated. Please log in again.
+              Your password has been successfully updated. All other active
+              system sessions on other devices have been terminated. Please log
+              in again.
             </p>
           </div>
-          <Button onClick={() => { setShowSuccessModal(false); navigate('/login', { replace: true }); }}>
+          <Button
+            onClick={() => {
+              setShowSuccessModal(false);
+              navigate('/login', { replace: true });
+            }}
+          >
             Return to Login
           </Button>
         </div>
       </Modal>
-
     </div>
   );
 };

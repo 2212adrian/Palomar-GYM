@@ -1,17 +1,24 @@
 // src/pages/logbook/LogbookPage.tsx
-import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from 'react';
-import { 
-  format, 
-  startOfWeek, 
-  addDays, 
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useContext,
+  useRef,
+  useCallback,
+} from 'react';
+import {
+  format,
+  startOfWeek,
+  addDays,
   getDay,
   parseISO,
-  isToday 
+  isToday,
 } from 'date-fns';
-import { 
-  Plus, 
-  RotateCcw, 
-  ClipboardList, 
+import {
+  Plus,
+  RotateCcw,
+  ClipboardList,
   FileSpreadsheet,
   ChevronRight,
   ChevronLeft,
@@ -20,7 +27,13 @@ import {
   Printer,
   Trash2,
 } from 'lucide-react';
-import { motion, AnimatePresence, animate, useMotionValue, useTransform } from 'framer-motion';
+import {
+  motion,
+  AnimatePresence,
+  animate,
+  useMotionValue,
+  useTransform,
+} from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -33,9 +46,9 @@ import { logAudit } from '../../lib/supabase/audit';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
-import { UndoToast } from '../../components/ui/UndoToast'; 
+import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
 import { TimelineBar } from '../../components/ui/TimelineBar';
-import { TabLoader } from '../../components/ui/TabLoader'; 
+import { TabLoader } from '../../components/ui/TabLoader';
 import { HeaderActionsContext } from '../../routes';
 import { LogbookRecordAttendance } from './components/LogbookRecordAttendance';
 import { LogbookRecycleBin } from './components/LogbookRecycleBin';
@@ -47,7 +60,9 @@ import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
-const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neutral' }> = ({ trend }) => {
+const DynamicBanknoteIcon: React.FC<{
+  trend: 'increasing' | 'decreasing' | 'neutral';
+}> = ({ trend }) => {
   return (
     <motion.div
       key={trend}
@@ -55,8 +70,8 @@ const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neut
         trend === 'increasing'
           ? { scale: 0.4, rotate: -20, opacity: 0 }
           : trend === 'decreasing'
-          ? { scale: 0.4, rotate: 20, opacity: 0 }
-          : { scale: 1, rotate: 0, opacity: 1 }
+            ? { scale: 0.4, rotate: 20, opacity: 0 }
+            : { scale: 1, rotate: 0, opacity: 1 }
       }
       animate={
         trend === 'increasing'
@@ -67,34 +82,34 @@ const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neut
               filter: [
                 'drop-shadow(0 0 0px rgba(16,185,129,0))',
                 'drop-shadow(0 0 14px rgba(16,185,129,0.9))',
-                'drop-shadow(0 0 4px rgba(16,185,129,0.4))'
-              ]
+                'drop-shadow(0 0 4px rgba(16,185,129,0.4))',
+              ],
             }
           : trend === 'decreasing'
-          ? {
-              scale: [0.4, 1.55, 0.95, 1],
-              rotate: [20, -8, 3, 0],
-              opacity: [0, 1, 1, 1],
-              filter: [
-                'drop-shadow(0 0 0px rgba(239,68,68,0))',
-                'drop-shadow(0 0 14px rgba(239,68,68,0.9))',
-                'drop-shadow(0 0 4px rgba(239,68,68,0.4))'
-              ]
-            }
-          : {
-              scale: 1,
-              rotate: 0,
-              opacity: 1,
-              filter: 'drop-shadow(0 0 0px rgba(0,0,0,0))'
-            }
+            ? {
+                scale: [0.4, 1.55, 0.95, 1],
+                rotate: [20, -8, 3, 0],
+                opacity: [0, 1, 1, 1],
+                filter: [
+                  'drop-shadow(0 0 0px rgba(239,68,68,0))',
+                  'drop-shadow(0 0 14px rgba(239,68,68,0.9))',
+                  'drop-shadow(0 0 4px rgba(239,68,68,0.4))',
+                ],
+              }
+            : {
+                scale: 1,
+                rotate: 0,
+                opacity: 1,
+                filter: 'drop-shadow(0 0 0px rgba(0,0,0,0))',
+              }
       }
       transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
       className={`shrink-0 flex items-center justify-center ${
         trend === 'increasing'
           ? 'text-emerald-500 dark:text-emerald-400'
           : trend === 'decreasing'
-          ? 'text-rose-500 dark:text-rose-400'
-          : 'text-emerald-500 dark:text-emerald-400'
+            ? 'text-rose-500 dark:text-rose-400'
+            : 'text-emerald-500 dark:text-emerald-400'
       }`}
     >
       {trend === 'increasing' ? (
@@ -155,17 +170,20 @@ const DynamicBanknoteIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'neut
 };
 
 // ANIMATED CURRENCY TICKER
-const AnimatedCurrency: React.FC<{ value: number; trend?: 'increasing' | 'decreasing' | 'neutral' }> = ({ 
-  value, 
-  trend = 'neutral' 
-}) => {
+const AnimatedCurrency: React.FC<{
+  value: number;
+  trend?: 'increasing' | 'decreasing' | 'neutral';
+}> = ({ value, trend = 'neutral' }) => {
   const count = useMotionValue(value);
-  const formatted = useTransform(count, (latest) => `₱${Number(latest).toFixed(2)}`);
+  const formatted = useTransform(
+    count,
+    (latest) => `₱${Number(latest).toFixed(2)}`
+  );
 
   useEffect(() => {
     const controls = animate(count, value, {
       duration: 1.0,
-      ease: [0.16, 1, 0.3, 1]
+      ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
   }, [value, count]);
@@ -178,18 +196,24 @@ const AnimatedCurrency: React.FC<{ value: number; trend?: 'increasing' | 'decrea
       }}
       animate={
         trend === 'increasing'
-          ? { scale: [1, 1.08, 1], color: ['#10b981', '#34d399', 'currentColor'] }
+          ? {
+              scale: [1, 1.08, 1],
+              color: ['#10b981', '#34d399', 'currentColor'],
+            }
           : trend === 'decreasing'
-          ? { scale: [1, 1.08, 1], color: ['#ef4444', '#f87171', 'currentColor'] }
-          : { scale: 1, color: 'currentColor' }
+            ? {
+                scale: [1, 1.08, 1],
+                color: ['#ef4444', '#f87171', 'currentColor'],
+              }
+            : { scale: 1, color: 'currentColor' }
       }
       transition={{ duration: 1.2, times: [0, 0.4, 1], ease: 'easeOut' }}
       className={`font-heading font-black tracking-tight inline-block ${
         trend === 'increasing'
           ? 'text-emerald-600 dark:text-emerald-400'
           : trend === 'decreasing'
-          ? 'text-rose-600 dark:text-rose-400'
-          : 'text-slate-900 dark:text-white'
+            ? 'text-rose-600 dark:text-rose-400'
+            : 'text-slate-900 dark:text-white'
       }`}
     >
       <motion.span>{formatted}</motion.span>
@@ -200,12 +224,14 @@ const AnimatedCurrency: React.FC<{ value: number; trend?: 'increasing' | 'decrea
 // ANIMATED NUMBER TICKER
 const AnimatedNumber: React.FC<{ value: number }> = ({ value }) => {
   const count = useMotionValue(value);
-  const rounded = useTransform(count, (latest) => Math.round(latest).toString());
+  const rounded = useTransform(count, (latest) =>
+    Math.round(latest).toString()
+  );
 
   useEffect(() => {
     const controls = animate(count, value, {
       duration: 0.8,
-      ease: [0.16, 1, 0.3, 1]
+      ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
   }, [value, count]);
@@ -217,13 +243,14 @@ const ATTENDANCE_FILTERS = [
   { label: 'All', value: 'All' },
   { label: 'Walk-In', value: 'Walk-In' },
   { label: 'Member', value: 'Member' },
-  { label: 'Subs', value: 'Subs' }
+  { label: 'Subs', value: 'Subs' },
+  { label: 'Cards', value: 'Card' },
 ];
 
 const PAYMENT_FILTERS = [
   { label: 'All Pay', value: 'All' },
   { label: 'Cash', value: 'Cash' },
-  { label: 'GCash', value: 'GCash' }
+  { label: 'GCash', value: 'GCash' },
 ];
 
 const isLogDeletable = (log: LogRecord) => {
@@ -236,7 +263,9 @@ const isLogDeletable = (log: LogRecord) => {
   }
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const logDate = log.timestamp ? format(parseISO(log.timestamp), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  const logDate = log.timestamp
+    ? format(parseISO(log.timestamp), 'yyyy-MM-dd')
+    : format(new Date(), 'yyyy-MM-dd');
   return logDate === todayStr;
 };
 
@@ -284,7 +313,8 @@ export const LogbookPage: React.FC = () => {
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
-    const userRole = profile?.role || user?.user_metadata?.role || user?.app_metadata?.role;
+    const userRole =
+      profile?.role || user?.user_metadata?.role || user?.app_metadata?.role;
     return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
@@ -292,23 +322,28 @@ export const LogbookPage: React.FC = () => {
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
 
   // Date selection states
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => 
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 0 })
   );
-  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => getDay(new Date()));
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() =>
+    getDay(new Date())
+  );
 
   const selectedDate = useMemo(() => {
     return addDays(currentWeekStart, selectedDayIndex);
   }, [currentWeekStart, selectedDayIndex]);
 
-  const dateStr = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+  const dateStr = useMemo(
+    () => format(selectedDate, 'yyyy-MM-dd'),
+    [selectedDate]
+  );
 
-  // Animation & Pending Delete states
+  // Animation & Consolidated Multi-Stacked Pending Delete states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
-  const [pendingDelete, setPendingDelete] = useState<LogRecord | null>(null);
-  const pendingDeleteRef = useRef<LogRecord | null>(null);
-  const [showUndoToast, setShowUndoToast] = useState(false);
+  const [stagedDeletions, setStagedDeletions] = useState<LogRecord[]>([]);
+  const stagedDeletionsRef = useRef<LogRecord[]>([]);
+  stagedDeletionsRef.current = stagedDeletions;
 
   // Pre-fill state passed from Scanner overlay
   const [initialSearchVal, setInitialSearchVal] = useState<string>('');
@@ -318,163 +353,178 @@ export const LogbookPage: React.FC = () => {
   }, [location.pathname]);
 
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
-  const fetchAttendanceFromSupabase = useCallback(async (isBackground: boolean = false) => {
-    const cacheKey = `logbook_sanitized_${dateStr}`;
+  const fetchAttendanceFromSupabase = useCallback(
+    async (isBackground: boolean = false) => {
+      const cacheKey = `logbook_sanitized_${dateStr}`;
 
-    // 1. Instant Cache Hydration
-    if (!isBackground) {
-      const cachedSession = sessionStorage.getItem(cacheKey);
-      if (cachedSession) {
-        try {
-          const parsed = JSON.parse(cachedSession);
-          if (Array.isArray(parsed)) {
-            setLogs(parsed);
+      if (!isBackground) {
+        const cachedSession = sessionStorage.getItem(cacheKey);
+        if (cachedSession) {
+          try {
+            const parsed = JSON.parse(cachedSession);
+            if (Array.isArray(parsed)) {
+              setLogs(parsed);
+            }
+          } catch (e) {
+            console.error('Failed to parse cached logbook session:', e);
           }
-        } catch (e) {
-          console.error('Failed to parse cached logbook session:', e);
+        } else {
+          setLoadingLogs(true);
         }
-      } else {
-        setLoadingLogs(true);
       }
-    }
-
-    try {
-      // 2. Try RPC for sanitized DTO first
-      let mappedLogs: LogRecord[] | null = null;
 
       try {
-        const { data, error } = await supabase.rpc('get_sanitized_logbook', {
-          target_date: dateStr
-        });
+        let mappedLogs: LogRecord[] | null = null;
 
-        if (!error && data) {
-          mappedLogs = (data || []).map((row: any) => ({
-            id: String(row.id),
-            timestamp: row.timestamp,
-            memberId: row.member_id || null,
-            customerName: row.customer_name,
-            customerType: row.customer_type,
-            categoryOrPlan: row.category_or_plan,
-            paymentMethod: row.payment_method,
-            amountPaid: Number(row.amount_paid || 0),
-            basePrice: Number(row.base_price || 0),
-            gcashFee: Number(row.gcash_fee || 0),
-            cardFee: Number(row.card_fee || 0),
-            gcashRefNo: row.gcash_ref_no,
-            referenceNumber: row.gcash_ref_no,
-            paymentRef: row.gcash_ref_no,
-            paymentStatus: (row.payment_status === 'Promo' || row.payment_status === 'Unpaid' ? row.payment_status : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
-            status: 'Active',
-            isSubscription: Boolean(row.is_subscription),
-            deletable: Boolean(row.deletable)
-          }));
-        } else if (error) {
-          const isOfflineErr = error?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
-          if (!isOfflineErr) {
-            console.warn('RPC get_sanitized_logbook fallback triggered:', error.message || error);
+        try {
+          const { data, error } = await supabase.rpc('get_sanitized_logbook', {
+            target_date: dateStr,
+          });
+
+          if (!error && data) {
+            mappedLogs = (data || []).map((row: any) => ({
+              id: String(row.id),
+              timestamp: row.timestamp,
+              memberId: row.member_id || null,
+              customerName: row.customer_name,
+              customerType: row.customer_type,
+              categoryOrPlan: row.category_or_plan,
+              paymentMethod: row.payment_method,
+              amountPaid: Number(row.amount_paid || 0),
+              basePrice: Number(row.base_price || 0),
+              gcashFee: Number(row.gcash_fee || 0),
+              cardFee: Number(row.card_fee || 0),
+              gcashRefNo: row.gcash_ref_no,
+              referenceNumber: row.gcash_ref_no,
+              paymentRef: row.gcash_ref_no,
+              paymentStatus: (row.payment_status === 'Promo' ||
+              row.payment_status === 'Unpaid'
+                ? row.payment_status
+                : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
+              status: 'Active',
+              isSubscription: Boolean(row.is_subscription),
+              deletable: Boolean(row.deletable),
+            }));
           }
-        }
-      } catch (rpcErr: any) {
-        const isOfflineErr = rpcErr?.message?.includes('No internet connection') || (typeof navigator !== 'undefined' && !navigator.onLine);
-        if (!isOfflineErr) {
+        } catch (rpcErr: any) {
           console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
         }
-      }
 
-      // 3. If RPC was not available or errored, attempt direct table query fallback
-      if (!mappedLogs && (typeof navigator === 'undefined' || navigator.onLine)) {
-        try {
-          const startOfDay = new Date(`${dateStr}T00:00:00+08:00`).toISOString();
-          const endOfDay = new Date(`${dateStr}T23:59:59.999+08:00`).toISOString();
+        // Direct table query fallback
+        if (
+          !mappedLogs &&
+          (typeof navigator === 'undefined' || navigator.onLine)
+        ) {
+          try {
+            const startOfDay = new Date(
+              `${dateStr}T00:00:00+08:00`
+            ).toISOString();
+            const endOfDay = new Date(
+              `${dateStr}T23:59:59.999+08:00`
+            ).toISOString();
 
-          const [attRes, rcptRes] = await Promise.allSettled([
-            supabase
-              .from('attendance')
-              .select('*')
-              .is('deleted_at', null)
-              .gte('check_in_time', startOfDay)
-              .lte('check_in_time', endOfDay)
-              .order('check_in_time', { ascending: false }),
-            supabase
-              .from('receipts')
-              .select('*')
-              .gte('created_at', startOfDay)
-              .lte('created_at', endOfDay)
-              .order('created_at', { ascending: false })
-          ]);
+            const [attRes, rcptRes] = await Promise.allSettled([
+              supabase
+                .from('attendance')
+                .select('*')
+                .is('deleted_at', null)
+                .gte('check_in_time', startOfDay)
+                .lte('check_in_time', endOfDay)
+                .order('check_in_time', { ascending: false }),
+              supabase
+                .from('receipts')
+                .select('*')
+                .gte('created_at', startOfDay)
+                .lte('created_at', endOfDay)
+                .order('created_at', { ascending: false }),
+            ]);
 
-          const rawAttendance = attRes.status === 'fulfilled' && !attRes.value.error ? (attRes.value.data || []) : [];
-          const rawReceipts = rcptRes.status === 'fulfilled' && !rcptRes.value.error ? (rcptRes.value.data || []) : [];
+            const rawAttendance =
+              attRes.status === 'fulfilled' && !attRes.value.error
+                ? attRes.value.data || []
+                : [];
+            const rawReceipts =
+              rcptRes.status === 'fulfilled' && !rcptRes.value.error
+                ? rcptRes.value.data || []
+                : [];
 
-          const fallbackList: LogRecord[] = [];
+            const fallbackList: LogRecord[] = [];
 
-          rawAttendance.forEach((a: any) => {
-            const entryFee = Number(a.entry_fee || 0);
-            fallbackList.push({
-              id: String(a.id),
-              timestamp: a.check_in_time,
-              memberId: a.member_id || null,
-              customerName: a.customer_name || 'Anonymous',
-              customerType: a.customer_type || 'Walk-In',
-              categoryOrPlan: a.plan_name || 'Regular Pass',
-              paymentMethod: a.payment_method || 'Cash',
-              amountPaid: entryFee,
-              basePrice: Number(a.base_price || (entryFee - (Number(a.gcash_fee) || 0))),
-              gcashFee: Number(a.gcash_fee || 0),
-              cardFee: Number(a.card_fee || 0),
-              gcashRefNo: a.gcash_ref_no || '',
-              referenceNumber: a.gcash_ref_no || '',
-              paymentRef: a.gcash_ref_no || '',
-              paymentStatus: entryFee > 0 ? 'Paid' : 'Promo',
-              status: 'Active',
-              isSubscription: false,
-              deletable: true
+            rawAttendance.forEach((a: any) => {
+              const entryFee = Number(a.entry_fee || 0);
+              fallbackList.push({
+                id: String(a.id),
+                timestamp: a.check_in_time,
+                memberId: a.member_id || null,
+                customerName: a.customer_name || 'Anonymous',
+                customerType: a.customer_type || 'Walk-In',
+                categoryOrPlan: a.plan_name || 'Regular Pass',
+                paymentMethod: a.payment_method || 'Cash',
+                amountPaid: entryFee,
+                basePrice: Number(
+                  a.base_price || entryFee - (Number(a.gcash_fee) || 0)
+                ),
+                gcashFee: Number(a.gcash_fee || 0),
+                cardFee: Number(a.card_fee || 0),
+                gcashRefNo: a.gcash_ref_no || '',
+                referenceNumber: a.gcash_ref_no || '',
+                paymentRef: a.gcash_ref_no || '',
+                paymentStatus: entryFee > 0 ? 'Paid' : 'Promo',
+                status: 'Active',
+                isSubscription: false,
+                deletable: true,
+              });
             });
-          });
 
-          rawReceipts.forEach((r: any) => {
-            const amt = Number(r.amount || 0);
-            fallbackList.push({
-              id: `rcpt-${r.id}`,
-              timestamp: r.created_at,
-              memberId: r.member_id || null,
-              customerName: r.customer_name || 'Member',
-              customerType: r.customer_type || 'New Membership',
-              categoryOrPlan: r.item_description || 'Subscription',
-              paymentMethod: r.payment_method || 'Cash',
-              amountPaid: amt,
-              basePrice: Number(r.base_price || amt),
-              gcashFee: Number(r.gcash_fee || 0),
-              cardFee: Number(r.card_fee || 0),
-              gcashRefNo: r.gcash_ref_no || '',
-              referenceNumber: r.gcash_ref_no || '',
-              paymentRef: r.gcash_ref_no || '',
-              paymentStatus: 'Paid',
-              status: 'Active',
-              isSubscription: true,
-              deletable: false
+            rawReceipts.forEach((r: any) => {
+              const amt = Number(r.amount || 0);
+              fallbackList.push({
+                id: `rcpt-${r.id}`,
+                timestamp: r.created_at,
+                memberId: r.member_id || null,
+                customerName: r.customer_name || 'Member',
+                customerType: r.customer_type || 'New Membership',
+                categoryOrPlan: r.item_description || 'Subscription',
+                paymentMethod: r.payment_method || 'Cash',
+                amountPaid: amt,
+                basePrice: Number(r.base_price || amt),
+                gcashFee: Number(r.gcash_fee || 0),
+                cardFee: Number(r.card_fee || 0),
+                gcashRefNo: r.gcash_ref_no || '',
+                referenceNumber: r.gcash_ref_no || '',
+                paymentRef: r.gcash_ref_no || '',
+                paymentStatus: 'Paid',
+                status: 'Active',
+                isSubscription: true,
+                deletable: false,
+              });
             });
-          });
 
-          fallbackList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          mappedLogs = fallbackList;
-        } catch (directErr) {
-          // Direct table query also failed (e.g. offline)
+            fallbackList.sort(
+              (a, b) =>
+                new Date(b.timestamp).getTime() -
+                new Date(a.timestamp).getTime()
+            );
+            mappedLogs = fallbackList;
+          } catch (directErr) {
+            console.error('Direct table fetch error:', directErr);
+          }
+        }
+
+        if (mappedLogs) {
+          setLogs(mappedLogs);
+          sessionStorage.setItem(cacheKey, JSON.stringify(mappedLogs));
+        }
+      } catch (err) {
+        console.error('Failed to fetch attendance:', err);
+      } finally {
+        if (!isBackground) {
+          setLoadingLogs(false);
         }
       }
-
-      if (mappedLogs) {
-        setLogs(mappedLogs);
-        sessionStorage.setItem(cacheKey, JSON.stringify(mappedLogs));
-      }
-    } catch (err) {
-      // General error guard
-    } finally {
-      if (!isBackground) {
-        setLoadingLogs(false);
-      }
-    }
-  }, [dateStr]);
+    },
+    [dateStr]
+  );
 
   useEffect(() => {
     fetchAttendanceFromSupabase(false);
@@ -482,14 +532,22 @@ export const LogbookPage: React.FC = () => {
     const channelId = `logbook_rt_${dateStr}_${Date.now()}`;
     const channel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
-        sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-        fetchAttendanceFromSupabase(true);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => {
-        sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-        fetchAttendanceFromSupabase(true);
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => {
+          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+          fetchAttendanceFromSupabase(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'receipts' },
+        () => {
+          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+          fetchAttendanceFromSupabase(true);
+        }
+      )
       .subscribe();
 
     return () => {
@@ -498,15 +556,20 @@ export const LogbookPage: React.FC = () => {
   }, [dateStr, fetchAttendanceFromSupabase]);
 
   const [ledgerSearch, setLedgerSearch] = useState('');
-  const [customerFilter, setCustomerFilter] = useState<'All' | 'Walk-In' | 'Member' | 'Subs'>('All');
-  const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash' | 'Card'>('All');
-  
+  const [customerFilter, setCustomerFilter] = useState<
+    'All' | 'Walk-In' | 'Member' | 'Subs'
+  >('All');
+  const [paymentFilter, setPaymentFilter] = useState<
+    'All' | 'Cash' | 'GCash' | 'Card'
+  >('All');
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  
-  const [selectedReceiptLog, setSelectedReceiptLog] = useState<LogRecord | null>(null);
+
+  const [selectedReceiptLog, setSelectedReceiptLog] =
+    useState<LogRecord | null>(null);
 
   useEffect(() => {
     if (location.state && (location.state as any).openAttendanceModal) {
@@ -523,7 +586,8 @@ export const LogbookPage: React.FC = () => {
   const filteredLogs = useMemo(() => {
     return dayLogs.filter((l: LogRecord) => {
       const q = ledgerSearch.toLowerCase().trim();
-      const matchesSearch = q === '' ||
+      const matchesSearch =
+        q === '' ||
         l.customerName.toLowerCase().includes(q) ||
         (l.memberId && l.memberId.toLowerCase().includes(q)) ||
         l.categoryOrPlan.toLowerCase().includes(q);
@@ -539,6 +603,10 @@ export const LogbookPage: React.FC = () => {
           !!l.isSubscription ||
           (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
           (l.categoryOrPlan || '').toLowerCase().includes('subscription');
+      } else if ((customerFilter as string) === 'Card') {
+        matchesType =
+          l.customerType === 'Card' ||
+          (l.categoryOrPlan || '').toLowerCase().includes('card');
       }
 
       let matchesPayment = true;
@@ -555,21 +623,22 @@ export const LogbookPage: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState<number>(25);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Reset lazy load count on filter/date changes
   useEffect(() => {
     setVisibleCount(25);
   }, [dateStr, ledgerSearch, customerFilter, paymentFilter]);
 
-  // Lazy loading intersection observer
   useEffect(() => {
     const el = loadMoreRef.current;
     if (!el) return;
 
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && visibleCount < filteredLogs.length) {
-        setVisibleCount(prev => Math.min(prev + 20, filteredLogs.length));
-      }
-    }, { threshold: 0.1, rootMargin: '300px' });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredLogs.length) {
+          setVisibleCount((prev) => Math.min(prev + 20, filteredLogs.length));
+        }
+      },
+      { threshold: 0.1, rootMargin: '300px' }
+    );
 
     observer.observe(el);
     return () => {
@@ -590,7 +659,9 @@ export const LogbookPage: React.FC = () => {
     }, 0);
   }, [dayLogs]);
 
-  const [revenueTrend, setRevenueTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
+  const [revenueTrend, setRevenueTrend] = useState<
+    'increasing' | 'decreasing' | 'neutral'
+  >('neutral');
   const prevRevenueRef = useRef<number>(totalCollectedToday);
 
   useEffect(() => {
@@ -613,10 +684,11 @@ export const LogbookPage: React.FC = () => {
   }, [totalCollectedToday]);
 
   const newMembersCount = useMemo(() => {
-    return dayLogs.filter((l: LogRecord) => l.customerType === 'New Membership' || l.isSubscription).length;
+    return dayLogs.filter(
+      (l: LogRecord) => l.customerType === 'New Membership' || l.isSubscription
+    ).length;
   }, [dayLogs]);
 
-  // BROADCAST TO TOPBAR
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('logbook-kpi-update', {
@@ -624,8 +696,8 @@ export const LogbookPage: React.FC = () => {
           checkins: dayLogs.length,
           revenue: totalCollectedToday,
           newMembers: newMembersCount,
-          revenueTrend
-        }
+          revenueTrend,
+        },
       })
     );
   }, [dayLogs.length, totalCollectedToday, newMembersCount, revenueTrend]);
@@ -633,15 +705,21 @@ export const LogbookPage: React.FC = () => {
   const handleCheckInSuccess = (newLog: LogRecord) => {
     const normalizedLog: LogRecord = {
       ...newLog,
-      id: String(newLog.id)
+      id: String(newLog.id),
     };
 
     setNewlyAddedId(normalizedLog.id);
     setTimeout(() => setNewlyAddedId(null), 2500);
 
-    setLogs(prev => {
-      const updated: LogRecord[] = [normalizedLog, ...prev.filter(item => String(item.id) !== normalizedLog.id)];
-      sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
+    setLogs((prev) => {
+      const updated: LogRecord[] = [
+        normalizedLog,
+        ...prev.filter((item) => String(item.id) !== normalizedLog.id),
+      ];
+      sessionStorage.setItem(
+        `logbook_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
       return updated;
     });
 
@@ -656,15 +734,22 @@ export const LogbookPage: React.FC = () => {
     const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
     const todayIndex = getDay(today);
 
-    setCurrentWeekStart(prev => (prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart));
-    setSelectedDayIndex(prev => (prev === todayIndex ? prev : todayIndex));
+    setCurrentWeekStart((prev) =>
+      prev.getTime() === todayWeekStart.getTime() ? prev : todayWeekStart
+    );
+    setSelectedDayIndex((prev) => (prev === todayIndex ? prev : todayIndex));
     setVisibleCount(25);
   };
 
   const handleTriggerCollectPayment = (log: LogRecord) => {
-    setLogs(prev => {
-      const updated: LogRecord[] = prev.map(item => item.id === log.id ? { ...item, paymentStatus: 'Paid' as const } : item);
-      sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
+    setLogs((prev) => {
+      const updated: LogRecord[] = prev.map((item) =>
+        item.id === log.id ? { ...item, paymentStatus: 'Paid' as const } : item
+      );
+      sessionStorage.setItem(
+        `logbook_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
       return updated;
     });
     toast.success(`Payment logged for ${log.customerName}`);
@@ -672,13 +757,20 @@ export const LogbookPage: React.FC = () => {
       'PAYMENT_COLLECTED',
       `Collected payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Unpaid" to "Paid" via ${log.paymentMethod || 'Cash'}.`,
       log.id
-    ).catch(e => console.warn('Payment collect audit log failed:', e));
+    ).catch((e) => console.warn('Payment collect audit log failed:', e));
   };
 
   const handleTriggerUndoPayment = (log: LogRecord) => {
-    setLogs(prev => {
-      const updated: LogRecord[] = prev.map(item => item.id === log.id ? { ...item, paymentStatus: 'Unpaid' as const } : item);
-      sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
+    setLogs((prev) => {
+      const updated: LogRecord[] = prev.map((item) =>
+        item.id === log.id
+          ? { ...item, paymentStatus: 'Unpaid' as const }
+          : item
+      );
+      sessionStorage.setItem(
+        `logbook_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
       return updated;
     });
     toast.info(`Undone payment. Set back to Unpaid.`);
@@ -686,49 +778,193 @@ export const LogbookPage: React.FC = () => {
       'PAYMENT_UNDONE',
       `Reverted payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Paid" to "Unpaid".`,
       log.id
-    ).catch(e => console.warn('Payment undo audit log failed:', e));
+    ).catch((e) => console.warn('Payment undo audit log failed:', e));
   };
 
-  const commitDelete = useCallback(async (targetLog: LogRecord | null) => {
-    if (!targetLog) return;
-    try {
-      const { error } = await supabase
-        .from('attendance')
-        .update({ 
-          deleted_at: new Date().toISOString(),
-          deleted_by: user?.id || null 
-        })
-        .eq('id', targetLog.id);
-
-      if (error) throw error;
-      toast.success('Check-in log moved to Recycle Bin.');
-
-      await logAudit(
-        'LOGBOOK_REMOVED',
-        `Moved attendance check-in for "${targetLog.customerName}" (${targetLog.customerType} - ${targetLog.categoryOrPlan}, ₱${Number(targetLog.amountPaid || 0).toFixed(2)}) to Recycle Bin.`,
-        targetLog.id
+  // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
+  const handleConfirmDelete = useCallback(
+    async (id: string) => {
+      const stagedLog = stagedDeletionsRef.current.find(
+        (l) => String(l.id) === String(id)
       );
-    } catch (err: any) {
-      console.error('Failed to commit deletion to database:', err);
-      toast.error(err.message || 'Failed to move check-in log to Recycle Bin.');
-      setLogs(prev => {
-        const updated: LogRecord[] = [targetLog, ...prev.filter(item => String(item.id) !== String(targetLog.id))].sort((a, b) => {
-          const dateA = a.timestamp || '';
-          const dateB = b.timestamp || '';
-          return dateB.localeCompare(dateA);
+      if (!stagedLog) return;
+
+      try {
+        // 1. Soft-delete attendance record
+        const { error } = await supabase
+          .from('attendance')
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: user?.id || null,
+          })
+          .eq('id', stagedLog.id);
+
+        if (error) throw error;
+
+        // 2. If it's a Card transaction, deactivate/soft-delete in member_cards
+        const isCard =
+          stagedLog.customerType === 'Card' ||
+          String(stagedLog.categoryOrPlan || '')
+            .toLowerCase()
+            .includes('card');
+
+        if (stagedLog.memberId && isCard) {
+          await supabase
+            .from('member_cards')
+            .update({
+              status: 'Inactive',
+              payment_status: 'UNPAID',
+              deleted_at: new Date().toISOString(),
+            })
+            .eq('member_id', stagedLog.memberId);
+        }
+
+        toast.success(
+          `Record for "${stagedLog.customerName}" moved to Recycle Bin.`
+        );
+
+        await logAudit(
+          'LOGBOOK_REMOVED',
+          `Moved check-in / card record for "${stagedLog.customerName}" (${stagedLog.customerType} - ${stagedLog.categoryOrPlan}, ₱${Number(stagedLog.amountPaid || 0).toFixed(2)}) to Recycle Bin.`,
+          stagedLog.id
+        );
+      } catch (err: any) {
+        console.error('Failed to commit deletion to database:', err);
+        toast.error(
+          err.message || 'Failed to move check-in log to Recycle Bin.'
+        );
+        setLogs((prev) => {
+          const updated: LogRecord[] = [
+            stagedLog,
+            ...prev.filter((item) => String(item.id) !== String(id)),
+          ].sort((a, b) => {
+            const dateA = a.timestamp || '';
+            const dateB = b.timestamp || '';
+            return dateB.localeCompare(dateA);
+          });
+          sessionStorage.setItem(
+            `logbook_sanitized_${dateStr}`,
+            JSON.stringify(updated)
+          );
+          return updated;
         });
-        sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
-        return updated;
+      } finally {
+        setStagedDeletions((prev) =>
+          prev.filter((item) => String(item.id) !== String(id))
+        );
+      }
+    },
+    [user?.id, dateStr]
+  );
+
+  const handleUndoDelete = (id: string) => {
+    const stagedLog = stagedDeletionsRef.current.find(
+      (l) => String(l.id) === String(id)
+    );
+    if (!stagedLog) return;
+
+    setDeletingIds((prev) => prev.filter((item) => item !== String(id)));
+    setLogs((prev) => {
+      const updated: LogRecord[] = [
+        stagedLog,
+        ...prev.filter((item) => String(item.id) !== String(id)),
+      ].sort((a, b) => {
+        const dateA = a.timestamp || '';
+        const dateB = b.timestamp || '';
+        return dateB.localeCompare(dateA);
       });
+      sessionStorage.setItem(
+        `logbook_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
+      return updated;
+    });
+
+    // Re-activate member card if it was a card transaction
+    const isCard =
+      stagedLog.customerType === 'Card' ||
+      String(stagedLog.categoryOrPlan || '')
+        .toLowerCase()
+        .includes('card');
+
+    if (stagedLog.memberId && isCard) {
+      supabase
+        .from('member_cards')
+        .update({
+          status: 'Active',
+          payment_status: 'PAID',
+          deleted_at: null,
+        })
+        .eq('member_id', stagedLog.memberId)
+        .then();
     }
-  }, [user?.id, dateStr]);
+
+    setStagedDeletions((prev) =>
+      prev.filter((item) => String(item.id) !== String(id))
+    );
+    toast.info(`Restored check-in for "${stagedLog.customerName}".`);
+  };
+
+  const handleConfirmAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToCommit = [...stagedDeletionsRef.current];
+    itemsToCommit.forEach((log) => handleConfirmDelete(String(log.id)));
+  };
+
+  const handleUndoAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToRestore = [...stagedDeletionsRef.current];
+    setDeletingIds([]);
+    setLogs((prev) => {
+      const existingIds = new Set(itemsToRestore.map((i) => String(i.id)));
+      const filtered = prev.filter((item) => !existingIds.has(String(item.id)));
+      const updated = [...itemsToRestore, ...filtered].sort((a, b) => {
+        const dateA = a.timestamp || '';
+        const dateB = b.timestamp || '';
+        return dateB.localeCompare(dateA);
+      });
+      sessionStorage.setItem(
+        `logbook_sanitized_${dateStr}`,
+        JSON.stringify(updated)
+      );
+      return updated;
+    });
+
+    // Re-activate all cards in member_cards
+    itemsToRestore.forEach((log) => {
+      const isCard =
+        log.customerType === 'Card' ||
+        String(log.categoryOrPlan || '')
+          .toLowerCase()
+          .includes('card');
+
+      if (log.memberId && isCard) {
+        supabase
+          .from('member_cards')
+          .update({
+            status: 'Active',
+            payment_status: 'PAID',
+            deleted_at: null,
+          })
+          .eq('member_id', log.memberId)
+          .then();
+      }
+    });
+
+    setStagedDeletions([]);
+    toast.info(`Restored all ${itemsToRestore.length} records.`);
+  };
 
   const handleDeleteLog = async (log: LogRecord) => {
     if (!isLogDeletable(log)) {
       if (log.isSubscription || log.customerType === 'New Membership') {
-        toast.error('Subscription transactions cannot be deleted from Logbook.');
+        toast.error(
+          'Subscription transactions cannot be deleted from Logbook.'
+        );
       } else {
-        toast.error('Only standard check-in logs recorded today can be deleted.');
+        toast.error(
+          'Only standard check-in logs recorded today can be deleted.'
+        );
       }
       return;
     }
@@ -736,68 +972,59 @@ export const LogbookPage: React.FC = () => {
     const strId = String(log.id);
     if (deletingIds.includes(strId)) return;
 
-    if (pendingDeleteRef.current && String(pendingDeleteRef.current.id) !== strId) {
-      const priorLog = pendingDeleteRef.current;
-      pendingDeleteRef.current = null;
-      commitDelete(priorLog);
-    }
-
-    setDeletingIds(prev => [...prev, strId]);
+    setDeletingIds((prev) => [...prev, strId]);
 
     setTimeout(() => {
-      setLogs(prev => {
-        const updated: LogRecord[] = prev.filter(item => String(item.id) !== strId);
-        sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
+      setStagedDeletions((prev) => [...prev, log]);
+      setLogs((prev) => {
+        const updated: LogRecord[] = prev.filter(
+          (item) => String(item.id) !== strId
+        );
+        sessionStorage.setItem(
+          `logbook_sanitized_${dateStr}`,
+          JSON.stringify(updated)
+        );
         return updated;
       });
-
-      setPendingDelete(log);
-      pendingDeleteRef.current = log;
-      setDeletingIds(prev => prev.filter(id => id !== strId));
-      setShowUndoToast(true);
+      setDeletingIds((prev) => prev.filter((id) => id !== strId));
     }, 380);
   };
 
-  const confirmDelete = () => {
-    const logToCommit = pendingDeleteRef.current || pendingDelete;
-    setPendingDelete(null);
-    pendingDeleteRef.current = null;
-    setShowUndoToast(false);
-
-    if (logToCommit) {
-      commitDelete(logToCommit);
-    }
-  };
-
-  const undoDelete = () => {
-    const logToRestore = pendingDeleteRef.current || pendingDelete;
-    if (!logToRestore) return;
-
-    const strId = String(logToRestore.id);
-    setDeletingIds(prev => prev.filter(id => id !== strId));
-    setLogs(prev => {
-      const updated: LogRecord[] = [logToRestore, ...prev.filter(item => String(item.id) !== strId)].sort((a, b) => {
-        const dateA = a.timestamp || '';
-        const dateB = b.timestamp || '';
-        return dateB.localeCompare(dateA);
-      });
-      sessionStorage.setItem(`logbook_sanitized_${dateStr}`, JSON.stringify(updated));
-      return updated;
-    });
-
-    setPendingDelete(null);
-    pendingDeleteRef.current = null;
-    setShowUndoToast(false);
-    toast.info('Check-in record restored.');
-  };
-
+  // Clean up any staged deletes immediately if user leaves page
   useEffect(() => {
     return () => {
-      if (pendingDeleteRef.current) {
-        commitDelete(pendingDeleteRef.current);
+      if (stagedDeletionsRef.current.length > 0) {
+        stagedDeletionsRef.current.forEach((log) => {
+          supabase
+            .from('attendance')
+            .update({
+              deleted_at: new Date().toISOString(),
+              deleted_by: user?.id || null,
+            })
+            .eq('id', log.id)
+            .then();
+
+          const isCard =
+            log.customerType === 'Card' ||
+            String(log.categoryOrPlan || '')
+              .toLowerCase()
+              .includes('card');
+
+          if (log.memberId && isCard) {
+            supabase
+              .from('member_cards')
+              .update({
+                status: 'Inactive',
+                payment_status: 'UNPAID',
+                deleted_at: new Date().toISOString(),
+              })
+              .eq('member_id', log.memberId)
+              .then();
+          }
+        });
       }
     };
-  }, [commitDelete]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (activePage === 'logbook') {
@@ -807,8 +1034,10 @@ export const LogbookPage: React.FC = () => {
             <>
               <Button
                 onClick={() => {
-                  if (pendingDeleteRef.current) {
-                    confirmDelete();
+                  if (stagedDeletionsRef.current.length > 0) {
+                    stagedDeletionsRef.current.forEach((log) =>
+                      handleConfirmDelete(String(log.id))
+                    );
                   }
                   setIsRecycleBinOpen(true);
                 }}
@@ -847,7 +1076,9 @@ export const LogbookPage: React.FC = () => {
       setActions(
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
           <Button
-            onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-print'))}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent('trigger-member-print'))
+            }
             variant="secondary"
             className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
           >
@@ -857,7 +1088,9 @@ export const LogbookPage: React.FC = () => {
 
           {role === 'admin' && (
             <Button
-              onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-recycle'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('trigger-member-recycle'))
+              }
               variant="secondary"
               className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
             >
@@ -867,7 +1100,9 @@ export const LogbookPage: React.FC = () => {
           )}
 
           <Button
-            onClick={() => window.dispatchEvent(new CustomEvent('trigger-member-wizard'))}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent('trigger-member-wizard'))
+            }
             variant="primary"
             className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
           >
@@ -881,7 +1116,7 @@ export const LogbookPage: React.FC = () => {
     return () => {
       setActions(null);
     };
-  }, [role, setActions, activePage]);
+  }, [role, setActions, activePage, handleConfirmDelete]);
 
   useEffect(() => {
     if (location.state && (location.state as any).refreshed) {
@@ -899,6 +1134,20 @@ export const LogbookPage: React.FC = () => {
       handleDeleteLog(log);
     }
   };
+
+  const undoToastItems: UndoItem[] = useMemo(() => {
+    return stagedDeletions.map((log) => ({
+      id: String(log.id),
+      title: `${log.customerName} (${log.categoryOrPlan || 'Daily Pass'})`,
+      type: 'logbook',
+      customerName: log.customerName,
+      customerType: log.customerType,
+      categoryOrPlan: log.categoryOrPlan,
+      paymentMethod: log.paymentMethod,
+      amount: Number(log.amountPaid || 0),
+      timestamp: log.timestamp,
+    }));
+  }, [stagedDeletions]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
@@ -922,9 +1171,13 @@ export const LogbookPage: React.FC = () => {
                 <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
                   MEMBERS
                 </span>
-                <motion.div 
-                  animate={{ x: [0, 4, 0] }} 
-                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                <motion.div
+                  animate={{ x: [0, 4, 0] }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.5,
+                    ease: 'easeInOut',
+                  }}
                 >
                   <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
                 </motion.div>
@@ -941,9 +1194,13 @@ export const LogbookPage: React.FC = () => {
                   title="View Attendance Logbook"
                   className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
                 >
-                  <motion.div 
-                    animate={{ x: [0, -4, 0] }} 
-                    transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                  <motion.div
+                    animate={{ x: [0, -4, 0] }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.5,
+                      ease: 'easeInOut',
+                    }}
                   >
                     <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
                   </motion.div>
@@ -965,9 +1222,13 @@ export const LogbookPage: React.FC = () => {
                   <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
                     PLANS
                   </span>
-                  <motion.div 
-                    animate={{ x: [0, 4, 0] }} 
-                    transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                  <motion.div
+                    animate={{ x: [0, 4, 0] }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.5,
+                      ease: 'easeInOut',
+                    }}
                   >
                     <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
                   </motion.div>
@@ -980,19 +1241,22 @@ export const LogbookPage: React.FC = () => {
 
       {/* SLIDING TIMELINE CANVAS GRID SCROLLER */}
       <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
-        
         {/* VIEW 1: LOGBOOK */}
-        <div 
+        <div
           className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 ${
-            activePage === 'logbook' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+            activePage === 'logbook'
+              ? 'h-auto'
+              : 'h-0 overflow-hidden pointer-events-none'
           }`}
           style={{
             gridColumn: 1,
             gridRow: 1,
-            transform: activePage === 'logbook' ? 'none' : 'translate3d(-101%, 0, 0)',
+            transform:
+              activePage === 'logbook' ? 'none' : 'translate3d(-101%, 0, 0)',
             opacity: activePage === 'logbook' ? 1 : 0,
             pointerEvents: activePage === 'logbook' ? 'auto' : 'none',
-            transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+            transition:
+              'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)',
           }}
         >
           <TimelineBar
@@ -1025,9 +1289,10 @@ export const LogbookPage: React.FC = () => {
                   );
                 }
 
-                const hourlyGroups: { label: string; records: LogRecord[] }[] = [];
-                
-                paginatedLogs.forEach(log => {
+                const hourlyGroups: { label: string; records: LogRecord[] }[] =
+                  [];
+
+                paginatedLogs.forEach((log) => {
                   const rawTime = log.timestamp;
                   let hourLabel = 'Unknown Time';
                   if (rawTime) {
@@ -1037,7 +1302,9 @@ export const LogbookPage: React.FC = () => {
                       console.error(e);
                     }
                   }
-                  const existingGroup = hourlyGroups.find(g => g.label === hourLabel);
+                  const existingGroup = hourlyGroups.find(
+                    (g) => g.label === hourLabel
+                  );
                   if (existingGroup) {
                     existingGroup.records.push(log);
                   } else {
@@ -1046,7 +1313,10 @@ export const LogbookPage: React.FC = () => {
                 });
 
                 if (totalItems === 0) {
-                  const hasFilter = ledgerSearch.trim() !== '' || customerFilter !== 'All' || paymentFilter !== 'All';
+                  const hasFilter =
+                    ledgerSearch.trim() !== '' ||
+                    customerFilter !== 'All' ||
+                    paymentFilter !== 'All';
                   const isSelectedDayToday = isToday(selectedDate);
 
                   return (
@@ -1056,18 +1326,24 @@ export const LogbookPage: React.FC = () => {
                       exit={{ opacity: 0 }}
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
-                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-455 dark:text-zinc-655 mb-4 animate-pulse">
-                        {hasFilter ? <Search className="w-8 h-8" /> : <ClipboardList className="w-8 h-8" />}
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
+                        {hasFilter ? (
+                          <Search className="w-8 h-8" />
+                        ) : (
+                          <ClipboardList className="w-8 h-8" />
+                        )}
                       </div>
                       <h3 className="font-heading text-sm text-(--color-text) tracking-wider uppercase">
-                        {hasFilter ? 'No check-ins match query' : 'NO CHECK-INS RECORDED'}
+                        {hasFilter
+                          ? 'No check-ins match query'
+                          : 'NO CHECK-INS RECORDED'}
                       </h3>
                       <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 font-body">
                         {hasFilter
                           ? 'Try modifying your search keywords or reset category filters.'
                           : isSelectedDayToday
-                          ? 'No check-ins recorded today. Click below to register attendance.'
-                          : 'Attendance records and subscription log sheets are empty for this date.'}
+                            ? 'No check-ins recorded today. Click below to register attendance.'
+                            : 'Attendance records and subscription log sheets are empty for this date.'}
                       </p>
 
                       {hasFilter ? (
@@ -1101,8 +1377,11 @@ export const LogbookPage: React.FC = () => {
 
                 return (
                   <div className="space-y-6">
-                    {hourlyGroups.map(group => (
-                      <div key={group.label} className="space-y-4 font-body animate-fade-in">
+                    {hourlyGroups.map((group) => (
+                      <div
+                        key={group.label}
+                        className="space-y-4 font-body animate-fade-in"
+                      >
                         <div className="flex items-center gap-3 select-none pt-2">
                           <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
                             {group.label}
@@ -1121,50 +1400,71 @@ export const LogbookPage: React.FC = () => {
                                 <motion.div
                                   key={strId}
                                   layout
-                                  initial={{ 
-                                    opacity: 0, 
-                                    y: -15, 
-                                    scale: 0.96,
-                                    boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)" 
-                                  }}
-                                  animate={isDeleting ? {
+                                  initial={{
                                     opacity: 0,
-                                    scale: 0.92,
-                                    y: -5,
-                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)",
-                                    filter: "brightness(0.9)"
-                                  } : {
-                                    opacity: 1, 
-                                    y: 0, 
-                                    scale: 1,
-                                    boxShadow: isNew 
-                                      ? "0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)" 
-                                      : "0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)"
+                                    y: -15,
+                                    scale: 0.96,
+                                    boxShadow:
+                                      '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
                                   }}
-                                  exit={{ 
-                                    opacity: 0, 
+                                  animate={
+                                    isDeleting
+                                      ? {
+                                          opacity: 0,
+                                          scale: 0.92,
+                                          y: -5,
+                                          boxShadow:
+                                            '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                                          filter: 'brightness(0.9)',
+                                        }
+                                      : {
+                                          opacity: 1,
+                                          y: 0,
+                                          scale: 1,
+                                          boxShadow: isNew
+                                            ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                            : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                                        }
+                                  }
+                                  exit={{
+                                    opacity: 0,
                                     scale: 0.9,
                                     y: -10,
-                                    boxShadow: "0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)"
+                                    boxShadow:
+                                      '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
                                   }}
-                                  transition={{ 
-                                    layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-                                    boxShadow: { duration: isDeleting ? 0.15 : 1.5, ease: "easeOut" },
-                                    opacity: { duration: isDeleting ? 0.38 : 0.3 }
+                                  transition={{
+                                    layout: {
+                                      duration: 0.35,
+                                      ease: [0.16, 1, 0.3, 1],
+                                    },
+                                    boxShadow: {
+                                      duration: isDeleting ? 0.15 : 1.5,
+                                      ease: 'easeOut',
+                                    },
+                                    opacity: {
+                                      duration: isDeleting ? 0.38 : 0.3,
+                                    },
                                   }}
                                   className="rounded-2xl transition-all overflow-hidden"
                                 >
                                   <TimelineCard
                                     mode="attendance"
                                     data={log}
-                                    canDelete={isLogDeletable(log) && !isDeleting}
+                                    canDelete={
+                                      isLogDeletable(log) && !isDeleting
+                                    }
                                     onSelectReceipt={(rec) => {
                                       setSelectedReceiptLog(rec);
                                       setIsReceiptModalOpen(true);
                                     }}
                                     onTriggerDelete={handleDeleteLog}
-                                    onTriggerCollectPayment={handleTriggerCollectPayment}
-                                    onTriggerUndoPayment={handleTriggerUndoPayment}
+                                    onTriggerCollectPayment={
+                                      handleTriggerCollectPayment
+                                    }
+                                    onTriggerUndoPayment={
+                                      handleTriggerUndoPayment
+                                    }
                                     onDragEnd={handleDragEnd}
                                   />
                                 </motion.div>
@@ -1177,11 +1477,22 @@ export const LogbookPage: React.FC = () => {
 
                     {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
                     {totalItems > 0 && (
-                      <div ref={loadMoreRef} className="py-2 text-center text-xs text-slate-500 font-medium">
+                      <div
+                        ref={loadMoreRef}
+                        className="py-2 text-center text-xs text-slate-500 font-medium"
+                      >
                         {visibleCount < totalItems ? (
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-[#161920]/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
                             <span className="text-[11px] text-slate-500 font-semibold">
-                              Showing <strong className="text-slate-900 dark:text-white font-bold">{Math.min(visibleCount, totalItems)}</strong> of <strong className="text-slate-900 dark:text-white font-bold">{totalItems}</strong> records (Scroll down for more)
+                              Showing{' '}
+                              <strong className="text-slate-900 dark:text-white font-bold">
+                                {Math.min(visibleCount, totalItems)}
+                              </strong>{' '}
+                              of{' '}
+                              <strong className="text-slate-900 dark:text-white font-bold">
+                                {totalItems}
+                              </strong>{' '}
+                              records (Scroll down for more)
                             </span>
                             <button
                               type="button"
@@ -1193,7 +1504,8 @@ export const LogbookPage: React.FC = () => {
                           </div>
                         ) : (
                           <div className="py-2 text-[11px] text-slate-400 font-medium">
-                            ✓ All {totalItems} attendance records loaded for this day.
+                            ✓ All {totalItems} attendance records loaded for
+                            this day.
                           </div>
                         )}
                       </div>
@@ -1224,23 +1536,26 @@ export const LogbookPage: React.FC = () => {
 
         {/* VIEW 2: MEMBERS */}
         {role === 'admin' && (
-          <div 
+          <div
             className={`w-full pb-40 md:pb-12 max-w-full animate-fade-in ${
-              activePage === 'members' ? 'h-auto' : 'h-0 overflow-hidden pointer-events-none'
+              activePage === 'members'
+                ? 'h-auto'
+                : 'h-0 overflow-hidden pointer-events-none'
             }`}
             style={{
               gridColumn: 1,
               gridRow: 1,
-              transform: activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
+              transform:
+                activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
               opacity: activePage === 'members' ? 1 : 0,
               pointerEvents: activePage === 'members' ? 'auto' : 'none',
-              transition: 'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)'
+              transition:
+                'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)',
             }}
           >
             <MembersList hideHeaderActions={activePage !== 'members'} />
           </div>
         )}
-
       </div>
 
       {/* MODALS */}
@@ -1266,30 +1581,65 @@ export const LogbookPage: React.FC = () => {
           data={(() => {
             const rawLog = selectedReceiptLog as any;
             const gcashFee = Number(
-              rawLog.gcashFee ?? rawLog.gcash_fee ?? rawLog.gcashFeeApplied ?? rawLog.gcash_fee_applied ?? 0
+              rawLog.gcashFee ??
+                rawLog.gcash_fee ??
+                rawLog.gcashFeeApplied ??
+                rawLog.gcash_fee_applied ??
+                0
             );
             const cardFee = Number(
               rawLog.cardFee ?? rawLog.card_fee ?? rawLog.cardFeeApplied ?? 0
             );
             const totalPaid = Number(selectedReceiptLog.amountPaid || 0);
-            const basePrice = rawLog.basePrice ?? rawLog.base_price ?? Math.max(0, totalPaid - gcashFee - cardFee);
+            const basePrice =
+              rawLog.basePrice ??
+              rawLog.base_price ??
+              Math.max(0, totalPaid - gcashFee - cardFee);
             const gcashRefNo = String(
-              rawLog.gcashRefNo || rawLog.gcash_ref_no || rawLog.gcashReference || rawLog.referenceNumber || rawLog.reference_number || rawLog.paymentRef || rawLog.payment_ref || ''
+              rawLog.gcashRefNo ||
+                rawLog.gcash_ref_no ||
+                rawLog.gcashReference ||
+                rawLog.referenceNumber ||
+                rawLog.reference_number ||
+                rawLog.paymentRef ||
+                rawLog.payment_ref ||
+                ''
             );
 
+            const isCard =
+              selectedReceiptLog.customerType === 'Card' ||
+              (selectedReceiptLog.categoryOrPlan || '')
+                .toLowerCase()
+                .includes('card');
+            const receiptNoClean =
+              rawLog.receipt_number ||
+              rawLog.receiptNumber ||
+              rawLog.receipt_no ||
+              rawLog.receiptNo ||
+              selectedReceiptLog.id;
+
             return {
-              receiptType: selectedReceiptLog.customerType === 'New Membership' ? 'subscription' : 'walkin',
-              receiptNo: rawLog.receipt_no || rawLog.receiptNo || selectedReceiptLog.id,
+              receiptType:
+                selectedReceiptLog.customerType === 'New Membership'
+                  ? 'subscription'
+                  : isCard
+                    ? 'card'
+                    : 'walkin',
+              receiptNo: receiptNoClean,
               customerName: selectedReceiptLog.customerName || 'Walk-In Guest',
               planType: selectedReceiptLog.categoryOrPlan || 'Daily Pass',
-              basePrice,
+              basePrice: isCard ? 0 : basePrice,
               gcashFee,
-              cardFee,
+              cardFee: isCard ? totalPaid : cardFee,
               paymentMethod: selectedReceiptLog.paymentMethod,
               gcashRefNo,
-              paymentRef: rawLog.paymentRef || rawLog.payment_ref || gcashRefNo,
+              paymentRef:
+                rawLog.receipt_number ||
+                rawLog.receiptNumber ||
+                rawLog.paymentRef ||
+                gcashRefNo,
               transactionDate: selectedReceiptLog.timestamp,
-              processedBy: 'WOLF PALOMAR STAFF'
+              processedBy: 'WOLF PALOMAR STAFF',
             };
           })()}
         />
@@ -1314,85 +1664,85 @@ export const LogbookPage: React.FC = () => {
         />
       )}
 
-      {/* CONFIRMATION NOTIFIER (5-SECOND UNDO WINDOW) */}
-      <div className="fixed bottom-40 md:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col gap-2 w-[calc(100vw-24px)] md:w-auto items-center pointer-events-none">
-        <AnimatePresence mode="popLayout">
-          {pendingDelete && (
-            <UndoToast
-              isOpen={showUndoToast}
-              message={`Removing check-in transaction for "${pendingDelete.customerName}"...`}
-              duration={5}
-              onConfirm={confirmDelete}
-              onUndo={undoDelete}
-              onClose={confirmDelete}
-            />
-          )}
-        </AnimatePresence>
-      </div>
+      {/* CONSOLIDATED STACKABLE UNDO TOAST */}
+      <UndoToast
+        items={undoToastItems}
+        duration={5}
+        onUndoItem={handleUndoDelete}
+        onConfirmItem={handleConfirmDelete}
+        onUndoAll={handleUndoAll}
+        onConfirmAll={handleConfirmAll}
+      />
 
       {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
-      {activePage === 'logbook' && createPortal(
-        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
-          <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+      {activePage === 'logbook' &&
+        createPortal(
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
+            <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <DynamicBanknoteIcon trend={revenueTrend} />
+                <span className="text-[11px]">
+                  <AnimatedCurrency
+                    value={totalCollectedToday}
+                    trend={revenueTrend}
+                  />
+                </span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
+                <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-[11px] truncate">
+                  <AnimatedNumber value={dayLogs.length} /> Check-ins
+                </span>
+              </div>
+            </div>
+
             <div className="flex items-center gap-1.5 shrink-0">
-              <DynamicBanknoteIcon trend={revenueTrend} />
-              <span className="text-[11px]">
-                <AnimatedCurrency value={totalCollectedToday} trend={revenueTrend} />
-              </span>
+              {role === 'admin' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (stagedDeletionsRef.current.length > 0) {
+                        stagedDeletionsRef.current.forEach((log) =>
+                          handleConfirmDelete(String(log.id))
+                        );
+                      }
+                      setIsRecycleBinOpen(true);
+                    }}
+                    className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                    title="Recycle Bin"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsReportModalOpen(true)}
+                    className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                    title="Generate Report"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInitialSearchVal('');
+                  setIsCreateModalOpen(true);
+                }}
+                className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md cursor-pointer active:scale-95 transition-all"
+                title="Record New Check-In"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>CHECK-IN</span>
+              </button>
             </div>
-            <span className="text-slate-300 dark:text-zinc-700">•</span>
-            <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
-              <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="text-[11px] truncate">
-                <AnimatedNumber value={dayLogs.length} /> Check-ins
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {role === 'admin' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pendingDeleteRef.current) {
-                      confirmDelete();
-                    }
-                    setIsRecycleBinOpen(true);
-                  }}
-                  className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                  title="Recycle Bin"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsReportModalOpen(true)}
-                  className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                  title="Generate Report"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setInitialSearchVal('');
-                setIsCreateModalOpen(true);
-              }}
-              className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md cursor-pointer active:scale-95 transition-all"
-              title="Record New Check-In"
-            >
-              <Plus className="w-4 h-4 shrink-0" />
-              <span>CHECK-IN</span>
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

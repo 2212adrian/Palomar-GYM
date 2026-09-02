@@ -1,17 +1,21 @@
 // src/pages/scanner/LogbookScannerView.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  X, 
-  UserCheck, 
-  AlertTriangle, 
+import {
+  X,
+  UserCheck,
+  AlertTriangle,
   ArrowRight,
   CircleDollarSign,
-  CreditCard
+  CreditCard,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
-import { memberService, subscriptionService, cardService } from '../members/memberService';
+import {
+  memberService,
+  subscriptionService,
+  cardService,
+} from '../members/memberService';
 import type { Member, Subscription, MemberCard } from '../../types/members';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -120,8 +124,8 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
                 openWizard: true,
                 initialStep: 1,
                 initialIntakeMode: 'Manual',
-                prefillData: regData
-              }
+                prefillData: regData,
+              },
             });
             return;
           }
@@ -150,7 +154,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             }
           }
         }
-      
+
         const [allCards, allMembers, allSubscriptions] = await Promise.all([
           cardService.getAll(),
           memberService.getAll(),
@@ -159,28 +163,31 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
 
         const { fullCode, memberIdPart } = parseScannedMemberCode(scannedCode);
 
-        const cardMatch = allCards.find((c: MemberCard) => 
-          c.card_number.toLowerCase() === fullCode.toLowerCase() ||
-          c.card_number.toLowerCase() === memberIdPart.toLowerCase()
+        const cardMatch = allCards.find(
+          (c: MemberCard) =>
+            c.card_number.toLowerCase() === fullCode.toLowerCase() ||
+            c.card_number.toLowerCase() === memberIdPart.toLowerCase()
         );
 
-        const targetMemberId = resolvedReceiptMemberId 
-          ? resolvedReceiptMemberId 
-          : cardMatch 
-          ? cardMatch.member_id 
-          : memberIdPart;
+        const targetMemberId = resolvedReceiptMemberId
+          ? resolvedReceiptMemberId
+          : cardMatch
+            ? cardMatch.member_id
+            : memberIdPart;
 
-        const member = allMembers.find((m: Member) => 
-          m.member_id.toLowerCase() === targetMemberId.toLowerCase() ||
-          m.member_id.toLowerCase() === fullCode.toLowerCase() ||
-          m.phone === fullCode ||
-          m.id === fullCode
+        const member = allMembers.find(
+          (m: Member) =>
+            m.member_id.toLowerCase() === targetMemberId.toLowerCase() ||
+            m.member_id.toLowerCase() === fullCode.toLowerCase() ||
+            m.phone === fullCode ||
+            m.id === fullCode
         );
 
         if (member) {
           playBeepSound();
           const activeSub = allSubscriptions.find(
-            (s: Subscription) => s.member_id === member.member_id && s.status === 'Active'
+            (s: Subscription) =>
+              s.member_id === member.member_id && s.status === 'Active'
           );
 
           const now = new Date();
@@ -192,7 +199,9 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
           } else if (activeSub) {
             planName = activeSub.plan_name || 'Active Membership';
             const endDate = new Date(activeSub.end_date);
-            const diffDays = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            const diffDays = Math.ceil(
+              (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+            );
 
             if (diffDays <= 0) {
               calculatedStatus = 'Expired';
@@ -220,7 +229,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             avatarUrl: member.avatar_url || (member as any).image_url || null,
             status: calculatedStatus,
             membershipPlan: planName,
-            alreadyCheckedInToday: Boolean(todayAtt && todayAtt.length > 0)
+            alreadyCheckedInToday: Boolean(todayAtt && todayAtt.length > 0),
           });
         } else {
           setNotFound(true);
@@ -238,22 +247,28 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
 
   const isYearly = memberData?.membershipPlan.toLowerCase().includes('year');
   const baseEntryFee = isYearly ? yearlyMemberFee : 0;
-  const gcashFee = paymentMethod === 'GCash' && baseEntryFee > 0 ? gcashFeeRate : 0;
+  const gcashFee =
+    paymentMethod === 'GCash' && baseEntryFee > 0 ? gcashFeeRate : 0;
   const totalDue = baseEntryFee + gcashFee;
 
   const handleConfirmAttendance = async () => {
     if (!memberData || isSubmitting) return;
 
-    if (baseEntryFee > 0 && paymentMethod === 'GCash' && referenceNumber.trim().length < 6) {
-      toast.error('Please enter a valid GCash reference number (min 6 characters).');
+    if (
+      baseEntryFee > 0 &&
+      paymentMethod === 'GCash' &&
+      referenceNumber.trim().length < 6
+    ) {
+      toast.error(
+        'Please enter a valid GCash reference number (min 6 characters).'
+      );
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase
-        .from('attendance')
-        .insert([{
+      const { error } = await supabase.from('attendance').insert([
+        {
           member_id: memberData.memberId,
           customer_name: memberData.fullName.toUpperCase(),
           customer_type: 'Existing Member',
@@ -263,10 +278,12 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
           base_price: baseEntryFee,
           gcash_fee: gcashFee,
           card_fee: 0,
-          gcash_ref_no: paymentMethod === 'GCash' ? referenceNumber.trim() : null,
+          gcash_ref_no:
+            paymentMethod === 'GCash' ? referenceNumber.trim() : null,
           payment_method: paymentMethod,
-          staff_name: user?.email || 'Scanner Station'
-        }]);
+          staff_name: user?.email || 'Scanner Station',
+        },
+      ]);
 
       if (error) throw error;
 
@@ -283,7 +300,9 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
     const { memberIdPart } = parseScannedMemberCode(scannedCode || '');
     const searchName = memberData?.fullName || memberIdPart;
     onClearScan();
-    navigate('/logbook', { state: { openAttendanceModal: true, initialSearch: searchName } });
+    navigate('/logbook', {
+      state: { openAttendanceModal: true, initialSearch: searchName },
+    });
   };
 
   if (!scannedCode) return null;
@@ -306,14 +325,20 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
       {isLoading ? (
         <div className="py-8 text-center space-y-2">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Verifying Receipt / Card...</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Verifying Receipt / Card...
+          </p>
         </div>
       ) : memberData ? (
         <div className="space-y-4 pt-1">
           <div className="p-4 bg-slate-50 dark:bg-zinc-900 border-2 border-(--border-color) rounded-2xl flex items-center gap-3.5">
             <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white overflow-hidden flex items-center justify-center font-black text-xl shrink-0 border-2 border-blue-500/40 shadow-md">
               {memberData.avatarUrl ? (
-                <img src={memberData.avatarUrl} alt={memberData.fullName} className="w-full h-full object-cover" />
+                <img
+                  src={memberData.avatarUrl}
+                  alt={memberData.fullName}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <span>{memberData.fullName[0]?.toUpperCase()}</span>
               )}
@@ -323,14 +348,20 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
               <h3 className="font-bold text-sm sm:text-base text-(--color-text) truncate uppercase">
                 {memberData.fullName}
               </h3>
-              <p className="text-xs text-slate-500 font-mono">ID: {memberData.memberId}</p>
+              <p className="text-xs text-slate-500 font-mono">
+                ID: {memberData.memberId}
+              </p>
 
               <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${
-                  memberData.status === 'Active' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' :
-                  memberData.status === 'Expires Soon' ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30' :
-                  'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30'
-                }`}>
+                <span
+                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${
+                    memberData.status === 'Active'
+                      ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                      : memberData.status === 'Expires Soon'
+                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                        : 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                  }`}
+                >
                   {memberData.status}
                 </span>
                 <span className="text-xs text-slate-400">•</span>
@@ -401,16 +432,24 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             </div>
           )}
 
-          {memberData.status === 'Active' || memberData.status === 'Expires Soon' ? (
+          {memberData.status === 'Active' ||
+          memberData.status === 'Expires Soon' ? (
             <Button
               type="button"
               variant="primary"
               onClick={handleConfirmAttendance}
-              disabled={isSubmitting || (baseEntryFee > 0 && paymentMethod === 'GCash' && referenceNumber.trim().length < 6)}
+              disabled={
+                isSubmitting ||
+                (baseEntryFee > 0 &&
+                  paymentMethod === 'GCash' &&
+                  referenceNumber.trim().length < 6)
+              }
               className="w-full py-3.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
             >
               <UserCheck className="w-4.5 h-4.5" />
-              <span>{isSubmitting ? 'LOGGING...' : 'CONFIRM & LOG ATTENDANCE'}</span>
+              <span>
+                {isSubmitting ? 'LOGGING...' : 'CONFIRM & LOG ATTENDANCE'}
+              </span>
             </Button>
           ) : (
             <div className="space-y-2">
@@ -438,7 +477,9 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
             <h3 className="font-bold text-sm text-(--color-text) uppercase">
               RECEIPT / MEMBER NOT FOUND
             </h3>
-            <p className="text-xs text-slate-500 font-mono mt-1">"{scannedCode}"</p>
+            <p className="text-xs text-slate-500 font-mono mt-1">
+              "{scannedCode}"
+            </p>
           </div>
           <Button
             type="button"

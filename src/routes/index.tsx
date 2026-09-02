@@ -1,6 +1,12 @@
 // src/routes/index.tsx
 import React, { useState, createContext } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  RouterProvider,
+  Navigate,
+  Outlet,
+  useLocation,
+} from 'react-router-dom';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
 import { RevenueGoalsPage } from '../pages/dashboard/RevenueGoalsPage';
@@ -30,51 +36,63 @@ export const HeaderActionsContext = createContext<{
 }>({ setActions: () => {} });
 
 // Centralized Header Configuration Directory
-const ROUTE_HEADERS: Record<string, { subtitle: string; title: string; description: string }> = {
+const ROUTE_HEADERS: Record<
+  string,
+  { subtitle: string; title: string; description: string }
+> = {
   '/dashboard': {
     subtitle: 'Console / Performance',
     title: 'System Dashboard',
-    description: 'Real-time overview of active gym operations, financial metrics, and performance charts.'
+    description:
+      'Real-time overview of active gym operations, financial metrics, and performance charts.',
   },
   '/dashboard/goals': {
     subtitle: 'Console / Revenue Benchmarks',
     title: 'Revenue Goals Tracker',
-    description: 'Set custom goal limits, analyze logbook vs sales run-rates, and monitor milestones.'
+    description:
+      'Set custom goal limits, analyze logbook vs sales run-rates, and monitor milestones.',
   },
   '/sales/products': {
     subtitle: 'Sales / Products',
     title: 'My Products',
-    description: 'Manage your product inventory catalog, barcodes, prices, and stock indicators.'
+    description:
+      'Manage your product inventory catalog, barcodes, prices, and stock indicators.',
   },
   '/sales': {
     subtitle: 'Sales / Register',
     title: 'Sales Register',
-    description: 'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.'
+    description:
+      'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.',
   },
   '/logbook': {
     subtitle: 'Check-in Records',
     title: 'GYM LOGBOOK',
-    description: 'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.'
-  },   
+    description:
+      'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.',
+  },
   '/scanner': {
     subtitle: 'Terminal Station',
     title: 'Smart Scanner',
-    description: 'Scan member access cards, QR codes, or product barcodes for instant check-in, subscription inspection, and POS inventory.'
+    description:
+      'Scan member access cards, QR codes, or product barcodes for instant check-in, subscription inspection, and POS inventory.',
   },
   '/members/list': {
     subtitle: 'List of Members',
     title: 'Member List',
-    description: 'Manage client accounts, track subscription statuses, and generate security access QR cards.'
+    description:
+      'Manage client accounts, track subscription statuses, and generate security access QR cards.',
   },
   '/members/plans': {
     subtitle: 'List of Members',
     title: 'Membership Plans',
-    description: 'Selectable catalog plans and setup configurations for security turnstiles.'
+    description:
+      'Selectable catalog plans and setup configurations for security turnstiles.',
   },
   '/reports': {
     subtitle: 'Reports / Incident Reports',
     title: 'Incident Reports',
-    description: 'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.'
+    description:
+      'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.',
   },
 };
 
@@ -91,37 +109,42 @@ const HeaderLayout: React.FC = () => {
     const newBase = getBaseSegment(location.pathname);
 
     // Treat logbook and members as the same continuous section to preserve sliding header actions
-    const isLogbookOrMember = (seg: string) => seg === '/logbook' || seg === '/members';
+    const isLogbookOrMember = (seg: string) =>
+      seg === '/logbook' || seg === '/members';
 
-    if (oldBase !== newBase && !(isLogbookOrMember(oldBase) && isLogbookOrMember(newBase))) {
+    if (
+      oldBase !== newBase &&
+      !(isLogbookOrMember(oldBase) && isLogbookOrMember(newBase))
+    ) {
       setActions(null);
     }
   }
 
-  const headerInfo = ROUTE_HEADERS[location.pathname] || 
-                     Object.entries(ROUTE_HEADERS).find(([k]) => location.pathname.startsWith(k))?.[1];
+  const headerInfo =
+    ROUTE_HEADERS[location.pathname] ||
+    Object.entries(ROUTE_HEADERS).find(([k]) =>
+      location.pathname.startsWith(k)
+    )?.[1];
 
   return (
     <HeaderActionsContext.Provider value={{ setActions }}>
       <div className="space-y-6 h-full flex flex-col min-h-0 pt-2 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
         {headerInfo && (
           <div className="hidden md:block shrink-0">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-  <div>
-    <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
-      {headerInfo.subtitle}
-    </span>
-    <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
-      {headerInfo.title}
-    </h1>
-    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-      {headerInfo.description}
-    </p>
-  </div>
-  <div className="flex items-center gap-2 shrink-0">
-    {actions}
-  </div>
-</div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                  {headerInfo.subtitle}
+                </span>
+                <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
+                  {headerInfo.title}
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                  {headerInfo.description}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">{actions}</div>
+            </div>
           </div>
         )}
         <Outlet />
@@ -133,8 +156,8 @@ const HeaderLayout: React.FC = () => {
 const router = createBrowserRouter([
   // Public Routes (Outside of the secure console layout shell)
   { path: '/login', element: <Login /> },
-  { path: '/forgot-password', element: <ForgotPassword /> }, 
-  { path: '/confirm-signup', element: <ConfirmSignUp /> }, 
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/confirm-signup', element: <ConfirmSignUp /> },
 
   // Public Anonymous Pre-Registration Routes
   { path: '/register', element: <OnlineRegistrationPage /> },
@@ -156,10 +179,31 @@ const router = createBrowserRouter([
                 children: [
                   { path: '/dashboard', element: <Dashboard /> },
                   { path: '/dashboard/goals', element: <RevenueGoalsPage /> },
-                  { path: '/members/transactions', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Records of Transaction</div> },
-                  { path: '/reports/bir', element: <div className="p-4 text-slate-900 dark:text-white font-heading">BIR Records</div> },
-                  { path: '/system/audit-logs', element: <div className="p-4 text-slate-900 dark:text-white font-heading">Audit Logs</div> }
-                ]
+                  {
+                    path: '/members/transactions',
+                    element: (
+                      <div className="p-4 text-slate-900 dark:text-white font-heading">
+                        Records of Transaction
+                      </div>
+                    ),
+                  },
+                  {
+                    path: '/reports/bir',
+                    element: (
+                      <div className="p-4 text-slate-900 dark:text-white font-heading">
+                        BIR Records
+                      </div>
+                    ),
+                  },
+                  {
+                    path: '/system/audit-logs',
+                    element: (
+                      <div className="p-4 text-slate-900 dark:text-white font-heading">
+                        Audit Logs
+                      </div>
+                    ),
+                  },
+                ],
               },
 
               // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
@@ -172,21 +216,26 @@ const router = createBrowserRouter([
                   { path: '/scanner', element: <ScannerPage /> },
                   { path: '/members/list', element: <LogbookPage /> },
                   { path: '/members/plans', element: <StaffPlansConsole /> },
-                  { path: '/reports', element: <IncidentReports /> }, 
+                  { path: '/reports', element: <IncidentReports /> },
                   { path: '/settings/:activeTab', element: <Settings /> },
                   { path: '/settings', element: <Settings /> },
-                  { path: '/system/account', element: <Navigate to="/settings/personal-account" replace /> }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    ]
+                  {
+                    path: '/system/account',
+                    element: (
+                      <Navigate to="/settings/personal-account" replace />
+                    ),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
   },
 
   // Fallback Route
-  { path: '*', element: <Navigate to="/login" replace /> }
+  { path: '*', element: <Navigate to="/login" replace /> },
 ]);
 
 export const AppRoutes: React.FC = () => <RouterProvider router={router} />;

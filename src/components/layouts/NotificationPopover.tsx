@@ -2,21 +2,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Bell, 
-  Check, 
-  Clock, 
-  ChevronRight, 
-  ShieldCheck, 
-  BellRing, 
+import {
+  Bell,
+  Check,
+  Clock,
+  ChevronRight,
+  ShieldCheck,
+  BellRing,
   X,
   Package,
   AlertTriangle,
   Flame,
   UserCheck,
-  ShieldAlert
+  ShieldAlert,
 } from 'lucide-react';
-import { useNotificationStore, formatBadgeCount } from '../../stores/useNotificationStore';
+import {
+  useNotificationStore,
+  formatBadgeCount,
+} from '../../stores/useNotificationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 
@@ -27,7 +30,10 @@ interface NotificationPopoverProps {
 
 type TabType = 'all' | 'incidents' | 'stock' | 'members';
 
-export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen, onClose }) => {
+export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
+  isOpen,
+  onClose,
+}) => {
   const navigate = useNavigate();
   const popoverRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
@@ -46,10 +52,11 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
     requestBrowserPermission,
     markIncidentRead,
     dismissAlert,
-    markAllAsRead
+    markAllAsRead,
   } = useNotificationStore();
 
-  const totalNotifications = (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
+  const totalNotifications =
+    (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
 
   // Handle outside click & escape key
   useEffect(() => {
@@ -59,7 +66,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
       if (target && target.closest('#btn-topbar-notifications')) {
         return;
       }
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node)
+      ) {
         onClose();
       }
     };
@@ -94,7 +104,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
 
   const handleStockClick = (productId: string) => {
     dismissAlert('stock', productId);
-    handleNavigate('/sales/products', { state: { highlightProductId: productId } });
+    handleNavigate('/sales/products', {
+      state: { highlightProductId: productId },
+    });
   };
 
   const handleExpiringMemberClick = (memberId: string) => {
@@ -102,9 +114,16 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
     handleNavigate('/members/list', { state: { openMemberId: memberId } });
   };
 
-  const showIncidents = isAdmin && (activeTab === 'all' || activeTab === 'incidents') && unreadIncidents.length > 0;
-  const showStock = (activeTab === 'all' || activeTab === 'stock') && stockAlertProducts.length > 0;
-  const showMembers = (activeTab === 'all' || activeTab === 'members') && expiringMembers.length > 0;
+  const showIncidents =
+    isAdmin &&
+    (activeTab === 'all' || activeTab === 'incidents') &&
+    unreadIncidents.length > 0;
+  const showStock =
+    (activeTab === 'all' || activeTab === 'stock') &&
+    stockAlertProducts.length > 0;
+  const showMembers =
+    (activeTab === 'all' || activeTab === 'members') &&
+    expiringMembers.length > 0;
 
   const hasItemsInTab = showIncidents || showStock || showMembers;
 
@@ -113,7 +132,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
       {isOpen && (
         <>
           {/* Backdrop on mobile screens to easily dismiss */}
-          <div 
+          <div
             className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] sm:hidden"
             onClick={onClose}
           />
@@ -144,8 +163,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
                     )}
                   </div>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    {totalNotifications === 0 
-                      ? 'Everything is up to date' 
+                    {totalNotifications === 0
+                      ? 'Everything is up to date'
                       : `${totalNotifications} active item${totalNotifications > 1 ? 's' : ''} require attention`}
                   </p>
                 </div>
@@ -244,7 +263,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
                     No Active Alerts
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-                    All inventory stocks are healthy, subscriptions are current, and reports are reviewed.
+                    All inventory stocks are healthy, subscriptions are current,
+                    and reports are reviewed.
                   </p>
                 </div>
               ) : (
@@ -283,19 +303,25 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
                                 <h5 className="font-heading text-xs font-bold text-slate-900 dark:text-white truncate">
                                   {item.title}
                                 </h5>
-                                <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase shrink-0 ${
-                                  item.priority === 'High'
-                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400'
-                                    : item.priority === 'Medium'
-                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                                    : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                                }`}>
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase shrink-0 ${
+                                    item.priority === 'High'
+                                      ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                      : item.priority === 'Medium'
+                                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                        : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                                  }`}
+                                >
                                   {item.priority}
                                 </span>
                               </div>
 
                               <span className="text-[9.5px] text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
-                                By {item.staff_name} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                By {item.staff_name} •{' '}
+                                {new Date(item.created_at).toLocaleTimeString(
+                                  [],
+                                  { hour: '2-digit', minute: '2-digit' }
+                                )}
                               </span>
                             </div>
 
@@ -350,7 +376,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
                                   {prod.product_name}
                                 </h5>
                                 <span className="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono">
-                                  Alert threshold: {prod.low_stock_alert ?? 0} pcs
+                                  Alert threshold: {prod.low_stock_alert ?? 0}{' '}
+                                  pcs
                                 </span>
                               </div>
                             </div>
@@ -406,7 +433,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
                         {expiringMembers.slice(0, 4).map((sub) => (
                           <div
                             key={sub.id}
-                            onClick={() => handleExpiringMemberClick(sub.member_id)}
+                            onClick={() =>
+                              handleExpiringMemberClick(sub.member_id)
+                            }
                             className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-zinc-900/60 hover:bg-slate-100 dark:hover:bg-zinc-800/80 border border-slate-200/60 dark:border-white/5 transition-all cursor-pointer flex items-center justify-between gap-2.5 group"
                           >
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -425,7 +454,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({ isOpen
 
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                                {sub.daysRemaining === 0 ? 'Today' : `${sub.daysRemaining}d left`}
+                                {sub.daysRemaining === 0
+                                  ? 'Today'
+                                  : `${sub.daysRemaining}d left`}
                               </span>
 
                               <button

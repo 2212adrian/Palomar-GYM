@@ -11,10 +11,9 @@ interface ManualCardTemplateModalProps {
   onClose: () => void;
 }
 
-export const ManualCardTemplateModal: React.FC<ManualCardTemplateModalProps> = ({
-  member,
-  onClose,
-}) => {
+export const ManualCardTemplateModal: React.FC<
+  ManualCardTemplateModalProps
+> = ({ member, onClose }) => {
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -75,7 +74,6 @@ export const ManualCardTemplateModal: React.FC<ManualCardTemplateModalProps> = (
   return createPortal(
     <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-lg shadow-2xl p-6 space-y-6">
-        
         {/* Header */}
         <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
           <div className="flex items-center gap-2">
@@ -94,15 +92,16 @@ export const ManualCardTemplateModal: React.FC<ManualCardTemplateModalProps> = (
         </div>
 
         <p className="text-[11px] text-slate-400 leading-relaxed text-left">
-          Official printable physical card background template for manually filled client passes.
+          Official printable physical card background template for manually
+          filled client passes.
         </p>
 
         {/* Template Image Preview Container - FIXED: Padding + object-contain */}
         <div className="flex flex-col items-center gap-3">
           <div className="w-full max-w-[400px] aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-xl bg-black p-1.5 flex items-center justify-center">
-            <img 
-              src={cardTemplateImg} 
-              alt="Physical Member Card Template" 
+            <img
+              src={cardTemplateImg}
+              alt="Physical Member Card Template"
               className="w-full h-full object-contain block"
             />
           </div>
@@ -129,7 +128,6 @@ export const ManualCardTemplateModal: React.FC<ManualCardTemplateModalProps> = (
             <span>Print Template Sheet</span>
           </button>
         </div>
-
       </div>
     </div>,
     document.body

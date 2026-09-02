@@ -65,12 +65,16 @@ export const InventoryAlertsSection: React.FC<InventoryAlertsSectionProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] sm:text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
-                    item.stock_quantity === 0
-                      ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
-                      : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                  }`}>
-                    {item.stock_quantity === 0 ? 'Out of stock' : `${item.stock_quantity} left`}
+                  <span
+                    className={`text-[10px] sm:text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                      item.stock_quantity === 0
+                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {item.stock_quantity === 0
+                      ? 'Out of stock'
+                      : `${item.stock_quantity} left`}
                   </span>
                 </div>
               </div>

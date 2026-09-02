@@ -1,10 +1,22 @@
 // src/pages/sales/components/ProductFormModal.tsx
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, Tag, Barcode, Camera, ChevronDown, ChevronUp, 
-  Settings, Loader2, CheckCircle2, AlertTriangle, Plus, Trash, 
-  SwitchCamera, FolderPlus, Aperture
+import {
+  X,
+  Tag,
+  Barcode,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Settings,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Plus,
+  Trash,
+  SwitchCamera,
+  FolderPlus,
+  Aperture,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -38,16 +50,23 @@ interface ProductFormModalProps {
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSave: (e: React.FormEvent, bulkItems?: any[]) => void;
   onClose: () => void;
-  existingProducts: { id: string; product_name: string; image_url: string | null }[]; 
-  editingProductId?: string | null; 
+  existingProducts: {
+    id: string;
+    product_name: string;
+    image_url: string | null;
+  }[];
+  editingProductId?: string | null;
 }
 
-const sessionLookupCache: Record<string, {
-  product_name?: string;
-  image_front_url?: string;
-  quantity?: string;
-  notFound?: boolean;
-}> = {};
+const sessionLookupCache: Record<
+  string,
+  {
+    product_name?: string;
+    image_front_url?: string;
+    quantity?: string;
+    notFound?: boolean;
+  }
+> = {};
 
 const formatQuantity = (qty: string): string => {
   if (!qty) return '';
@@ -113,15 +132,20 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const isStartingRef = useRef(false);
   const [apiLoading, setApiLoading] = useState(false);
   const lastFetchedBarcode = useRef<string>('');
-  
+
   // Combined Input text state (ignores base64 data URLs)
   const [combinedInput, setCombinedInput] = useState<string>(
-    formManufacturerBarcode || (formImageUrl && !formImageUrl.startsWith('data:image/') ? formImageUrl : '')
+    formManufacturerBarcode ||
+      (formImageUrl && !formImageUrl.startsWith('data:image/')
+        ? formImageUrl
+        : '')
   );
 
   // Scanner States
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
+    []
+  );
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
@@ -140,9 +164,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const isDuplicateName = useMemo(() => {
     const nameClean = formName.trim().toLowerCase();
     if (!nameClean) return false;
-    return existingProducts.some(p => 
-      p.product_name.toLowerCase() === nameClean && 
-      p.id !== editingProductId
+    return existingProducts.some(
+      (p) =>
+        p.product_name.toLowerCase() === nameClean && p.id !== editingProductId
     );
   }, [formName, existingProducts, editingProductId]);
 
@@ -153,7 +177,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     if (!formName) {
       const rawName = data.product_name || '';
       const weightVolume = formatQuantity(data.quantity || '');
-      const combinedName = weightVolume ? `${rawName} - ${weightVolume}` : rawName;
+      const combinedName = weightVolume
+        ? `${rawName} - ${weightVolume}`
+        : rawName;
       setFormName(combinedName);
     }
     if (data.image_front_url) {
@@ -199,12 +225,16 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
         sessionLookupCache[trimmed] = mappedData;
         applyOFFData(mappedData, trimmed);
-        toast.success(`Success! Details for "${mappedData.product_name}" were automatically imported.`);
+        toast.success(
+          `Success! Details for "${mappedData.product_name}" were automatically imported.`
+        );
       } else {
         sessionLookupCache[trimmed] = { notFound: true };
         setFormManufacturerBarcode(trimmed);
         setFormManufacturerSource('manual');
-        toast.info('Barcode info not found online. Product details can be typed manually.');
+        toast.info(
+          'Barcode info not found online. Product details can be typed manually.'
+        );
       }
     } catch {
       setFormManufacturerBarcode(trimmed);
@@ -219,7 +249,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const trimmed = val.trim();
     setCombinedInput(val);
 
-    const isUrl = /^https?:\/\/.+/i.test(trimmed) || /\.(jpeg|jpg|gif|png|webp|svg)$/i.test(trimmed);
+    const isUrl =
+      /^https?:\/\/.+/i.test(trimmed) ||
+      /\.(jpeg|jpg|gif|png|webp|svg)$/i.test(trimmed);
     const isBarcodeDigits = /^\d{8,14}$/.test(trimmed);
 
     if (isUrl) {
@@ -263,7 +295,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     try {
       if (html5QrCodeRef.current?.isScanning) {
         await html5QrCodeRef.current.stop();
-        try { html5QrCodeRef.current.clear(); } catch (e) {}
+        try {
+          html5QrCodeRef.current.clear();
+        } catch (e) {}
       }
 
       const qrReader = new Html5Qrcode('product-form-qr-reader');
@@ -284,7 +318,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     } catch (err) {
       console.warn(`Camera feed failure on camera ${targetCam.id}:`, err);
       if (camIdx === 0 && cameraList.length > 1) {
-        toast.info('Primary camera unavailable. Switching to secondary camera...');
+        toast.info(
+          'Primary camera unavailable. Switching to secondary camera...'
+        );
         isStartingRef.current = false;
         setTimeout(() => startCameraWithFallback(1, cameraList), 300);
         return;
@@ -306,11 +342,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       isStartingRef.current = false;
       if (html5QrCodeRef.current) {
         if (html5QrCodeRef.current.isScanning) {
-          html5QrCodeRef.current.stop().then(() => {
-            try { html5QrCodeRef.current?.clear(); } catch (e) {}
-          }).catch(console.error);
+          html5QrCodeRef.current
+            .stop()
+            .then(() => {
+              try {
+                html5QrCodeRef.current?.clear();
+              } catch (e) {}
+            })
+            .catch(console.error);
         } else {
-          try { html5QrCodeRef.current.clear(); } catch (e) {}
+          try {
+            html5QrCodeRef.current.clear();
+          } catch (e) {}
         }
       }
     };
@@ -319,7 +362,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   // Capture photo snapshot directly from live camera feed
   const handleCapturePhotoFromCamera = () => {
     try {
-      const videoEl = document.querySelector('#product-form-qr-reader video') as HTMLVideoElement;
+      const videoEl = document.querySelector(
+        '#product-form-qr-reader video'
+      ) as HTMLVideoElement;
       if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
         toast.error('Unable to capture frame from active camera stream.');
         return;
@@ -353,7 +398,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           setStagedItems([]);
           setConfirmDialog(null);
           onClose();
-        }
+        },
       });
       return;
     }
@@ -374,7 +419,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
 
     const stockQty = formHasStockLimit ? parseInt(formStockQuantity) || 0 : 0;
-    const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) || null : null;
+    const alertQty =
+      formHasStockLimit && formLowStockAlert.trim() !== ''
+        ? parseInt(formLowStockAlert) || null
+        : null;
 
     const newItem = {
       product_name: nameClean,
@@ -386,7 +434,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       image_url: formImageUrl.trim() || null,
       manufacturer_barcode: formManufacturerBarcode.trim() || null,
       manufacturer_source: formManufacturerSource,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
 
     setStagedItems((prev) => [...prev, newItem]);
@@ -412,8 +460,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       let itemsToSave = [...stagedItems];
 
       if (currentName && !isNaN(currentPrice) && currentPrice >= 0) {
-        const stockQty = formHasStockLimit ? parseInt(formStockQuantity) || 0 : 0;
-        const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) || null : null;
+        const stockQty = formHasStockLimit
+          ? parseInt(formStockQuantity) || 0
+          : 0;
+        const alertQty =
+          formHasStockLimit && formLowStockAlert.trim() !== ''
+            ? parseInt(formLowStockAlert) || null
+            : null;
 
         itemsToSave.push({
           product_name: currentName,
@@ -425,7 +478,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           image_url: formImageUrl.trim() || null,
           manufacturer_barcode: formManufacturerBarcode.trim() || null,
           manufacturer_source: formManufacturerSource,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         });
       }
 
@@ -443,7 +496,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 dark:bg-black/75 backdrop-blur-sm animate-fade-in text-xs text-(--color-text) font-sans">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-md shadow-2xl overflow-hidden relative animate-scale-up">
-
         {/* INLINE CONFIRMATION OVERLAY */}
         {confirmDialog && confirmDialog.isOpen && (
           <div className="absolute inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -452,7 +504,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <AlertTriangle className="w-5 h-5 animate-bounce" />
               </div>
               <div className="space-y-1">
-                <h4 className="font-extrabold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400">Discard Queue?</h4>
+                <h4 className="font-extrabold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                  Discard Queue?
+                </h4>
                 <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
                   {confirmDialog.message}
                 </p>
@@ -497,7 +551,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </button>
             )}
           </div>
-          <button 
+          <button
             type="button"
             onClick={handleAttemptClose}
             className="text-slate-400 hover:text-(--color-text) cursor-pointer p-1 rounded-lg transition-colors"
@@ -508,8 +562,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         </div>
 
         {/* FORM CONTENT */}
-        <form onSubmit={handleFormSubmission} className="p-5 space-y-4 text-xs overflow-y-auto max-h-[82vh] no-scrollbar text-left">
-          
+        <form
+          onSubmit={handleFormSubmission}
+          className="p-5 space-y-4 text-xs overflow-y-auto max-h-[82vh] no-scrollbar text-left"
+        >
           {/* STAGED ITEMS QUEUE (Multi-Add Mode) */}
           {isMultiAddMode && stagedItems.length > 0 && (
             <div className="p-3 bg-(--bg-page) border border-blue-500/30 rounded-xl space-y-2">
@@ -518,13 +574,20 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </span>
               <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
                 {stagedItems.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-[11px] bg-(--bg-card) px-3 py-1.5 border border-(--border-color) rounded-lg shadow-xs">
+                  <div
+                    key={idx}
+                    className="flex justify-between items-center text-[11px] bg-(--bg-card) px-3 py-1.5 border border-(--border-color) rounded-lg shadow-xs"
+                  >
                     <span className="font-bold truncate max-w-[220px]">
                       {item.product_name} • ₱{item.selling_price.toFixed(2)}
                     </span>
                     <button
                       type="button"
-                      onClick={() => setStagedItems((prev) => prev.filter((_, i) => i !== idx))}
+                      onClick={() =>
+                        setStagedItems((prev) =>
+                          prev.filter((_, i) => i !== idx)
+                        )
+                      }
                       className="text-red-500 hover:text-red-600 font-bold uppercase text-[9px] cursor-pointer"
                     >
                       <Trash className="w-3.5 h-3.5" />
@@ -537,7 +600,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
           {/* PRODUCT NAME */}
           <div className="space-y-1.5">
-            <label htmlFor="modal-product-name" className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block">
+            <label
+              htmlFor="modal-product-name"
+              className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block"
+            >
               PRODUCT NAME *
             </label>
             <div className="bg-(--bg-page) border border-(--border-color) focus-within:border-blue-500 rounded-xl px-3 py-2.5 flex items-center gap-2.5 transition-colors">
@@ -563,11 +629,16 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
           {/* SELLING PRICE */}
           <div className="space-y-1.5">
-            <label htmlFor="modal-product-price" className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block">
+            <label
+              htmlFor="modal-product-price"
+              className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block"
+            >
               SELLING PRICE (₱) *
             </label>
             <div className="bg-(--bg-page) border border-(--border-color) focus-within:border-blue-500 rounded-xl px-3 py-2.5 flex items-center gap-2.5 transition-colors">
-              <span className="font-mono font-bold text-slate-400 text-xs shrink-0">₱</span>
+              <span className="font-mono font-bold text-slate-400 text-xs shrink-0">
+                ₱
+              </span>
               <input
                 id="modal-product-price"
                 type="number"
@@ -593,10 +664,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <div className="space-y-1.5">
                 <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between gap-3 shadow-xs">
                   <div className="flex items-center gap-3 min-w-0">
-                    <img 
-                      src={formImageUrl} 
-                      alt="Product Preview" 
-                      className="w-12 h-12 rounded-lg object-cover border border-(--border-color) shrink-0 bg-white shadow-xs" 
+                    <img
+                      src={formImageUrl}
+                      alt="Product Preview"
+                      className="w-12 h-12 rounded-lg object-cover border border-(--border-color) shrink-0 bg-white shadow-xs"
                     />
                     <div className="min-w-0 text-left">
                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 truncate">
@@ -627,8 +698,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 {formManufacturerBarcode && (
                   <div className="flex items-center justify-between p-2 bg-(--bg-page) border border-(--border-color) rounded-xl">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">MFG Barcode:</span>
-                      <span className="font-mono font-bold text-xs text-(--color-text)">{formManufacturerBarcode}</span>
+                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        MFG Barcode:
+                      </span>
+                      <span className="font-mono font-bold text-xs text-(--color-text)">
+                        {formManufacturerBarcode}
+                      </span>
                       <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400">
                         {formManufacturerSource}
                       </span>
@@ -676,7 +751,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       type="text"
                       placeholder="Paste Barcode or Image Web URL..."
                       value={combinedInput}
-                      onChange={(e) => handleCombinedInputChange(e.target.value)}
+                      onChange={(e) =>
+                        handleCombinedInputChange(e.target.value)
+                      }
                       className="bg-transparent outline-none w-full text-(--color-text) placeholder-slate-400 dark:placeholder-slate-500 text-xs font-mono font-medium truncate"
                     />
                   </div>
@@ -686,8 +763,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     type="button"
                     onClick={() => setShowLiveScanner(!showLiveScanner)}
                     className={`p-2 rounded-lg transition-all cursor-pointer shrink-0 ${
-                      showLiveScanner 
-                        ? 'bg-blue-600 text-white shadow-md animate-pulse' 
+                      showLiveScanner
+                        ? 'bg-blue-600 text-white shadow-md animate-pulse'
                         : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                     }`}
                     title="Scan barcode or snap photo with camera"
@@ -700,8 +777,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 {formManufacturerBarcode && (
                   <div className="flex items-center justify-between p-2 bg-(--bg-page) border border-(--border-color) rounded-xl">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">MFG Barcode:</span>
-                      <span className="font-mono font-bold text-xs text-(--color-text)">{formManufacturerBarcode}</span>
+                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        MFG Barcode:
+                      </span>
+                      <span className="font-mono font-bold text-xs text-(--color-text)">
+                        {formManufacturerBarcode}
+                      </span>
                       <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400">
                         {formManufacturerSource}
                       </span>
@@ -749,7 +830,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </div>
 
                 <div className="relative w-full aspect-video max-w-xs mx-auto rounded-xl overflow-hidden bg-black border border-blue-500/40 flex items-center justify-center shadow-inner">
-                  <div id="product-form-qr-reader" className="w-full h-full object-cover" />
+                  <div
+                    id="product-form-qr-reader"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 {/* CAMERA CONTROLS: SNAP PHOTO & SWITCH CAMERA */}
@@ -768,7 +852,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const idx = cameras.findIndex((c) => c.id === selectedCameraId);
+                        const idx = cameras.findIndex(
+                          (c) => c.id === selectedCameraId
+                        );
                         const nextIdx = (idx + 1) % cameras.length;
                         startCameraWithFallback(nextIdx, cameras);
                       }}
@@ -784,7 +870,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
             {!formImageUrl && (
               <span className="text-[9px] text-slate-500 dark:text-slate-400 block font-medium pt-1">
-                Paste Barcode / Image URL, or tap <kbd className="px-1 py-0.2 bg-slate-200 dark:bg-slate-800 rounded text-blue-600 dark:text-blue-400 font-bold">+</kbd> to upload image file, or camera to scan/snap.
+                Paste Barcode / Image URL, or tap{' '}
+                <kbd className="px-1 py-0.2 bg-slate-200 dark:bg-slate-800 rounded text-blue-600 dark:text-blue-400 font-bold">
+                  +
+                </kbd>{' '}
+                to upload image file, or camera to scan/snap.
               </span>
             )}
           </div>
@@ -809,14 +899,16 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
             {showAdvanced && (
               <div className="p-4 bg-(--bg-card) border-t border-(--border-color) space-y-4 animate-slide-up text-left">
-                
                 {/* Inventory Control */}
                 <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">Track stock</h4>
+                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                        Track stock
+                      </h4>
                       <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Turn this on if you want to keep track of how many are left.
+                        Turn this on if you want to keep track of how many are
+                        left.
                       </p>
                     </div>
                     <input
@@ -862,19 +954,23 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 {/* Customer Visibility Toggle */}
                 <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between">
                   <div>
-                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">Available for sale</h4>
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                      Available for sale
+                    </h4>
                     <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Allow staff and customers to select this product during sale.
+                      Allow staff and customers to select this product during
+                      sale.
                     </p>
                   </div>
                   <input
                     type="checkbox"
                     checked={formStatus === 'Active'}
-                    onChange={(e) => setFormStatus(e.target.checked ? 'Active' : 'Inactive')}
+                    onChange={(e) =>
+                      setFormStatus(e.target.checked ? 'Active' : 'Inactive')
+                    }
                     className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
                   />
                 </div>
-
               </div>
             )}
           </div>
@@ -909,16 +1005,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>
-                {isEditing 
-                  ? 'Save Changes' 
-                  : isMultiAddMode 
+                {isEditing
+                  ? 'Save Changes'
+                  : isMultiAddMode
                     ? `Add ${stagedItems.length + (formName.trim() ? 1 : 0)} Products`
-                    : 'Add Product'
-                }
+                    : 'Add Product'}
               </span>
             </button>
           </div>
-
         </form>
       </div>
     </div>,

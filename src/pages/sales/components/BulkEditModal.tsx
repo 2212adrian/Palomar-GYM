@@ -3,8 +3,17 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase/client';
 import { compressImage } from '../../../lib/imageCompressor';
-import { 
-  X, Search, SlidersHorizontal, Check, Image as ImageIcon, Loader2, Info, Eye, EyeOff, RefreshCcw
+import {
+  X,
+  Search,
+  SlidersHorizontal,
+  Check,
+  Image as ImageIcon,
+  Loader2,
+  Info,
+  Eye,
+  EyeOff,
+  RefreshCcw,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { logAudit } from '../../../lib/supabase/audit';
@@ -54,10 +63,10 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
   const fileRef = useRef<HTMLInputElement>(null);
 
   return (
-    <tr 
+    <tr
       className={`transition-colors relative ${
-        modified 
-          ? 'bg-blue-500/5 dark:bg-blue-500/5 border-l-2 border-blue-500' 
+        modified
+          ? 'bg-blue-500/5 dark:bg-blue-500/5 border-l-2 border-blue-500'
           : 'hover:bg-slate-100/30 dark:hover:bg-neutral-900/10'
       }`}
     >
@@ -72,14 +81,18 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
       </td>
 
       <td className="py-2.5 px-4 align-middle text-center">
-        <div 
+        <div
           onClick={() => rowUploadingId !== p.id && fileRef.current?.click()}
           className="relative w-9 h-9 rounded-xl border border-(--border-color) bg-(--bg-page) flex items-center justify-center overflow-hidden cursor-pointer transition-opacity hover:opacity-85 mx-auto"
         >
           {rowUploadingId === p.id ? (
             <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
           ) : p.image_url ? (
-            <img src={p.image_url} alt="Cover" className="w-full h-full object-cover" />
+            <img
+              src={p.image_url}
+              alt="Cover"
+              className="w-full h-full object-cover"
+            />
           ) : (
             <ImageIcon className="w-4 h-4 text-slate-500" />
           )}
@@ -107,7 +120,11 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           maxLength={100}
           onChange={(e) => {
             const val = e.target.value;
-            setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, product_name: val } : item));
+            setEditedProducts((prev) =>
+              prev.map((item) =>
+                item.id === p.id ? { ...item, product_name: val } : item
+              )
+            );
           }}
           className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-medium"
         />
@@ -115,7 +132,9 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
 
       <td className="py-2.5 px-4 align-middle">
         <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">₱</span>
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">
+            ₱
+          </span>
           <input
             type="number"
             step="0.01"
@@ -123,7 +142,11 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
             value={p.selling_price}
             onChange={(e) => {
               const val = e.target.value;
-              setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, selling_price: val } : item));
+              setEditedProducts((prev) =>
+                prev.map((item) =>
+                  item.id === p.id ? { ...item, selling_price: val } : item
+                )
+              );
             }}
             className="w-full pl-6 pr-2 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-semibold font-mono"
           />
@@ -135,7 +158,11 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           value={p.has_stock_limit ? 'Limited' : 'Unlimited'}
           onChange={(e) => {
             const limit = e.target.value === 'Limited';
-            setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, has_stock_limit: limit } : item));
+            setEditedProducts((prev) =>
+              prev.map((item) =>
+                item.id === p.id ? { ...item, has_stock_limit: limit } : item
+              )
+            );
           }}
           className="w-full px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-bold"
         >
@@ -152,7 +179,11 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
             value={p.stock_quantity}
             onChange={(e) => {
               const val = e.target.value;
-              setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, stock_quantity: val } : item));
+              setEditedProducts((prev) =>
+                prev.map((item) =>
+                  item.id === p.id ? { ...item, stock_quantity: val } : item
+                )
+              );
             }}
             className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
           />
@@ -172,7 +203,11 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
             value={p.low_stock_alert}
             onChange={(e) => {
               const val = e.target.value;
-              setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, low_stock_alert: val } : item));
+              setEditedProducts((prev) =>
+                prev.map((item) =>
+                  item.id === p.id ? { ...item, low_stock_alert: val } : item
+                )
+              );
             }}
             className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
           />
@@ -188,15 +223,23 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           type="button"
           onClick={() => {
             const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
-            setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, status: nextStatus } : item));
+            setEditedProducts((prev) =>
+              prev.map((item) =>
+                item.id === p.id ? { ...item, status: nextStatus } : item
+              )
+            );
           }}
           className={`p-1.5 border rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center ${
             p.status === 'Active'
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
               : 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
-            }`}
+          }`}
         >
-          {p.status === 'Active' ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          {p.status === 'Active' ? (
+            <Eye className="w-3.5 h-3.5" />
+          ) : (
+            <EyeOff className="w-3.5 h-3.5" />
+          )}
         </button>
       </td>
 
@@ -226,10 +269,10 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
   const fileRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div 
+    <div
       className={`p-4 border rounded-2xl flex flex-col gap-4 transition-all duration-150 text-left bg-[var(--bg-card)] shrink-0 ${
-        modified 
-          ? 'border-blue-500 bg-blue-500/5 dark:bg-blue-500/5 shadow-xs' 
+        modified
+          ? 'border-blue-500 bg-blue-500/5 dark:bg-blue-500/5 shadow-xs'
           : 'border-(--border-color)'
       }`}
     >
@@ -249,14 +292,18 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
           </span>
         </div>
 
-        <div 
+        <div
           onClick={() => rowUploadingId !== p.id && fileRef.current?.click()}
           className="relative w-10 h-10 rounded-xl border border-(--border-color) bg-(--bg-page) flex items-center justify-center overflow-hidden cursor-pointer"
         >
           {rowUploadingId === p.id ? (
             <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
           ) : p.image_url ? (
-            <img src={p.image_url} alt="Cover" className="w-full h-full object-cover" />
+            <img
+              src={p.image_url}
+              alt="Cover"
+              className="w-full h-full object-cover"
+            />
           ) : (
             <ImageIcon className="w-4 h-4 text-slate-500" />
           )}
@@ -274,14 +321,20 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Product Name *</label>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          Product Name *
+        </label>
         <input
           type="text"
           value={p.product_name}
           maxLength={100}
           onChange={(e) => {
             const val = e.target.value;
-            setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, product_name: val } : item));
+            setEditedProducts((prev) =>
+              prev.map((item) =>
+                item.id === p.id ? { ...item, product_name: val } : item
+              )
+            );
           }}
           className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-medium"
         />
@@ -289,9 +342,13 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Price *</label>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Price *
+          </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">₱</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">
+              ₱
+            </span>
             <input
               type="number"
               step="0.01"
@@ -299,7 +356,11 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
               value={p.selling_price}
               onChange={(e) => {
                 const val = e.target.value;
-                setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, selling_price: val } : item));
+                setEditedProducts((prev) =>
+                  prev.map((item) =>
+                    item.id === p.id ? { ...item, selling_price: val } : item
+                  )
+                );
               }}
               className="w-full pl-6 pr-2 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-semibold font-mono"
             />
@@ -307,12 +368,18 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cashier Show</label>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Cashier Show
+          </label>
           <button
             type="button"
             onClick={() => {
               const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
-              setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, status: nextStatus } : item));
+              setEditedProducts((prev) =>
+                prev.map((item) =>
+                  item.id === p.id ? { ...item, status: nextStatus } : item
+                )
+              );
             }}
             className={`w-full py-2 border rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
               p.status === 'Active'
@@ -336,12 +403,18 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
       </div>
 
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Type</label>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          Stock Type
+        </label>
         <select
           value={p.has_stock_limit ? 'Limited' : 'Unlimited'}
           onChange={(e) => {
             const limit = e.target.value === 'Limited';
-            setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, has_stock_limit: limit } : item));
+            setEditedProducts((prev) =>
+              prev.map((item) =>
+                item.id === p.id ? { ...item, has_stock_limit: limit } : item
+              )
+            );
           }}
           className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-bold"
         >
@@ -353,21 +426,29 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
       {p.has_stock_limit && (
         <div className="grid grid-cols-2 gap-3 animate-slide-up">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Count</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Stock Count
+            </label>
             <input
               type="number"
               min="0"
               value={p.stock_quantity}
               onChange={(e) => {
                 const val = e.target.value;
-                setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, stock_quantity: val } : item));
+                setEditedProducts((prev) =>
+                  prev.map((item) =>
+                    item.id === p.id ? { ...item, stock_quantity: val } : item
+                  )
+                );
               }}
               className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Low Warn Mark</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Low Warn Mark
+            </label>
             <input
               type="number"
               min="0"
@@ -375,7 +456,11 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
               value={p.low_stock_alert}
               onChange={(e) => {
                 const val = e.target.value;
-                setEditedProducts(prev => prev.map(item => item.id === p.id ? { ...item, low_stock_alert: val } : item));
+                setEditedProducts((prev) =>
+                  prev.map((item) =>
+                    item.id === p.id ? { ...item, low_stock_alert: val } : item
+                  )
+                );
               }}
               className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
             />
@@ -394,7 +479,6 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
           <span>Reset Item</span>
         </button>
       </div>
-
     </div>
   );
 };
@@ -420,11 +504,11 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   }, []);
 
   const originalMap = useMemo(() => {
-    return new Map(selectedProducts.map(p => [p.id, p]));
+    return new Map(selectedProducts.map((p) => [p.id, p]));
   }, [selectedProducts]);
 
   const [editedProducts, setEditedProducts] = useState<EditState[]>(() => {
-    return selectedProducts.map(p => ({
+    return selectedProducts.map((p) => ({
       id: p.id,
       barcode_id: p.barcode_id,
       product_name: p.product_name,
@@ -438,14 +522,20 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   });
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'edited' | 'visible' | 'hidden'>('all');
+  const [activeFilter, setActiveFilter] = useState<
+    'all' | 'edited' | 'visible' | 'hidden'
+  >('all');
   const [saving, setSaving] = useState(false);
   const [rowUploadingId, setRowUploadingId] = useState<string | null>(null);
 
-  const [quickVisibility, setQuickVisibility] = useState<'Active' | 'Inactive'>('Active');
+  const [quickVisibility, setQuickVisibility] = useState<'Active' | 'Inactive'>(
+    'Active'
+  );
   const [quickStockType, setQuickHasStockLimit] = useState(false);
-  
-  const [priceAdjType, setPriceAdjType] = useState<'pct_inc' | 'pct_dec' | 'flat_inc' | 'flat_dec' | 'fixed'>('pct_inc');
+
+  const [priceAdjType, setPriceAdjType] = useState<
+    'pct_inc' | 'pct_dec' | 'flat_inc' | 'flat_dec' | 'fixed'
+  >('pct_inc');
   const [priceAdjValue, setPriceAdjValue] = useState('');
 
   const isRowModified = (current: EditState) => {
@@ -457,7 +547,8 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       current.product_name !== original.product_name ||
       parseFloat(current.selling_price) !== original.selling_price ||
       current.has_stock_limit !== original.has_stock_limit ||
-      (current.has_stock_limit && parseInt(current.stock_quantity) !== original.stock_quantity) ||
+      (current.has_stock_limit &&
+        parseInt(current.stock_quantity) !== original.stock_quantity) ||
       (current.has_stock_limit && current.low_stock_alert !== originalAlert) ||
       current.status !== original.status ||
       current.image_url !== original.image_url
@@ -472,44 +563,56 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     const original = originalMap.get(id);
     if (!original) return;
 
-    setEditedProducts(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      return {
-        id: original.id,
-        barcode_id: original.barcode_id,
-        product_name: original.product_name,
-        selling_price: original.selling_price.toString(),
-        has_stock_limit: original.has_stock_limit,
-        stock_quantity: original.stock_quantity.toString(),
-        low_stock_alert: original.low_stock_alert?.toString() || '',
-        status: original.status,
-        image_url: original.image_url,
-      };
-    }));
+    setEditedProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        return {
+          id: original.id,
+          barcode_id: original.barcode_id,
+          product_name: original.product_name,
+          selling_price: original.selling_price.toString(),
+          has_stock_limit: original.has_stock_limit,
+          stock_quantity: original.stock_quantity.toString(),
+          low_stock_alert: original.low_stock_alert?.toString() || '',
+          status: original.status,
+          image_url: original.image_url,
+        };
+      })
+    );
   };
 
   const handleResetAll = () => {
-    setEditedProducts(selectedProducts.map(p => ({
-      id: p.id,
-      barcode_id: p.barcode_id,
-      product_name: p.product_name,
-      selling_price: p.selling_price.toString(),
-      has_stock_limit: p.has_stock_limit,
-      stock_quantity: p.stock_quantity.toString(),
-      low_stock_alert: p.low_stock_alert?.toString() || '',
-      status: p.status,
-      image_url: p.image_url,
-    })));
+    setEditedProducts(
+      selectedProducts.map((p) => ({
+        id: p.id,
+        barcode_id: p.barcode_id,
+        product_name: p.product_name,
+        selling_price: p.selling_price.toString(),
+        has_stock_limit: p.has_stock_limit,
+        stock_quantity: p.stock_quantity.toString(),
+        low_stock_alert: p.low_stock_alert?.toString() || '',
+        status: p.status,
+        image_url: p.image_url,
+      }))
+    );
   };
 
   const handleApplyQuickVisibility = () => {
-    setEditedProducts(prev => prev.map(p => ({ ...p, status: quickVisibility })));
-    toast.info(`Updated visibility status to ${quickVisibility === 'Active' ? 'Visible' : 'Hidden'} for all rows.`);
+    setEditedProducts((prev) =>
+      prev.map((p) => ({ ...p, status: quickVisibility }))
+    );
+    toast.info(
+      `Updated visibility status to ${quickVisibility === 'Active' ? 'Visible' : 'Hidden'} for all rows.`
+    );
   };
 
   const handleApplyQuickStockType = () => {
-    setEditedProducts(prev => prev.map(p => ({ ...p, has_stock_limit: quickStockType })));
-    toast.info(`Updated stock tracking parameter to ${quickStockType ? 'Limited' : 'Unlimited'} for all rows.`);
+    setEditedProducts((prev) =>
+      prev.map((p) => ({ ...p, has_stock_limit: quickStockType }))
+    );
+    toast.info(
+      `Updated stock tracking parameter to ${quickStockType ? 'Limited' : 'Unlimited'} for all rows.`
+    );
   };
 
   const handleApplyPriceAdjustment = () => {
@@ -519,30 +622,32 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       return;
     }
 
-    setEditedProducts(prev => prev.map(p => {
-      const currentPrice = parseFloat(p.selling_price) || 0;
-      let adjustedPrice = currentPrice;
+    setEditedProducts((prev) =>
+      prev.map((p) => {
+        const currentPrice = parseFloat(p.selling_price) || 0;
+        let adjustedPrice = currentPrice;
 
-      switch (priceAdjType) {
-        case 'pct_inc':
-          adjustedPrice = currentPrice * (1 + val / 100);
-          break;
-        case 'pct_dec':
-          adjustedPrice = Math.max(0, currentPrice * (1 - val / 100));
-          break;
-        case 'flat_inc':
-          adjustedPrice = currentPrice + val;
-          break;
-        case 'flat_dec':
-          adjustedPrice = Math.max(0, currentPrice - val);
-          break;
-        case 'fixed':
-          adjustedPrice = val;
-          break;
-      }
+        switch (priceAdjType) {
+          case 'pct_inc':
+            adjustedPrice = currentPrice * (1 + val / 100);
+            break;
+          case 'pct_dec':
+            adjustedPrice = Math.max(0, currentPrice * (1 - val / 100));
+            break;
+          case 'flat_inc':
+            adjustedPrice = currentPrice + val;
+            break;
+          case 'flat_dec':
+            adjustedPrice = Math.max(0, currentPrice - val);
+            break;
+          case 'fixed':
+            adjustedPrice = val;
+            break;
+        }
 
-      return { ...p, selling_price: adjustedPrice.toFixed(2) };
-    }));
+        return { ...p, selling_price: adjustedPrice.toFixed(2) };
+      })
+    );
 
     toast.info('Applied price adjustments to selected items.');
     setPriceAdjValue('');
@@ -557,16 +662,24 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       const { error } = await supabase.storage
         .from('avatars')
-        .upload(fileName, compressed, { contentType: 'image/jpeg', cacheControl: '3600', upsert: true });
+        .upload(fileName, compressed, {
+          contentType: 'image/jpeg',
+          cacheControl: '3600',
+          upsert: true,
+        });
 
       if (error) throw error;
 
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
 
-      setEditedProducts(prev => prev.map(p => {
-        if (p.id !== id) return p;
-        return { ...p, image_url: urlData.publicUrl };
-      }));
+      setEditedProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== id) return p;
+          return { ...p, image_url: urlData.publicUrl };
+        })
+      );
 
       toast.success('Image uploaded successfully.');
     } catch {
@@ -577,9 +690,12 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   };
 
   const displayedProducts = useMemo(() => {
-    return editedProducts.filter(p => {
+    return editedProducts.filter((p) => {
       const query = searchQuery.toLowerCase().trim();
-      const matchesSearch = query === '' || p.product_name.toLowerCase().includes(query) || p.barcode_id.toLowerCase().includes(query);
+      const matchesSearch =
+        query === '' ||
+        p.product_name.toLowerCase().includes(query) ||
+        p.barcode_id.toLowerCase().includes(query);
       if (!matchesSearch) return false;
 
       if (activeFilter === 'all') return true;
@@ -592,18 +708,22 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   const validationError = useMemo(() => {
     for (const p of editedProducts) {
-      if (!p.product_name.trim()) return `Product "${p.barcode_id}" name cannot be empty.`;
-      
+      if (!p.product_name.trim())
+        return `Product "${p.barcode_id}" name cannot be empty.`;
+
       const price = parseFloat(p.selling_price);
-      if (isNaN(price) || price < 0) return `Product "${p.product_name}" must have a non-negative selling price.`;
+      if (isNaN(price) || price < 0)
+        return `Product "${p.product_name}" must have a non-negative selling price.`;
 
       if (p.has_stock_limit) {
         const qty = parseInt(p.stock_quantity);
-        if (isNaN(qty) || qty < 0) return `Product "${p.product_name}" stock count cannot be negative.`;
-        
+        if (isNaN(qty) || qty < 0)
+          return `Product "${p.product_name}" stock count cannot be negative.`;
+
         if (p.low_stock_alert.trim() !== '') {
           const alert = parseInt(p.low_stock_alert);
-          if (isNaN(alert) || alert < 0) return `Product "${p.product_name}" alert mark cannot be negative.`;
+          if (isNaN(alert) || alert < 0)
+            return `Product "${p.product_name}" alert mark cannot be negative.`;
         }
       }
     }
@@ -625,57 +745,74 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     try {
       setSaving(true);
 
-      const auditDetails = modifiedItems.map(p => {
-        const original = originalMap.get(p.id);
-        if (!original) return `"${p.product_name.trim()}"`;
+      const auditDetails = modifiedItems
+        .map((p) => {
+          const original = originalMap.get(p.id);
+          if (!original) return `"${p.product_name.trim()}"`;
 
-        const changes: string[] = [];
+          const changes: string[] = [];
 
-        if (p.product_name.trim() !== original.product_name) {
-          changes.push(`Name: "${original.product_name}" -> "${p.product_name.trim()}"`);
-        }
-
-        const priceNum = parseFloat(p.selling_price);
-        if (priceNum !== original.selling_price) {
-          changes.push(`Price: ₱${original.selling_price.toFixed(2)} -> ₱${priceNum.toFixed(2)}`);
-        }
-
-        if (p.status !== original.status) {
-          changes.push(`Visibility: ${original.status} -> ${p.status}`);
-        }
-
-        if (p.has_stock_limit !== original.has_stock_limit) {
-          changes.push(`Stock Type: ${original.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${p.has_stock_limit ? 'Limited' : 'Unlimited'}`);
-        } else if (p.has_stock_limit) {
-          const qtyNum = parseInt(p.stock_quantity) || 0;
-          if (qtyNum !== original.stock_quantity) {
-            changes.push(`Stock Count: ${original.stock_quantity} -> ${qtyNum}`);
+          if (p.product_name.trim() !== original.product_name) {
+            changes.push(
+              `Name: "${original.product_name}" -> "${p.product_name.trim()}"`
+            );
           }
-          const lowAlertOriginal = original.low_stock_alert?.toString() || '';
-          if (p.low_stock_alert !== lowAlertOriginal) {
-            changes.push(`Low Alert Warning: ${lowAlertOriginal || 'None'} -> ${p.low_stock_alert || 'None'}`);
+
+          const priceNum = parseFloat(p.selling_price);
+          if (priceNum !== original.selling_price) {
+            changes.push(
+              `Price: ₱${original.selling_price.toFixed(2)} -> ₱${priceNum.toFixed(2)}`
+            );
           }
-        }
 
-        return `"${original.product_name}" [${changes.join(', ')}]`;
-      }).join('; ');
+          if (p.status !== original.status) {
+            changes.push(`Visibility: ${original.status} -> ${p.status}`);
+          }
 
-      const updatePromises = modifiedItems.map(p => {
+          if (p.has_stock_limit !== original.has_stock_limit) {
+            changes.push(
+              `Stock Type: ${original.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${p.has_stock_limit ? 'Limited' : 'Unlimited'}`
+            );
+          } else if (p.has_stock_limit) {
+            const qtyNum = parseInt(p.stock_quantity) || 0;
+            if (qtyNum !== original.stock_quantity) {
+              changes.push(
+                `Stock Count: ${original.stock_quantity} -> ${qtyNum}`
+              );
+            }
+            const lowAlertOriginal = original.low_stock_alert?.toString() || '';
+            if (p.low_stock_alert !== lowAlertOriginal) {
+              changes.push(
+                `Low Alert Warning: ${lowAlertOriginal || 'None'} -> ${p.low_stock_alert || 'None'}`
+              );
+            }
+          }
+
+          return `"${original.product_name}" [${changes.join(', ')}]`;
+        })
+        .join('; ');
+
+      const updatePromises = modifiedItems.map((p) => {
         const payload = {
           product_name: p.product_name.trim(),
           selling_price: parseFloat(p.selling_price),
           has_stock_limit: p.has_stock_limit,
-          stock_quantity: p.has_stock_limit ? parseInt(p.stock_quantity) || 0 : 0,
-          low_stock_alert: (p.has_stock_limit && p.low_stock_alert.trim() !== '') ? parseInt(p.low_stock_alert) : null,
+          stock_quantity: p.has_stock_limit
+            ? parseInt(p.stock_quantity) || 0
+            : 0,
+          low_stock_alert:
+            p.has_stock_limit && p.low_stock_alert.trim() !== ''
+              ? parseInt(p.low_stock_alert)
+              : null,
           status: p.status,
           image_url: p.image_url,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         };
         return supabase.from('products').update(payload).eq('id', p.id);
       });
 
       const results = await Promise.all(updatePromises);
-      const errors = results.filter(r => r.error);
+      const errors = results.filter((r) => r.error);
 
       if (errors.length > 0) throw new Error('Bulk update failed');
 
@@ -705,7 +842,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-[16000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-xs text-(--color-text)">
       <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-[95vw] max-w-[1400px] h-[92vh] max-h-[95vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
-        
         {/* MODAL HEADER */}
         <div className="px-6 py-4 border-b border-(--border-color) flex items-center justify-between shrink-0 bg-[var(--bg-card)]">
           <div className="flex items-center gap-2.5">
@@ -713,14 +849,17 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               <SlidersHorizontal className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-sm font-heading tracking-widest uppercase">Spreadsheet Bulk Editor</h2>
+              <h2 className="text-sm font-heading tracking-widest uppercase">
+                Spreadsheet Bulk Editor
+              </h2>
               <span className="text-[10px] text-slate-455 font-bold block mt-0.5">
-                Quickly edit name, price, stock limits, and display settings for selected items.
+                Quickly edit name, price, stock limits, and display settings for
+                selected items.
               </span>
             </div>
           </div>
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={onClose}
             className="p-1.5 bg-slate-100/5 hover:bg-slate-100/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer border border-white/5"
           >
@@ -730,7 +869,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
         {/* MODAL CONTENT WORKSPACE */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 flex flex-col min-h-0 bg-(--bg-page)">
-          
           {/* TOP TOOLBAR */}
           <div className="hidden xl:grid grid-cols-1 xl:grid-cols-12 gap-4 shrink-0 bg-(--bg-card) border border-(--border-color) p-4 rounded-2xl shadow-sm">
             <div className="xl:col-span-4 space-y-2.5">
@@ -746,14 +884,20 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               </div>
 
               <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                {(['all', 'edited', 'visible', 'hidden'] as const).map(f => (
+                {(['all', 'edited', 'visible', 'hidden'] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
                     onClick={() => setActiveFilter(f)}
                     className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer bg-slate-100 dark:bg-[#1e232d] text-slate-400 dark:text-slate-455 hover:bg-slate-200"
                   >
-                    {f === 'all' ? 'All Selected' : f === 'edited' ? 'Edited Only' : f === 'visible' ? 'Visible' : 'Hidden'}
+                    {f === 'all'
+                      ? 'All Selected'
+                      : f === 'edited'
+                        ? 'Edited Only'
+                        : f === 'visible'
+                          ? 'Visible'
+                          : 'Hidden'}
                   </button>
                 ))}
               </div>
@@ -762,7 +906,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             {/* Quick Actions Panel */}
             <div className="xl:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-3.5 border-t xl:border-t-0 xl:border-l border-(--border-color) pt-4 xl:pt-0 xl:pl-4">
               <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Set Visibility</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Set Visibility
+                </span>
                 <div className="flex gap-1.5">
                   <select
                     value={quickVisibility}
@@ -783,11 +929,15 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Set Stock limits</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Set Stock limits
+                </span>
                 <div className="flex gap-1.5">
                   <select
                     value={quickStockType ? 'Limited' : 'Unlimited'}
-                    onChange={(e) => setQuickHasStockLimit(e.target.value === 'Limited')}
+                    onChange={(e) =>
+                      setQuickHasStockLimit(e.target.value === 'Limited')
+                    }
                     className="flex-1 px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-semibold"
                   >
                     <option value="Unlimited">Unlimited</option>
@@ -804,7 +954,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Batch Price Adjuster</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Batch Price Adjuster
+                </span>
                 <div className="flex gap-1">
                   <select
                     value={priceAdjType}
@@ -839,10 +991,10 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
           {/* MOBILE/TABLET VIEW */}
           <div className="md:hidden flex flex-col gap-4 overflow-y-auto no-scrollbar pb-[100px] flex-1">
-            {displayedProducts.map(p => {
+            {displayedProducts.map((p) => {
               const modified = isRowModified(p);
               return (
-                <BulkEditCard 
+                <BulkEditCard
                   key={p.id}
                   p={p}
                   modified={modified}
@@ -861,24 +1013,44 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
                 <thead className="sticky top-0 z-30 bg-slate-100 dark:bg-[#13161a] border-b border-(--border-color)">
                   <tr>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">Status</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-14 text-center">Image</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-28">Barcode ID</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider">Product Name *</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">Price *</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-36">Stock Type</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">Quantity</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">Low Alert</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-24 text-center">Cashier</th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">Reset</th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">
+                      Status
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-14 text-center">
+                      Image
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-28">
+                      Barcode ID
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider">
+                      Product Name *
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                      Price *
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-36">
+                      Stock Type
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                      Quantity
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                      Low Alert
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-24 text-center">
+                      Cashier
+                    </th>
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">
+                      Reset
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-(--border-color)">
-                  {displayedProducts.map(p => {
+                  {displayedProducts.map((p) => {
                     const modified = isRowModified(p);
                     return (
-                      <BulkEditRow 
+                      <BulkEditRow
                         key={p.id}
                         p={p}
                         modified={modified}
@@ -893,7 +1065,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               </table>
             </div>
           </div>
-
         </div>
 
         {/* MODAL FOOTER */}
@@ -932,7 +1103,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             </button>
           </div>
         </div>
-
       </div>
     </div>,
     document.body

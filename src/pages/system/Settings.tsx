@@ -11,12 +11,12 @@ import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation';
 import { PermissionsSettings } from './PermissionsSettings';
-import { 
-  User as UserIcon, 
-  Building, 
-  CreditCard, 
-  Users, 
-  Database, 
+import {
+  User as UserIcon,
+  Building,
+  CreditCard,
+  Users,
+  Database,
   FileText,
   ShieldCheck,
   ChevronRight,
@@ -24,10 +24,18 @@ import {
   Save,
   Loader2,
   Sun,
-  Moon
+  Moon,
 } from 'lucide-react';
 
-export type TabID = 'account' | 'permissions' | 'gym-profile' | 'rates' | 'users' | 'backup' | 'audit' | 'info';
+export type TabID =
+  | 'account'
+  | 'permissions'
+  | 'gym-profile'
+  | 'rates'
+  | 'users'
+  | 'backup'
+  | 'audit'
+  | 'info';
 
 export interface TabItem {
   id: TabID;
@@ -38,73 +46,73 @@ export interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { 
-    id: 'account', 
-    label: 'Personal Account', 
-    description: 'Update your account credentials', 
-    icon: UserIcon, 
-    adminOnly: false 
+  {
+    id: 'account',
+    label: 'Personal Account',
+    description: 'Update your account credentials',
+    icon: UserIcon,
+    adminOnly: false,
   },
   {
     id: 'permissions',
     label: 'Device Permissions',
     description: 'Camera & notification access',
     icon: ShieldCheck,
-    adminOnly: false
+    adminOnly: false,
   },
-  { 
-    id: 'gym-profile', 
-    label: 'Gym Profile', 
-    description: 'Manage business information', 
-    icon: Building, 
-    adminOnly: true 
+  {
+    id: 'gym-profile',
+    label: 'Gym Profile',
+    description: 'Manage business information',
+    icon: Building,
+    adminOnly: true,
   },
-  { 
-    id: 'rates', 
-    label: 'Rates & Payments', 
-    description: 'Configure memberships', 
-    icon: CreditCard, 
-    adminOnly: true 
+  {
+    id: 'rates',
+    label: 'Rates & Payments',
+    description: 'Configure memberships',
+    icon: CreditCard,
+    adminOnly: true,
   },
-  { 
-    id: 'users', 
-    label: 'User Management', 
-    description: 'Manage staff accounts', 
-    icon: Users, 
-    adminOnly: true 
+  {
+    id: 'users',
+    label: 'User Management',
+    description: 'Manage staff accounts',
+    icon: Users,
+    adminOnly: true,
   },
-  { 
-    id: 'backup', 
-    label: 'Database Backup', 
-    description: 'Backup and restore data', 
-    icon: Database, 
-    adminOnly: true 
+  {
+    id: 'backup',
+    label: 'Database Backup',
+    description: 'Backup and restore data',
+    icon: Database,
+    adminOnly: true,
   },
-  { 
-    id: 'audit', 
-    label: 'Audit Logs', 
-    description: 'View security history', 
-    icon: FileText, 
-    adminOnly: true 
+  {
+    id: 'audit',
+    label: 'Audit Logs',
+    description: 'View security history',
+    icon: FileText,
+    adminOnly: true,
   },
-  { 
-    id: 'info', 
-    label: 'System Information', 
-    description: 'Storage metrics & specifications', 
-    icon: FileText, 
-    adminOnly: true 
+  {
+    id: 'info',
+    label: 'System Information',
+    description: 'Storage metrics & specifications',
+    icon: FileText,
+    adminOnly: true,
   },
 ];
 
 const TAB_URL_MAP: Record<TabID, string> = {
-  'account': 'personal-account',
-  'permissions': 'device-permissions',
+  account: 'personal-account',
+  permissions: 'device-permissions',
   'gym-profile': 'gym-profile',
-  'rates': 'rates-and-payments',
-  'users': 'user-management',
-  'backup': 'database-backup',
-  'audit': 'audit-logs',
-  'info': 'system-information' 
+  rates: 'rates-and-payments',
+  users: 'user-management',
+  backup: 'database-backup',
+  audit: 'audit-logs',
+  info: 'system-information',
 };
 
 const URL_TAB_MAP: Record<string, TabID> = {
@@ -115,7 +123,7 @@ const URL_TAB_MAP: Record<string, TabID> = {
   'user-management': 'users',
   'database-backup': 'backup',
   'audit-logs': 'audit',
-  'system-information': 'info'
+  'system-information': 'info',
 };
 
 export default function Settings() {
@@ -146,16 +154,20 @@ export default function Settings() {
   const [navigatingTab, setNavigatingTab] = useState<string | null>(null);
   const [isChildDirty, setIsChildDirty] = useState<boolean>(false);
   const [isChildSaving, setIsChildSaving] = useState<boolean>(false);
-  
+
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
   const isAdmin = userRole === 'admin' || isSuperAdmin(user?.email);
-  const visibleTabs: TabItem[] = TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
+  const visibleTabs: TabItem[] = TABS.filter(
+    (tab: TabItem) => !tab.adminOnly || isAdmin
+  );
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    return document.documentElement.classList.contains('dark')
+      ? 'dark'
+      : 'light';
   });
 
   const toggleTheme = () => {
@@ -165,7 +177,9 @@ export default function Settings() {
     root.classList.toggle('dark', nextTheme === 'dark');
     root.classList.toggle('light', nextTheme === 'light');
     localStorage.setItem('theme', nextTheme);
-    window.dispatchEvent(new CustomEvent('theme-changed', { detail: nextTheme }));
+    window.dispatchEvent(
+      new CustomEvent('theme-changed', { detail: nextTheme })
+    );
   };
 
   useEffect(() => {
@@ -193,34 +207,48 @@ export default function Settings() {
   }, [urlTabParam]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth >= 1280 && !urlTabParam) {
+    if (
+      typeof window !== 'undefined' &&
+      window.innerWidth >= 1280 &&
+      !urlTabParam
+    ) {
       navigate('/settings/personal-account', { replace: true });
     }
   }, [urlTabParam, navigate]);
 
   useEffect(() => {
     const isMobile = window.innerWidth < 1280;
-    
+
     const delayTimeout = setTimeout(() => {
       if (isMobile) {
         if (mobileView === 'detail') {
-          const activeLabel = TABS.find(t => t.id === activeTabId)?.label || '';
-          window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: activeLabel }));
+          const activeLabel =
+            TABS.find((t) => t.id === activeTabId)?.label || '';
+          window.dispatchEvent(
+            new CustomEvent('settings-subtab-change', { detail: activeLabel })
+          );
         } else {
-          window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: null }));
+          window.dispatchEvent(
+            new CustomEvent('settings-subtab-change', { detail: null })
+          );
         }
       } else {
-        const activeLabel = TABS.find(t => t.id === activeTabId)?.label || '';
-        window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: activeLabel }));
+        const activeLabel = TABS.find((t) => t.id === activeTabId)?.label || '';
+        window.dispatchEvent(
+          new CustomEvent('settings-subtab-change', { detail: activeLabel })
+        );
       }
-    }, 100); 
+    }, 100);
 
     return () => clearTimeout(delayTimeout);
   }, [activeTabId, mobileView]);
 
   useEffect(() => {
     const handleDirtyState = (e: Event) => {
-      const customEvent = e as CustomEvent<{ isDirty: boolean; isSaving: boolean }>;
+      const customEvent = e as CustomEvent<{
+        isDirty: boolean;
+        isSaving: boolean;
+      }>;
       setIsChildDirty(customEvent.detail.isDirty);
       setIsChildSaving(customEvent.detail.isSaving);
     };
@@ -236,12 +264,15 @@ export default function Settings() {
       handleGoBack();
     };
     window.addEventListener('settings-go-back', handleSettingsGoBack);
-    return () => window.removeEventListener('settings-go-back', handleSettingsGoBack);
+    return () =>
+      window.removeEventListener('settings-go-back', handleSettingsGoBack);
   }, [isChildDirty]);
 
   useEffect(() => {
     return () => {
-      window.dispatchEvent(new CustomEvent('settings-subtab-change', { detail: null }));
+      window.dispatchEvent(
+        new CustomEvent('settings-subtab-change', { detail: null })
+      );
     };
   }, []);
 
@@ -266,7 +297,7 @@ export default function Settings() {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
     setMobileView('menu');
-    navigate('/settings'); 
+    navigate('/settings');
   };
 
   const handleTriggerChildSave = () => {
@@ -278,8 +309,9 @@ export default function Settings() {
   };
 
   return (
-    <div className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}>
-      
+    <div
+      className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}
+    >
       <style>{`
         @keyframes slideUp {
           from {
@@ -302,15 +334,17 @@ export default function Settings() {
           System Settings
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Manage your account security, pre-register staff personnel, and update gym attributes.
+          Manage your account security, pre-register staff personnel, and update
+          gym attributes.
         </p>
       </div>
 
       {/* Main Split-View Area */}
       <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-hidden">
-        
         {/* Mobile / Tablet Navigation List */}
-        <div className={`${mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'} xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}>
+        <div
+          className={`${mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'} xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}
+        >
           <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
             {visibleTabs.map((tab: TabItem) => {
               const Icon = tab.icon;
@@ -326,29 +360,43 @@ export default function Settings() {
                   }`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-lg transition-colors ${
-                      isActive 
-                        ? 'bg-white/15 text-white' 
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-red-500'
-                    }`}>
+                    <div
+                      className={`p-2 rounded-lg transition-colors ${
+                        isActive
+                          ? 'bg-white/15 text-white'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-red-500'
+                      }`}
+                    >
                       <Icon className="w-6 h-6 shrink-0" />
                     </div>
                     <div>
-                      <h3 className={`font-semibold text-sm xl:text-base transition-colors ${
-                        isActive ? 'text-white' : 'text-slate-800 dark:text-slate-100'
-                      }`}>
+                      <h3
+                        className={`font-semibold text-sm xl:text-base transition-colors ${
+                          isActive
+                            ? 'text-white'
+                            : 'text-slate-800 dark:text-slate-100'
+                        }`}
+                      >
                         {tab.label}
                       </h3>
-                      <p className={`text-xs transition-colors mt-0.5 ${
-                        isActive ? 'text-slate-200' : 'text-slate-500 dark:text-slate-400'
-                      }`}>
+                      <p
+                        className={`text-xs transition-colors mt-0.5 ${
+                          isActive
+                            ? 'text-slate-200'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
                         {tab.description}
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className={`w-5 h-5 shrink-0 transition-transform ${
-                    isActive ? 'text-white translate-x-1' : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-red-500'
-                  }`} />
+                  <ChevronRight
+                    className={`w-5 h-5 shrink-0 transition-transform ${
+                      isActive
+                        ? 'text-white translate-x-1'
+                        : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-red-500'
+                    }`}
+                  />
                 </button>
               );
             })}
@@ -371,11 +419,16 @@ export default function Settings() {
                     {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {theme === 'dark' ? 'Switch to Light Mode layout' : 'Switch to Dark Mode layout'}
+                    {theme === 'dark'
+                      ? 'Switch to Light Mode layout'
+                      : 'Switch to Dark Mode layout'}
                   </p>
                 </div>
               </div>
-              <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden" aria-hidden="true">
+              <div
+                className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden"
+                aria-hidden="true"
+              >
                 {theme === 'dark' ? (
                   <>
                     <span className="w-3.5 h-3.5 bg-[#f0f4f8]" />
@@ -401,34 +454,9 @@ export default function Settings() {
               Personal Area
             </h4>
             <div className="flex flex-col gap-1">
-              {visibleTabs.filter(t => !t.adminOnly).map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTabId === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleTabClick(tab.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
-                      isActive
-                        ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {isAdmin && (
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 px-4">
-                Admin Console
-              </h4>
-              <div className="flex flex-col gap-1">
-                {visibleTabs.filter(t => t.adminOnly).map(tab => {
+              {visibleTabs
+                .filter((t) => !t.adminOnly)
+                .map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTabId === tab.id;
                   return (
@@ -446,6 +474,35 @@ export default function Settings() {
                     </button>
                   );
                 })}
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 px-4">
+                Admin Console
+              </h4>
+              <div className="flex flex-col gap-1">
+                {visibleTabs
+                  .filter((t) => t.adminOnly)
+                  .map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTabId === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleTabClick(tab.id)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
+                          isActive
+                            ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -468,7 +525,10 @@ export default function Settings() {
                   {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
                 </span>
               </div>
-              <div className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden scale-90" aria-hidden="true">
+              <div
+                className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden scale-90"
+                aria-hidden="true"
+              >
                 {theme === 'dark' ? (
                   <>
                     <span className="w-2.5 h-2.5 bg-[#f0f4f8]" />
@@ -488,8 +548,9 @@ export default function Settings() {
         </div>
 
         {/* Conditional Workspace Frame */}
-        <div className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}>
-          
+        <div
+          className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}
+        >
           {/* Back Navigation Bar */}
           {mobileView === 'detail' && (
             <div className="hidden md:flex xl:hidden px-4 py-3 border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#111315]/50 items-center shrink-0">
@@ -504,7 +565,9 @@ export default function Settings() {
           )}
 
           {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
-          <div className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}>
+          <div
+            className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}
+          >
             {activeTab === 'personal-account' && <PersonalAccount />}
             {activeTab === 'device-permissions' && <PermissionsSettings />}
             {activeTab === 'gym-profile' && <GymProfile />}
@@ -541,7 +604,6 @@ export default function Settings() {
           </button>
         </div>
       )}
-
     </div>
   );
 }

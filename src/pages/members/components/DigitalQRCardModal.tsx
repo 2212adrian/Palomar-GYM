@@ -77,7 +77,6 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-white">
       <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-xl shadow-2xl p-6 space-y-4 max-h-[95vh] overflow-y-auto no-scrollbar">
-        
         {/* Modal Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
@@ -102,7 +101,6 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
         {selectedFormat === 'QR' ? (
           <div className="flex justify-center select-none py-3">
             <div className="w-full max-w-115 aspect-[1.586/1] bg-black rounded-2xl p-3.5 flex flex-col justify-between border border-zinc-800 shadow-2xl relative overflow-hidden font-sans">
-              
               {/* CARD TOP BRANDING HEADER */}
               <div className="text-center shrink-0">
                 <div className="font-heading text-[15px] font-black tracking-wider text-white uppercase leading-none">
@@ -122,12 +120,11 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
 
               {/* CARD MIDDLE GRID */}
               <div className="flex gap-3 items-center flex-1 my-1.5 min-h-0">
-                
                 {/* QR CODE CONTAINER */}
                 <div className="bg-white p-1.5 rounded-xl w-28 h-28 flex items-center justify-center shrink-0 relative">
-                  <img 
-                    src={qrImageSrc} 
-                    alt="Member QR Code" 
+                  <img
+                    src={qrImageSrc}
+                    alt="Member QR Code"
                     className="w-full h-full object-contain"
                     style={{ opacity: isExpired ? 0.25 : 1 }}
                   />
@@ -141,7 +138,6 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
 
                 {/* DYNAMIC FIELDS WITH VISIBLE LABELS */}
                 <div className="flex-1 flex flex-col justify-between h-full max-h-28 text-left">
-                  
                   {/* FULL NAME */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[7.5px] font-black text-white uppercase tracking-wider leading-none">
@@ -179,7 +175,7 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
                       <span className="text-[7.5px] font-black text-white uppercase tracking-wider leading-none">
                         EXPIRATION
                       </span>
-                      <div 
+                      <div
                         className="bg-white font-extrabold text-[9px] px-1 py-1 rounded-md text-center leading-tight"
                         style={{ color: isExpired ? '#dc2626' : '#000000' }}
                       >
@@ -187,28 +183,26 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
                       </div>
                     </div>
                   </div>
-
                 </div>
-
               </div>
 
               {/* CARD BOTTOM RULES FOOTER */}
               <div className="shrink-0">
                 <div className="h-[1.5px] bg-[#dc2626] mb-1 w-full" />
                 <div className="text-[6.5px] font-extrabold text-white text-center uppercase tracking-wider leading-tight">
-                  NON-REFUNDABLE &nbsp;•&nbsp; NON-TRANSFERRABLE &nbsp;•&nbsp; BE RESPONSIBLE WITH EQUIPMENT
+                  NON-REFUNDABLE &nbsp;•&nbsp; NON-TRANSFERRABLE &nbsp;•&nbsp;
+                  BE RESPONSIBLE WITH EQUIPMENT
                 </div>
               </div>
-
             </div>
           </div>
         ) : (
           /* MANUAL TEMPLATE CARD PREVIEW */
           <div className="flex flex-col items-center gap-2 select-none py-3">
             <div className="w-full max-w-115 aspect-[1.586/1] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-black p-1 flex items-center justify-center">
-              <img 
-                src={cardTemplateImg} 
-                alt="Manual Member Card Template Asset" 
+              <img
+                src={cardTemplateImg}
+                alt="Manual Member Card Template Asset"
                 className="w-full h-full object-contain block"
               />
             </div>
@@ -227,7 +221,7 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
           >
             Close Preview
           </button>
-          
+
           <button
             type="button"
             onClick={handleRedirectToPrint}
@@ -237,7 +231,6 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
             <span>Go to Card Printing Portal</span>
           </button>
         </div>
-
       </div>
     </div>,
     document.body

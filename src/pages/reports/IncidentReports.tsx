@@ -1,15 +1,23 @@
 // src/pages/reports/IncidentReports.tsx
-import React, { useState, useEffect, useContext, useRef } from 'react';
-import { useLocation } from 'react-router-dom'; 
+import React, {
+  useState,
+  useEffect,
+  useContext,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { HeaderActionsContext } from '../../routes';
-import { UndoToast } from '../../components/ui/UndoToast';
+import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
 import {
   Activity,
   Trash2,
@@ -37,7 +45,7 @@ import {
   Copy,
   MapPin,
   HeartPulse,
-  ShieldAlert
+  ShieldAlert,
 } from 'lucide-react';
 import type { Member } from '../../types/members';
 
@@ -76,31 +84,32 @@ const SUGGESTED_TAGS = [
   'Payment',
   'Complaint',
   'Staff',
-  'Other'
+  'Other',
 ];
 
 export const IncidentReports: React.FC = () => {
-  const location = useLocation(); 
+  const location = useLocation();
   const { user } = useAuthStore();
   const { setActions } = useContext(HeaderActionsContext);
-  
+
   // Safe, case-insensitive role check
   const roleString = String(
-    user?.app_metadata?.role || 
-    user?.user_metadata?.role || 
-    (user as any)?.role || 
-    ''
-  ).toLowerCase().trim();
+    user?.app_metadata?.role ||
+      user?.user_metadata?.role ||
+      (user as any)?.role ||
+      ''
+  )
+    .toLowerCase()
+    .trim();
 
-  const isAdmin = 
-    roleString === 'admin' || 
-    roleString === 'superadmin' || 
+  const isAdmin =
+    roleString === 'admin' ||
+    roleString === 'superadmin' ||
     isSuperAdmin(user?.email);
 
   // Mount Guard Ref
   const isMountedRef = useRef(true);
 
-  // Initialize and clean up the mount guard
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -110,23 +119,27 @@ export const IncidentReports: React.FC = () => {
 
   // State Management
   const [reports, setReports] = useState<IncidentReport[]>([]);
-  const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
+  const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  
-  // Undo Countdown States
-  const [pendingDelete, setPendingDelete] = useState<IncidentReport | null>(null);
-  const [showUndoToast, setShowUndoToast] = useState(false);
-  
-  // Navigation States
+
+  // Consolidated Multi-Stacked Deletion States
+  const [stagedDeletions, setStagedDeletions] = useState<IncidentReport[]>([]);
+  const stagedDeletionsRef = useRef<IncidentReport[]>([]);
+  stagedDeletionsRef.current = stagedDeletions;
+
+  // Navigation & Lookup States
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showContactsModal, setShowContactsModal] = useState(false);
   const [showMemberLookupModal, setShowMemberLookupModal] = useState(false);
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [allMembers, setAllMembers] = useState<Member[]>([]);
-  const [selectedEmergencyMember, setSelectedEmergencyMember] = useState<Member | null>(null);
+  const [selectedEmergencyMember, setSelectedEmergencyMember] =
+    useState<Member | null>(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -135,25 +148,46 @@ export const IncidentReports: React.FC = () => {
     name1: 'Staff Ryan',
     number1: '09762607481',
     name2: 'Admin Wolf',
-    number2: '09123456789'
+    number2: '09123456789',
   });
 
   // Modal Form State
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formPriority, setFormPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
+  const [formPriority, setFormPriority] = useState<'Low' | 'Medium' | 'High'>(
+    'Medium'
+  );
   const [formTags, setFormTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
 
   // Filters & Search State
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Unread' | 'Read' | 'Archived'>('All');
-  const [priorityFilter, setPriorityFilter] = useState<'All' | 'Low' | 'Medium' | 'High'>('All');
+  const [statusFilter, setStatusFilter] = useState<
+    'All' | 'Unread' | 'Read' | 'Archived'
+  >('All');
+  const [priorityFilter, setPriorityFilter] = useState<
+    'All' | 'Low' | 'Medium' | 'High'
+  >('All');
   const [sortOrder] = useState<'Newest' | 'Oldest'>('Newest');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = useResponsiveItemsPerPage();
+
+  const openCreateModal = useCallback(() => {
+    if (isAdmin) {
+      toast.info(
+        'Only staff personnel are authorized to submit incident reports.'
+      );
+      return;
+    }
+    setIsEditing(false);
+    setFormTitle('');
+    setFormDescription('');
+    setFormPriority('Medium');
+    setFormTags([]);
+    setShowModal(true);
+  }, [isAdmin]);
 
   // Load members for emergency lookup
   const fetchMembersForLookup = async () => {
@@ -178,7 +212,7 @@ export const IncidentReports: React.FC = () => {
   };
 
   // Filtered members for emergency lookup
-  const filteredEmergencyMembers = allMembers.filter(m => {
+  const filteredEmergencyMembers = allMembers.filter((m) => {
     if (!memberSearchTerm.trim()) return true;
     const term = memberSearchTerm.toLowerCase().trim();
     return (
@@ -193,10 +227,10 @@ export const IncidentReports: React.FC = () => {
     );
   });
 
-  // Centralize top action controls
+  // Top header actions for desktop
   useEffect(() => {
     setActions(
-      <>
+      <div className="flex items-center gap-2">
         <button
           onClick={() => {
             setShowMemberLookupModal(true);
@@ -204,7 +238,7 @@ export const IncidentReports: React.FC = () => {
           }}
           title="Emergency member lookup & contact info"
           aria-label="Lookup Member"
-          className="px-3.5 py-2.5 bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 rounded-xl transition-all active:scale-95 cursor-pointer inline-flex items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
+          className="hidden sm:inline-flex px-3.5 py-2.5 bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 rounded-xl transition-all active:scale-95 cursor-pointer items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
         >
           <UserSearch className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           <span>Lookup Members</span>
@@ -214,7 +248,7 @@ export const IncidentReports: React.FC = () => {
           onClick={() => setShowContactsModal(true)}
           title="Escalated emergency contact directory"
           aria-label="Emergency Staff Contacts"
-          className="px-3.5 py-2.5 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 cursor-pointer inline-flex items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
+          className="hidden sm:inline-flex px-3.5 py-2.5 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 cursor-pointer items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
         >
           <PhoneCall className="w-4 h-4 text-blue-500" />
           <span>Emergency Staff Contacts</span>
@@ -223,19 +257,22 @@ export const IncidentReports: React.FC = () => {
         {!isAdmin && (
           <button
             onClick={openCreateModal}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0"
+            className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0 font-bold"
           >
             <Plus className="w-4 h-4" />
             New Report
           </button>
         )}
-      </>
+      </div>
     );
-  }, [isAdmin, reports, allMembers]);
+    return () => setActions(null);
+  }, [isAdmin, setActions, openCreateModal]);
 
   useEffect(() => {
     if (location.state?.openIncidentId && reports.length > 0) {
-      const target = reports.find((r) => r.id === location.state.openIncidentId);
+      const target = reports.find(
+        (r) => r.id === location.state.openIncidentId
+      );
       if (target) {
         setSelectedReport(target);
         setIsDetailModalOpen(true);
@@ -249,7 +286,9 @@ export const IncidentReports: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('gym_profile')
-        .select('contact_name_1, contact_number_1, contact_name_2, contact_number_2')
+        .select(
+          'contact_name_1, contact_number_1, contact_name_2, contact_number_2'
+        )
         .limit(1)
         .maybeSingle();
 
@@ -259,7 +298,7 @@ export const IncidentReports: React.FC = () => {
           name1: data.contact_name_1 || 'Staff Ryan',
           number1: data.contact_number_1 || '09762607481',
           name2: data.contact_name_2 || 'Admin Wolf',
-          number2: data.contact_number_2 || '09123456789'
+          number2: data.contact_number_2 || '09123456789',
         });
       }
     } catch {
@@ -267,8 +306,8 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  // Fetch Incident Reports: Admins get ALL reports, Staff get only their own
-  const fetchIncidentReports = async () => {
+  // Fetch Incident Reports
+  const fetchIncidentReports = useCallback(async () => {
     try {
       if (isMountedRef.current) setLoading(true);
       let query = supabase.from('incident_reports').select('*');
@@ -286,16 +325,18 @@ export const IncidentReports: React.FC = () => {
       }
     } catch (err: any) {
       if (isMountedRef.current) {
-        console.warn('INTERNET_ERR: Could not load incident files. Please check connection.');
+        console.warn(
+          'INTERNET_ERR: Could not load incident files. Please check connection.'
+        );
       }
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  };
+  }, [isAdmin, user]);
 
-  // Realtime subscription and base fetch initialization
+  // Realtime subscription
   useEffect(() => {
     fetchEmergencyContacts();
     fetchIncidentReports();
@@ -337,7 +378,7 @@ export const IncidentReports: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, user?.id]);
+  }, [isAdmin, user?.id, fetchIncidentReports]);
 
   const recordAuditLog = async (action: string, details: string) => {
     try {
@@ -348,56 +389,71 @@ export const IncidentReports: React.FC = () => {
   };
 
   // Calculate stats counters
-  const stats = {
-    unread: reports.filter(r => r.status === 'Unread' && !r.is_archived).length,
-    read: reports.filter(r => r.status === 'Read' && !r.is_archived).length,
-    archived: reports.filter(r => r.is_archived).length,
-    highPriority: reports.filter(r => r.priority === 'High' && !r.is_archived).length
-  };
+  const stats = useMemo(() => {
+    return {
+      unread: reports.filter((r) => r.status === 'Unread' && !r.is_archived)
+        .length,
+      read: reports.filter((r) => r.status === 'Read' && !r.is_archived).length,
+      archived: reports.filter((r) => r.is_archived).length,
+      highPriority: reports.filter(
+        (r) => r.priority === 'High' && !r.is_archived
+      ).length,
+      total: reports.filter((r) => !r.is_archived).length,
+    };
+  }, [reports]);
 
   // Filter records
-  const filteredReports = reports.filter(report => {
-    const query = searchQuery.toLowerCase().trim();
-    const matchesSearch = query === '' || 
-      report.title.toLowerCase().includes(query) ||
-      report.staff_name.toLowerCase().includes(query) ||
-      report.description.toLowerCase().includes(query) ||
-      report.tags.some(t => t.toLowerCase().includes(query));
+  const filteredReports = reports
+    .filter((report) => {
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        query === '' ||
+        report.title.toLowerCase().includes(query) ||
+        report.staff_name.toLowerCase().includes(query) ||
+        report.description.toLowerCase().includes(query) ||
+        report.tags.some((t) => t.toLowerCase().includes(query));
 
-    let matchesStatus = true;
-    if (statusFilter === 'Unread') {
-      matchesStatus = report.status === 'Unread' && !report.is_archived;
-    } else if (statusFilter === 'Read') {
-      matchesStatus = report.status === 'Read' && !report.is_archived;
-    } else if (statusFilter === 'Archived') {
-      matchesStatus = report.is_archived;
-    } else {
-      matchesStatus = !report.is_archived;
-    }
+      let matchesStatus = true;
+      if (statusFilter === 'Unread') {
+        matchesStatus = report.status === 'Unread' && !report.is_archived;
+      } else if (statusFilter === 'Read') {
+        matchesStatus = report.status === 'Read' && !report.is_archived;
+      } else if (statusFilter === 'Archived') {
+        matchesStatus = report.is_archived;
+      } else {
+        matchesStatus = !report.is_archived;
+      }
 
-    const matchesPriority = priorityFilter === 'All' || report.priority === priorityFilter;
+      const matchesPriority =
+        priorityFilter === 'All' || report.priority === priorityFilter;
 
-    return matchesSearch && matchesStatus && matchesPriority;
-  }).sort((a, b) => {
-    const timeA = new Date(a.created_at).getTime();
-    const timeB = new Date(b.created_at).getTime();
-    return sortOrder === 'Newest' ? timeB - timeA : timeA - timeB;
-  });
+      return matchesSearch && matchesStatus && matchesPriority;
+    })
+    .sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      return sortOrder === 'Newest' ? timeB - timeA : timeA - timeB;
+    });
 
   const totalItems = filteredReports.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
-  const paginatedReports = filteredReports.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedReports = filteredReports.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
-  // Helper to group filtered reports by calendar days for timeline separation
   const getGroupedReports = () => {
     const groups: Record<string, IncidentReport[]> = {};
-    paginatedReports.forEach(report => {
-      const dateStr = new Date(report.created_at).toLocaleDateString(undefined, {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
+    paginatedReports.forEach((report) => {
+      const dateStr = new Date(report.created_at).toLocaleDateString(
+        undefined,
+        {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }
+      );
       if (!groups[dateStr]) {
         groups[dateStr] = [];
       }
@@ -413,7 +469,7 @@ export const IncidentReports: React.FC = () => {
       toast.warn('Limit of 20 tags reached.');
       return;
     }
-    if (formTags.some(t => t.toLowerCase() === cleaned.toLowerCase())) {
+    if (formTags.some((t) => t.toLowerCase() === cleaned.toLowerCase())) {
       setTagInput('');
       return;
     }
@@ -423,19 +479,6 @@ export const IncidentReports: React.FC = () => {
 
   const handleRemoveTag = (index: number) => {
     setFormTags(formTags.filter((_, i) => i !== index));
-  };
-
-  const openCreateModal = () => {
-    if (isAdmin) {
-      toast.info('Only staff personnel are authorized to submit incident reports.');
-      return;
-    }
-    setIsEditing(false);
-    setFormTitle('');
-    setFormDescription('');
-    setFormPriority('Medium');
-    setFormTags([]);
-    setShowModal(true);
   };
 
   const openEditModal = (report: IncidentReport) => {
@@ -475,16 +518,22 @@ export const IncidentReports: React.FC = () => {
             description: descClean,
             priority: formPriority,
             tags: formTags,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq('id', selectedReport.id);
 
         if (error) throw error;
 
         toast.success('Report updated successfully.');
-        await recordAuditLog('INCIDENT_UPDATED', `Updated incident report "${titleClean}" (${formPriority} priority).`);
+        await recordAuditLog(
+          'INCIDENT_UPDATED',
+          `Updated incident report "${titleClean}" (${formPriority} priority).`
+        );
       } else {
-        const staffName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff Personnel';
+        const staffName =
+          user?.user_metadata?.full_name ||
+          user?.email?.split('@')[0] ||
+          'Staff Personnel';
         const { data, error } = await supabase
           .from('incident_reports')
           .insert({
@@ -495,7 +544,7 @@ export const IncidentReports: React.FC = () => {
             staff_name: staffName,
             created_by: user?.id,
             status: 'Unread',
-            is_archived: false
+            is_archived: false,
           })
           .select()
           .single();
@@ -504,7 +553,10 @@ export const IncidentReports: React.FC = () => {
 
         toast.success('Report submitted successfully.');
         if (data) {
-          await recordAuditLog('INCIDENT_CREATED', `Filed incident report "${titleClean}" with ${formPriority} priority by ${staffName}.`);
+          await recordAuditLog(
+            'INCIDENT_CREATED',
+            `Filed incident report "${titleClean}" with ${formPriority} priority by ${staffName}.`
+          );
         }
       }
 
@@ -517,76 +569,15 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  // Triggered when a report is selected
-  const handleSelectReport = async (report: IncidentReport) => {
-    if (selectedReport?.id === report.id) {
-      setSelectedReport(null);
-      setIsDetailModalOpen(false);
-    } else {
-      setSelectedReport(report);
-      setIsDetailModalOpen(true);
-      
-      // Mark as Reviewed (Read) automatically when opened by an admin
-      if (isAdmin && report.status === 'Unread' && !report.is_archived) {
-        await updateStatus(report.id, 'Read');
-      }
-    }
-  };
-
-  // Prepares the countdown timer toast for deletion
-  const startPendingDelete = (report: IncidentReport) => {
-    if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
-      toast.error('Reviewed or archived incidents cannot be deleted.');
-      return;
-    }
-    
-    setPendingDelete(report);
-    setShowUndoToast(true);
-
-    setReports(prev => prev.filter(r => r.id !== report.id));
-    if (selectedReport?.id === report.id) {
-      setSelectedReport(null);
-      setIsDetailModalOpen(false);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    try {
-      const { error } = await supabase
-        .from('incident_reports')
-        .delete()
-        .eq('id', pendingDelete.id);
-
-      if (error) throw error;
-
-      await recordAuditLog('INCIDENT_DELETED', `Deleted incident report "${pendingDelete.title}".`);
-    } catch {
-      toast.error('Deletion failure. Restoring report file.');
-      setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-    } finally {
-      setPendingDelete(null);
-      setShowUndoToast(false);
-    }
-  };
-
-  const undoDelete = () => {
-    if (!pendingDelete) return;
-    setReports(prev => [pendingDelete, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-    setPendingDelete(null);
-    setShowUndoToast(false);
-    toast.info('Operation successfully undone.');
-  };
-
   const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
     try {
-      const target = reports.find(r => r.id === id);
+      const target = reports.find((r) => r.id === id);
       const { error } = await supabase
         .from('incident_reports')
         .update({
           status,
           read_at: status === 'Read' ? new Date().toISOString() : null,
-          read_by: status === 'Read' ? user?.id : null
+          read_by: status === 'Read' ? user?.id : null,
         })
         .eq('id', id);
 
@@ -598,20 +589,154 @@ export const IncidentReports: React.FC = () => {
           ? `Marked incident report "${target?.title || 'Report'}" as Reviewed / Read.`
           : `Marked incident report "${target?.title || 'Report'}" as Unread.`
       );
-      
+
       if (selectedReport?.id === id) {
-        setSelectedReport(prev => prev ? { ...prev, status, read_at: status === 'Read' ? new Date().toISOString() : null } : null);
+        setSelectedReport((prev) =>
+          prev
+            ? {
+                ...prev,
+                status,
+                read_at: status === 'Read' ? new Date().toISOString() : null,
+              }
+            : null
+        );
       }
-      
-      setReports(prev => prev.map(r => r.id === id ? { ...r, status, read_at: status === 'Read' ? new Date().toISOString() : null } : r));
+
+      setReports((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                status,
+                read_at: status === 'Read' ? new Date().toISOString() : null,
+              }
+            : r
+        )
+      );
     } catch {
       toast.error('Failed to change status attributes.');
     }
   };
 
+  const handleSelectReport = async (report: IncidentReport) => {
+    if (selectedReport?.id === report.id) {
+      setSelectedReport(null);
+      setIsDetailModalOpen(false);
+    } else {
+      setSelectedReport(report);
+      setIsDetailModalOpen(true);
+
+      if (isAdmin && report.status === 'Unread' && !report.is_archived) {
+        await updateStatus(report.id, 'Read');
+      }
+    }
+  };
+
+  // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
+  const handleConfirmDelete = useCallback(async (id: string) => {
+    const stagedReport = stagedDeletionsRef.current.find(
+      (r) => String(r.id) === String(id)
+    );
+    if (!stagedReport) return;
+
+    try {
+      const { error } = await supabase
+        .from('incident_reports')
+        .delete()
+        .eq('id', stagedReport.id);
+
+      if (error) throw error;
+
+      await recordAuditLog(
+        'INCIDENT_DELETED',
+        `Deleted incident report "${stagedReport.title}".`
+      );
+      toast.success(`Report "${stagedReport.title}" deleted.`);
+    } catch {
+      toast.error('Deletion failure. Restoring report file.');
+      setReports((prev) =>
+        [stagedReport, ...prev].sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
+    } finally {
+      setStagedDeletions((prev) =>
+        prev.filter((r) => String(r.id) !== String(id))
+      );
+    }
+  }, []);
+
+  const handleUndoDelete = (id: string) => {
+    const stagedReport = stagedDeletionsRef.current.find(
+      (r) => String(r.id) === String(id)
+    );
+    if (!stagedReport) return;
+
+    setReports((prev) =>
+      [
+        stagedReport,
+        ...prev.filter((item) => String(item.id) !== String(id)),
+      ].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+    );
+    setStagedDeletions((prev) =>
+      prev.filter((item) => String(item.id) !== String(id))
+    );
+    toast.info(`Restored report "${stagedReport.title}".`);
+  };
+
+  const handleConfirmAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToCommit = [...stagedDeletionsRef.current];
+    itemsToCommit.forEach((report) => handleConfirmDelete(String(report.id)));
+  };
+
+  const handleUndoAll = () => {
+    if (stagedDeletionsRef.current.length === 0) return;
+    const itemsToRestore = [...stagedDeletionsRef.current];
+    setReports((prev) => {
+      const existingIds = new Set(itemsToRestore.map((r) => String(r.id)));
+      const filtered = prev.filter((r) => !existingIds.has(String(r.id)));
+      return [...itemsToRestore, ...filtered].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+    setStagedDeletions([]);
+    toast.info(`Restored all ${itemsToRestore.length} incident reports.`);
+  };
+
+  const startPendingDelete = (report: IncidentReport) => {
+    if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
+      toast.error('Reviewed or archived incidents cannot be deleted.');
+      return;
+    }
+
+    setStagedDeletions((prev) => [...prev, report]);
+    setReports((prev) => prev.filter((r) => r.id !== report.id));
+
+    if (selectedReport?.id === report.id) {
+      setSelectedReport(null);
+      setIsDetailModalOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (stagedDeletionsRef.current.length > 0) {
+        stagedDeletionsRef.current.forEach((report) => {
+          supabase.from('incident_reports').delete().eq('id', report.id).then();
+        });
+      }
+    };
+  }, []);
+
   const toggleArchive = async (id: string, archiveState: boolean) => {
     try {
-      const target = reports.find(r => r.id === id);
+      const target = reports.find((r) => r.id === id);
       const { error } = await supabase
         .from('incident_reports')
         .update({ is_archived: archiveState })
@@ -619,27 +744,35 @@ export const IncidentReports: React.FC = () => {
 
       if (error) throw error;
 
-      toast.success(archiveState ? 'Report moved to archives.' : 'Report restored to workspace.');
+      toast.success(
+        archiveState
+          ? 'Report moved to archives.'
+          : 'Report restored to workspace.'
+      );
       await recordAuditLog(
         archiveState ? 'INCIDENT_ARCHIVED' : 'INCIDENT_RESTORED',
         `${archiveState ? 'Archived' : 'Restored'} incident report "${target?.title || 'Report'}".`
       );
-      
+
       if (selectedReport?.id === id) {
-        setSelectedReport(prev => prev ? { ...prev, is_archived: archiveState } : null);
+        setSelectedReport((prev) =>
+          prev ? { ...prev, is_archived: archiveState } : null
+        );
       }
-      setIsDetailModalOpen(false); 
+      setIsDetailModalOpen(false);
       fetchIncidentReports();
     } catch {
       toast.error('Archiving operation failure.');
     }
   };
 
-  const handleBulkAction = async (action: 'Read' | 'Unread' | 'Archive' | 'Delete') => {
+  const handleBulkAction = async (
+    action: 'Read' | 'Unread' | 'Archive' | 'Delete'
+  ) => {
     if (selectedIds.length === 0) return;
 
-    const targetReports = reports.filter(r => selectedIds.includes(r.id));
-    const targetTitles = targetReports.map(r => r.title).join(', ');
+    const targetReports = reports.filter((r) => selectedIds.includes(r.id));
+    const targetTitles = targetReports.map((r) => r.title).join(', ');
 
     try {
       setLoading(true);
@@ -650,7 +783,10 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully removed ${selectedIds.length} reports.`);
-        await recordAuditLog('INCIDENT_DELETED', `Deleted ${selectedIds.length} incident reports: ${targetTitles}.`);
+        await recordAuditLog(
+          'INCIDENT_DELETED',
+          `Deleted ${selectedIds.length} incident reports: ${targetTitles}.`
+        );
       } else if (action === 'Archive') {
         const { error } = await supabase
           .from('incident_reports')
@@ -658,19 +794,25 @@ export const IncidentReports: React.FC = () => {
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully archived ${selectedIds.length} reports.`);
-        await recordAuditLog('INCIDENT_ARCHIVED', `Archived ${selectedIds.length} incident reports: ${targetTitles}.`);
+        await recordAuditLog(
+          'INCIDENT_ARCHIVED',
+          `Archived ${selectedIds.length} incident reports: ${targetTitles}.`
+        );
       } else {
         const { error } = await supabase
           .from('incident_reports')
-          .update({ 
+          .update({
             status: action,
             read_at: action === 'Read' ? new Date().toISOString() : null,
-            read_by: action === 'Read' ? user?.id : null
+            read_by: action === 'Read' ? user?.id : null,
           })
           .in('id', selectedIds);
         if (error) throw error;
         toast.success(`Successfully updated ${selectedIds.length} reports.`);
-        await recordAuditLog('INCIDENT_UPDATED', `Marked ${selectedIds.length} incident reports as ${action === 'Read' ? 'Reviewed' : 'Unread'}: ${targetTitles}.`);
+        await recordAuditLog(
+          'INCIDENT_UPDATED',
+          `Marked ${selectedIds.length} incident reports as ${action === 'Read' ? 'Reviewed' : 'Unread'}: ${targetTitles}.`
+        );
       }
       setSelectedIds([]);
       fetchIncidentReports();
@@ -704,28 +846,45 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  const renderDetailPanelContent = (report: IncidentReport, isModalContext = false) => {
+  const undoToastItems: UndoItem[] = useMemo(() => {
+    return stagedDeletions.map((report) => ({
+      id: String(report.id),
+      title: report.title,
+      type: 'general',
+      extraInfo: `${report.priority} Priority • Filed by ${report.staff_name}`,
+      timestamp: report.created_at,
+    }));
+  }, [stagedDeletions]);
+
+  const renderDetailPanelContent = (
+    report: IncidentReport,
+    isModalContext = false
+  ) => {
     return (
       <div className="space-y-6 text-xs relative">
         {!isModalContext && (
-          <div className={`absolute top-[-20px] left-[-20px] right-[-20px] h-1.5 rounded-t-2xl ${
-            report.priority === 'High' 
-              ? 'bg-red-500' 
-              : report.priority === 'Medium' 
-                ? 'bg-amber-500' 
-                : 'bg-green-500'
-          }`} />
+          <div
+            className={`absolute -top-5 -left-5 -right-5 h-1.5 rounded-t-2xl ${
+              report.priority === 'High'
+                ? 'bg-red-500'
+                : report.priority === 'Medium'
+                  ? 'bg-amber-500'
+                  : 'bg-green-500'
+            }`}
+          />
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 dark:border-white/5 pb-4">
           <div className="space-y-1.5 flex-1 min-w-0">
-            <span className={`px-2 py-0.5 rounded text-[9px] font-heading tracking-widest uppercase ${
-              report.priority === 'High' 
-                ? 'bg-red-500/10 text-red-500' 
-                : report.priority === 'Medium'
-                  ? 'bg-amber-500/10 text-amber-500'
-                  : 'bg-green-500/10 text-green-500'
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded text-[9px] font-heading tracking-widest uppercase ${
+                report.priority === 'High'
+                  ? 'bg-red-500/10 text-red-500'
+                  : report.priority === 'Medium'
+                    ? 'bg-amber-500/10 text-amber-500'
+                    : 'bg-green-500/10 text-green-500'
+              }`}
+            >
               {report.priority} Priority
             </span>
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 leading-tight">
@@ -741,20 +900,20 @@ export const IncidentReports: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
                 <span>
-                  {new Date(report.created_at).toLocaleDateString(undefined, { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                  {new Date(report.created_at).toLocaleDateString(undefined, {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
                   })}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
                 <span>
-                  {new Date(report.created_at).toLocaleTimeString(undefined, { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  {new Date(report.created_at).toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })}
                 </span>
               </div>
@@ -762,15 +921,23 @@ export const IncidentReports: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 self-start shrink-0">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-heading tracking-widest uppercase ${
-              report.status === 'Unread' && !report.is_archived
-                ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                : 'bg-green-500/10 text-green-500 border border-green-500/20'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' && !report.is_archived ? 'bg-red-500' : 'bg-green-500'}`} />
-              {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-heading tracking-widest uppercase ${
+                report.status === 'Unread' && !report.is_archived
+                  ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                  : 'bg-green-500/10 text-green-500 border border-green-500/20'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' && !report.is_archived ? 'bg-red-500' : 'bg-green-500'}`}
+              />
+              {report.is_archived
+                ? 'Archived'
+                : report.status === 'Unread'
+                  ? 'New'
+                  : 'Reviewed'}
             </span>
-            
+
             {!isModalContext && (
               <button
                 onClick={() => setSelectedReport(null)}
@@ -785,10 +952,15 @@ export const IncidentReports: React.FC = () => {
 
         {report.tags && report.tags.length > 0 && (
           <div className="space-y-1.5">
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Incident Tags</h4>
+            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Incident Tags
+            </h4>
             <div className="flex flex-wrap gap-2">
               {report.tags.map((tag, idx) => (
-                <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-[10px] text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider">
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-[10px] text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider"
+                >
                   {getTagIcon(tag)}
                   {tag}
                 </span>
@@ -798,8 +970,10 @@ export const IncidentReports: React.FC = () => {
         )}
 
         <div className="space-y-2 bg-slate-50/50 dark:bg-[#12141a]/50 border border-slate-200/40 dark:border-white/5 p-4 rounded-2xl">
-          <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Description</h4>
-          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Description
+          </h4>
+          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap wrap-break-word">
             {report.description}
           </p>
         </div>
@@ -808,7 +982,9 @@ export const IncidentReports: React.FC = () => {
         <div className="border-t border-slate-100 dark:border-white/5 pt-4">
           {isAdmin ? (
             <div className="space-y-3.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Admin Controls</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Admin Controls
+              </h4>
               <div className="flex flex-wrap gap-2">
                 {report.status === 'Unread' ? (
                   <button
@@ -857,12 +1033,18 @@ export const IncidentReports: React.FC = () => {
 
               <div className="p-3.5 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/10 rounded-xl flex items-start gap-2 text-xs text-blue-600 dark:text-blue-300">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Marking reports as reviewed updates the status for staff. Archived incidents can always be retrieved via the "Archived" filter.</span>
+                <span>
+                  Marking reports as reviewed updates the status for staff.
+                  Archived incidents can always be retrieved via the "Archived"
+                  filter.
+                </span>
               </div>
             </div>
           ) : (
             <div className="space-y-3.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Staff Actions</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Staff Actions
+              </h4>
               {report.status === 'Unread' && !report.is_archived ? (
                 <div className="flex gap-2">
                   <button
@@ -884,7 +1066,10 @@ export const IncidentReports: React.FC = () => {
               ) : (
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
-                  <span>This incident report has been reviewed or archived by gym management and is now locked from further edits or deletion.</span>
+                  <span>
+                    This incident report has been reviewed or archived by gym
+                    management and is now locked from further edits or deletion.
+                  </span>
                 </div>
               )}
             </div>
@@ -895,29 +1080,27 @@ export const IncidentReports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-24 lg:pb-8">
-
+    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-36 sm:pb-24 lg:pb-8 animate-fade-in relative min-h-[85vh] w-full">
       {/* Main Dashboard Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
-        
         {/* Left Column: Directory List Section */}
-        <div 
+        <div
           className={`transition-all duration-300 ease-in-out space-y-4 w-full ${
-            selectedReport 
-              ? "lg:w-[42%] shrink-0" 
-              : "w-full max-w-5xl mx-auto"
+            selectedReport ? 'lg:w-[42%] shrink-0' : 'w-full max-w-5xl mx-auto'
           }`}
         >
           {/* Queue Alert for Admins if >= 10 unread */}
           {isAdmin && stats.unread >= 10 && (
             <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-[11px] flex items-center gap-2 font-medium animate-slide-up">
               <AlertTriangle className="w-4 h-4 shrink-0 animate-bounce text-amber-500" />
-              <span>Queue Alert: You have {stats.unread} unread incident reports requiring admin review.</span>
+              <span>
+                Queue Alert: You have {stats.unread} unread incident reports
+                requiring admin review.
+              </span>
             </div>
           )}
-          
+
           <div className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-3">
-            
             {/* Search Input */}
             <div className="relative">
               <Search className="absolute left-3 top-3.5 w-4 h-4 text-slate-400" />
@@ -938,44 +1121,59 @@ export const IncidentReports: React.FC = () => {
                 <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
                   <input
                     type="checkbox"
-                    checked={paginatedReports.length > 0 && paginatedReports.every(r => selectedIds.includes(r.id))}
+                    checked={
+                      paginatedReports.length > 0 &&
+                      paginatedReports.every((r) => selectedIds.includes(r.id))
+                    }
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setSelectedIds(paginatedReports.map(r => r.id));
+                        setSelectedIds(paginatedReports.map((r) => r.id));
                       } else {
                         setSelectedIds([]);
                       }
                     }}
                     className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
                   />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Select All</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Select All
+                  </span>
                 </label>
 
-                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-0.5 min-w-0">
-                  {(['All', 'Unread', 'Read', 'Archived'] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => { setStatusFilter(filter); setCurrentPage(1); }}
-                      className={`px-3 py-1.5 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
-                        statusFilter === filter
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
-                      }`}
-                    >
-                      {filter}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 min-w-0">
+                  {(['All', 'Unread', 'Read', 'Archived'] as const).map(
+                    (filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => {
+                          setStatusFilter(filter);
+                          setCurrentPage(1);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
+                          statusFilter === filter
+                            ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                            : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
+                        }`}
+                      >
+                        {filter}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-                <label htmlFor="priority-filter-select" className="sr-only">Priority Filter</label>
+                <label htmlFor="priority-filter-select" className="sr-only">
+                  Priority Filter
+                </label>
                 <select
                   id="priority-filter-select"
                   title="Filter reports by priority level"
                   value={priorityFilter}
-                  onChange={(e) => { setPriorityFilter(e.target.value as any); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    setPriorityFilter(e.target.value as any);
+                    setCurrentPage(1);
+                  }}
                   className="bg-slate-100 dark:bg-[#1e232d] border-none text-[10px] text-slate-500 dark:text-slate-400 font-heading tracking-wider uppercase rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#123c73] dark:focus:ring-[#bf0202] outline-none cursor-pointer"
                 >
                   <option value="All">All Priority</option>
@@ -1040,7 +1238,10 @@ export const IncidentReports: React.FC = () => {
           {loading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="p-4 bg-white/50 dark:bg-[#161920]/50 border border-slate-200 dark:border-white/5 rounded-2xl animate-pulse space-y-3">
+                <div
+                  key={i}
+                  className="p-4 bg-white/50 dark:bg-[#161920]/50 border border-slate-200 dark:border-white/5 rounded-2xl animate-pulse space-y-3"
+                >
                   <div className="flex justify-between">
                     <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-2/3" />
                     <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-1/6" />
@@ -1054,109 +1255,147 @@ export const IncidentReports: React.FC = () => {
               <div className="w-12 h-12 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto text-slate-400">
                 <Activity className="w-6 h-6" />
               </div>
-              <h3 className="font-heading text-xs uppercase tracking-widest text-slate-800 dark:text-slate-200">No incident reports</h3>
+              <h3 className="font-heading text-xs uppercase tracking-widest text-slate-800 dark:text-slate-200">
+                No incident reports
+              </h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                {isAdmin 
-                  ? "Reports submitted by your staff matching your active filters will appear here." 
+                {isAdmin
+                  ? 'Reports submitted by your staff matching your active filters will appear here.'
                   : "You haven't submitted any incident reports matching the active filters."}
               </p>
+
+              {!isAdmin && (
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="mt-3 px-4 py-2 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider cursor-pointer shadow-md hover:opacity-90 transition-all inline-flex items-center gap-2 active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>FILE NEW REPORT</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-6">
-              {Object.entries(getGroupedReports()).map(([dateLabel, groupReports]) => (
-                <div key={dateLabel} className="space-y-3 relative">
-                  <div className="flex items-center gap-2 py-1 select-none">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#123c73] dark:bg-[#bf0202]" />
-                    <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
-                      {dateLabel}
-                    </span>
-                    <div className="flex-1 h-[1px] bg-slate-200/50 dark:bg-white/5" />
-                  </div>
+              {Object.entries(getGroupedReports()).map(
+                ([dateLabel, groupReports]) => (
+                  <div key={dateLabel} className="space-y-3 relative">
+                    <div className="flex items-center gap-2 py-1 select-none">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#123c73] dark:bg-[#bf0202]" />
+                      <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                        {dateLabel}
+                      </span>
+                      <div className="flex-1 h-px bg-slate-200/50 dark:bg-white/5" />
+                    </div>
 
-                  {groupReports.map((report) => {
-                    const isSelected = selectedReport?.id === report.id;
-                    const isHigh = report.priority === 'High';
-                    
-                    return (
-                      <div
-                        key={report.id}
-                        onClick={() => handleSelectReport(report)}
-                        className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
-                          isSelected
-                            ? 'bg-[#123c73]/5 dark:bg-[#bf0202]/5 border-[#123c73] dark:border-[#bf0202]'
-                            : 'bg-white dark:bg-[#161920] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15'
-                        }`}
-                      >
-                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${
-                          report.priority === 'High' 
-                            ? 'bg-red-500' 
-                            : report.priority === 'Medium' 
-                              ? 'bg-amber-500' 
-                              : 'bg-green-500'
-                        }`} />
+                    {groupReports.map((report) => {
+                      const isSelected = selectedReport?.id === report.id;
+                      const isHigh = report.priority === 'High';
 
-                        <div className="pt-1 select-none shrink-0 z-10" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(report.id)}
-                            onChange={() => handleToggleSelect(report.id, { stopPropagation: () => {} } as any)}
-                            title={`Select report: ${report.title}`}
-                            aria-label={`Select report: ${report.title}`}
-                            className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
-                          />
-                        </div>
-
-                        <div className="pl-1.5 flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#123c73] dark:group-hover:text-[#bf0202] transition-colors leading-snug line-clamp-1">
-                              {report.title}
-                            </h4>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
-                              isHigh 
-                                ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
+                      return (
+                        <div
+                          key={report.id}
+                          onClick={() => handleSelectReport(report)}
+                          className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
+                            isSelected
+                              ? 'bg-[#123c73]/5 dark:bg-[#bf0202]/5 border-[#123c73] dark:border-[#bf0202]'
+                              : 'bg-white dark:bg-[#161920] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15'
+                          }`}
+                        >
+                          <div
+                            className={`absolute top-0 left-0 bottom-0 w-1 ${
+                              report.priority === 'High'
+                                ? 'bg-red-500'
                                 : report.priority === 'Medium'
-                                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                                  : 'bg-green-500/10 text-green-500 border border-green-500/20'
-                            }`}>
-                              {report.priority}
-                            </span>
+                                  ? 'bg-amber-500'
+                                  : 'bg-green-500'
+                            }`}
+                          />
+
+                          <div
+                            className="pt-1 select-none shrink-0 z-10"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(report.id)}
+                              onChange={() =>
+                                handleToggleSelect(report.id, {
+                                  stopPropagation: () => {},
+                                } as any)
+                              }
+                              title={`Select report: ${report.title}`}
+                              aria-label={`Select report: ${report.title}`}
+                              className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                            />
                           </div>
 
-                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {report.staff_name}
-                            </span>
-                            <span>•</span>
-                            <span>
-                              {new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                            <span>•</span>
-                            <span className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}>
-                              {report.is_archived ? 'Archived' : report.status === 'Unread' ? 'New' : 'Reviewed'}
-                            </span>
-                          </div>
-
-                          {report.tags && report.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2.5">
-                              {report.tags.slice(0, 3).map((tag, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-[8px] text-slate-500 font-semibold uppercase tracking-wider">
-                                  {getTagIcon(tag)}
-                                  {tag}
-                                </span>
-                              ))}
-                              {report.tags.length > 3 && (
-                                <span className="text-[8px] text-slate-400 font-bold self-center">
-                                  +{report.tags.length - 3} more
-                                </span>
-                              )}
+                          <div className="pl-1.5 flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#123c73] dark:group-hover:text-[#bf0202] transition-colors leading-snug line-clamp-1">
+                                {report.title}
+                              </h4>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
+                                  isHigh
+                                    ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                                    : report.priority === 'Medium'
+                                      ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                      : 'bg-green-500/10 text-green-500 border border-green-500/20'
+                                }`}
+                              >
+                                {report.priority}
+                              </span>
                             </div>
-                          )}
+
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-medium">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {report.staff_name}
+                              </span>
+                              <span>•</span>
+                              <span>
+                                {new Date(report.created_at).toLocaleDateString(
+                                  undefined,
+                                  { month: 'short', day: 'numeric' }
+                                )}
+                              </span>
+                              <span>•</span>
+                              <span
+                                className={`font-semibold ${report.is_archived ? 'text-amber-500' : report.status === 'Unread' ? 'text-red-500' : 'text-slate-400'}`}
+                              >
+                                {report.is_archived
+                                  ? 'Archived'
+                                  : report.status === 'Unread'
+                                    ? 'New'
+                                    : 'Reviewed'}
+                              </span>
+                            </div>
+
+                            {report.tags && report.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2.5">
+                                {report.tags.slice(0, 3).map((tag, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-[8px] text-slate-500 font-semibold uppercase tracking-wider"
+                                  >
+                                    {getTagIcon(tag)}
+                                    {tag}
+                                  </span>
+                                ))}
+                                {report.tags.length > 3 && (
+                                  <span className="text-[8px] text-slate-400 font-bold self-center">
+                                    +{report.tags.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                      );
+                    })}
+                  </div>
+                )
+              )}
             </div>
           )}
 
@@ -1164,12 +1403,16 @@ export const IncidentReports: React.FC = () => {
           {totalPages > 1 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 dark:border-white/5 pt-4 text-xs">
               <span className="text-slate-400 font-medium text-[11px] text-center sm:text-left">
-                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} reports
+                Showing {(currentPage - 1) * itemsPerPage + 1} to{' '}
+                {Math.min(currentPage * itemsPerPage, totalItems)} of{' '}
+                {totalItems} reports
               </span>
               <div className="flex gap-1.5 items-center">
                 <button
                   disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(prev - 1, 1))
+                  }
                   title="Previous Page"
                   aria-label="Previous Page"
                   className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161920] disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -1194,7 +1437,9 @@ export const IncidentReports: React.FC = () => {
                 </div>
                 <button
                   disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
                   title="Next Page"
                   aria-label="Next Page"
                   className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161920] disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -1207,47 +1452,47 @@ export const IncidentReports: React.FC = () => {
         </div>
 
         {/* Right Column: Desktop Inline Detail Panel */}
-        <div 
+        <div
           className={`transition-all duration-300 ease-in-out hidden lg:block overflow-hidden ${
-            selectedReport 
-              ? "opacity-100 translate-x-0 lg:w-[58%] shrink-0 h-auto" 
-              : "opacity-0 translate-x-4 w-0 h-0 pointer-events-none"
+            selectedReport
+              ? 'opacity-100 translate-x-0 lg:w-[58%] shrink-0 h-auto'
+              : 'opacity-0 translate-x-4 w-0 h-0 pointer-events-none'
           }`}
         >
           <div className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-xs relative">
             {selectedReport && renderDetailPanelContent(selectedReport, false)}
           </div>
         </div>
-
       </div>
 
-      {/* Reusable Countdown Toast */}
+      {/* Reusable Consolidated Multi-Stacked Countdown Toast */}
       <UndoToast
-        isOpen={showUndoToast}
-        message={`Incident report "${pendingDelete?.title}" deleted.`}
-        duration={10}
-        onConfirm={confirmDelete}
-        onUndo={undoDelete}
-        onClose={() => setShowUndoToast(false)}
+        items={undoToastItems}
+        duration={5}
+        onUndoItem={handleUndoDelete}
+        onConfirmItem={handleConfirmDelete}
+        onUndoAll={handleUndoAll}
+        onConfirmAll={handleConfirmAll}
       />
 
-      {/* Mobile & Tablet Detail Modal Overlay */}
-      <AnimatePresence>
-        {isDetailModalOpen && selectedReport && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs lg:hidden">
-            <motion.div 
+      {/* Mobile & Tablet Detail Modal Overlay (Portaled to document.body) */}
+      {isDetailModalOpen &&
+        selectedReport &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/40" 
-              onClick={() => setSelectedReport(null)} 
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+              onClick={() => setSelectedReport(null)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 50, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 50, scale: 0.95 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-2xl relative w-full max-w-lg max-h-[90vh] overflow-y-auto z-[2001]"
+              className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-2xl relative w-full max-w-lg max-h-[90vh] overflow-y-auto z-10"
             >
               <button
                 type="button"
@@ -1260,33 +1505,33 @@ export const IncidentReports: React.FC = () => {
 
               {renderDetailPanelContent(selectedReport, true)}
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
-      </AnimatePresence>
 
-      {/* Emergency Contacts Modal */}
-      <AnimatePresence>
-        {showContactsModal && (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div 
+      {/* Emergency Contacts Directory Modal (Portaled to document.body) */}
+      {showContactsModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/30" 
-              onClick={() => setShowContactsModal(false)} 
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+              onClick={() => setShowContactsModal(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-xl relative z-10 space-y-4 text-xs max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl relative z-10 space-y-4 text-xs max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
                 <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <PhoneCall className="w-4 h-4 text-blue-500" />
                   <span>Emergency Escalation Directory</span>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowContactsModal(false)}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors cursor-pointer"
                   title="Close directory"
@@ -1294,11 +1539,12 @@ export const IncidentReports: React.FC = () => {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              
+
               <p className="text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                If an incident requires immediate security, management support, or critical escalation, call the registered gym administrators:
+                If an incident requires immediate security, management support,
+                or critical escalation, call the registered gym administrators:
               </p>
-              
+
               <div className="space-y-3 pt-1">
                 {contacts.name1 && (
                   <div className="p-3.5 bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-100 dark:border-white/5 flex items-start gap-3">
@@ -1306,9 +1552,16 @@ export const IncidentReports: React.FC = () => {
                       1
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Primary Admin</p>
-                      <p className="font-bold text-slate-800 dark:text-slate-200">{contacts.name1}</p>
-                      <a href={`tel:${contacts.number1}`} className="text-blue-600 dark:text-[#bf0202] dark:hover:text-red-400 font-semibold hover:underline block mt-0.5">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                        Primary Admin
+                      </p>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">
+                        {contacts.name1}
+                      </p>
+                      <a
+                        href={`tel:${contacts.number1}`}
+                        className="text-blue-600 dark:text-[#bf0202] dark:hover:text-red-400 font-semibold hover:underline block mt-0.5"
+                      >
                         {contacts.number1}
                       </a>
                     </div>
@@ -1321,9 +1574,16 @@ export const IncidentReports: React.FC = () => {
                       2
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Secondary Admin</p>
-                      <p className="font-bold text-slate-800 dark:text-slate-200">{contacts.name2}</p>
-                      <a href={`tel:${contacts.number2}`} className="text-blue-600 dark:text-[#bf0202] dark:hover:text-red-400 font-semibold hover:underline block mt-0.5">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                        Secondary Admin
+                      </p>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">
+                        {contacts.name2}
+                      </p>
+                      <a
+                        href={`tel:${contacts.number2}`}
+                        className="text-blue-600 dark:text-[#bf0202] dark:hover:text-red-400 font-semibold hover:underline block mt-0.5"
+                      >
                         {contacts.number2}
                       </a>
                     </div>
@@ -1346,13 +1606,15 @@ export const IncidentReports: React.FC = () => {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
 
-        {/* Emergency Member Lookup Modal */}
-        {showMemberLookupModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
+      {/* Emergency Member Lookup Modal (Portaled to document.body) */}
+      {showMemberLookupModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4">
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -1360,13 +1622,13 @@ export const IncidentReports: React.FC = () => {
                 setShowMemberLookupModal(false);
                 setSelectedEmergencyMember(null);
               }}
-              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs"
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-4xl shadow-2xl relative z-10 overflow-hidden max-h-[90vh] flex flex-col"
+              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-4xl shadow-2xl relative z-10 overflow-hidden max-h-[88vh] sm:max-h-[90vh] flex flex-col"
             >
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-black/20 shrink-0">
@@ -1379,11 +1641,12 @@ export const IncidentReports: React.FC = () => {
                       Emergency Member Lookup
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Instantly locate member personal, medical, and emergency contact records
+                      Instantly locate member personal, medical, and emergency
+                      contact records
                     </p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => {
                     setShowMemberLookupModal(false);
                     setSelectedEmergencyMember(null);
@@ -1396,9 +1659,14 @@ export const IncidentReports: React.FC = () => {
               </div>
 
               {/* Main Modal Layout */}
-              <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-0 overflow-hidden">
-                {/* Left Pane: Search & List */}
-                <div className="md:col-span-5 border-r border-slate-200 dark:border-white/5 p-4 flex flex-col gap-3 min-h-0 bg-slate-50/30 dark:bg-black/10">
+              <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col md:grid md:grid-cols-12">
+                {/* ── Left Pane: Search & Member Directory List ── */}
+                <div
+                  className={`md:col-span-5 md:border-r border-slate-200 dark:border-white/5 p-3.5 sm:p-4 flex-col gap-3 min-h-0 bg-slate-50/30 dark:bg-black/10 h-full ${
+                    selectedEmergencyMember ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  {/* Search Box */}
                   <div className="relative shrink-0">
                     <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                     <input
@@ -1411,8 +1679,9 @@ export const IncidentReports: React.FC = () => {
                     />
                     {memberSearchTerm && (
                       <button
+                        type="button"
                         onClick={() => setMemberSearchTerm('')}
-                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -1421,15 +1690,22 @@ export const IncidentReports: React.FC = () => {
 
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-1 shrink-0 flex items-center justify-between">
                     <span>{filteredEmergencyMembers.length} Members Found</span>
-                    {loadingMembers && <span className="animate-pulse text-emerald-500">Loading...</span>}
+                    {loadingMembers && (
+                      <span className="animate-pulse text-emerald-500">
+                        Loading...
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                  {/* Scrollable Member List */}
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 pb-4">
                     {filteredEmergencyMembers.length === 0 ? (
                       <div className="py-12 text-center text-xs text-slate-400 space-y-1">
                         <User className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 opacity-60 mb-2" />
                         <p className="font-semibold">No member matches found</p>
-                        <p className="text-[11px]">Try searching by partial name, ID number, or phone.</p>
+                        <p className="text-[11px]">
+                          Try searching by partial name, ID number, or phone.
+                        </p>
                       </div>
                     ) : (
                       filteredEmergencyMembers.map((m) => {
@@ -1438,19 +1714,23 @@ export const IncidentReports: React.FC = () => {
                           <div
                             key={m.id}
                             onClick={() => setSelectedEmergencyMember(m)}
-                            className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                            className={`p-3 rounded-xl border text-left cursor-pointer transition-all active:scale-[0.99] ${
                               isSelected
                                 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-900 dark:text-emerald-100 shadow-xs'
                                 : 'bg-white dark:bg-[#1e232d] border-slate-200/80 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 text-slate-800 dark:text-slate-200'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <div className="font-bold text-xs truncate">{m.full_name}</div>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase shrink-0 ${
-                                m.status === 'Active' 
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
-                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                              }`}>
+                              <div className="font-bold text-xs truncate">
+                                {m.full_name}
+                              </div>
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase shrink-0 ${
+                                  m.status === 'Active'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                }`}
+                              >
                                 {m.status}
                               </span>
                             </div>
@@ -1461,7 +1741,10 @@ export const IncidentReports: React.FC = () => {
                             {m.emergency_contact_name && (
                               <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
                                 <ShieldAlert className="w-3 h-3 text-rose-500 shrink-0" />
-                                <span className="truncate">ICE: {m.emergency_contact_name} ({m.relationship || 'Contact'})</span>
+                                <span className="truncate">
+                                  ICE: {m.emergency_contact_name} (
+                                  {m.relationship || 'Contact'})
+                                </span>
                               </div>
                             )}
                           </div>
@@ -1471,75 +1754,116 @@ export const IncidentReports: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Pane: Selected Member Profile */}
-                <div className="md:col-span-7 p-5 flex flex-col min-h-0 overflow-y-auto space-y-4">
+                {/* ── Right Pane: Selected Member Profile ── */}
+                <div
+                  className={`md:col-span-7 p-4 sm:p-5 flex-col min-h-0 overflow-y-auto space-y-4 h-full ${
+                    !selectedEmergencyMember ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  {/* Mobile Back Button */}
+                  {selectedEmergencyMember && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEmergencyMember(null)}
+                      className="md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold font-heading uppercase tracking-wider self-start cursor-pointer transition-colors active:scale-95"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Back to Member List</span>
+                    </button>
+                  )}
+
                   {selectedEmergencyMember ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 pb-6">
                       {/* Identity Card Header */}
-                      <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl border border-slate-200/80 dark:border-white/5 flex items-start gap-3.5">
-                        <div className="w-12 h-12 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading font-black text-lg shrink-0 shadow-xs">
+                      <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-black/20 rounded-2xl border border-slate-200/80 dark:border-white/5 flex items-start gap-3">
+                        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading font-black text-lg shrink-0 shadow-xs">
                           {selectedEmergencyMember.full_name?.charAt(0) || 'M'}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <h4 className="font-bold text-base text-slate-900 dark:text-white truncate">
+                            <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white truncate">
                               {selectedEmergencyMember.full_name}
                             </h4>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                              selectedEmergencyMember.status === 'Active' 
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
-                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                            }`}>
+                            <span
+                              className={`text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                selectedEmergencyMember.status === 'Active'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              }`}
+                            >
                               {selectedEmergencyMember.status} Member
                             </span>
                           </div>
-                          <div className="text-xs text-slate-400 font-mono mt-0.5">
-                            ID: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedEmergencyMember.member_id}</span>
-                            {selectedEmergencyMember.gender && <span> • {selectedEmergencyMember.gender}</span>}
-                            {selectedEmergencyMember.birthday && <span> • Born: {selectedEmergencyMember.birthday}</span>}
+                          <div className="text-[11px] sm:text-xs text-slate-400 font-mono mt-0.5">
+                            ID:{' '}
+                            <span className="font-bold text-slate-700 dark:text-slate-300">
+                              {selectedEmergencyMember.member_id}
+                            </span>
+                            {selectedEmergencyMember.gender && (
+                              <span> • {selectedEmergencyMember.gender}</span>
+                            )}
+                            {selectedEmergencyMember.birthday && (
+                              <span>
+                                {' '}
+                                • Born: {selectedEmergencyMember.birthday}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       {/* Emergency Contact Highlight Box */}
-                      <div className="p-4 bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/30 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 font-heading">
-                            <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                            <span>Primary Emergency Contact (In Case of Emergency)</span>
-                          </div>
+                      <div className="p-3.5 sm:p-4 bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/30 rounded-2xl space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 font-heading">
+                          <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                          <span>Primary Emergency Contact (ICE)</span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
                           <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Contact Name</span>
-                            <span className="font-bold text-slate-900 dark:text-slate-100 text-sm mt-0.5 block truncate">
-                              {selectedEmergencyMember.emergency_contact_name || 'Not Provided'}
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Contact Name
+                            </span>
+                            <span className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm mt-0.5 block truncate">
+                              {selectedEmergencyMember.emergency_contact_name ||
+                                'Not Provided'}
                             </span>
                             <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
-                              Relationship: {selectedEmergencyMember.relationship || 'Not Specified'}
+                              Relationship:{' '}
+                              {selectedEmergencyMember.relationship ||
+                                'Not Specified'}
                             </span>
                           </div>
 
                           <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Emergency Phone</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Emergency Phone
+                            </span>
                             {selectedEmergencyMember.emergency_contact_phone ? (
                               <div className="flex items-center justify-between gap-1.5 mt-1">
-                                <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm truncate">
-                                  {selectedEmergencyMember.emergency_contact_phone}
+                                <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm truncate">
+                                  {
+                                    selectedEmergencyMember.emergency_contact_phone
+                                  }
                                 </span>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <a
                                     href={`tel:${selectedEmergencyMember.emergency_contact_phone}`}
-                                    className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors cursor-pointer inline-flex items-center"
+                                    className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors inline-flex items-center"
                                     title="Call Emergency Contact"
                                   >
                                     <Phone className="w-3.5 h-3.5" />
                                   </a>
                                   <button
+                                    type="button"
                                     onClick={() => {
-                                      navigator.clipboard.writeText(selectedEmergencyMember.emergency_contact_phone || '');
-                                      toast.success('Phone copied to clipboard');
+                                      navigator.clipboard.writeText(
+                                        selectedEmergencyMember.emergency_contact_phone ||
+                                          ''
+                                      );
+                                      toast.success(
+                                        'Phone copied to clipboard'
+                                      );
                                     }}
                                     className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
                                     title="Copy Phone"
@@ -1549,27 +1873,41 @@ export const IncidentReports: React.FC = () => {
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-slate-400 text-xs mt-1 block italic">No phone recorded</span>
+                              <span className="text-slate-400 text-xs mt-1 block italic">
+                                No phone recorded
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Minor / Parent Guardian Info */}
-                        {(selectedEmergencyMember.parent_name || selectedEmergencyMember.parent_phone) && (
+                        {/* Minor / Parent Info */}
+                        {(selectedEmergencyMember.parent_name ||
+                          selectedEmergencyMember.parent_phone) && (
                           <div className="pt-2 border-t border-rose-500/20 text-xs">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
                               Parent / Guardian (Minor Member Record)
                             </span>
                             <div className="p-2.5 bg-white/80 dark:bg-black/30 rounded-xl border border-rose-500/20 flex items-center justify-between gap-2 flex-wrap">
                               <div>
-                                <span className="font-bold text-slate-800 dark:text-slate-200">{selectedEmergencyMember.parent_name || 'Parent'}</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {selectedEmergencyMember.parent_name ||
+                                    'Parent'}
+                                </span>
                                 {selectedEmergencyMember.parent_relationship && (
-                                  <span className="text-[11px] text-slate-400 ml-1.5">({selectedEmergencyMember.parent_relationship})</span>
+                                  <span className="text-[11px] text-slate-400 ml-1.5">
+                                    (
+                                    {
+                                      selectedEmergencyMember.parent_relationship
+                                    }
+                                    )
+                                  </span>
                                 )}
                               </div>
                               {selectedEmergencyMember.parent_phone && (
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-bold text-xs">{selectedEmergencyMember.parent_phone}</span>
+                                  <span className="font-mono font-bold text-xs">
+                                    {selectedEmergencyMember.parent_phone}
+                                  </span>
                                   <a
                                     href={`tel:${selectedEmergencyMember.parent_phone}`}
                                     className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700"
@@ -1584,22 +1922,26 @@ export const IncidentReports: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Primary Contact & Location */}
-                      <div className="p-4 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 text-xs">
-                        <h5 className="font-heading font-bold text-[11px] uppercase tracking-wider text-slate-400">
+                      {/* Member Mobile & Email */}
+                      <div className="p-3.5 sm:p-4 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 text-xs">
+                        <h5 className="font-heading font-bold text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400">
                           Direct Member Contacts & Residence
                         </h5>
-                        
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                           <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-center justify-between">
                             <div>
-                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Member Mobile</span>
-                              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{selectedEmergencyMember.phone || 'None'}</span>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                                Member Mobile
+                              </span>
+                              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                                {selectedEmergencyMember.phone || 'None'}
+                              </span>
                             </div>
                             {selectedEmergencyMember.phone && (
                               <a
                                 href={`tel:${selectedEmergencyMember.phone}`}
-                                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors inline-flex"
                                 title="Call Member"
                               >
                                 <Phone className="w-3.5 h-3.5" />
@@ -1609,15 +1951,18 @@ export const IncidentReports: React.FC = () => {
 
                           <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-center justify-between">
                             <div className="min-w-0 pr-1">
-                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Email Address</span>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                                Email Address
+                              </span>
                               <span className="text-slate-900 dark:text-slate-100 font-medium truncate block">
-                                {selectedEmergencyMember.email || 'None registered'}
+                                {selectedEmergencyMember.email ||
+                                  'None registered'}
                               </span>
                             </div>
                             {selectedEmergencyMember.email && (
                               <a
                                 href={`mailto:${selectedEmergencyMember.email}`}
-                                className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 rounded-lg"
+                                className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 rounded-lg inline-flex"
                                 title="Email Member"
                               >
                                 <Mail className="w-3.5 h-3.5" />
@@ -1630,21 +1975,26 @@ export const IncidentReports: React.FC = () => {
                           <div className="p-2.5 bg-slate-50 dark:bg-black/20 rounded-xl flex items-start gap-2 text-xs">
                             <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
                             <div>
-                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Home Address</span>
-                              <span className="text-slate-700 dark:text-slate-300">{selectedEmergencyMember.address}</span>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                                Home Address
+                              </span>
+                              <span className="text-slate-700 dark:text-slate-300">
+                                {selectedEmergencyMember.address}
+                              </span>
                             </div>
                           </div>
                         )}
                       </div>
 
-                      {/* Medical & Notes */}
-                      <div className="p-4 bg-slate-50 dark:bg-black/20 border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-2 text-xs">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-heading">
-                          <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
+                      {/* Medical & Health Notes */}
+                      <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-black/20 border border-slate-200/80 dark:border-white/5 rounded-2xl space-y-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-heading">
+                          <HeartPulse className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                           <span>Medical, Physical or Account Notes</span>
                         </div>
                         <p className="text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-[#161920] p-3 rounded-xl border border-slate-200/60 dark:border-white/5">
-                          {selectedEmergencyMember.notes || 'No health conditions, allergies, or special instructions recorded on member file.'}
+                          {selectedEmergencyMember.notes ||
+                            'No health conditions, allergies, or special instructions recorded on member file.'}
                         </p>
                       </div>
                     </div>
@@ -1654,9 +2004,12 @@ export const IncidentReports: React.FC = () => {
                         <UserSearch className="w-7 h-7 text-slate-400" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300">No Member Selected</h4>
+                        <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300">
+                          No Member Selected
+                        </h4>
                         <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                          Select a member from the left list to view their complete emergency dossier and contact information.
+                          Select a member from the left list to view their
+                          complete emergency dossier and contact information.
                         </p>
                       </div>
                     </div>
@@ -1664,167 +2017,297 @@ export const IncidentReports: React.FC = () => {
                 </div>
               </div>
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
-      </AnimatePresence>
 
-      {/* Staff New / Edit Modal Form */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-scale-up max-h-[90vh] flex flex-col">
-            
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0">
-              <h3 className="font-heading text-xs tracking-widest uppercase text-slate-900 dark:text-slate-100">
-                {isEditing ? 'Modify Incident Report' : 'Draft New Incident Report'}
-              </h3>
-              <button 
-                onClick={() => setShowModal(false)}
-                title="Close editing modal dialog window"
-                aria-label="Close Modal"
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveReport} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
-              
-              <div className="grid gap-1.5">
-                <label htmlFor="form-incident-title" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Incident Title * (Max 100 chars)
-                </label>
-                <input
-                  id="form-incident-title"
-                  type="text"
-                  required
-                  maxLength={100}
-                  placeholder="E.g., Power Surge on Treadmill #4"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <label htmlFor="form-priority-select" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Severity Priority Level *
-                </label>
-                <select
-                  id="form-priority-select"
-                  title="Select priority severity of the incident"
-                  value={formPriority}
-                  onChange={(e) => setFormPriority(e.target.value as any)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all cursor-pointer"
+      {/* Staff New / Edit Modal Form (Portaled to document.body) */}
+      {showModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+              onClick={() => setShowModal(false)}
+            />
+            <div className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative z-10 max-h-[90vh] flex flex-col">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0">
+                <h3 className="font-heading text-xs tracking-widest uppercase text-slate-900 dark:text-slate-100">
+                  {isEditing
+                    ? 'Modify Incident Report'
+                    : 'Draft New Incident Report'}
+                </h3>
+                <button
+                  onClick={() => setShowModal(false)}
+                  title="Close editing modal dialog window"
+                  aria-label="Close Modal"
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-lg"
                 >
-                  <option value="Low">Low (No disruption to core workflow)</option>
-                  <option value="Medium">Medium (Disruptive but manageable)</option>
-                  <option value="High">High (Immediate safety or business stoppage)</option>
-                </select>
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="grid gap-1.5">
-                <label htmlFor="form-tag-input" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Classified Tags (Max 20 tags)
-                </label>
-                
-                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl min-h-[40px]">
-                  {formTags.map((tag, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 text-[9px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      {tag}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTag(idx)}
-                        title={`Remove tag: ${tag}`}
-                        aria-label={`Remove tag: ${tag}`}
-                        className="text-slate-400 hover:text-red-500 ml-0.5 cursor-pointer p-0.5"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                  
+              <form
+                onSubmit={handleSaveReport}
+                className="p-5 space-y-4 text-xs overflow-y-auto flex-1"
+              >
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="form-incident-title"
+                    className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                  >
+                    Incident Title * (Max 100 chars)
+                  </label>
                   <input
-                    id="form-tag-input"
+                    id="form-incident-title"
                     type="text"
-                    placeholder={formTags.length === 0 ? "Press Enter to add custom tag..." : "Add more..."}
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddTag(tagInput);
-                      }
-                    }}
-                    className="flex-1 bg-transparent border-none outline-none text-xs text-slate-900 dark:text-slate-100 min-w-[100px] p-0.5"
+                    required
+                    maxLength={100}
+                    placeholder="E.g., Power Surge on Treadmill #4"
+                    value={formTitle}
+                    onChange={(e) => setFormTitle(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-1 pt-1.5">
-                  {SUGGESTED_TAGS.map((tag) => {
-                    const exists = formTags.some(t => t.toLowerCase() === tag.toLowerCase());
-                    return (
-                      <button
-                        type="button"
-                        key={tag}
-                        onClick={() => exists ? setFormTags(formTags.filter(t => t.toLowerCase() !== tag.toLowerCase())) : handleAddTag(tag)}
-                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer border ${
-                          exists
-                            ? 'bg-[#123c73] dark:bg-[#bf0202] border-[#123c73] dark:border-[#bf0202] text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-white/5 text-slate-400 dark:text-slate-400 hover:opacity-80'
-                        }`}
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="form-priority-select"
+                    className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                  >
+                    Severity Priority Level *
+                  </label>
+                  <select
+                    id="form-priority-select"
+                    title="Select priority severity of the incident"
+                    value={formPriority}
+                    onChange={(e) => setFormPriority(e.target.value as any)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all cursor-pointer"
+                  >
+                    <option value="Low">
+                      Low (No disruption to core workflow)
+                    </option>
+                    <option value="Medium">
+                      Medium (Disruptive but manageable)
+                    </option>
+                    <option value="High">
+                      High (Immediate safety or business stoppage)
+                    </option>
+                  </select>
+                </div>
+
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="form-tag-input"
+                    className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                  >
+                    Classified Tags (Max 20 tags)
+                  </label>
+
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl min-h-10">
+                    {formTags.map((tag, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 text-[9px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
                       >
                         {tag}
-                      </button>
-                    );
-                  })}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(idx)}
+                          title={`Remove tag: ${tag}`}
+                          aria-label={`Remove tag: ${tag}`}
+                          className="text-slate-400 hover:text-red-500 ml-0.5 cursor-pointer p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+
+                    <input
+                      id="form-tag-input"
+                      type="text"
+                      placeholder={
+                        formTags.length === 0
+                          ? 'Press Enter to add custom tag...'
+                          : 'Add more...'
+                      }
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddTag(tagInput);
+                        }
+                      }}
+                      className="flex-1 bg-transparent border-none outline-none text-xs text-slate-900 dark:text-slate-100 min-w-25 p-0.5"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1.5">
+                    {SUGGESTED_TAGS.map((tag) => {
+                      const exists = formTags.some(
+                        (t) => t.toLowerCase() === tag.toLowerCase()
+                      );
+                      return (
+                        <button
+                          type="button"
+                          key={tag}
+                          onClick={() =>
+                            exists
+                              ? setFormTags(
+                                  formTags.filter(
+                                    (t) => t.toLowerCase() !== tag.toLowerCase()
+                                  )
+                                )
+                              : handleAddTag(tag)
+                          }
+                          className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                            exists
+                              ? 'bg-[#123c73] dark:bg-[#bf0202] border-[#123c73] dark:border-[#bf0202] text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-white/5 text-slate-400 dark:text-slate-400 hover:opacity-80'
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid gap-1.5">
-                <label htmlFor="form-incident-description" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Detailed Description * (Max 3000 chars)
-                </label>
-                <textarea
-                  id="form-incident-description"
-                  required
-                  rows={4}
-                  maxLength={3000}
-                  placeholder="Detail exactly what happened, any actions taken, and who is involved..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
-                />
-              </div>
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="form-incident-description"
+                    className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                  >
+                    Detailed Description * (Max 3000 chars)
+                  </label>
+                  <textarea
+                    id="form-incident-description"
+                    required
+                    rows={4}
+                    maxLength={3000}
+                    placeholder="Detail exactly what happened, any actions taken, and who is involved..."
+                    value={formDescription}
+                    onChange={(e) => setFormDescription(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
+                  />
+                </div>
 
-              <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-4 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-95 text-white disabled:opacity-50 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all"
-                >
-                  {saving ? 'Submitting...' : isEditing ? 'Save Modifications' : 'Submit Report'}
-                </button>
-              </div>
+                <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-4 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-95 text-white disabled:opacity-50 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all font-bold"
+                  >
+                    {saving
+                      ? 'Submitting...'
+                      : isEditing
+                        ? 'Save Modifications'
+                        : 'Submit Report'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
 
-            </form>
+      {/* ─── MOBILE STICKY BOTTOM BAR FOR INCIDENT REPORTS ─── */}
+      {createPortal(
+        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-40 shadow-2xl">
+          {/* Left Indicators */}
+          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-[11px] text-slate-700 dark:text-slate-200 font-bold">
+                {stats.unread} Unread
+              </span>
+            </div>
+            {stats.highPriority > 0 && (
+              <>
+                <span className="text-slate-300 dark:text-zinc-700">•</span>
+                <div className="flex items-center gap-1 text-rose-500 truncate font-bold">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[11px] truncate">
+                    {stats.highPriority} High
+                  </span>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
 
+          {/* Right Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Lookup Members */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowMemberLookupModal(true);
+                fetchMembersForLookup();
+              }}
+              className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95 shrink-0"
+              title="Emergency Member Lookup"
+              aria-label="Emergency Member Lookup"
+            >
+              <UserSearch className="w-4 h-4" />
+            </button>
+
+            {/* Emergency Contacts */}
+            <button
+              type="button"
+              onClick={() => setShowContactsModal(true)}
+              className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95 shrink-0"
+              title="Emergency Escalation Contacts"
+              aria-label="Emergency Contacts"
+            >
+              <PhoneCall className="w-4 h-4" />
+            </button>
+
+            {/* New Report (Staff Only) */}
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-all shrink-0"
+                title="Create New Report"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>NEW REPORT</span>
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
 
 const TagIcon: React.FC = () => (
-  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581a1.125 1.125 0 001.59 0l4.318-4.318a1.125 1.125 0 000-1.59l-9.58-9.581A1.125 1.125 0 009.568 3z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+  <svg
+    className="w-2.5 h-2.5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581a1.125 1.125 0 001.59 0l4.318-4.318a1.125 1.125 0 000-1.59l-9.58-9.581A1.125 1.125 0 009.568 3z"
+    />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M6 6h.008v.008H6V6z"
+    />
   </svg>
 );
+
+export default IncidentReports;

@@ -1,9 +1,16 @@
 // src/pages/sales/components/SalesRecycleBin.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, RotateCcw, Search, AlertCircle, ShoppingBag, 
-  ChevronLeft, ChevronRight, CheckSquare, Square 
+import {
+  X,
+  RotateCcw,
+  Search,
+  AlertCircle,
+  ShoppingBag,
+  ChevronLeft,
+  ChevronRight,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -42,7 +49,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState('');
-  
+
   // Local pagination parameters (5 items per page)
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -79,7 +86,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         totalAmount: Number(t.total_amount || 0),
         archivedAt: t.deleted_at,
         items: t.items || [],
-        paymentMethod: t.payment_method
+        paymentMethod: t.payment_method,
       }));
 
       setDeletedTransactions(mapped);
@@ -113,21 +120,21 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       const manilaOffsetMs = 8 * 60 * 60 * 1000;
       const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
       const manilaLocalTime = new Date(utcTime + manilaOffsetMs);
-      
+
       const manilaMidnightLocal = new Date(manilaLocalTime);
       manilaMidnightLocal.setHours(24, 0, 0, 0);
-      
+
       const diffMs = manilaMidnightLocal.getTime() - manilaLocalTime.getTime();
-      
+
       if (diffMs <= 0) {
-        setCountdown("00h 00m 00s");
+        setCountdown('00h 00m 00s');
         return;
       }
-      
+
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-      
+
       const pad = (num: number) => String(num).padStart(2, '0');
       setCountdown(`${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`);
     };
@@ -140,7 +147,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
   const getRestorationStatus = (tx: any) => {
     const isExpired = isOlderThan24Hours(tx.archivedAt);
-    
+
     let hasOutOfStock = false;
     let hasInsufficientStock = false;
     let productNotFound = false;
@@ -160,14 +167,15 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       }
     }
 
-    const cannotRestore = isExpired || hasOutOfStock || hasInsufficientStock || productNotFound;
+    const cannotRestore =
+      isExpired || hasOutOfStock || hasInsufficientStock || productNotFound;
 
     return {
       isExpired,
       hasOutOfStock,
       hasInsufficientStock,
       productNotFound,
-      cannotRestore
+      cannotRestore,
     };
   };
 
@@ -175,11 +183,20 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     const q = searchQuery.toLowerCase().trim();
     return deletedTransactions.filter((t: any) => {
       return (
-        String(t.id || '').toLowerCase().includes(q) ||
-        String(t.productName || '').toLowerCase().includes(q) ||
-        String(t.paymentMethod || '').toLowerCase().includes(q) ||
-        String(t.receipt_no || '').toLowerCase().includes(q) ||
-        (t.reference_number && String(t.reference_number).toLowerCase().includes(q))
+        String(t.id || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(t.productName || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(t.paymentMethod || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(t.receipt_no || '')
+          .toLowerCase()
+          .includes(q) ||
+        (t.reference_number &&
+          String(t.reference_number).toLowerCase().includes(q))
       );
     });
   }, [deletedTransactions, searchQuery]);
@@ -229,7 +246,8 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         if (formatTime(maxTime) === formatTime(minTime)) {
           meta[groupId].label = `Batch at ${formatTime(maxTime)}`;
         } else {
-          meta[groupId].label = `Batch: ${formatTime(minTime)} - ${formatTime(maxTime)}`;
+          meta[groupId].label =
+            `Batch: ${formatTime(minTime)} - ${formatTime(maxTime)}`;
         }
       } else {
         meta[groupId].label = 'Consecutive Batch';
@@ -251,9 +269,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const handleBulkRestore = async (selectedList: any[]) => {
-    const restorableList = selectedList.filter((t: any) => !getRestorationStatus(t).cannotRestore);
+    const restorableList = selectedList.filter(
+      (t: any) => !getRestorationStatus(t).cannotRestore
+    );
     if (restorableList.length === 0) {
-      toast.error('No restorable items selected. Verify that stock limits are not exceeded.');
+      toast.error(
+        'No restorable items selected. Verify that stock limits are not exceeded.'
+      );
       return;
     }
 
@@ -261,13 +283,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
     try {
       const selectedTxIds = restorableList.map((t: any) => t.id);
-      
+
       // 1. Clear soft delete flags
       const { error: restoreError } = await supabase
         .from('sales')
         .update({
           deleted_at: null,
-          deleted_by: null
+          deleted_by: null,
         })
         .in('id', selectedTxIds);
 
@@ -277,11 +299,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       for (const tx of restorableList) {
         if (tx.items && Array.isArray(tx.items)) {
           for (const item of tx.items) {
-            const matchedProduct = dbProducts.find((p: any) => p.id === item.productId);
+            const matchedProduct = dbProducts.find(
+              (p: any) => p.id === item.productId
+            );
             if (matchedProduct && matchedProduct.has_stock_limit) {
               const currentStock = matchedProduct.stock_quantity ?? 0;
               const updatedStock = Math.max(0, currentStock - item.quantity);
-              
+
               await supabase
                 .from('products')
                 .update({ stock_quantity: updatedStock })
@@ -290,15 +314,26 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
           }
         }
 
-        const itemsList = tx.items?.map((i: any) => `${i.productName || i.product_name} (${i.quantity}x)`).join(', ') || tx.productName || tx.product_name;
+        const itemsList =
+          tx.items
+            ?.map(
+              (i: any) => `${i.productName || i.product_name} (${i.quantity}x)`
+            )
+            .join(', ') ||
+          tx.productName ||
+          tx.product_name;
         const auditDetails = `Restored sale transaction (₱${Number(tx.totalAmount || tx.total_amount || 0).toFixed(2)} via ${tx.paymentMethod || tx.payment_method || 'Cash'}) from Recycle Bin back to ledger — Items: ${itemsList}`;
 
         await logAudit('SALE_RESTORED', auditDetails, tx.id);
       }
 
-      setSelectedIds(prev => prev.filter(id => !selectedTxIds.includes(id)));
+      setSelectedIds((prev) =>
+        prev.filter((id) => !selectedTxIds.includes(id))
+      );
       onRestoreSuccess();
-      toast.success(`Successfully restored ${restorableList.length} transaction(s) back to the sales ledger.`);
+      toast.success(
+        `Successfully restored ${restorableList.length} transaction(s) back to the sales ledger.`
+      );
       await fetchDeletedTransactions();
     } catch (err) {
       console.error('Error executing database restoration:', err);
@@ -310,31 +345,33 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
   const handleRowSelect = (id: string, canBeRestored: boolean) => {
     if (!canBeRestored) return;
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
   const isGroupFullySelected = (groupId: string) => {
-    const groupItemIds = (groupMeta[groupId]?.ids || []).filter(id => {
-      const tx = deletedTransactions.find(t => t.id === id);
+    const groupItemIds = (groupMeta[groupId]?.ids || []).filter((id) => {
+      const tx = deletedTransactions.find((t) => t.id === id);
       return tx && !getRestorationStatus(tx).cannotRestore;
     });
     if (groupItemIds.length === 0) return false;
-    return groupItemIds.every(id => selectedIds.includes(id));
+    return groupItemIds.every((id) => selectedIds.includes(id));
   };
 
   const handleGroupSelect = (groupId: string) => {
-    const groupItemIds = (groupMeta[groupId]?.ids || []).filter(id => {
-      const tx = deletedTransactions.find(t => t.id === id);
+    const groupItemIds = (groupMeta[groupId]?.ids || []).filter((id) => {
+      const tx = deletedTransactions.find((t) => t.id === id);
       return tx && !getRestorationStatus(tx).cannotRestore;
     });
-    const allSelected = groupItemIds.length > 0 && groupItemIds.every(id => selectedIds.includes(id));
-    
+    const allSelected =
+      groupItemIds.length > 0 &&
+      groupItemIds.every((id) => selectedIds.includes(id));
+
     if (allSelected) {
-      setSelectedIds(prev => prev.filter(id => !groupItemIds.includes(id)));
+      setSelectedIds((prev) => prev.filter((id) => !groupItemIds.includes(id)));
     } else {
-      setSelectedIds(prev => Array.from(new Set([...prev, ...groupItemIds])));
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...groupItemIds])));
     }
   };
 
@@ -342,12 +379,18 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     const currentPageIds = paginatedTransactions
       .filter((t: any) => !getRestorationStatus(t).cannotRestore)
       .map((t: any) => t.id);
-    const allSelectedOnPage = currentPageIds.length > 0 && currentPageIds.every(id => selectedIds.includes(id));
+    const allSelectedOnPage =
+      currentPageIds.length > 0 &&
+      currentPageIds.every((id) => selectedIds.includes(id));
 
     if (allSelectedOnPage) {
-      setSelectedIds(prev => prev.filter(id => !currentPageIds.includes(id)));
+      setSelectedIds((prev) =>
+        prev.filter((id) => !currentPageIds.includes(id))
+      );
     } else {
-      setSelectedIds(prev => Array.from(new Set([...prev, ...currentPageIds])));
+      setSelectedIds((prev) =>
+        Array.from(new Set([...prev, ...currentPageIds]))
+      );
     }
   };
 
@@ -380,7 +423,9 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
           <span>
-            <strong>Caution:</strong> Restorable items are kept for up to 24 hours. Transactions older than 24 hours are locked and will be permanently deleted at 12:00 AM Manila Time.
+            <strong>Caution:</strong> Restorable items are kept for up to 24
+            hours. Transactions older than 24 hours are locked and will be
+            permanently deleted at 12:00 AM Manila Time.
           </span>
         </div>
 
@@ -398,8 +443,8 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
             <span>Search Deletions...</span>
           </label>
           {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')} 
+            <button
+              onClick={() => setSearchQuery('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
             >
               CLEAR
@@ -411,13 +456,18 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
           <div className="flex justify-between items-center bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
             <button
               onClick={handleToggleSelectAll}
-              disabled={loading || paginatedTransactions.every((t: any) => getRestorationStatus(t).cannotRestore)}
+              disabled={
+                loading ||
+                paginatedTransactions.every(
+                  (t: any) => getRestorationStatus(t).cannotRestore
+                )
+              }
               className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50"
             >
-              {paginatedTransactions.length > 0 && 
-               paginatedTransactions
-                 .filter((t: any) => !getRestorationStatus(t).cannotRestore)
-                 .every((t: any) => selectedIds.includes(t.id)) ? (
+              {paginatedTransactions.length > 0 &&
+              paginatedTransactions
+                .filter((t: any) => !getRestorationStatus(t).cannotRestore)
+                .every((t: any) => selectedIds.includes(t.id)) ? (
                 <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
               ) : (
                 <Square className="w-4 h-4 shrink-0" />
@@ -432,7 +482,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
           {loading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl animate-pulse flex items-center justify-between gap-3">
+                <div
+                  key={i}
+                  className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl animate-pulse flex items-center justify-between gap-3"
+                >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-4.5 h-4.5 bg-slate-200 dark:bg-zinc-800 rounded shrink-0" />
                     <div className="min-w-0 flex-1 space-y-2 text-left">
@@ -456,7 +509,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                 hasOutOfStock,
                 hasInsufficientStock,
                 productNotFound,
-                cannotRestore
+                cannotRestore,
               } = getRestorationStatus(tx);
 
               return (
@@ -465,10 +518,17 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                     <div className="flex items-center justify-between border-b border-(--border-color) pt-4 pb-1.5 select-none">
                       <button
                         type="button"
-                        disabled={loading || (groupMeta[tx.groupId]?.ids || []).every(id => {
-                          const item = deletedTransactions.find(t => t.id === id);
-                          return item && getRestorationStatus(item).cannotRestore;
-                        })}
+                        disabled={
+                          loading ||
+                          (groupMeta[tx.groupId]?.ids || []).every((id) => {
+                            const item = deletedTransactions.find(
+                              (t) => t.id === id
+                            );
+                            return (
+                              item && getRestorationStatus(item).cannotRestore
+                            );
+                          })
+                        }
                         onClick={() => handleGroupSelect(tx.groupId)}
                         className="flex items-center gap-2 cursor-pointer hover:opacity-80 text-left disabled:opacity-50"
                       >
@@ -482,58 +542,90 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                         </span>
                       </button>
                       <span className="text-[9px] text-slate-400 font-medium font-mono">
-                        ({groupMeta[tx.groupId]?.ids.length} item{groupMeta[tx.groupId]?.ids.length !== 1 && 's'})
+                        ({groupMeta[tx.groupId]?.ids.length} item
+                        {groupMeta[tx.groupId]?.ids.length !== 1 && 's'})
                       </span>
                     </div>
                   )}
 
                   <div
-                    onClick={() => !loading && !cannotRestore && handleRowSelect(tx.id, !cannotRestore)}
+                    onClick={() =>
+                      !loading &&
+                      !cannotRestore &&
+                      handleRowSelect(tx.id, !cannotRestore)
+                    }
                     className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                      isSelected 
-                        ? 'bg-blue-500/10 border-blue-500' 
+                      isSelected
+                        ? 'bg-blue-500/10 border-blue-500'
                         : cannotRestore
                           ? 'bg-slate-200/50 dark:bg-zinc-950/50 border-dashed border-slate-300 dark:border-zinc-800 opacity-60 cursor-not-allowed'
                           : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-(--border-color)'
                     } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           disabled={loading || cannotRestore}
                           checked={isSelected && !cannotRestore}
-                          onChange={() => handleRowSelect(tx.id, !cannotRestore)}
+                          onChange={() =>
+                            handleRowSelect(tx.id, !cannotRestore)
+                          }
                           className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
                       <div className="min-w-0 text-left">
-                        <span className="font-bold block text-[11px] text-(--color-text) truncate">{tx.productName}</span>
+                        <span className="font-bold block text-[11px] text-(--color-text) truncate">
+                          {tx.productName}
+                        </span>
                         <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
                           {tx.receipt_no} • ₱{tx.totalAmount.toFixed(2)}
-                          {isExpired && <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">(Locked - Older than 24h)</span>}
-                          {!isExpired && hasOutOfStock && <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">(Out of Stock)</span>}
-                          {!isExpired && !hasOutOfStock && hasInsufficientStock && <span className="text-amber-500 dark:text-amber-400 ml-2 font-bold">(Low Stock)</span>}
-                          {!isExpired && productNotFound && <span className="text-stone-500 dark:text-stone-400 ml-2 font-bold">(Missing Catalog Item)</span>}
+                          {isExpired && (
+                            <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
+                              (Locked - Older than 24h)
+                            </span>
+                          )}
+                          {!isExpired && hasOutOfStock && (
+                            <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
+                              (Out of Stock)
+                            </span>
+                          )}
+                          {!isExpired &&
+                            !hasOutOfStock &&
+                            hasInsufficientStock && (
+                              <span className="text-amber-500 dark:text-amber-400 ml-2 font-bold">
+                                (Low Stock)
+                              </span>
+                            )}
+                          {!isExpired && productNotFound && (
+                            <span className="text-stone-500 dark:text-stone-400 ml-2 font-bold">
+                              (Missing Catalog Item)
+                            </span>
+                          )}
                         </span>
                       </div>
                     </div>
                     {cannotRestore ? (
-                      <span className={`py-1.5 px-3 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border ${
-                        isExpired 
-                          ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 border-slate-400/20'
-                          : hasOutOfStock 
-                            ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                            : hasInsufficientStock 
-                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                              : 'bg-stone-500/10 text-stone-500 border-stone-500/20'
-                      }`}>
-                        {isExpired 
-                          ? 'Expired' 
-                          : hasOutOfStock 
-                            ? 'Out of Stock' 
-                            : hasInsufficientStock 
-                              ? 'Low Stock' 
+                      <span
+                        className={`py-1.5 px-3 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border ${
+                          isExpired
+                            ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 border-slate-400/20'
+                            : hasOutOfStock
+                              ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                              : hasInsufficientStock
+                                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                : 'bg-stone-500/10 text-stone-500 border-stone-500/20'
+                        }`}
+                      >
+                        {isExpired
+                          ? 'Expired'
+                          : hasOutOfStock
+                            ? 'Out of Stock'
+                            : hasInsufficientStock
+                              ? 'Low Stock'
                               : 'Missing Prod'}
                       </span>
                     ) : (
@@ -557,8 +649,12 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
             <div className="text-center py-12 text-slate-400 border border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center space-y-3">
               <ShoppingBag className="w-8 h-8 animate-pulse text-slate-500" />
               <div>
-                <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">No deletions found</h4>
-                <p className="text-[10px] font-sans mt-0.5 text-slate-500">Recycle Bin is completely clear.</p>
+                <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">
+                  No deletions found
+                </h4>
+                <p className="text-[10px] font-sans mt-0.5 text-slate-500">
+                  Recycle Bin is completely clear.
+                </p>
               </div>
             </div>
           )}
@@ -567,40 +663,54 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         {totalItems > 0 && totalPages > 1 && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-2 text-[10px] font-body">
             <span className="text-slate-500">
-              Showing <span className="font-semibold text-(--color-text)">{startIndex + 1}</span> to{' '}
-              <span className="font-semibold text-(--color-text)">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
-              <span className="font-semibold text-(--color-text)">{totalItems}</span> entries
+              Showing{' '}
+              <span className="font-semibold text-(--color-text)">
+                {startIndex + 1}
+              </span>{' '}
+              to{' '}
+              <span className="font-semibold text-(--color-text)">
+                {Math.min(startIndex + itemsPerPage, totalItems)}
+              </span>{' '}
+              of{' '}
+              <span className="font-semibold text-(--color-text)">
+                {totalItems}
+              </span>{' '}
+              entries
             </span>
 
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={clampedPage === 1 || loading}
                 className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none cursor-pointer inline-flex items-center justify-center h-7 w-7"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
 
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => setCurrentPage(page)}
-                  className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] disabled:opacity-50 ${
-                    clampedPage === page
-                      ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
-                      : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                (page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setCurrentPage(page)}
+                    className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] disabled:opacity-50 ${
+                      clampedPage === page
+                        ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
+                        : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                )
+              )}
 
               <button
                 type="button"
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                }
                 disabled={clampedPage === totalPages || loading}
                 className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none cursor-pointer inline-flex items-center justify-center h-7 w-7"
               >
@@ -629,7 +739,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
               <button
                 type="button"
                 disabled={loading}
-                onClick={() => handleBulkRestore(deletedTransactions.filter(t => selectedIds.includes(t.id)))}
+                onClick={() =>
+                  handleBulkRestore(
+                    deletedTransactions.filter((t) =>
+                      selectedIds.includes(t.id)
+                    )
+                  )
+                }
                 className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md font-black disabled:opacity-50"
               >
                 <RotateCcw className="w-4 h-4 shrink-0" />

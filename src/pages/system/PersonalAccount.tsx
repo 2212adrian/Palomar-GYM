@@ -5,16 +5,14 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-import { 
-  User as UserIcon, 
-  Camera, 
-  Trash2, 
-  Loader2, 
-  Mail 
-} from 'lucide-react';
+import { User as UserIcon, Camera, Trash2, Loader2, Mail } from 'lucide-react';
 
 // Exported to be reused across other user settings components
-export const AvatarImage: React.FC<{ src: string | null | undefined; className?: string; fallbackIcon?: React.ReactNode }> = ({ src, className, fallbackIcon }) => {
+export const AvatarImage: React.FC<{
+  src: string | null | undefined;
+  className?: string;
+  fallbackIcon?: React.ReactNode;
+}> = ({ src, className, fallbackIcon }) => {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,7 +21,11 @@ export const AvatarImage: React.FC<{ src: string | null | undefined; className?:
         setUrl(null);
         return;
       }
-      if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('blob:')) {
+      if (
+        src.startsWith('http://') ||
+        src.startsWith('https://') ||
+        src.startsWith('blob:')
+      ) {
         setUrl(src);
         return;
       }
@@ -34,13 +36,17 @@ export const AvatarImage: React.FC<{ src: string | null | undefined; className?:
           .createSignedUrl(cleanPath, 86400);
 
         if (error || !data?.signedUrl) {
-          const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
+          const { data: pubData } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(cleanPath);
           setUrl(pubData?.publicUrl || null);
         } else {
           setUrl(data.signedUrl);
         }
       } catch (err) {
-        const { data: pubData } = supabase.storage.from('avatars').getPublicUrl(cleanPath);
+        const { data: pubData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(cleanPath);
         setUrl(pubData?.publicUrl || null);
       }
     };
@@ -48,14 +54,25 @@ export const AvatarImage: React.FC<{ src: string | null | undefined; className?:
   }, [src]);
 
   if (!url) {
-    return <>{fallbackIcon || <UserIcon className="w-4 h-4 text-slate-400" />}</>;
+    return (
+      <>{fallbackIcon || <UserIcon className="w-4 h-4 text-slate-400" />}</>
+    );
   }
 
-  return <img src={url} alt="Profile avatar" className={className || "w-full h-full object-cover"} />;
+  return (
+    <img
+      src={url}
+      alt="Profile avatar"
+      className={className || 'w-full h-full object-cover'}
+    />
+  );
 };
 
 // Exported image compressor utility
-export const compressImage = (file: File, targetSizeBytes: number): Promise<File> => {
+export const compressImage = (
+  file: File,
+  targetSizeBytes: number
+): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -113,19 +130,25 @@ export const compressImage = (file: File, targetSizeBytes: number): Promise<File
             blob = await getBlobAtQuality(currentQuality);
           }
 
-          const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
+          const compressedFile = new File(
+            [blob],
+            file.name.replace(/\.[^/.]+$/, '.jpg'),
+            {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            }
+          );
 
           resolve(compressedFile);
         };
 
         executeAdaptiveCompression().catch(reject);
       };
-      img.onerror = () => reject(new Error('Failed to render loaded picture template'));
+      img.onerror = () =>
+        reject(new Error('Failed to render loaded picture template'));
     };
-    reader.onerror = () => reject(new Error('Failed to read selected image data stream'));
+    reader.onerror = () =>
+      reject(new Error('Failed to read selected image data stream'));
   });
 };
 
@@ -140,7 +163,6 @@ export const PersonalAccount: React.FC = () => {
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
 
   const getRawMetadataPath = (): string | null => {
     if (!user?.user_metadata?.avatar_url) return null;
@@ -160,7 +182,7 @@ export const PersonalAccount: React.FC = () => {
       const newUsername = username.trim();
 
       const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: newUsername }
+        data: { full_name: newUsername },
       });
       if (authError) throw authError;
 
@@ -209,7 +231,7 @@ export const PersonalAccount: React.FC = () => {
     try {
       setIsUpdatingPassword(true);
       const { error } = await supabase.auth.updateUser({
-        password: newPassword
+        password: newPassword,
       });
 
       if (error) throw error;
@@ -255,7 +277,9 @@ export const PersonalAccount: React.FC = () => {
       );
       // ──────────────────────────────────────────────────────────────────────────
 
-      toast.success(`A password reset link has been dispatched to ${user.email}`);
+      toast.success(
+        `A password reset link has been dispatched to ${user.email}`
+      );
     } catch (err: any) {
       toast.error(err.message || 'Failed to dispatch recovery link.');
     } finally {
@@ -267,7 +291,7 @@ export const PersonalAccount: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxOriginalSize = 20 * 1024 * 1024; 
+    const maxOriginalSize = 20 * 1024 * 1024;
     if (file.size > maxOriginalSize) {
       toast.error('File size exceeds the maximum allowed 20MB limit.');
       return;
@@ -276,19 +300,22 @@ export const PersonalAccount: React.FC = () => {
     try {
       setIsUploadingAvatar(true);
       const originalMB = (file.size / (1024 * 1024)).toFixed(2);
-      
-      const compressionToastId = toast.info(`Processing image of size ${originalMB} MB...`, {
-        autoClose: false,
-        isLoading: true,
-      });
+
+      const compressionToastId = toast.info(
+        `Processing image of size ${originalMB} MB...`,
+        {
+          autoClose: false,
+          isLoading: true,
+        }
+      );
 
       let processedFile = file;
-      const targetSizingBytes = 100 * 1024; 
+      const targetSizingBytes = 100 * 1024;
 
       try {
         processedFile = await compressImage(file, targetSizingBytes);
         const processedSizeKB = (processedFile.size / 1024).toFixed(0);
-        
+
         toast.update(compressionToastId, {
           render: `Optimized! Compressed from ${originalMB} MB down to ${processedSizeKB} KB.`,
           type: 'success',
@@ -296,9 +323,13 @@ export const PersonalAccount: React.FC = () => {
           autoClose: 3500,
         });
       } catch (err) {
-        console.warn('Fallback: Canvas compression failed, uploading original image.', err);
+        console.warn(
+          'Fallback: Canvas compression failed, uploading original image.',
+          err
+        );
         toast.update(compressionToastId, {
-          render: 'Optimization process bypassed. Uploading original picture file...',
+          render:
+            'Optimization process bypassed. Uploading original picture file...',
           type: 'warning',
           isLoading: false,
           autoClose: 2000,
@@ -313,29 +344,42 @@ export const PersonalAccount: React.FC = () => {
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, processedFile, { cacheControl: '3600', upsert: true });
+        .upload(filePath, processedFile, {
+          cacheControl: '3600',
+          upsert: true,
+        });
 
       if (uploadError) {
         console.error('Upload Error Details:', uploadError);
-        throw new Error('Could not upload image. Confirm that the "avatars" bucket exists.');
+        throw new Error(
+          'Could not upload image. Confirm that the "avatars" bucket exists.'
+        );
       }
 
       const { error: updateError } = await supabase.auth.updateUser({
-        data: { avatar_url: filePath }
+        data: { avatar_url: filePath },
       });
 
       if (updateError) throw updateError;
 
-      await supabase.from('profiles').update({ avatar_url: filePath }).eq('id', user?.id);
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: filePath })
+        .eq('id', user?.id);
 
       if (oldAvatarPath) {
-        const cleanOldPath = oldAvatarPath.includes('/avatars/') ? oldAvatarPath.split('/avatars/').pop() : oldAvatarPath;
+        const cleanOldPath = oldAvatarPath.includes('/avatars/')
+          ? oldAvatarPath.split('/avatars/').pop()
+          : oldAvatarPath;
         if (cleanOldPath) {
           const { error: deleteError } = await supabase.storage
             .from('avatars')
             .remove([cleanOldPath]);
           if (deleteError) {
-            console.warn('Failed to delete old avatar file:', deleteError.message);
+            console.warn(
+              'Failed to delete old avatar file:',
+              deleteError.message
+            );
           }
         }
       }
@@ -368,20 +412,28 @@ export const PersonalAccount: React.FC = () => {
       setIsUploadingAvatar(true);
 
       const { error: updateError } = await supabase.auth.updateUser({
-        data: { avatar_url: null }
+        data: { avatar_url: null },
       });
 
       if (updateError) throw updateError;
 
-      await supabase.from('profiles').update({ avatar_url: null }).eq('id', user?.id);
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: null })
+        .eq('id', user?.id);
 
-      const cleanOldPath = oldPath.includes('/avatars/') ? oldPath.split('/avatars/').pop() : oldPath;
+      const cleanOldPath = oldPath.includes('/avatars/')
+        ? oldPath.split('/avatars/').pop()
+        : oldPath;
       if (cleanOldPath) {
         const { error: deleteError } = await supabase.storage
           .from('avatars')
           .remove([cleanOldPath]);
         if (deleteError) {
-          console.warn('Failed to remove avatar from storage:', deleteError.message);
+          console.warn(
+            'Failed to remove avatar from storage:',
+            deleteError.message
+          );
         }
       }
 
@@ -405,7 +457,9 @@ export const PersonalAccount: React.FC = () => {
   return (
     <div className="space-y-6 font-body text-(--color-text)">
       <div>
-        <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">Personal Account</h2>
+        <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
+          Personal Account
+        </h2>
         <p className="text-sm text-slate-400 mt-1 font-medium">
           Update your identity settings and credentials.
         </p>
@@ -413,22 +467,22 @@ export const PersonalAccount: React.FC = () => {
 
       {/* Two-Column Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
         {/* LEFT COLUMN: Profile Info & Email Recovery (5 Cols) */}
         <div className="lg:col-span-5 space-y-6">
-          
           {/* Avatar & Username Card */}
           <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
             <div className="flex flex-col sm:flex-row items-center gap-5">
               <div className="relative group">
                 <div className="w-20 h-20 rounded-full overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center">
-                  <AvatarImage 
-                    src={profile?.avatar_url || user?.user_metadata?.avatar_url} 
-                    fallbackIcon={<UserIcon className="w-8 h-8 text-slate-500" />} 
+                  <AvatarImage
+                    src={profile?.avatar_url || user?.user_metadata?.avatar_url}
+                    fallbackIcon={
+                      <UserIcon className="w-8 h-8 text-slate-500" />
+                    }
                   />
                 </div>
-                
-                <button 
+
+                <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploadingAvatar}
@@ -442,13 +496,13 @@ export const PersonalAccount: React.FC = () => {
                     <Camera className="w-3.5 h-3.5" />
                   )}
                 </button>
-                
-                <input 
-                  type="file" 
+
+                <input
+                  type="file"
                   id="avatar-upload"
-                  ref={fileInputRef} 
-                  onChange={handleAvatarChange} 
-                  className="hidden" 
+                  ref={fileInputRef}
+                  onChange={handleAvatarChange}
+                  className="hidden"
                   accept="image/*"
                   title="Upload profile photo file"
                   aria-label="Upload profile photo file"
@@ -456,12 +510,18 @@ export const PersonalAccount: React.FC = () => {
               </div>
 
               <div className="text-center sm:text-left flex flex-col items-center sm:items-start">
-                <h4 className="font-heading tracking-wider uppercase text-(--color-text) text-base leading-tight">{profile?.username}</h4>
+                <h4 className="font-heading tracking-wider uppercase text-(--color-text) text-base leading-tight">
+                  {profile?.username}
+                </h4>
                 <p className="text-xs text-(--color-primary-light) mt-0.5 capitalize font-bold tracking-widest">
-                  {isSuperAdmin(user?.email) ? 'Superadmin Account' : `${profile?.role} Account`}
+                  {isSuperAdmin(user?.email)
+                    ? 'Superadmin Account'
+                    : `${profile?.role} Account`}
                 </p>
-                <p className="text-[10px] text-slate-500 mt-1 font-mono">Max size 20MB.</p>
-                
+                <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                  Max size 20MB.
+                </p>
+
                 {profile?.avatar_url && (
                   <button
                     type="button"
@@ -477,9 +537,15 @@ export const PersonalAccount: React.FC = () => {
             </div>
 
             {/* Display Username Form */}
-            <form onSubmit={handleUpdateProfile} className="space-y-4 pt-5 border-t border-(--border-color)">
+            <form
+              onSubmit={handleUpdateProfile}
+              className="space-y-4 pt-5 border-t border-(--border-color)"
+            >
               <div className="grid gap-1.5">
-                <label htmlFor="username" className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label
+                  htmlFor="username"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
                   Display Username
                 </label>
                 <input
@@ -494,7 +560,9 @@ export const PersonalAccount: React.FC = () => {
               </div>
               <button
                 type="submit"
-                disabled={isUpdatingProfile || username.trim() === profile?.username}
+                disabled={
+                  isUpdatingProfile || username.trim() === profile?.username
+                }
                 className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
               >
                 {isUpdatingProfile ? (
@@ -512,9 +580,12 @@ export const PersonalAccount: React.FC = () => {
           {/* Quick Password Reset Card */}
           <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-3">
             <div>
-              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">Reset Password</h3>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Reset Password
+              </h3>
               <p className="text-xs text-slate-450 mt-1 leading-relaxed font-semibold">
-                Send a secure link to your email so you can easily choose a new password.
+                Send a secure link to your email so you can easily choose a new
+                password.
               </p>
             </div>
             <button
@@ -536,7 +607,9 @@ export const PersonalAccount: React.FC = () => {
         {/* RIGHT COLUMN: Manual Security Credentials (7 Cols) */}
         <div className="lg:col-span-7 bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
           <div>
-            <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">Update Credentials</h3>
+            <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+              Update Credentials
+            </h3>
             <p className="text-xs text-slate-400 mt-1 font-semibold">
               Manually configure your login security passwords.
             </p>
@@ -545,7 +618,10 @@ export const PersonalAccount: React.FC = () => {
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <div className="grid gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="current-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
+                <label
+                  htmlFor="current-password"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                >
                   Current Password
                 </label>
                 <input
@@ -559,7 +635,10 @@ export const PersonalAccount: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="new-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
+                <label
+                  htmlFor="new-password"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                >
                   New Password
                 </label>
                 <input
@@ -573,7 +652,10 @@ export const PersonalAccount: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="confirm-password" className="text-xs font-bold uppercase tracking-wider text-slate-450">
+                <label
+                  htmlFor="confirm-password"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                >
                   Confirm New Password
                 </label>
                 <input
@@ -589,7 +671,12 @@ export const PersonalAccount: React.FC = () => {
 
             <button
               type="submit"
-              disabled={isUpdatingPassword || !currentPassword || !newPassword || !confirmPassword}
+              disabled={
+                isUpdatingPassword ||
+                !currentPassword ||
+                !newPassword ||
+                !confirmPassword
+              }
               className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
             >
               {isUpdatingPassword ? (
@@ -603,7 +690,6 @@ export const PersonalAccount: React.FC = () => {
             </button>
           </form>
         </div>
-
       </div>
     </div>
   );

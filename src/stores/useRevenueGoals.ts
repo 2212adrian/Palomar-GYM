@@ -1,10 +1,14 @@
 // src/stores/useRevenueGoals.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  startOfDay, endOfDay, 
-  startOfWeek, endOfWeek, 
-  startOfMonth, endOfMonth, 
-  startOfYear, endOfYear 
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
 } from 'date-fns';
 import { supabase } from '../lib/supabase/client';
 import { useAuthStore } from './authStore';
@@ -23,7 +27,7 @@ const DEFAULT_GOALS: RevenueGoalsConfig = {
   daily: 5000,
   weekly: 35000,
   monthly: 150000,
-  yearly: 1800000
+  yearly: 1800000,
 };
 
 export function useRevenueGoals() {
@@ -34,11 +38,14 @@ export function useRevenueGoals() {
   const isAdmin = isSuperAdminUser || profile?.role === 'admin';
 
   const [timeframe, setTimeframe] = useState<GoalTimeframe>('daily');
-  const [goalsConfig, setGoalsConfig] = useState<RevenueGoalsConfig>(DEFAULT_GOALS);
+  const [goalsConfig, setGoalsConfig] =
+    useState<RevenueGoalsConfig>(DEFAULT_GOALS);
   const [logbookRevenue, setLogbookRevenue] = useState<number>(0);
   const [salesRevenue, setSalesRevenue] = useState<number>(0);
   const [totalRevenue, setTotalRevenue] = useState<number>(0);
-  const [trend, setTrend] = useState<'increasing' | 'decreasing' | 'neutral'>('neutral');
+  const [trend, setTrend] = useState<'increasing' | 'decreasing' | 'neutral'>(
+    'neutral'
+  );
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const prevTotalRef = useRef<number>(0);
@@ -56,7 +63,10 @@ export function useRevenueGoals() {
         .maybeSingle();
 
       if (error) {
-        console.warn('Could not fetch revenue_goals, using baseline:', error.message);
+        console.warn(
+          'Could not fetch revenue_goals, using baseline:',
+          error.message
+        );
         return;
       }
 
@@ -65,7 +75,7 @@ export function useRevenueGoals() {
           daily: Number(data.daily) || DEFAULT_GOALS.daily,
           weekly: Number(data.weekly) || DEFAULT_GOALS.weekly,
           monthly: Number(data.monthly) || DEFAULT_GOALS.monthly,
-          yearly: Number(data.yearly) || DEFAULT_GOALS.yearly
+          yearly: Number(data.yearly) || DEFAULT_GOALS.yearly,
         });
       }
     } catch (err) {
@@ -76,21 +86,24 @@ export function useRevenueGoals() {
   // Update Goals Configuration in Supabase
   const updateGoals = async (newGoals: RevenueGoalsConfig) => {
     if (!isAdmin) {
-      throw new Error('Unauthorized: Only administrators can update revenue goals.');
+      throw new Error(
+        'Unauthorized: Only administrators can update revenue goals.'
+      );
     }
 
     setGoalsConfig(newGoals);
 
-    const { error } = await supabase
-      .from('revenue_goals')
-      .upsert({
+    const { error } = await supabase.from('revenue_goals').upsert(
+      {
         id: 'default_goals',
         daily: newGoals.daily,
         weekly: newGoals.weekly,
         monthly: newGoals.monthly,
         yearly: newGoals.yearly,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
 
     if (error) {
       console.error('Failed to update revenue_goals in Supabase:', error);
@@ -105,7 +118,10 @@ export function useRevenueGoals() {
       case 'daily':
         return { start: startOfDay(now), end: endOfDay(now) };
       case 'weekly':
-        return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
+        return {
+          start: startOfWeek(now, { weekStartsOn: 1 }),
+          end: endOfWeek(now, { weekStartsOn: 1 }),
+        };
       case 'monthly':
         return { start: startOfMonth(now), end: endOfMonth(now) };
       case 'yearly':
@@ -147,12 +163,21 @@ export function useRevenueGoals() {
           .select('price')
           .gte('created_at', startIso)
           .lte('created_at', endIso)
-          .is('voided_at', null)
+          .is('voided_at', null),
       ]);
 
-      const salesSum = (salesRes.data || []).reduce((sum, item: any) => sum + Number(item.total_amount || 0), 0);
-      const attSum = (attendanceRes.data || []).reduce((sum, item: any) => sum + Number(item.entry_fee || 0), 0);
-      const subsSum = (subsRes.data || []).reduce((sum, item: any) => sum + Number(item.price || 0), 0);
+      const salesSum = (salesRes.data || []).reduce(
+        (sum, item: any) => sum + Number(item.total_amount || 0),
+        0
+      );
+      const attSum = (attendanceRes.data || []).reduce(
+        (sum, item: any) => sum + Number(item.entry_fee || 0),
+        0
+      );
+      const subsSum = (subsRes.data || []).reduce(
+        (sum, item: any) => sum + Number(item.price || 0),
+        0
+      );
 
       const calculatedLogbook = attSum + subsSum;
       const calculatedTotal = salesSum + calculatedLogbook;
@@ -195,18 +220,34 @@ export function useRevenueGoals() {
     const channel = supabase.channel(channelId);
 
     channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        fetchRevenue();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
-        fetchRevenue();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => {
-        fetchRevenue();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'revenue_goals' }, () => {
-        fetchGoalsConfig();
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        () => {
+          fetchRevenue();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => {
+          fetchRevenue();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions' },
+        () => {
+          fetchRevenue();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'revenue_goals' },
+        () => {
+          fetchGoalsConfig();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -215,7 +256,10 @@ export function useRevenueGoals() {
   }, [fetchRevenue, fetchGoalsConfig, isAdmin]);
 
   const currentGoalTarget = goalsConfig[timeframe] || DEFAULT_GOALS[timeframe];
-  const progressPercent = currentGoalTarget > 0 ? Math.min(100, Math.round((totalRevenue / currentGoalTarget) * 100)) : 0;
+  const progressPercent =
+    currentGoalTarget > 0
+      ? Math.min(100, Math.round((totalRevenue / currentGoalTarget) * 100))
+      : 0;
   const remainingAmount = Math.max(0, currentGoalTarget - totalRevenue);
   const isGoalAchieved = totalRevenue >= currentGoalTarget;
 
@@ -234,6 +278,6 @@ export function useRevenueGoals() {
     trend,
     isLoading,
     isAdmin,
-    refreshRevenue: fetchRevenue
+    refreshRevenue: fetchRevenue,
   };
 }

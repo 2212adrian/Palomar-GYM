@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
 @variant dark (&:where(.dark, .dark *));
@@ -20,7 +20,7 @@
 
 /* --- LIGHT MODE: NAVY BLUE SCROLLBARS --- */
 ::-webkit-scrollbar-track {
-  background: transparent; 
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -97,12 +97,12 @@ html {
 
 :root {
   /* LIGHT MODE: Premium Ice Slate & Athletic Navy (from Logo Shield) */
-  --bg-page: #f0f4f8;                  /* Elegant light slate blue canvas */
-  --bg-card: #ffffff;                  /* Lighter white card for proper depth hierarchy */
-  --bg-input: #e2e8f0;                 /* Structured inner inputs */
+  --bg-page: #f0f4f8; /* Elegant light slate blue canvas */
+  --bg-card: #ffffff; /* Lighter white card for proper depth hierarchy */
+  --bg-input: #e2e8f0; /* Structured inner inputs */
   --border-color: rgba(12, 60, 115, 0.08);
-  --color-glow: #123c73;               /* Shield Navy Blue */
-  --color-text: #0b1a30;               /* Readable dark navy text */
+  --color-glow: #123c73; /* Shield Navy Blue */
+  --color-text: #0b1a30; /* Readable dark navy text */
   --color-primary: #123c73;
   --color-primary-hover: #0c2950;
   --color-primary-light: #295c9a;
@@ -112,12 +112,12 @@ html {
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
-    --bg-page: #0c0e12;                /* Deepest base - a rich midnight obsidian blue-black */
-    --bg-card: #161920;                /* Elevated panel/card/sidebar - polished and comfortable */
-    --bg-input: #1e232d;               /* Even lighter for readable form inputs/fields */
+    --bg-page: #0c0e12; /* Deepest base - a rich midnight obsidian blue-black */
+    --bg-card: #161920; /* Elevated panel/card/sidebar - polished and comfortable */
+    --bg-input: #1e232d; /* Even lighter for readable form inputs/fields */
     --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
     --color-text: #f3f4f6;
-    --color-primary: #bf0202;          /* Active Wolf Red */
+    --color-primary: #bf0202; /* Active Wolf Red */
     --color-primary-hover: #9c0202;
     --color-primary-light: #e03434;
   }
@@ -127,12 +127,12 @@ html {
 .dark {
   --color-glow: #bf0202;
   /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
-  --bg-page: #0c0e12;                  /* Deepest base - a rich midnight obsidian blue-black */
-  --bg-card: #161920;                  /* Elevated panel/card/sidebar - polished and comfortable */
-  --bg-input: #1e232d;                 /* Even lighter for readable form inputs/fields */
+  --bg-page: #0c0e12; /* Deepest base - a rich midnight obsidian blue-black */
+  --bg-card: #161920; /* Elevated panel/card/sidebar - polished and comfortable */
+  --bg-input: #1e232d; /* Even lighter for readable form inputs/fields */
   --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
   --color-text: #f3f4f6;
-  --color-primary: #bf0202;            /* Active Wolf Red */
+  --color-primary: #bf0202; /* Active Wolf Red */
   --color-primary-hover: #9c0202;
   --color-primary-light: #e03434;
 }
@@ -166,10 +166,11 @@ span,
 p,
 label,
 button {
-  transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              color 0.6s cubic-bezier(0.4, 0, 0.2, 1), 
-              box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
@@ -192,7 +193,10 @@ button {
   flex: 1 0 100%;
   border: none !important;
   outline: none !important;
-  transition: flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1), transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+  transition:
+    flex-basis 1.8s cubic-bezier(0.77, 0, 0.175, 1),
+    transform 1.2s cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 /* ==========================================================
@@ -206,10 +210,11 @@ button {
   z-index: 30;
   pointer-events: none;
   background-color: var(--color-glow);
-  filter: drop-shadow(0 0 4px var(--color-glow)) 
-          drop-shadow(0 0 12px var(--color-glow));
-  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
-              background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 0 4px var(--color-glow))
+    drop-shadow(0 0 12px var(--color-glow));
+  transition:
+    opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .auth-line-left {
@@ -239,11 +244,12 @@ button {
   outline: none !important;
   clip-path: polygon(10% 0%, 100% 0%, 100% 100%, 0% 100%);
   margin-left: -5vw;
-  transition: flex 1.8s cubic-bezier(0.77, 0, 0.175, 1), 
-              transform 1.2s cubic-bezier(0.77, 0, 0.175, 1), 
-              opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1),
-              clip-path 1.2s cubic-bezier(0.77, 0, 0.175, 1),
-              margin 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+  transition:
+    flex 1.8s cubic-bezier(0.77, 0, 0.175, 1),
+    transform 1.2s cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 1.6s cubic-bezier(0.77, 0, 0.175, 1),
+    clip-path 1.2s cubic-bezier(0.77, 0, 0.175, 1),
+    margin 1.2s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 .auth-right.carousel-flipped {
@@ -308,8 +314,8 @@ button {
 
 /* --- ADAPTIVE READABILITY OPTIMIZATIONS --- */
 .carousel-content h2 {
-  text-shadow: 
-    0 4px 18px rgba(0, 0, 0, 0.95), 
+  text-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.95),
     0 2px 4px rgba(0, 0, 0, 0.95),
     0 1px 1px rgba(0, 0, 0, 1);
 }
@@ -319,7 +325,7 @@ button {
   background: linear-gradient(
     to right,
     var(--bg-page) 0%,
-    var(--bg-page) 16%, 
+    var(--bg-page) 16%,
     transparent 45%,
     transparent 65%,
     var(--bg-page) 100
@@ -367,11 +373,13 @@ button {
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 24px 14px 8px !important; 
+  padding: 24px 14px 8px !important;
   color: var(--color-text);
   font-size: 14px;
   outline: none;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 .field-input:focus {
@@ -392,10 +400,11 @@ button {
   text-transform: uppercase;
   pointer-events: none;
   transform-origin: top left;
-  transition: top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition:
+    top 0.22s cubic-bezier(0.25, 0.8, 0.25, 1),
+    transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1),
+    font-size 0.22s cubic-bezier(0.25, 0.8, 0.25, 1),
+    color 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .field-input:focus ~ .field-label,
@@ -506,10 +515,19 @@ button {
 
 /* --- SHAKE ERROR ON FAILURE --- */
 @keyframes field-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
 }
 
 .shake-error {
@@ -520,14 +538,22 @@ button {
 
 /* --- TYPEWRITER CURSOR BLINKING --- */
 @keyframes blink {
-  50% { opacity: 0; }
+  50% {
+    opacity: 0;
+  }
 }
 
 /* --- WELCOME GATEWAY OVERLAY PROGRESS --- */
 @keyframes loading {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
 }
 
 /* --- MOBILE RESPONSIVE LAYOUTS --- */
@@ -543,14 +569,14 @@ button {
     align-items: center;
     justify-content: center;
   }
-  
+
   .flip-card {
     width: 100%;
     max-width: 400px;
     height: auto !important;
     max-height: none !important;
   }
-  
+
   .flip-card-inner {
     transform-style: flat;
     height: auto;
@@ -624,15 +650,21 @@ body.print-portal-open nav {
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
   padding: 14px 18px !important;
-  background-color: var(--bg-card) !important; /* White in Light Mode, #161920 in Dark Mode */
-  color: var(--color-text) !important;          /* Dark Navy in Light Mode, Slate White in Dark Mode */
+  background-color: var(
+    --bg-card
+  ) !important; /* White in Light Mode, #161920 in Dark Mode */
+  color: var(
+    --color-text
+  ) !important; /* Dark Navy in Light Mode, Slate White in Dark Mode */
   border: 1px solid var(--border-color) !important;
-  box-shadow: 0 12px 36px -8px rgba(11, 26, 48, 0.08),
-              0 4px 12px -2px rgba(11, 26, 48, 0.04) !important;
-  transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow:
+    0 12px 36px -8px rgba(11, 26, 48, 0.08),
+    0 4px 12px -2px rgba(11, 26, 48, 0.04) !important;
+  transition:
+    background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* Close Button Colors */
@@ -682,10 +714,11 @@ select {
   background-position: right 12px center;
   background-size: 11px;
   padding-right: 36px !important;
-  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-              background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 select option {

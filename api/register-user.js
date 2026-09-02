@@ -20,18 +20,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+    const body =
+      typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const { email, username, password, full_name, role, auth_method } = body;
 
     // 1. Email Invitation Method
     if (auth_method === 'email') {
-      const { data, error } = await supabase.auth.admin.inviteUserByEmail(email.trim().toLowerCase(), {
-        redirectTo: `${process.env.VITE_APP_URL || 'http://localhost:9999'}/forgot-password`,
-        data: {
-          full_name: full_name.trim(),
-          role: role
+      const { data, error } = await supabase.auth.admin.inviteUserByEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo: `${process.env.VITE_APP_URL || 'http://localhost:9999'}/forgot-password`,
+          data: {
+            full_name: full_name.trim(),
+            role: role,
+          },
         }
-      });
+      );
       if (error) throw error;
 
       const userId = data.user.id;
@@ -39,7 +43,7 @@ export default async function handler(req, res) {
         id: userId,
         username: full_name.trim(),
         role: role,
-        status: 'pending'
+        status: 'pending',
       });
 
       return res.status(200).json({ success: true, user: data.user });
@@ -54,8 +58,8 @@ export default async function handler(req, res) {
         email_confirm: true,
         user_metadata: {
           full_name: full_name.trim(),
-          role: role
-        }
+          role: role,
+        },
       });
       if (error) throw error;
 
@@ -64,7 +68,7 @@ export default async function handler(req, res) {
         id: userId,
         username: full_name.trim(),
         role: role,
-        status: 'active'
+        status: 'active',
       });
 
       return res.status(200).json({ success: true, user: data.user });
@@ -73,6 +77,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid registration parameters' });
   } catch (error) {
     console.error('Registration serverless execution failure:', error);
-    return res.status(500).json({ error: error.message || 'System error processing request.' });
+    return res
+      .status(500)
+      .json({ error: error.message || 'System error processing request.' });
   }
 }

@@ -3,15 +3,20 @@ import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
-import { 
-  CreditCard, 
-  Smartphone, 
-  Percent, 
-  User, 
+import {
+  CreditCard,
+  Smartphone,
+  Percent,
+  User,
   Receipt,
-  Info
+  Info,
 } from 'lucide-react';
-import { OfficialReceipt, type ReceiptData, type GymProfileConfig, type RatesConfig } from '../../components/ui/OfficialReceipt';
+import {
+  OfficialReceipt,
+  type ReceiptData,
+  type GymProfileConfig,
+  type RatesConfig,
+} from '../../components/ui/OfficialReceipt';
 
 const DEFAULT_RATES_CONFIG = {
   monthlyRate: 800,
@@ -22,27 +27,47 @@ const DEFAULT_RATES_CONFIG = {
   gcashFee: 10,
   newCardFee: 150,
   vatEnabled: true,
-  vatPercentage: 12
+  vatPercentage: 12,
 };
 
 export const RatesPayments: React.FC = () => {
   const { profile, user } = useAuthStore();
 
-  const [monthlyRate, setMonthlyRate] = useState<number>(DEFAULT_RATES_CONFIG.monthlyRate);
-  const [yearlyRate, setYearlyRate] = useState<number>(DEFAULT_RATES_CONFIG.yearlyRate);
-  const [regularWalkIn, setRegularWalkIn] = useState<number>(DEFAULT_RATES_CONFIG.regularWalkIn);
-  const [studentWalkIn, setStudentWalkIn] = useState<number>(DEFAULT_RATES_CONFIG.studentWalkIn);
-  const [yearlyWalkIn, setYearlyWalkIn] = useState<number>(DEFAULT_RATES_CONFIG.yearlyWalkIn);
-  const [gcashFee, setGcashFee] = useState<number>(DEFAULT_RATES_CONFIG.gcashFee);
-  const [newCardFee, setNewCardFee] = useState<number>(DEFAULT_RATES_CONFIG.newCardFee);
-  const [vatEnabled, setVatEnabled] = useState<boolean>(DEFAULT_RATES_CONFIG.vatEnabled);
-  const [vatPercentage, setVatPercentage] = useState<number>(DEFAULT_RATES_CONFIG.vatPercentage);
+  const [monthlyRate, setMonthlyRate] = useState<number>(
+    DEFAULT_RATES_CONFIG.monthlyRate
+  );
+  const [yearlyRate, setYearlyRate] = useState<number>(
+    DEFAULT_RATES_CONFIG.yearlyRate
+  );
+  const [regularWalkIn, setRegularWalkIn] = useState<number>(
+    DEFAULT_RATES_CONFIG.regularWalkIn
+  );
+  const [studentWalkIn, setStudentWalkIn] = useState<number>(
+    DEFAULT_RATES_CONFIG.studentWalkIn
+  );
+  const [yearlyWalkIn, setYearlyWalkIn] = useState<number>(
+    DEFAULT_RATES_CONFIG.yearlyWalkIn
+  );
+  const [gcashFee, setGcashFee] = useState<number>(
+    DEFAULT_RATES_CONFIG.gcashFee
+  );
+  const [newCardFee, setNewCardFee] = useState<number>(
+    DEFAULT_RATES_CONFIG.newCardFee
+  );
+  const [vatEnabled, setVatEnabled] = useState<boolean>(
+    DEFAULT_RATES_CONFIG.vatEnabled
+  );
+  const [vatPercentage, setVatPercentage] = useState<number>(
+    DEFAULT_RATES_CONFIG.vatPercentage
+  );
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [initialConfig, setInitialConfig] = useState<any>(DEFAULT_RATES_CONFIG);
 
-  const [gymProfileData, setGymProfileData] = useState<GymProfileConfig | null>(null);
+  const [gymProfileData, setGymProfileData] = useState<GymProfileConfig | null>(
+    null
+  );
 
   const initialConfigRef = useRef<any>(DEFAULT_RATES_CONFIG);
   const currentConfigRef = useRef<any>(null);
@@ -56,7 +81,7 @@ export const RatesPayments: React.FC = () => {
     gcashFee,
     newCardFee,
     vatEnabled,
-    vatPercentage
+    vatPercentage,
   };
 
   const fetchRatesConfig = useCallback(async () => {
@@ -72,15 +97,29 @@ export const RatesPayments: React.FC = () => {
 
       if (data) {
         const parsedConfig = {
-          monthlyRate: Number(data.monthly_rate ?? DEFAULT_RATES_CONFIG.monthlyRate),
-          yearlyRate: Number(data.yearly_rate ?? DEFAULT_RATES_CONFIG.yearlyRate),
-          regularWalkIn: Number(data.regular_walk_in ?? DEFAULT_RATES_CONFIG.regularWalkIn),
-          studentWalkIn: Number(data.student_walk_in ?? DEFAULT_RATES_CONFIG.studentWalkIn),
-          yearlyWalkIn: Number(data.yearly_walk_in ?? DEFAULT_RATES_CONFIG.yearlyWalkIn),
+          monthlyRate: Number(
+            data.monthly_rate ?? DEFAULT_RATES_CONFIG.monthlyRate
+          ),
+          yearlyRate: Number(
+            data.yearly_rate ?? DEFAULT_RATES_CONFIG.yearlyRate
+          ),
+          regularWalkIn: Number(
+            data.regular_walk_in ?? DEFAULT_RATES_CONFIG.regularWalkIn
+          ),
+          studentWalkIn: Number(
+            data.student_walk_in ?? DEFAULT_RATES_CONFIG.studentWalkIn
+          ),
+          yearlyWalkIn: Number(
+            data.yearly_walk_in ?? DEFAULT_RATES_CONFIG.yearlyWalkIn
+          ),
           gcashFee: Number(data.gcash_fee ?? DEFAULT_RATES_CONFIG.gcashFee),
-          newCardFee: Number(data.new_card_fee ?? DEFAULT_RATES_CONFIG.newCardFee),
+          newCardFee: Number(
+            data.new_card_fee ?? DEFAULT_RATES_CONFIG.newCardFee
+          ),
           vatEnabled: data.vat_enabled ?? DEFAULT_RATES_CONFIG.vatEnabled,
-          vatPercentage: Number(data.vat_percentage ?? DEFAULT_RATES_CONFIG.vatPercentage)
+          vatPercentage: Number(
+            data.vat_percentage ?? DEFAULT_RATES_CONFIG.vatPercentage
+          ),
         };
 
         setMonthlyRate(parsedConfig.monthlyRate);
@@ -97,7 +136,10 @@ export const RatesPayments: React.FC = () => {
         initialConfigRef.current = parsedConfig;
       }
     } catch (err: any) {
-      console.warn('Failed to load rates_config from database, using defaults:', err.message);
+      console.warn(
+        'Failed to load rates_config from database, using defaults:',
+        err.message
+      );
     } finally {
       setIsLoading(false);
     }
@@ -127,8 +169,16 @@ export const RatesPayments: React.FC = () => {
     // Supabase Realtime Subscriptions
     const channel = supabase
       .channel('rates_gym_profile_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rates_config' }, fetchRatesConfig)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gym_profile' }, fetchGymProfile)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rates_config' },
+        fetchRatesConfig
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gym_profile' },
+        fetchGymProfile
+      )
       .subscribe();
 
     return () => {
@@ -137,34 +187,43 @@ export const RatesPayments: React.FC = () => {
   }, [fetchRatesConfig, fetchGymProfile]);
 
   // Track Dirty State for Header Navigation Save / Discard Bar
-  const isDirty = Boolean(initialConfig && (
-    monthlyRate !== initialConfig.monthlyRate ||
-    yearlyRate !== initialConfig.yearlyRate ||
-    regularWalkIn !== initialConfig.regularWalkIn ||
-    studentWalkIn !== initialConfig.studentWalkIn ||
-    yearlyWalkIn !== initialConfig.yearlyWalkIn ||
-    gcashFee !== initialConfig.gcashFee ||
-    newCardFee !== initialConfig.newCardFee ||
-    vatEnabled !== initialConfig.vatEnabled ||
-    vatPercentage !== initialConfig.vatPercentage
-  ));
+  const isDirty = Boolean(
+    initialConfig &&
+    (monthlyRate !== initialConfig.monthlyRate ||
+      yearlyRate !== initialConfig.yearlyRate ||
+      regularWalkIn !== initialConfig.regularWalkIn ||
+      studentWalkIn !== initialConfig.studentWalkIn ||
+      yearlyWalkIn !== initialConfig.yearlyWalkIn ||
+      gcashFee !== initialConfig.gcashFee ||
+      newCardFee !== initialConfig.newCardFee ||
+      vatEnabled !== initialConfig.vatEnabled ||
+      vatPercentage !== initialConfig.vatPercentage)
+  );
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-      detail: { isDirty, isSaving } 
-    }));
+    window.dispatchEvent(
+      new CustomEvent('settings-dirty-state', {
+        detail: { isDirty, isSaving },
+      })
+    );
   }, [isDirty, isSaving]);
 
   useEffect(() => {
     return () => {
-      window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-        detail: { isDirty: false, isSaving: false } 
-      }));
+      window.dispatchEvent(
+        new CustomEvent('settings-dirty-state', {
+          detail: { isDirty: false, isSaving: false },
+        })
+      );
     };
   }, []);
 
-  const [previewPlan, setPreviewPlan] = useState<'monthly' | 'yearly' | 'regular_walkin' | 'student_walkin' | 'yearly_walkin'>('monthly');
-  const [previewPaymentMethod, setPreviewPaymentMethod] = useState<'cash' | 'gcash'>('cash');
+  const [previewPlan, setPreviewPlan] = useState<
+    'monthly' | 'yearly' | 'regular_walkin' | 'student_walkin' | 'yearly_walkin'
+  >('monthly');
+  const [previewPaymentMethod, setPreviewPaymentMethod] = useState<
+    'cash' | 'gcash'
+  >('cash');
   const [previewNewCard, setPreviewNewCard] = useState<boolean>(false);
   const [showReceipt, setShowReceipt] = useState<boolean>(true);
 
@@ -185,7 +244,7 @@ export const RatesPayments: React.FC = () => {
           vat_enabled: current.vatEnabled,
           vat_percentage: current.vatPercentage,
           updated_at: new Date().toISOString(),
-          updated_by: user?.id
+          updated_by: user?.id,
         })
         .eq('id', 1);
 
@@ -209,7 +268,8 @@ export const RatesPayments: React.FC = () => {
   useEffect(() => {
     const handleSaveTrigger = () => handleSaveConfig();
     window.addEventListener('trigger-rates-save', handleSaveTrigger);
-    return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, []);
 
   useEffect(() => {
@@ -229,7 +289,8 @@ export const RatesPayments: React.FC = () => {
       }
     };
     window.addEventListener('trigger-rates-cancel', handleCancelTrigger);
-    return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
   }, []);
 
   // Compute Live Receipt Payload Dynamically
@@ -266,7 +327,8 @@ export const RatesPayments: React.FC = () => {
         break;
     }
 
-    const isSubscription = previewPlan === 'monthly' || previewPlan === 'yearly';
+    const isSubscription =
+      previewPlan === 'monthly' || previewPlan === 'yearly';
 
     const liveRatesConfig: RatesConfig = {
       monthly_rate: monthlyRate,
@@ -277,7 +339,7 @@ export const RatesPayments: React.FC = () => {
       gcash_fee: gcashFee,
       new_card_fee: newCardFee,
       vat_enabled: vatEnabled,
-      vat_percentage: vatPercentage
+      vat_percentage: vatPercentage,
     };
 
     return {
@@ -290,9 +352,10 @@ export const RatesPayments: React.FC = () => {
       cardFee: previewNewCard && isSubscription ? newCardFee : 0,
       gcashFee: previewPaymentMethod === 'gcash' ? gcashFee : 0,
       paymentMethod: previewPaymentMethod,
-      processedBy: profile?.username || user?.user_metadata?.full_name || 'Staff Ryan',
+      processedBy:
+        profile?.username || user?.user_metadata?.full_name || 'Staff Ryan',
       gymProfile: gymProfileData || undefined,
-      ratesConfig: liveRatesConfig
+      ratesConfig: liveRatesConfig,
     };
   };
 
@@ -303,12 +366,12 @@ export const RatesPayments: React.FC = () => {
           Rates & Payments
         </h2>
         <p className="text-sm text-slate-400 mt-1 font-medium">
-          Set membership costs, student discounts, walk-in prices, and receipts tax rules.
+          Set membership costs, student discounts, walk-in prices, and receipts
+          tax rules.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
         {/* Left Side: Configuration Forms */}
         <div className="lg:col-span-7 space-y-6">
           <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
@@ -318,34 +381,56 @@ export const RatesPayments: React.FC = () => {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="monthlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Monthly Plan Rate</label>
+                <label
+                  htmlFor="monthlyRateInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  Monthly Plan Rate
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="monthlyRateInput"
                       type="number"
                       value={monthlyRate}
-                      onChange={(e) => setMonthlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setMonthlyRate(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
               </div>
               <div className="grid gap-1.5">
-                <label htmlFor="yearlyRateInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Yearly Registration Fee</label>
+                <label
+                  htmlFor="yearlyRateInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  Yearly Registration Fee
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="yearlyRateInput"
                       type="number"
                       value={yearlyRate}
-                      onChange={(e) => setYearlyRate(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setYearlyRate(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
@@ -361,51 +446,84 @@ export const RatesPayments: React.FC = () => {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="regularWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Regular Non-Member</label>
+                <label
+                  htmlFor="regularWalkInInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  Regular Non-Member
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="regularWalkInInput"
                       type="number"
                       value={regularWalkIn}
-                      onChange={(e) => setRegularWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setRegularWalkIn(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
               </div>
               <div className="grid gap-1.5">
-                <label htmlFor="studentWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Student Non-Member</label>
+                <label
+                  htmlFor="studentWalkInInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  Student Non-Member
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="studentWalkInInput"
                       type="number"
                       value={studentWalkIn}
-                      onChange={(e) => setStudentWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setStudentWalkIn(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
               </div>
               <div className="grid gap-1.5">
-                <label htmlFor="yearlyWalkInInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">Yearly Member Daily</label>
+                <label
+                  htmlFor="yearlyWalkInInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  Yearly Member Daily
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="yearlyWalkInInput"
                       type="number"
                       value={yearlyWalkIn}
-                      onChange={(e) => setYearlyWalkIn(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setYearlyWalkIn(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
@@ -421,34 +539,54 @@ export const RatesPayments: React.FC = () => {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="gcashFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">GCash Extra Charge</label>
+                <label
+                  htmlFor="gcashFeeInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  GCash Extra Charge
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="gcashFeeInput"
                       type="number"
                       value={gcashFee}
-                      onChange={(e) => setGcashFee(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setGcashFee(Math.max(0, parseInt(e.target.value) || 0))
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
               </div>
               <div className="grid gap-1.5">
-                <label htmlFor="newCardFeeInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">New Card Fee</label>
+                <label
+                  htmlFor="newCardFeeInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  New Card Fee
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">₱</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                      ₱
+                    </span>
                     <input
                       id="newCardFeeInput"
                       type="number"
                       value={newCardFee}
-                      onChange={(e) => setNewCardFee(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) =>
+                        setNewCardFee(
+                          Math.max(0, parseInt(e.target.value) || 0)
+                        )
+                      }
                       className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
@@ -473,15 +611,22 @@ export const RatesPayments: React.FC = () => {
                     vatEnabled ? 'bg-(--color-primary)' : 'bg-(--bg-input)'
                   }`}
                 >
-                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                    vatEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                      vatEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div className="grid gap-1.5">
-                <label htmlFor="vatPercentageInput" className="text-xs font-bold uppercase tracking-wider text-slate-400">VAT Percentage (%)</label>
+                <label
+                  htmlFor="vatPercentageInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                >
+                  VAT Percentage (%)
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
@@ -490,7 +635,11 @@ export const RatesPayments: React.FC = () => {
                     type="number"
                     disabled={!vatEnabled}
                     value={vatPercentage}
-                    onChange={(e) => setVatPercentage(Math.max(0, parseInt(e.target.value) || 0))}
+                    onChange={(e) =>
+                      setVatPercentage(
+                        Math.max(0, parseInt(e.target.value) || 0)
+                      )
+                    }
                     className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) disabled:opacity-50"
                   />
                 )}
@@ -520,17 +669,24 @@ export const RatesPayments: React.FC = () => {
 
               <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl flex items-start gap-2.5 text-[11px] text-blue-400">
                 <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
-                <span>Edit pricing parameters on the left to see live thermal receipt updates.</span>
+                <span>
+                  Edit pricing parameters on the left to see live thermal
+                  receipt updates.
+                </span>
               </div>
 
               {/* Scenario controls */}
               <div className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Select Scenario</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                  Select Scenario
+                </span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => setPreviewPlan('monthly')}
                     className={`py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      previewPlan === 'monthly' ? 'bg-(--color-primary) text-white' : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
+                      previewPlan === 'monthly'
+                        ? 'bg-(--color-primary) text-white'
+                        : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
                     }`}
                   >
                     Monthly Sub
@@ -538,23 +694,35 @@ export const RatesPayments: React.FC = () => {
                   <button
                     onClick={() => setPreviewPlan('yearly')}
                     className={`py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      previewPlan === 'yearly' ? 'bg-(--color-primary) text-white' : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
+                      previewPlan === 'yearly'
+                        ? 'bg-(--color-primary) text-white'
+                        : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
                     }`}
                   >
                     Yearly Sub
                   </button>
                   <button
-                    onClick={() => { setPreviewPlan('regular_walkin'); setPreviewNewCard(false); }}
+                    onClick={() => {
+                      setPreviewPlan('regular_walkin');
+                      setPreviewNewCard(false);
+                    }}
                     className={`py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      previewPlan === 'regular_walkin' ? 'bg-(--color-primary) text-white' : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
+                      previewPlan === 'regular_walkin'
+                        ? 'bg-(--color-primary) text-white'
+                        : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
                     }`}
                   >
                     Walk-In Regular
                   </button>
                   <button
-                    onClick={() => { setPreviewPlan('student_walkin'); setPreviewNewCard(false); }}
+                    onClick={() => {
+                      setPreviewPlan('student_walkin');
+                      setPreviewNewCard(false);
+                    }}
                     className={`py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                      previewPlan === 'student_walkin' ? 'bg-(--color-primary) text-white' : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
+                      previewPlan === 'student_walkin'
+                        ? 'bg-(--color-primary) text-white'
+                        : 'bg-(--bg-page) text-slate-400 border border-(--border-color)'
                     }`}
                   >
                     Walk-In Student
@@ -564,12 +732,16 @@ export const RatesPayments: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Payment Method</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                    Payment Method
+                  </span>
                   <div className="flex bg-(--bg-page) p-1 rounded-lg border border-(--border-color)">
                     <button
                       onClick={() => setPreviewPaymentMethod('cash')}
                       className={`flex-1 py-1 rounded text-[10px] font-bold cursor-pointer ${
-                        previewPaymentMethod === 'cash' ? 'bg-(--bg-input) text-(--color-text)' : 'text-slate-400'
+                        previewPaymentMethod === 'cash'
+                          ? 'bg-(--bg-input) text-(--color-text)'
+                          : 'text-slate-400'
                       }`}
                     >
                       Cash
@@ -577,7 +749,9 @@ export const RatesPayments: React.FC = () => {
                     <button
                       onClick={() => setPreviewPaymentMethod('gcash')}
                       className={`flex-1 py-1 rounded text-[10px] font-bold cursor-pointer ${
-                        previewPaymentMethod === 'gcash' ? 'bg-(--bg-input) text-(--color-text)' : 'text-slate-400'
+                        previewPaymentMethod === 'gcash'
+                          ? 'bg-(--bg-input) text-(--color-text)'
+                          : 'text-slate-400'
                       }`}
                     >
                       GCash
@@ -586,12 +760,16 @@ export const RatesPayments: React.FC = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Options</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                    Options
+                  </span>
                   <button
                     disabled={previewPlan.includes('walkin')}
                     onClick={() => setPreviewNewCard(!previewNewCard)}
                     className={`w-full py-2 px-3 border rounded-lg text-[10px] font-bold uppercase cursor-pointer ${
-                      previewNewCard ? 'border-(--color-primary) text-(--color-primary-light)' : 'border-(--border-color) text-slate-400'
+                      previewNewCard
+                        ? 'border-(--color-primary) text-(--color-primary-light)'
+                        : 'border-(--border-color) text-slate-400'
                     }`}
                   >
                     + Member Card
@@ -610,7 +788,6 @@ export const RatesPayments: React.FC = () => {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

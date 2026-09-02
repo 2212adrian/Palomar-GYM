@@ -1,16 +1,15 @@
-
 // src/pages/sales/utils/barcodePdfHelper.ts
 import JsBarcode from 'jsbarcode';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
-export type LabelTemplateType = 
-  | '32_labels' 
-  | '40_labels' 
-  | '24_labels' 
-  | '65_labels' 
-  | '30_labels' 
-  | '21_labels' 
-  | '14_labels' 
+export type LabelTemplateType =
+  | '32_labels'
+  | '40_labels'
+  | '24_labels'
+  | '65_labels'
+  | '30_labels'
+  | '21_labels'
+  | '14_labels'
   | '80_labels';
 
 export interface LabelTemplate {
@@ -19,12 +18,12 @@ export interface LabelTemplate {
   labelsPerPage: number;
   cols: number;
   rows: number;
-  labelWidth: number;  // in mm
+  labelWidth: number; // in mm
   labelHeight: number; // in mm
-  marginTop: number;   // in mm
-  marginLeft: number;  // in mm
+  marginTop: number; // in mm
+  marginLeft: number; // in mm
   gapHorizontal: number; // in mm
-  gapVertical: number;   // in mm
+  gapVertical: number; // in mm
 }
 
 export interface BarcodeSettingsState {
@@ -52,7 +51,11 @@ export interface PrintableItem {
 export const MM_TO_POINTS = 2.83465;
 
 // Hardcoded standard Letter paper dimension: 8.5" x 11" (215.9mm x 279.4mm)
-export const LETTER_PAPER = { width: 215.9, height: 279.4, name: 'Letter (8.5" x 11")' };
+export const LETTER_PAPER = {
+  width: 215.9,
+  height: 279.4,
+  name: 'Letter (8.5" x 11")',
+};
 
 export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
   '32_labels': {
@@ -163,7 +166,7 @@ export const LABEL_TEMPLATES: Record<LabelTemplateType, LabelTemplate> = {
 
 // Generates high-resolution binary barcode images with integer module widths and standard quiet zones
 export const generateBarcodeDataUrl = (
-  value: string, 
+  value: string,
   options: { width?: number; height?: number; margin?: number } = {}
 ): string => {
   const canvas = document.createElement('canvas');
@@ -196,7 +199,7 @@ export const generatePdfFile = async (
   const pageHeight = LETTER_PAPER.height * MM_TO_POINTS;
 
   const labelsToPrint: PrintableItem[] = [];
-  items.forEach(item => {
+  items.forEach((item) => {
     const totalCopies = item.copiesToPrint ?? settings.copies;
     for (let i = 0; i < totalCopies; i++) {
       labelsToPrint.push(item);
@@ -212,7 +215,7 @@ export const generatePdfFile = async (
   const font = await doc.embedFont(StandardFonts.HelveticaBold);
 
   // Proportional font sizing based on label template height
-  const isSmallLabel = template.labelHeight < 22; 
+  const isSmallLabel = template.labelHeight < 22;
   const productNameSize = isSmallLabel ? 6.5 : 8.5;
   const barcodeTextSize = isSmallLabel ? 6.0 : 7.5;
   const priceTextSize = isSmallLabel ? 7.5 : 9.5;
@@ -220,15 +223,22 @@ export const generatePdfFile = async (
   for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
     const page = doc.addPage([pageWidth, pageHeight]);
     const startIndex = pageIdx * labelsPerPage;
-    const pageLabels = labelsToPrint.slice(startIndex, startIndex + labelsPerPage);
+    const pageLabels = labelsToPrint.slice(
+      startIndex,
+      startIndex + labelsPerPage
+    );
 
     for (let i = 0; i < pageLabels.length; i++) {
       const labelItem = pageLabels[i];
       const col = i % template.cols;
       const row = Math.floor(i / template.cols);
 
-      const xMm = template.marginLeft + col * (template.labelWidth + template.gapHorizontal);
-      const yMm = template.marginTop + row * (template.labelHeight + template.gapVertical);
+      const xMm =
+        template.marginLeft +
+        col * (template.labelWidth + template.gapHorizontal);
+      const yMm =
+        template.marginTop +
+        row * (template.labelHeight + template.gapVertical);
 
       const x = xMm * MM_TO_POINTS;
       const y = pageHeight - (yMm + template.labelHeight) * MM_TO_POINTS;
@@ -241,7 +251,7 @@ export const generatePdfFile = async (
         y,
         width,
         height,
-        borderColor: rgb(0.75, 0.8, 0.85), 
+        borderColor: rgb(0.75, 0.8, 0.85),
         borderWidth: 0.5,
         borderDashArray: [2, 2],
       });
@@ -249,27 +259,27 @@ export const generatePdfFile = async (
       // 1. Calculate Bottom Text Zone
       let yPaddingBottom = isSmallLabel ? 2.0 : 3.0;
       let yPrice = y + yPaddingBottom;
-      
+
       if (settings.showPrice) {
         yPaddingBottom += priceTextSize + (isSmallLabel ? 1.0 : 2.0);
       }
-      
+
       let yBarcodeText = y + yPaddingBottom;
-      
+
       if (settings.showBarcodeText) {
         yPaddingBottom += barcodeTextSize + (isSmallLabel ? 1.0 : 2.0);
       }
-      
+
       const barcodeMinY = y + yPaddingBottom;
 
       // 2. Calculate Top Text Zone
       let yPaddingTop = isSmallLabel ? 2.0 : 3.0;
       let yProductName = y + height - yPaddingTop - productNameSize;
-      
+
       if (settings.showProductName) {
         yPaddingTop += productNameSize + (isSmallLabel ? 1.0 : 2.0);
       }
-      
+
       const barcodeMaxY = y + height - yPaddingTop;
 
       // 3. Render Barcode with Strict Aspect Ratio Preservation
@@ -284,12 +294,12 @@ export const generatePdfFile = async (
         const response = await fetch(barcodeDataUrl);
         const imageBytes = await response.arrayBuffer();
         const image = await doc.embedPng(imageBytes);
-        
+
         // Scale preserving aspect ratio without stretching/squishing module bars
         const imgAspect = image.width / image.height;
-        const maxAllowedWidth = width * 0.90;
+        const maxAllowedWidth = width * 0.9;
         const maxAllowedHeight = Math.min(availableHeight, height * 0.65);
-        
+
         let drawWidth = maxAllowedWidth;
         let drawHeight = drawWidth / imgAspect;
 
@@ -313,10 +323,14 @@ export const generatePdfFile = async (
       if (settings.showProductName) {
         const truncatedName =
           labelItem.product_name.length > (isSmallLabel ? 20 : 25)
-            ? labelItem.product_name.substring(0, isSmallLabel ? 17 : 22) + '...'
+            ? labelItem.product_name.substring(0, isSmallLabel ? 17 : 22) +
+              '...'
             : labelItem.product_name;
 
-        const textWidth = font.widthOfTextAtSize(truncatedName, productNameSize);
+        const textWidth = font.widthOfTextAtSize(
+          truncatedName,
+          productNameSize
+        );
         page.drawText(truncatedName, {
           x: x + (width - textWidth) / 2,
           y: yProductName,
@@ -366,7 +380,7 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
     bottom: '0',
     width: '0',
     height: '0',
-    border: '0'
+    border: '0',
   });
 
   document.body.appendChild(printFrame);
@@ -375,7 +389,7 @@ export const triggerBrowserPrint = (printableElementId: string): void => {
   if (!doc) return;
 
   let stylesHtml = '';
-  document.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => {
+  document.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
     stylesHtml += el.outerHTML;
   });
 

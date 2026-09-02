@@ -1,12 +1,7 @@
 // src/pages/sales/SalesScannerView.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  X, 
-  ShoppingBag, 
-  Package, 
-  AlertTriangle 
-} from 'lucide-react';
+import { X, ShoppingBag, Package, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { Modal } from '../../components/ui/Modal';
@@ -79,7 +74,9 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
           .from('products')
           .select('*')
           .is('deleted_at', null)
-          .or(`barcode_id.ilike.${code},manufacturer_barcode.ilike.${code},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg}`)
+          .or(
+            `barcode_id.ilike.${code},manufacturer_barcode.ilike.${code},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg}`
+          )
           .maybeSingle();
 
         if (product) {
@@ -92,7 +89,7 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
             sellingPrice: Number(product.selling_price || 0),
             stockQuantity: Number(product.stock_quantity || 0),
             hasStockLimit: Boolean(product.has_stock_limit),
-            imageUrl: product.image_url || null
+            imageUrl: product.image_url || null,
           });
         } else {
           setNotFound(true);
@@ -139,7 +136,9 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
       {isLoading ? (
         <div className="py-8 text-center space-y-2">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Reading Product Barcode...</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Reading Product Barcode...
+          </p>
         </div>
       ) : productData ? (
         <div className="space-y-4 pt-1">
@@ -150,7 +149,8 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
               </span>
               <span className="font-mono text-xs text-slate-400">
                 {productData.barcodeId}
-                {productData.manufacturerBarcode && ` (MFG: ${productData.manufacturerBarcode})`}
+                {productData.manufacturerBarcode &&
+                  ` (MFG: ${productData.manufacturerBarcode})`}
               </span>
             </div>
 
@@ -160,22 +160,30 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
 
             <div className="flex items-center justify-between pt-2 border-t border-(--border-color)">
               <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Stock Status</span>
-                <span className={`text-xs font-bold ${
-                  !productData.hasStockLimit 
-                    ? 'text-blue-400' 
-                    : productData.stockQuantity > 5 
-                    ? 'text-emerald-500' 
-                    : productData.stockQuantity > 0 
-                    ? 'text-amber-500' 
-                    : 'text-rose-500'
-                }`}>
-                  {!productData.hasStockLimit ? 'UNLIMITED' : `${productData.stockQuantity} units available`}
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                  Stock Status
+                </span>
+                <span
+                  className={`text-xs font-bold ${
+                    !productData.hasStockLimit
+                      ? 'text-blue-400'
+                      : productData.stockQuantity > 5
+                        ? 'text-emerald-500'
+                        : productData.stockQuantity > 0
+                          ? 'text-amber-500'
+                          : 'text-rose-500'
+                  }`}
+                >
+                  {!productData.hasStockLimit
+                    ? 'UNLIMITED'
+                    : `${productData.stockQuantity} units available`}
                 </span>
               </div>
 
               <div className="text-right">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Price</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                  Price
+                </span>
                 <span className="font-mono font-black text-lg text-emerald-500">
                   ₱{productData.sellingPrice.toFixed(2)}
                 </span>
@@ -187,7 +195,9 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
             type="button"
             variant="primary"
             onClick={handleAddToCart}
-            disabled={productData.hasStockLimit && productData.stockQuantity <= 0}
+            disabled={
+              productData.hasStockLimit && productData.stockQuantity <= 0
+            }
             className="w-full py-3.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
           >
             <ShoppingBag className="w-4 h-4" />
@@ -200,8 +210,12 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-(--color-text) uppercase">PRODUCT NOT FOUND</h3>
-            <p className="text-xs text-slate-500 font-mono mt-1">"{scannedCode}"</p>
+            <h3 className="font-bold text-sm text-(--color-text) uppercase">
+              PRODUCT NOT FOUND
+            </h3>
+            <p className="text-xs text-slate-500 font-mono mt-1">
+              "{scannedCode}"
+            </p>
           </div>
           <Button
             type="button"

@@ -15,10 +15,13 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
   isOpen,
   onClose,
   imageUrl,
-  title = 'Photo Verification'
+  title = 'Photo Verification',
 }) => {
   const [scale, setScale] = useState<number>(1);
-  const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [position, setPosition] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -83,7 +86,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
     setIsDragging(true);
     dragStartRef.current = {
       x: e.clientX - position.x,
-      y: e.clientY - position.y
+      y: e.clientY - position.y,
     };
   };
 
@@ -91,7 +94,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
     if (!isDragging || scale <= 1) return;
     setPosition({
       x: e.clientX - dragStartRef.current.x,
-      y: e.clientY - dragStartRef.current.y
+      y: e.clientY - dragStartRef.current.y,
     });
   };
 
@@ -148,8 +151,9 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
             onMouseDown={handleMouseDown}
             style={{
               transform: `scale(${scale}) translate(${position.x / scale}px, ${position.y / scale}px)`,
-              cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-              transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+              cursor:
+                scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+              transition: isDragging ? 'none' : 'transform 0.15s ease-out',
             }}
             onClick={() => {
               if (scale === 1) handleZoomIn();

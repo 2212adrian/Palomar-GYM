@@ -14,13 +14,13 @@ interface ModalProps {
   className?: string; // Support layout/size customization
 }
 
-export const Modal: React.FC<ModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  title, 
+export const Modal: React.FC<ModalProps> = ({
+  isOpen,
+  onClose,
+  title,
   children,
   zIndex: customZIndex,
-  className = "max-w-sm text-center p-8" // Default styles reside entirely here
+  className = 'max-w-sm text-center p-8', // Default styles reside entirely here
 }) => {
   // 2. Consume parent depth and calculate current depth
   const parentDepth = useContext(ModalDepthContext);
@@ -28,13 +28,13 @@ export const Modal: React.FC<ModalProps> = ({
 
   // 3. Compute dynamic z-index. Base level is 1000, adding 10 per nesting level.
   const baseZIndex = 1000;
-  const computedZIndex = customZIndex ?? (baseZIndex + currentDepth * 10);
+  const computedZIndex = customZIndex ?? baseZIndex + currentDepth * 10;
 
   return (
     <AnimatePresence>
       {isOpen && (
         /* Outer backdrop overlay with top/bottom safe-area padding & flex centering */
-        <div 
+        <div
           className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 overflow-y-auto pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
           style={{ zIndex: computedZIndex }}
         >
@@ -58,7 +58,7 @@ export const Modal: React.FC<ModalProps> = ({
                 {title}
               </h3>
             )}
-            
+
             {/* 4. Provide the incremented depth to any nested Modals inside children */}
             <ModalDepthContext.Provider value={currentDepth}>
               {children}

@@ -1,25 +1,25 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  AreaChart, 
-  Area, 
+import {
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Legend,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  Cell
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
 } from 'recharts';
-import { 
-  ShoppingBag, 
-  Clock, 
-  FileText, 
-  Download, 
-  ArrowUpRight, 
+import {
+  ShoppingBag,
+  Clock,
+  FileText,
+  Download,
+  ArrowUpRight,
   ArrowDownRight,
   Layers,
   FileSpreadsheet,
@@ -28,17 +28,17 @@ import {
   BarChart2,
   CreditCard,
   Calendar,
-  Users
+  Users,
 } from 'lucide-react';
-import type { 
-  DashboardTab, 
-  TimeRangeFilter, 
-  RevenueTimelinePoint, 
-  TopProductMetric, 
-  AttendanceHourData, 
-  BirReportItem, 
+import type {
+  DashboardTab,
+  TimeRangeFilter,
+  RevenueTimelinePoint,
+  TopProductMetric,
+  AttendanceHourData,
+  BirReportItem,
   DashboardMetrics,
-  SubscriptionPlanBreakdown
+  SubscriptionPlanBreakdown,
 } from '../types';
 import { formatPHP } from '../dashboardService';
 import { ReportsExportModal } from './ReportsExportModal';
@@ -69,26 +69,40 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   onTimeRangeChange,
 }) => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [selectedReportType, setSelectedReportType] = useState<'bir' | 'sales' | 'attendance' | 'inventory' | 'subscriptions'>('bir');
+  const [selectedReportType, setSelectedReportType] = useState<
+    'bir' | 'sales' | 'attendance' | 'inventory' | 'subscriptions'
+  >('bir');
   const [salesChartView, setSalesChartView] = useState<'pie' | 'bar'>('pie');
-  const [logbookViewMode, setLogbookViewMode] = useState<'traffic' | 'subscriptions'>('traffic');
-  const [subscriptionChartView, setSubscriptionChartView] = useState<'timeline' | 'distribution'>('timeline');
+  const [logbookViewMode, setLogbookViewMode] = useState<
+    'traffic' | 'subscriptions'
+  >('traffic');
+  const [subscriptionChartView, setSubscriptionChartView] = useState<
+    'timeline' | 'distribution'
+  >('timeline');
 
-  const PIE_COLORS = ['#123c73', '#2563eb', '#38bdf8', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+  const PIE_COLORS = [
+    '#123c73',
+    '#2563eb',
+    '#38bdf8',
+    '#10b981',
+    '#f59e0b',
+    '#8b5cf6',
+    '#ec4899',
+  ];
 
   const pieProductData = useMemo(() => {
-    const soldOnly = topProducts.filter(p => p.total_sold > 0);
+    const soldOnly = topProducts.filter((p) => p.total_sold > 0);
     if (soldOnly.length === 0) {
-      return topProducts.slice(0, 5).map(p => ({
+      return topProducts.slice(0, 5).map((p) => ({
         name: p.product_name,
         value: p.total_sold || 1,
-        revenue: p.total_revenue || 0
+        revenue: p.total_revenue || 0,
       }));
     }
-    return soldOnly.slice(0, 6).map(p => ({
+    return soldOnly.slice(0, 6).map((p) => ({
       name: p.product_name,
       value: p.total_sold,
-      revenue: p.total_revenue
+      revenue: p.total_revenue,
     }));
   }, [topProducts]);
 
@@ -106,18 +120,24 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
   const rangeLabel = useMemo(() => {
     switch (timeRange) {
-      case 'today': return "Today's";
-      case 'week': return 'Past 7 Days';
-      case 'year': return 'Past 12 Months';
+      case 'today':
+        return "Today's";
+      case 'week':
+        return 'Past 7 Days';
+      case 'year':
+        return 'Past 12 Months';
       case 'month':
       default:
         return 'Past 30 Days';
     }
   }, [timeRange]);
 
-  const revenueGrowthPercent = metrics.lastMonthTotalRevenue > 0
-    ? (((metrics.monthTotalRevenue - metrics.lastMonthTotalRevenue) / metrics.lastMonthTotalRevenue) * 100)
-    : 0;
+  const revenueGrowthPercent =
+    metrics.lastMonthTotalRevenue > 0
+      ? ((metrics.monthTotalRevenue - metrics.lastMonthTotalRevenue) /
+          metrics.lastMonthTotalRevenue) *
+        100
+      : 0;
 
   const isPositiveGrowth = revenueGrowthPercent >= 0;
 
@@ -128,7 +148,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
     <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs overflow-hidden transition-all">
       {/* ─── ADAPTIVE BROWSER-TABBED HEADER BAR ─── */}
       <div className="border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/90 dark:bg-[#0c0e12]/60 px-3 sm:px-5 pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        
         {/* TAB BUTTONS (Smooth horizontal touch scrolling with no scrollbar) */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 md:pb-0 -mx-1 px-1">
           {/* TAB 1: COMBINED */}
@@ -208,25 +227,26 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
         {/* TIME RANGE FILTER (Segmented Pill Controller) */}
         <div className="flex items-center bg-slate-200/60 dark:bg-[#1e232d] p-1 rounded-xl shrink-0 self-stretch sm:self-auto mb-2 md:mb-2.5">
-          {(['today', 'week', 'month', 'year'] as TimeRangeFilter[]).map((range) => (
-            <button
-              key={range}
-              onClick={() => onTimeRangeChange(range)}
-              className={`flex-1 sm:flex-initial px-3 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                timeRange === range
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-2xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {range.charAt(0).toUpperCase() + range.slice(1)}
-            </button>
-          ))}
+          {(['today', 'week', 'month', 'year'] as TimeRangeFilter[]).map(
+            (range) => (
+              <button
+                key={range}
+                onClick={() => onTimeRangeChange(range)}
+                className={`flex-1 sm:flex-initial px-3 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
+                  timeRange === range
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {range.charAt(0).toUpperCase() + range.slice(1)}
+              </button>
+            )
+          )}
         </div>
       </div>
 
       {/* ─── TAB CONTENT BODY ─── */}
       <div className="p-4 sm:p-6">
-        
         {/* =========================================================
             TAB 1: COMBINED REVENUE & VELOCITY
             ========================================================= */}
@@ -234,7 +254,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
           <div className="space-y-6">
             {/* Top 3 Revenue Split Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
-              
               {/* Total Combined */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -246,14 +265,18 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 <div className="mt-2.5 flex items-center gap-1.5 text-xs">
                   {isPositiveGrowth ? (
                     <span className="text-emerald-600 dark:text-emerald-400 font-extrabold flex items-center">
-                      <ArrowUpRight className="w-3.5 h-3.5" /> +{revenueGrowthPercent.toFixed(1)}%
+                      <ArrowUpRight className="w-3.5 h-3.5" /> +
+                      {revenueGrowthPercent.toFixed(1)}%
                     </span>
                   ) : (
                     <span className="text-rose-600 dark:text-rose-400 font-extrabold flex items-center">
-                      <ArrowDownRight className="w-3.5 h-3.5" /> {revenueGrowthPercent.toFixed(1)}%
+                      <ArrowDownRight className="w-3.5 h-3.5" />{' '}
+                      {revenueGrowthPercent.toFixed(1)}%
                     </span>
                   )}
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">monthly trend</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                    monthly trend
+                  </span>
                 </div>
               </div>
 
@@ -292,18 +315,23 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Revenue Velocity Telemetry • {rangeLabel}
                   </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                    Dual-stream tracking of POS merchandise vs access admissions.
+                    Dual-stream tracking of POS merchandise vs access
+                    admissions.
                   </p>
                 </div>
-                
+
                 <div className="flex items-center gap-3 text-xs font-bold">
                   <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded-xs bg-[#123c73] dark:bg-blue-400" />
-                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">Product Sales</span>
+                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                      Product Sales
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded-xs bg-[#10b981]" />
-                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">Memberships/Passes</span>
+                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                      Memberships/Passes
+                    </span>
                   </div>
                 </div>
               </div>
@@ -311,35 +339,75 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               {/* Chart */}
               <div className="h-[240px] sm:h-[300px] lg:h-[320px] w-full pt-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueTimeline} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <AreaChart
+                    data={revenueTimeline}
+                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  >
                     <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={THEME_BLUE} stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor={THEME_BLUE} stopOpacity={0.0}/>
+                      <linearGradient
+                        id="colorSales"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={THEME_BLUE}
+                          stopOpacity={0.4}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={THEME_BLUE}
+                          stopOpacity={0.0}
+                        />
                       </linearGradient>
-                      <linearGradient id="colorLogbook" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={THEME_GREEN} stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor={THEME_GREEN} stopOpacity={0.0}/>
+                      <linearGradient
+                        id="colorLogbook"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={THEME_GREEN}
+                          stopOpacity={0.4}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={THEME_GREEN}
+                          stopOpacity={0.0}
+                        />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.2} />
-                    <XAxis 
-                      dataKey="label" 
-                      tick={{ fontSize: 10, fill: '#64748b' }} 
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#94a3b8"
+                      strokeOpacity={0.2}
+                    />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 10, fill: '#64748b' }}
                       axisLine={{ stroke: '#94a3b8', strokeOpacity: 0.2 }}
                       tickLine={false}
                     />
-                    <YAxis 
+                    <YAxis
                       width={45}
-                      tick={{ fontSize: 10, fill: '#64748b' }} 
+                      tick={{ fontSize: 10, fill: '#64748b' }}
                       axisLine={false}
                       tickLine={false}
-                      tickFormatter={(val) => `₱${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`}
+                      tickFormatter={(val) =>
+                        `₱${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`
+                      }
                     />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(val: any, name: any) => [
-                        formatPHP(Number(val)), 
-                        name === 'salesRevenue' ? 'Product POS' : 'Passes & Plans'
+                        formatPHP(Number(val)),
+                        name === 'salesRevenue'
+                          ? 'Product POS'
+                          : 'Passes & Plans',
                       ]}
                       labelFormatter={(label) => `${label}`}
                       contentStyle={{
@@ -349,25 +417,25 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         color: '#f8fafc',
                         fontSize: '12px',
                         fontWeight: 'bold',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)'
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
                       }}
                     />
-                    <Area 
-                      type="monotone" 
-                      dataKey="salesRevenue" 
-                      stroke={THEME_BLUE} 
+                    <Area
+                      type="monotone"
+                      dataKey="salesRevenue"
+                      stroke={THEME_BLUE}
                       strokeWidth={2.5}
-                      fillOpacity={1} 
-                      fill="url(#colorSales)" 
+                      fillOpacity={1}
+                      fill="url(#colorSales)"
                       name="salesRevenue"
                     />
-                    <Area 
-                      type="monotone" 
-                      dataKey="logbookRevenue" 
-                      stroke={THEME_GREEN} 
+                    <Area
+                      type="monotone"
+                      dataKey="logbookRevenue"
+                      stroke={THEME_GREEN}
                       strokeWidth={2.5}
-                      fillOpacity={1} 
-                      fill="url(#colorLogbook)" 
+                      fillOpacity={1}
+                      fill="url(#colorLogbook)"
                       name="logbookRevenue"
                     />
                   </AreaChart>
@@ -388,7 +456,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   Top Performing Merchandise ({rangeLabel})
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                  Ranking retail items by total quantity sold, revenue share, and gross sales generation.
+                  Ranking retail items by total quantity sold, revenue share,
+                  and gross sales generation.
                 </p>
               </div>
 
@@ -439,16 +508,16 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           nameKey="name"
                         >
                           {pieProductData.map((_, index) => (
-                            <Cell 
-                              key={`pie-cell-${index}`} 
-                              fill={PIE_COLORS[index % PIE_COLORS.length]} 
+                            <Cell
+                              key={`pie-cell-${index}`}
+                              fill={PIE_COLORS[index % PIE_COLORS.length]}
                             />
                           ))}
                         </Pie>
-                        <Tooltip 
+                        <Tooltip
                           formatter={(val: any, name: any, item: any) => [
                             `${val} units sold (${formatPHP(item.payload.revenue || 0)})`,
-                            name
+                            name,
                           ]}
                           contentStyle={{
                             backgroundColor: '#161920',
@@ -457,11 +526,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                             color: '#f8fafc',
                             fontSize: '12px',
                             fontWeight: 'bold',
-                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)'
+                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
                           }}
                         />
-                        <Legend 
-                          verticalAlign="bottom" 
+                        <Legend
+                          verticalAlign="bottom"
                           height={40}
                           iconType="circle"
                           formatter={(val) => (
@@ -476,36 +545,60 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 ) : (
                   <div className="h-[280px] sm:h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart 
-                        data={topProducts.slice(0, 5)} 
-                        layout="vertical" 
+                      <BarChart
+                        data={topProducts.slice(0, 5)}
+                        layout="vertical"
                         margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#94a3b8" strokeOpacity={0.2} />
-                        <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} allowDecimals={false} />
-                        <YAxis 
-                          dataKey="product_name" 
-                          type="category" 
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          horizontal={false}
+                          stroke="#94a3b8"
+                          strokeOpacity={0.2}
+                        />
+                        <XAxis
+                          type="number"
+                          tick={{ fontSize: 10, fill: '#64748b' }}
+                          allowDecimals={false}
+                        />
+                        <YAxis
+                          dataKey="product_name"
+                          type="category"
                           width={100}
                           tick={{ fontSize: 11, fill: '#64748b' }}
-                          tickFormatter={(name) => name.length > 14 ? name.slice(0, 14) + '...' : name}
+                          tickFormatter={(name) =>
+                            name.length > 14 ? name.slice(0, 14) + '...' : name
+                          }
                         />
-                        <Tooltip 
-                          formatter={(val: any) => [`${val} units sold`, 'Volume Sold']}
+                        <Tooltip
+                          formatter={(val: any) => [
+                            `${val} units sold`,
+                            'Volume Sold',
+                          ]}
                           contentStyle={{
                             backgroundColor: '#161920',
                             borderColor: '#334155',
                             borderRadius: '12px',
                             color: '#f8fafc',
                             fontSize: '12px',
-                            fontWeight: 'bold'
+                            fontWeight: 'bold',
                           }}
                         />
-                        <Bar dataKey="total_sold" fill="#123c73" radius={[0, 6, 6, 0]}>
+                        <Bar
+                          dataKey="total_sold"
+                          fill="#123c73"
+                          radius={[0, 6, 6, 0]}
+                        >
                           {topProducts.slice(0, 5).map((_, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={index === 0 ? '#123c73' : index === 1 ? '#2563eb' : '#3b82f6'} 
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={
+                                index === 0
+                                  ? '#123c73'
+                                  : index === 1
+                                    ? '#2563eb'
+                                    : '#3b82f6'
+                              }
                             />
                           ))}
                         </Bar>
@@ -524,32 +617,43 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   </h4>
                   <div className="space-y-3">
                     {topProducts.slice(0, 4).map((p, idx) => (
-                      <div key={p.id} className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60 dark:border-slate-800 last:border-0 last:pb-0">
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60 dark:border-slate-800 last:border-0 last:pb-0"
+                      >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
-                            idx === 0 
-                              ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300' 
-                              : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}>
+                          <span
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                              idx === 0
+                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'
+                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
                             #{idx + 1}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate" title={p.product_name}>
+                            <p
+                              className="text-xs font-bold text-slate-900 dark:text-white truncate"
+                              title={p.product_name}
+                            >
                               {p.product_name}
                             </p>
                             <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              {p.total_sold} units • {formatPHP(p.total_revenue)}
+                              {p.total_sold} units •{' '}
+                              {formatPHP(p.total_revenue)}
                             </p>
                           </div>
                         </div>
 
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
-                          p.status === 'Low Stock' 
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' 
-                            : p.status === 'Out of Stock' 
-                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' 
-                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                        }`}>
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                            p.status === 'Low Stock'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              : p.status === 'Out of Stock'
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          }`}
+                        >
                           {p.status}
                         </span>
                       </div>
@@ -570,15 +674,18 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
               <div>
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase font-heading">
-                  {logbookViewMode === 'traffic' ? 'Hourly Attendance & Foot Traffic' : 'Subscription Breakdown (Monthly vs Yearly)'} ({rangeLabel})
+                  {logbookViewMode === 'traffic'
+                    ? 'Hourly Attendance & Foot Traffic'
+                    : 'Subscription Breakdown (Monthly vs Yearly)'}{' '}
+                  ({rangeLabel})
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                  {logbookViewMode === 'traffic' 
-                    ? 'Visitor distribution showing counter check-ins and peak gym hours.' 
+                  {logbookViewMode === 'traffic'
+                    ? 'Visitor distribution showing counter check-ins and peak gym hours.'
                     : 'Compare membership acquisition, subscriber counts, and revenue between Monthly and Yearly plans.'}
                 </p>
               </div>
-              
+
               {/* Option Tab Buttons */}
               <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
                 <button
@@ -625,23 +732,33 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
                 <div className="h-[260px] sm:h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={attendanceHourly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.2} />
-                      <XAxis 
-                        dataKey="hour" 
-                        tick={{ fontSize: 10, fill: '#64748b' }} 
+                    <BarChart
+                      data={attendanceHourly}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#94a3b8"
+                        strokeOpacity={0.2}
+                      />
+                      <XAxis
+                        dataKey="hour"
+                        tick={{ fontSize: 10, fill: '#64748b' }}
                         tickFormatter={(val) => val.replace(':00', '')}
                       />
-                      <YAxis 
+                      <YAxis
                         width={40}
-                        tick={{ fontSize: 10, fill: '#64748b' }} 
-                        allowDecimals={false} 
-                        domain={[0, 'auto']} 
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        allowDecimals={false}
+                        domain={[0, 'auto']}
                       />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(val: any, name: any) => [
-                          `${val} visits`, 
-                          name === 'members' ? 'Registered Members' : 'Walk-In Guests'
+                          `${val} visits`,
+                          name === 'members'
+                            ? 'Registered Members'
+                            : 'Walk-In Guests',
                         ]}
                         labelFormatter={(label) => `${label}`}
                         contentStyle={{
@@ -650,11 +767,23 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           borderRadius: '12px',
                           color: '#f8fafc',
                           fontSize: '12px',
-                          fontWeight: 'bold'
+                          fontWeight: 'bold',
                         }}
                       />
-                      <Bar dataKey="members" stackId="a" fill="#123c73" radius={[0, 0, 0, 0]} name="members" />
-                      <Bar dataKey="walkIns" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} name="walkIns" />
+                      <Bar
+                        dataKey="members"
+                        stackId="a"
+                        fill="#123c73"
+                        radius={[0, 0, 0, 0]}
+                        name="members"
+                      />
+                      <Bar
+                        dataKey="walkIns"
+                        stackId="a"
+                        fill="#10b981"
+                        radius={[4, 4, 0, 0]}
+                        name="walkIns"
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -679,7 +808,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         {subscriptionBreakdown?.totalSubscribers || 0}
                       </div>
                       <div className="text-[11px] font-bold text-[#123c73] dark:text-blue-400 mt-0.5">
-                        {formatPHP(subscriptionBreakdown?.totalRevenue || 0)} gross
+                        {formatPHP(subscriptionBreakdown?.totalRevenue || 0)}{' '}
+                        gross
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2">
@@ -702,11 +832,13 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         {subscriptionBreakdown?.monthlyCount || 0}
                       </div>
                       <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-0.5">
-                        {formatPHP(subscriptionBreakdown?.monthlyRevenue || 0)} revenue
+                        {formatPHP(subscriptionBreakdown?.monthlyRevenue || 0)}{' '}
+                        revenue
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2">
-                      {subscriptionBreakdown?.activeMonthlyCount || 0} currently active contracts
+                      {subscriptionBreakdown?.activeMonthlyCount || 0} currently
+                      active contracts
                     </p>
                   </div>
 
@@ -725,11 +857,13 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         {subscriptionBreakdown?.yearlyCount || 0}
                       </div>
                       <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-0.5">
-                        {formatPHP(subscriptionBreakdown?.yearlyRevenue || 0)} revenue
+                        {formatPHP(subscriptionBreakdown?.yearlyRevenue || 0)}{' '}
+                        revenue
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2">
-                      {subscriptionBreakdown?.activeYearlyCount || 0} currently active contracts
+                      {subscriptionBreakdown?.activeYearlyCount || 0} currently
+                      active contracts
                     </p>
                   </div>
 
@@ -743,7 +877,9 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     </div>
                     <div className="mt-2">
                       <div className="text-2xl sm:text-3xl font-black text-purple-600 dark:text-purple-400 font-heading">
-                        {subscriptionBreakdown?.activeTotalCount || metrics.activeMembersCount || 0}
+                        {subscriptionBreakdown?.activeTotalCount ||
+                          metrics.activeMembersCount ||
+                          0}
                       </div>
                       <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-0.5">
                         Active paying member pool
@@ -762,7 +898,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       Subscription Volume & Plan Ratio ({rangeLabel})
                     </h4>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Visual distribution of monthly renewals and annual subscriptions.
+                      Visual distribution of monthly renewals and annual
+                      subscriptions.
                     </p>
                   </div>
 
@@ -800,35 +937,46 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     <div className="flex items-center justify-end gap-4 text-xs font-bold">
                       <div className="flex items-center gap-1.5">
                         <div className="w-3 h-3 rounded-xs bg-[#123c73] dark:bg-blue-500" />
-                        <span className="text-slate-600 dark:text-slate-300 text-[11px]">Monthly Subscriptions</span>
+                        <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                          Monthly Subscriptions
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="w-3 h-3 rounded-xs bg-[#10b981]" />
-                        <span className="text-slate-600 dark:text-slate-300 text-[11px]">Yearly Subscriptions</span>
+                        <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                          Yearly Subscriptions
+                        </span>
                       </div>
                     </div>
 
                     <div className="h-[260px] sm:h-[300px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart 
-                          data={subscriptionBreakdown?.timeline || []} 
+                        <BarChart
+                          data={subscriptionBreakdown?.timeline || []}
                           margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                         >
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.2} />
-                          <XAxis 
-                            dataKey="label" 
-                            tick={{ fontSize: 10, fill: '#64748b' }} 
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="#94a3b8"
+                            strokeOpacity={0.2}
                           />
-                          <YAxis 
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fontSize: 10, fill: '#64748b' }}
+                          />
+                          <YAxis
                             width={35}
-                            tick={{ fontSize: 10, fill: '#64748b' }} 
-                            allowDecimals={false} 
-                            domain={[0, 'auto']} 
+                            tick={{ fontSize: 10, fill: '#64748b' }}
+                            allowDecimals={false}
+                            domain={[0, 'auto']}
                           />
-                          <Tooltip 
+                          <Tooltip
                             formatter={(val: any, name: any, item: any) => [
-                              `${val} subscribers (${formatPHP(name === 'monthly' ? item.payload.monthlyRevenue : item.payload.yearlyRevenue)})`, 
-                              name === 'monthly' ? 'Monthly Plan' : 'Yearly Plan'
+                              `${val} subscribers (${formatPHP(name === 'monthly' ? item.payload.monthlyRevenue : item.payload.yearlyRevenue)})`,
+                              name === 'monthly'
+                                ? 'Monthly Plan'
+                                : 'Yearly Plan',
                             ]}
                             labelFormatter={(label) => `${label}`}
                             contentStyle={{
@@ -837,11 +985,21 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                               borderRadius: '12px',
                               color: '#f8fafc',
                               fontSize: '12px',
-                              fontWeight: 'bold'
+                              fontWeight: 'bold',
                             }}
                           />
-                          <Bar dataKey="monthly" fill="#123c73" radius={[0, 0, 0, 0]} name="monthly" />
-                          <Bar dataKey="yearly" fill="#10b981" radius={[4, 4, 0, 0]} name="yearly" />
+                          <Bar
+                            dataKey="monthly"
+                            fill="#123c73"
+                            radius={[0, 0, 0, 0]}
+                            name="monthly"
+                          />
+                          <Bar
+                            dataKey="yearly"
+                            fill="#10b981"
+                            radius={[4, 4, 0, 0]}
+                            name="yearly"
+                          />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -853,18 +1011,20 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         <PieChart>
                           <Pie
                             data={[
-                              { 
-                                name: 'Monthly Membership', 
-                                value: subscriptionBreakdown?.monthlyCount || 1, 
-                                revenue: subscriptionBreakdown?.monthlyRevenue || 0,
-                                color: '#123c73' 
+                              {
+                                name: 'Monthly Membership',
+                                value: subscriptionBreakdown?.monthlyCount || 1,
+                                revenue:
+                                  subscriptionBreakdown?.monthlyRevenue || 0,
+                                color: '#123c73',
                               },
-                              { 
-                                name: 'Yearly Membership', 
-                                value: subscriptionBreakdown?.yearlyCount || 1, 
-                                revenue: subscriptionBreakdown?.yearlyRevenue || 0,
-                                color: '#10b981' 
-                              }
+                              {
+                                name: 'Yearly Membership',
+                                value: subscriptionBreakdown?.yearlyCount || 1,
+                                revenue:
+                                  subscriptionBreakdown?.yearlyRevenue || 0,
+                                color: '#10b981',
+                              },
                             ]}
                             cx="50%"
                             cy="50%"
@@ -877,10 +1037,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                             <Cell fill="#123c73" />
                             <Cell fill="#10b981" />
                           </Pie>
-                          <Tooltip 
+                          <Tooltip
                             formatter={(val: any, name: any, item: any) => [
-                              `${val} members (${formatPHP(item.payload.revenue)})`, 
-                              name
+                              `${val} members (${formatPHP(item.payload.revenue)})`,
+                              name,
                             ]}
                             contentStyle={{
                               backgroundColor: '#161920',
@@ -888,7 +1048,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                               borderRadius: '12px',
                               color: '#f8fafc',
                               fontSize: '12px',
-                              fontWeight: 'bold'
+                              fontWeight: 'bold',
                             }}
                           />
                         </PieChart>
@@ -901,8 +1061,12 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         <div className="flex items-center gap-3">
                           <div className="w-3.5 h-3.5 rounded-full bg-[#123c73] shrink-0" />
                           <div>
-                            <div className="text-xs font-bold text-slate-900 dark:text-white">Monthly Memberships</div>
-                            <div className="text-[10px] text-slate-500">Standard flexible monthly access</div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Monthly Memberships
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              Standard flexible monthly access
+                            </div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -919,8 +1083,12 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                         <div className="flex items-center gap-3">
                           <div className="w-3.5 h-3.5 rounded-full bg-[#10b981] shrink-0" />
                           <div>
-                            <div className="text-xs font-bold text-slate-900 dark:text-white">Yearly Memberships</div>
-                            <div className="text-[10px] text-slate-500">High-retention 365-day pass</div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Yearly Memberships
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              High-retention 365-day pass
+                            </div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -954,7 +1122,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   </span>
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Export bookkeeping records in CSV spreadsheets or printable PDF format.
+                  Export bookkeeping records in CSV spreadsheets or printable
+                  PDF format.
                 </p>
               </div>
 
@@ -973,7 +1142,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
             {/* Quick Report Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
-              
               {/* 1. BIR REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
@@ -987,7 +1155,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Official Sales & Receipts Journal
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    OR Numbers, Gross Sales, VAT-Exempt entries, and payment details for BIR book audit.
+                    OR Numbers, Gross Sales, VAT-Exempt entries, and payment
+                    details for BIR book audit.
                   </p>
                 </div>
                 <button
@@ -1015,7 +1184,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Product Movement & Retail Log
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    Itemized sales receipts, quantity sold, stock movements, and gross profit generation.
+                    Itemized sales receipts, quantity sold, stock movements, and
+                    gross profit generation.
                   </p>
                 </div>
                 <button
@@ -1043,7 +1213,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Attendance & Member Utilization
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    Daily check-in logs, walk-in admission fees, pass redemptions, and staff signatures.
+                    Daily check-in logs, walk-in admission fees, pass
+                    redemptions, and staff signatures.
                   </p>
                 </div>
                 <button

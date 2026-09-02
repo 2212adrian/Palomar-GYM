@@ -44,7 +44,10 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
   checkSession: async () => {
     try {
       set({ loading: true, error: null });
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
 
@@ -67,12 +70,20 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
             } else if (!data && !dbError) {
               // Auto-create missing profile row if user was registered via auth directly
               try {
-                const autoRole = (session.user.app_metadata?.role || session.user.user_metadata?.role || 'admin').toLowerCase();
+                const autoRole = (
+                  session.user.app_metadata?.role ||
+                  session.user.user_metadata?.role ||
+                  'admin'
+                ).toLowerCase();
                 const { data: createdProfile } = await supabase
                   .from('profiles')
                   .insert({
                     id: session.user.id,
-                    username: session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
+                    username:
+                      session.user.user_metadata?.full_name ||
+                      session.user.user_metadata?.username ||
+                      session.user.email?.split('@')[0] ||
+                      'User',
                     role: autoRole === 'staff' ? 'staff' : 'admin',
                     status: 'active',
                   })
@@ -87,7 +98,10 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
               }
             }
           } catch (fetchErr) {
-            console.warn('Could not load profile from database, falling back to auth metadata:', fetchErr);
+            console.warn(
+              'Could not load profile from database, falling back to auth metadata:',
+              fetchErr
+            );
           }
         }
 
@@ -103,30 +117,46 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
             activeProfileChannel = null;
           }
           activeProfileUserId = null;
-          set({ user: null, profile: null, loading: false, initialized: true, error: 'Account suspended' });
+          set({
+            user: null,
+            profile: null,
+            loading: false,
+            initialized: true,
+            error: 'Account suspended',
+          });
           return;
         }
 
         // 2. Resolve account attributes with Superadmin taking absolute priority
-        const rawRole = (dbProfile?.role || session.user.app_metadata?.role || session.user.user_metadata?.role || 'admin').toLowerCase();
-        const userRole = isSuperAdminUser ? 'admin' : (rawRole === 'admin' ? 'admin' : 'staff');
+        const rawRole = (
+          dbProfile?.role ||
+          session.user.app_metadata?.role ||
+          session.user.user_metadata?.role ||
+          'admin'
+        ).toLowerCase();
+        const userRole = isSuperAdminUser
+          ? 'admin'
+          : rawRole === 'admin'
+            ? 'admin'
+            : 'staff';
 
         // Superadmin status always resolves to active; other accounts default to active unless specified
-        const userStatus = isSuperAdminUser 
-          ? 'active' 
-          : (dbProfile?.status || session.user.user_metadata?.status || 'active');
+        const userStatus = isSuperAdminUser
+          ? 'active'
+          : dbProfile?.status || session.user.user_metadata?.status || 'active';
 
-        const metadataAvatarPath = dbProfile?.avatar_url || 
-                                   session.user.user_metadata?.avatar_url || '';
+        const metadataAvatarPath =
+          dbProfile?.avatar_url || session.user.user_metadata?.avatar_url || '';
         let localAvatarBlobUrl = '';
 
         // Dynamically resolve private file storage as local blob URLs
         if (metadataAvatarPath) {
           if (!metadataAvatarPath.startsWith('http')) {
             try {
-              const { data: imageBlob, error: downloadError } = await supabase.storage
-                .from('avatars')
-                .download(metadataAvatarPath);
+              const { data: imageBlob, error: downloadError } =
+                await supabase.storage
+                  .from('avatars')
+                  .download(metadataAvatarPath);
 
               if (!downloadError && imageBlob) {
                 // Revoke old reference to prevent browser memory leaks
@@ -149,13 +179,18 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
           if (activeProfileChannel) {
             supabase.removeChannel(activeProfileChannel);
           }
-          
+
           activeProfileUserId = session.user.id;
           activeProfileChannel = supabase
             .channel(`profile-sync-${session.user.id}`)
             .on(
               'postgres_changes',
-              { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${session.user.id}` },
+              {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles',
+                filter: `id=eq.${session.user.id}`,
+              },
               async (payload: any) => {
                 const rawAvatar = payload.new.avatar_url || '';
                 let resolvedBlobUrl = '';
@@ -169,7 +204,10 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
                       resolvedBlobUrl = URL.createObjectURL(imageBlob);
                     }
                   } catch (err) {
-                    console.error('Failed to resolve raw avatar inside realtime event:', err);
+                    console.error(
+                      'Failed to resolve raw avatar inside realtime event:',
+                      err
+                    );
                   }
                 } else {
                   resolvedBlobUrl = rawAvatar;
@@ -185,7 +223,7 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
                         status: payload.new.status,
                         avatar_url: resolvedBlobUrl,
                       }
-                    : null
+                    : null,
                 }));
               }
             )
@@ -194,14 +232,24 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
 
         // 3. Client-Side Account Activation Trigger (Non-blocking)
         if (userStatus === 'pending' && !isSuperAdminUser) {
-          supabase.from('profiles').update({ status: 'active' }).eq('id', session.user.id).then(() => {});
+          supabase
+            .from('profiles')
+            .update({ status: 'active' })
+            .eq('id', session.user.id)
+            .then(() => {});
         }
 
         set({
           user: session.user,
           profile: {
             id: session.user.id,
-            username: isSuperAdminUser ? 'SUPERADMIN' : (dbProfile?.username || session.user.user_metadata?.full_name || session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User'),
+            username: isSuperAdminUser
+              ? 'SUPERADMIN'
+              : dbProfile?.username ||
+                session.user.user_metadata?.full_name ||
+                session.user.user_metadata?.username ||
+                session.user.email?.split('@')[0] ||
+                'User',
             role: userRole as 'admin' | 'staff',
             status: userStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,
@@ -224,7 +272,13 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
       }
     } catch (err: any) {
       console.error('Session check failed:', err.message);
-      set({ user: null, profile: null, loading: false, initialized: true, error: err.message });
+      set({
+        user: null,
+        profile: null,
+        loading: false,
+        initialized: true,
+        error: err.message,
+      });
     }
   },
 
@@ -235,7 +289,7 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
         provider: 'google',
         options: {
           redirectTo: window.location.origin,
-        }
+        },
       });
       if (error) throw error;
     } catch (err: any) {
@@ -262,24 +316,38 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'PASSWORD_RECOVERY') {
     const isSuperAdminUser = isSuperAdmin(session?.user?.email);
-    
+
     // Safely update user credentials directly to bypass database schema checks on restricted recovery tokens
-    useAuthStore.setState({ 
-      user: session?.user || null, 
-      profile: session?.user ? {
-        id: session.user.id,
-        username: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-        role: isSuperAdminUser ? 'admin' : 'staff', // Force admin role if superadmin during password recovery
-        status: 'active',
-        avatar_url: session.user.user_metadata?.avatar_url || ''
-      } : null,
-      loading: false, 
-      initialized: true 
+    useAuthStore.setState({
+      user: session?.user || null,
+      profile: session?.user
+        ? {
+            id: session.user.id,
+            username:
+              session.user.user_metadata?.full_name ||
+              session.user.email?.split('@')[0] ||
+              'User',
+            role: isSuperAdminUser ? 'admin' : 'staff', // Force admin role if superadmin during password recovery
+            status: 'active',
+            avatar_url: session.user.user_metadata?.avatar_url || '',
+          }
+        : null,
+      loading: false,
+      initialized: true,
     });
   } else if (event === 'SIGNED_OUT') {
     // Clear cached session parameters
-    useAuthStore.setState({ user: null, profile: null, loading: false, initialized: true });
-  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+    useAuthStore.setState({
+      user: null,
+      profile: null,
+      loading: false,
+      initialized: true,
+    });
+  } else if (
+    event === 'SIGNED_IN' ||
+    event === 'TOKEN_REFRESHED' ||
+    event === 'USER_UPDATED'
+  ) {
     if (session?.user) {
       await useAuthStore.getState().checkSession();
     }

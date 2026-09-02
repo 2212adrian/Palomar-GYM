@@ -3,7 +3,10 @@
  * Utility to compress any image down to a specified target file size (in bytes)
  * using an adaptive HTML5 Canvas rescaling algorithm.
  */
-export const compressImage = (file: File, targetSizeBytes: number): Promise<File> => {
+export const compressImage = (
+  file: File,
+  targetSizeBytes: number
+): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -61,23 +64,34 @@ export const compressImage = (file: File, targetSizeBytes: number): Promise<File
             blob = await getBlobAtQuality(currentQuality);
           }
 
-          const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
+          const compressedFile = new File(
+            [blob],
+            file.name.replace(/\.[^/.]+$/, '.jpg'),
+            {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            }
+          );
 
           resolve(compressedFile);
         };
 
         executeAdaptiveCompression().catch(reject);
       };
-      img.onerror = () => reject(new Error('Failed to render loaded picture template'));
+      img.onerror = () =>
+        reject(new Error('Failed to render loaded picture template'));
     };
-    reader.onerror = () => reject(new Error('Failed to read selected image data stream'));
+    reader.onerror = () =>
+      reject(new Error('Failed to read selected image data stream'));
   });
 };
 
 // Helper function to safely paint composite layers
-const bgDrawImage = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) => {
+const bgDrawImage = (
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  w: number,
+  h: number
+) => {
   ctx.drawImage(img, 0, 0, w, h);
 };

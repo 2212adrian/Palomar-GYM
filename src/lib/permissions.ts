@@ -17,7 +17,9 @@ export async function getCameraPermissionStatus(): Promise<PermissionState> {
 
   try {
     if (navigator.permissions && navigator.permissions.query) {
-      const result = await navigator.permissions.query({ name: 'camera' as any });
+      const result = await navigator.permissions.query({
+        name: 'camera' as any,
+      });
       return result.state as PermissionState;
     }
   } catch {
@@ -25,7 +27,8 @@ export async function getCameraPermissionStatus(): Promise<PermissionState> {
   }
 
   const stored = localStorage.getItem('palomar_camera_perm');
-  if (stored === 'granted' || stored === 'denied') return stored as PermissionState;
+  if (stored === 'granted' || stored === 'denied')
+    return stored as PermissionState;
 
   return 'prompt';
 }
@@ -54,12 +57,15 @@ export async function requestCameraPermission(): Promise<PermissionState> {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     // Immediately stop tracks to release hardware
-    stream.getTracks().forEach(track => track.stop());
+    stream.getTracks().forEach((track) => track.stop());
     localStorage.setItem('palomar_camera_perm', 'granted');
     return 'granted';
   } catch (err: any) {
     console.warn('Camera permission request denied or error:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+    if (
+      err.name === 'NotAllowedError' ||
+      err.name === 'PermissionDeniedError'
+    ) {
       localStorage.setItem('palomar_camera_perm', 'denied');
       return 'denied';
     }
@@ -77,7 +83,11 @@ export async function requestNotificationPermission(): Promise<PermissionState> 
 
   try {
     const permission = await Notification.requestPermission();
-    return permission === 'granted' ? 'granted' : permission === 'denied' ? 'denied' : 'prompt';
+    return permission === 'granted'
+      ? 'granted'
+      : permission === 'denied'
+        ? 'denied'
+        : 'prompt';
   } catch (err) {
     console.warn('Notification permission request error:', err);
     return 'denied';
@@ -102,6 +112,6 @@ export async function promptInitialPermissionsOnLogin(): Promise<HardwarePermiss
 
   return {
     camera: updatedCam,
-    notification: updatedNotif
+    notification: updatedNotif,
   };
 }

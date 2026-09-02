@@ -2,9 +2,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, RotateCcw, Search, AlertCircle, Users, 
-  ChevronLeft, ChevronRight, CheckSquare, Square 
+import {
+  X,
+  RotateCcw,
+  Search,
+  AlertCircle,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -29,7 +36,7 @@ const CONSECUTIVE_GAP_LIMIT_MS = 1 * 60 * 1000;
 export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   isOpen,
   onClose,
-  onRestoreSuccess
+  onRestoreSuccess,
 }) => {
   const [deletedItems, setDeletedItems] = useState<DeletedMember[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,7 +52,9 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
       setDeletedItems(data || []);
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || 'Failed to load archived members from Recycle Bin.');
+      toast.error(
+        err.message || 'Failed to load archived members from Recycle Bin.'
+      );
     } finally {
       setLoading(false);
     }
@@ -71,7 +80,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     const now = new Date();
     const diffMs = purgeDate.getTime() - now.getTime();
 
-    if (diffMs <= 0) return "Purging...";
+    if (diffMs <= 0) return 'Purging...';
     const diffDays = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
     return `${diffDays}d left`;
   };
@@ -92,7 +101,9 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     let prevTime: number | null = null;
 
     return filteredItems.map((item, idx) => {
-      const currentTime = item.deleted_at ? new Date(item.deleted_at).getTime() : 0;
+      const currentTime = item.deleted_at
+        ? new Date(item.deleted_at).getTime()
+        : 0;
 
       if (idx > 0 && prevTime !== null && currentTime !== 0) {
         const diffMs = prevTime - currentTime;
@@ -126,12 +137,14 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
       if (times.length > 0) {
         const maxTime = Math.max(...times);
         const minTime = Math.min(...times);
-        const formatTime = (ms: number) => format(new Date(ms), 'MMM d, hh:mm a');
+        const formatTime = (ms: number) =>
+          format(new Date(ms), 'MMM d, hh:mm a');
 
         if (formatTime(maxTime) === formatTime(minTime)) {
           meta[groupId].label = `Batch at ${formatTime(maxTime)}`;
         } else {
-          meta[groupId].label = `Batch: ${formatTime(minTime)} - ${formatTime(maxTime)}`;
+          meta[groupId].label =
+            `Batch: ${formatTime(minTime)} - ${formatTime(maxTime)}`;
         }
       } else {
         meta[groupId].label = 'Consecutive Batch';
@@ -163,47 +176,57 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
 
       setSelectedIds([]);
       onRestoreSuccess();
-      toast.success(`Successfully restored ${selectedList.length} member(s) back to your directory.`);
+      toast.success(
+        `Successfully restored ${selectedList.length} member(s) back to your directory.`
+      );
       await fetchDeletedMembers();
     } catch (err: any) {
       console.error('Error executing database restoration:', err);
-      toast.error(err.message || 'Failed to complete member profile restoration.');
+      toast.error(
+        err.message || 'Failed to complete member profile restoration.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleRowSelect = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
   const isGroupFullySelected = (groupId: string) => {
     const groupItemIds = groupMeta[groupId]?.ids || [];
     if (groupItemIds.length === 0) return false;
-    return groupItemIds.every(id => selectedIds.includes(id));
+    return groupItemIds.every((id) => selectedIds.includes(id));
   };
 
   const handleGroupSelect = (groupId: string) => {
     const groupItemIds = groupMeta[groupId]?.ids || [];
     const allSelected = isGroupFullySelected(groupId);
-    
+
     if (allSelected) {
-      setSelectedIds(prev => prev.filter(id => !groupItemIds.includes(id)));
+      setSelectedIds((prev) => prev.filter((id) => !groupItemIds.includes(id)));
     } else {
-      setSelectedIds(prev => Array.from(new Set([...prev, ...groupItemIds])));
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...groupItemIds])));
     }
   };
 
   const handleToggleSelectAll = () => {
     const currentPageIds = paginatedItems.map((t: any) => t.id);
-    const allSelectedOnPage = currentPageIds.every(id => selectedIds.includes(id));
+    const allSelectedOnPage = currentPageIds.every((id) =>
+      selectedIds.includes(id)
+    );
 
     if (allSelectedOnPage) {
-      setSelectedIds(prev => prev.filter(id => !currentPageIds.includes(id)));
+      setSelectedIds((prev) =>
+        prev.filter((id) => !currentPageIds.includes(id))
+      );
     } else {
-      setSelectedIds(prev => Array.from(new Set([...prev, ...currentPageIds])));
+      setSelectedIds((prev) =>
+        Array.from(new Set([...prev, ...currentPageIds]))
+      );
     }
   };
 
@@ -216,12 +239,14 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     <div className="fixed inset-0 z-2000 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
-          <h3 className="font-heading tracking-widest uppercase">Member Recycle Bin</h3>
-          <button 
-  type="button" 
-  onClick={onClose} 
-  className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer"
->
+          <h3 className="font-heading tracking-widest uppercase">
+            Member Recycle Bin
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer"
+          >
             <X className="w-4.5 h-4.5" />
           </button>
         </div>
@@ -230,7 +255,9 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
           <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400 font-semibold">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
             <span>
-              <strong>Caution:</strong> Restorable profiles are kept for up to 30 days. Accounts here are locked and will be permanently deleted at 12:00 AM Manila Time.
+              <strong>Caution:</strong> Restorable profiles are kept for up to
+              30 days. Accounts here are locked and will be permanently deleted
+              at 12:00 AM Manila Time.
             </span>
           </div>
 
@@ -248,8 +275,8 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
               <span>Search Deletions...</span>
             </label>
             {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')} 
+              <button
+                onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-655 dark:hover:text-slate-205 text-xs font-bold border-none bg-transparent cursor-pointer animate-fade-in"
               >
                 CLEAR
@@ -264,7 +291,8 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                 disabled={loading}
                 className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50 border-none bg-transparent font-bold text-slate-500"
               >
-                {paginatedItems.length > 0 && paginatedItems.every((t: any) => selectedIds.includes(t.id)) ? (
+                {paginatedItems.length > 0 &&
+                paginatedItems.every((t: any) => selectedIds.includes(t.id)) ? (
                   <CheckSquare className="w-4 h-4 text-(--color-primary-light) shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 shrink-0" />
@@ -279,7 +307,10 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
             {loading ? (
               <div className="space-y-3">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl animate-pulse flex items-center justify-between gap-3">
+                  <div
+                    key={i}
+                    className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl animate-pulse flex items-center justify-between gap-3"
+                  >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-4.5 h-4.5 bg-slate-200 dark:bg-zinc-800 rounded shrink-0" />
                       <div className="w-10 h-10 bg-slate-200 dark:bg-zinc-800 rounded-lg shrink-0" />
@@ -324,7 +355,8 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                           </span>
                         </button>
                         <span className="text-[9px] text-slate-400 font-medium font-mono">
-                          ({groupMeta[item.groupId]?.ids.length} item{groupMeta[item.groupId]?.ids.length !== 1 && 's'})
+                          ({groupMeta[item.groupId]?.ids.length} item
+                          {groupMeta[item.groupId]?.ids.length !== 1 && 's'})
                         </span>
                       </div>
                     )}
@@ -332,13 +364,16 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                     <div
                       onClick={() => !loading && handleRowSelect(item.id)}
                       className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-  isSelected 
-    ? 'bg-blue-500/10 border-blue-500' 
-    : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
-} ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        isSelected
+                          ? 'bg-blue-500/10 border-blue-500'
+                          : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
+                      } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input
                             type="checkbox"
                             disabled={loading}
@@ -349,10 +384,10 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                         </div>
                         <div className="min-w-0 text-left flex items-center gap-3">
                           {item.avatar_url ? (
-                            <img 
-                              src={item.avatar_url} 
-                              alt={item.full_name} 
-                              className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70" 
+                            <img
+                              src={item.avatar_url}
+                              alt={item.full_name}
+                              className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
@@ -360,16 +395,18 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                             </div>
                           )}
                           <div className="min-w-0">
-                            <span className="font-bold block text-[11px] text-(--color-text) truncate">{item.full_name}</span>
+                            <span className="font-bold block text-[11px] text-(--color-text) truncate">
+                              {item.full_name}
+                            </span>
                             <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
                               {item.member_id} • {item.phone || 'No phone'}
                             </span>
                           </div>
                         </div>
                       </div>
-                      
-                      <div 
-                        className="flex items-center gap-2 shrink-0" 
+
+                      <div
+                        className="flex items-center gap-2 shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {daysRemaining && (
@@ -394,8 +431,12 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
               <div className="text-center py-12 text-slate-400 border border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center space-y-3">
                 <Users className="w-8 h-8 animate-pulse text-slate-505" />
                 <div>
-                  <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">No deletions found</h4>
-                  <p className="text-[10px] font-sans mt-0.5 text-slate-505">Recycle Bin is completely clear.</p>
+                  <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">
+                    No deletions found
+                  </h4>
+                  <p className="text-[10px] font-sans mt-0.5 text-slate-505">
+                    Recycle Bin is completely clear.
+                  </p>
                 </div>
               </div>
             )}
@@ -404,40 +445,56 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
           {totalItems > 0 && totalPages > 1 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-2 text-[10px] font-body">
               <span className="text-slate-500">
-                Showing <span className="font-semibold text-(--color-text)">{startIndex + 1}</span> to{' '}
-                <span className="font-semibold text-(--color-text)">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of{' '}
-                <span className="font-semibold text-(--color-text)">{totalItems}</span> entries
+                Showing{' '}
+                <span className="font-semibold text-(--color-text)">
+                  {startIndex + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-semibold text-(--color-text)">
+                  {Math.min(startIndex + itemsPerPage, totalItems)}
+                </span>{' '}
+                of{' '}
+                <span className="font-semibold text-(--color-text)">
+                  {totalItems}
+                </span>{' '}
+                entries
               </span>
 
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(prev - 1, 1))
+                  }
                   disabled={clampedPage === 1 || loading}
                   className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none cursor-pointer inline-flex items-center justify-center h-7 w-7 bg-transparent"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
 
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => setCurrentPage(page)}
-                    className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] disabled:opacity-50 border-none ${
-                      clampedPage === page
-                        ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
-                        : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800 bg-transparent'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (page) => (
+                    <button
+                      key={page}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => setCurrentPage(page)}
+                      className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] disabled:opacity-50 border-none ${
+                        clampedPage === page
+                          ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
+                          : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800 bg-transparent'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  )
+                )}
 
                 <button
                   type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
                   disabled={clampedPage === totalPages || loading}
                   className="p-1 border border-(--border-color) rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none cursor-pointer inline-flex items-center justify-center h-7 w-7 bg-transparent"
                 >
@@ -466,7 +523,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                 <button
                   type="button"
                   disabled={loading}
-                  onClick={() => handleBulkRestore(deletedItems.filter(t => selectedIds.includes(t.id)))}
+                  onClick={() =>
+                    handleBulkRestore(
+                      deletedItems.filter((t) => selectedIds.includes(t.id))
+                    )
+                  }
                   className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md font-black disabled:opacity-50 border-none animate-fade-in"
                 >
                   <RotateCcw className="w-4 h-4 shrink-0 animate-fade-in" />

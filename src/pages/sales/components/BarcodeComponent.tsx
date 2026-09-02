@@ -1,4 +1,3 @@
-
 // src/pages/sales/components/BarcodeComponent.tsx
 import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
@@ -15,9 +14,9 @@ interface BarcodeComponentProps {
 
 export const BarcodeComponent: React.FC<BarcodeComponentProps> = ({
   value,
-  width = 2,           // Strict integer module width (min 2px)
-  height = 45,          // Clear laser/camera scan height
-  margin = 10,          // 10X quiet zone (ISO/IEC 15417)
+  width = 2, // Strict integer module width (min 2px)
+  height = 45, // Clear laser/camera scan height
+  margin = 10, // 10X quiet zone (ISO/IEC 15417)
   fontSize = 12,
   displayValue = false,
   className = '',
@@ -47,8 +46,8 @@ export const BarcodeComponent: React.FC<BarcodeComponentProps> = ({
   if (!value) return null;
 
   return (
-    <svg 
-      ref={svgRef} 
+    <svg
+      ref={svgRef}
       className={`block max-w-full h-auto select-none ${className}`}
       style={{ shapeRendering: 'crispEdges' }}
     />

@@ -1,5 +1,3 @@
-
-
 // src/pages/sales/Products.tsx
 import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -33,8 +31,18 @@ import { ProductRecoveryModal } from './components/ProductRecycleBin';
 // Shared Layout Header Context
 import { HeaderActionsContext } from '../../routes';
 
-import { 
-  Plus, Pencil, Trash2, Layers, Package, PackageX, Search, X, Printer, Loader2, RotateCcw
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Layers,
+  Package,
+  PackageX,
+  Search,
+  X,
+  Printer,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface Product {
@@ -51,7 +59,7 @@ interface Product {
   deleted_by: string | null;
   created_at: string;
   updated_at: string;
-  
+
   manufacturer_barcode?: string | null;
   manufacturer_source?: string;
 }
@@ -60,11 +68,13 @@ interface ProductsProps {
   hideHeaderActions?: boolean;
 }
 
-export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false }) => {
+export const Products: React.FC<ProductsProps> = ({
+  hideHeaderActions = false,
+}) => {
   const { user } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
-  
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -72,11 +82,11 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
     };
   }, []);
 
-  const isAdmin = 
-    user?.app_metadata?.role === 'Admin' || 
-    user?.app_metadata?.role === 'admin' || 
-    user?.user_metadata?.role === 'Admin' || 
-    user?.user_metadata?.role === 'admin' || 
+  const isAdmin =
+    user?.app_metadata?.role === 'Admin' ||
+    user?.app_metadata?.role === 'admin' ||
+    user?.user_metadata?.role === 'Admin' ||
+    user?.user_metadata?.role === 'admin' ||
     isSuperAdmin(user?.email);
 
   // Core Listings States
@@ -84,22 +94,24 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
-  
+
   // Navigation & Modals Toggle States
   const [showFormModal, setShowFormModal] = useState(false);
-  const [showPrintModal, setShowPrintModal] = useState(false); 
-  const [showBulkEditModal, setShowBulkEditModal] = useState(false); 
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false); 
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(
+    null
+  );
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  
+
   // Selection States for Bulk actions
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
@@ -114,10 +126,11 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   // Minimal background tracker states
   const [formManufacturerBarcode, setFormManufacturerBarcode] = useState('');
-  const [formManufacturerSource, setFormManufacturerSource] = useState('manual');
+  const [formManufacturerSource, setFormManufacturerSource] =
+    useState('manual');
 
   const { setActions } = useContext(HeaderActionsContext);
-  
+
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -133,7 +146,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       }
     } catch {
       if (isMountedRef.current) {
-        console.warn('INTERNET_ERR: Could not load your product items. Please Check your Connection.');
+        console.warn(
+          'INTERNET_ERR: Could not load your product items. Please Check your Connection.'
+        );
       }
     } finally {
       if (isMountedRef.current) {
@@ -142,19 +157,32 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
     }
   };
 
-  const stats = useMemo(() => ({
-    total: products.length,
-    active: products.filter(p => p.status === 'Active').length,
-    inStock: products.filter(p => !p.has_stock_limit || p.stock_quantity > 0).length,
-    outOfStock: products.filter(p => p.has_stock_limit && p.stock_quantity === 0).length,
-    lowStock: products.filter(p => p.has_stock_limit && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert && p.stock_quantity > 0).length
-  }), [products]);
+  const stats = useMemo(
+    () => ({
+      total: products.length,
+      active: products.filter((p) => p.status === 'Active').length,
+      inStock: products.filter(
+        (p) => !p.has_stock_limit || p.stock_quantity > 0
+      ).length,
+      outOfStock: products.filter(
+        (p) => p.has_stock_limit && p.stock_quantity === 0
+      ).length,
+      lowStock: products.filter(
+        (p) =>
+          p.has_stock_limit &&
+          p.low_stock_alert !== null &&
+          p.stock_quantity <= p.low_stock_alert &&
+          p.stock_quantity > 0
+      ).length,
+    }),
+    [products]
+  );
 
   // Broadcast Products Telemetry to Topbar
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('products-kpi-update', {
-        detail: stats
+        detail: stats,
       })
     );
   }, [stats]);
@@ -189,26 +217,34 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           if (eventType === 'INSERT') {
             setProducts((prev) => {
               if (prev.some((p) => p.id === newRecord.id)) return prev;
-              return [...prev, newRecord as Product].sort((a, b) => a.product_name.localeCompare(b.product_name));
+              return [...prev, newRecord as Product].sort((a, b) =>
+                a.product_name.localeCompare(b.product_name)
+              );
             });
           } else if (eventType === 'UPDATE') {
             const updated = newRecord as Product;
-            
+
             if (updated.deleted_at) {
               setProducts((prev) => prev.filter((p) => p.id !== updated.id));
-              setSelectedProductIds((prev) => prev.filter((id) => id !== updated.id));
+              setSelectedProductIds((prev) =>
+                prev.filter((id) => id !== updated.id)
+              );
             } else {
               setProducts((prev) => {
-                const updatedList = prev.some(p => p.id === updated.id)
+                const updatedList = prev.some((p) => p.id === updated.id)
                   ? prev.map((p) => (p.id === updated.id ? updated : p))
                   : [...prev, updated];
-                return updatedList.sort((a, b) => a.product_name.localeCompare(b.product_name));
+                return updatedList.sort((a, b) =>
+                  a.product_name.localeCompare(b.product_name)
+                );
               });
             }
           } else if (eventType === 'DELETE') {
             const targetId = oldRecord.id;
             setProducts((prev) => prev.filter((p) => p.id !== targetId));
-            setSelectedProductIds((prev) => prev.filter((id) => id !== targetId));
+            setSelectedProductIds((prev) =>
+              prev.filter((id) => id !== targetId)
+            );
           }
         }
       )
@@ -221,12 +257,15 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   // Dispatch selection changes to custom window event so parent component can hide header actions
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('product-selection-change', { detail: selectedProductIds.length }));
+    window.dispatchEvent(
+      new CustomEvent('product-selection-change', {
+        detail: selectedProductIds.length,
+      })
+    );
   }, [selectedProductIds]);
 
   const location = useLocation();
 
-  
   useEffect(() => {
     if (hideHeaderActions) return;
 
@@ -272,8 +311,14 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       clearTimeout(timer);
       setActions(null);
     };
-  }, [isAdmin, selectedProductIds.length, location.pathname, setActions, hideHeaderActions]);
-  
+  }, [
+    isAdmin,
+    selectedProductIds.length,
+    location.pathname,
+    setActions,
+    hideHeaderActions,
+  ]);
+
   // Auto-highlight product from notification redirection
   useEffect(() => {
     if (location.state?.highlightProductId && products.length > 0) {
@@ -301,13 +346,13 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       const compressedFile = await compressImage(file, 10 * 1024);
       const fileExt = 'jpg';
       const fileName = `products/${Math.random().toString(36).substring(2)}.${fileExt}`;
-      
+
       const { error } = await supabase.storage
         .from('avatars')
-        .upload(fileName, compressedFile, { 
-          contentType: 'image/jpeg', 
-          cacheControl: '3600', 
-          upsert: true 
+        .upload(fileName, compressedFile, {
+          contentType: 'image/jpeg',
+          cacheControl: '3600',
+          upsert: true,
         });
 
       if (error) throw error;
@@ -315,7 +360,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       const { data: urlData } = supabase.storage
         .from('avatars')
         .getPublicUrl(fileName);
-      
+
       setFormImageUrl(urlData.publicUrl);
       toast.success(`Image processed successfully.`);
     } catch {
@@ -371,15 +416,19 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
         if (error) throw error;
 
-        toast.success(`Successfully saved ${bulkItems.length} products to inventory.`);
+        toast.success(
+          `Successfully saved ${bulkItems.length} products to inventory.`
+        );
 
-        const itemsList = bulkItems.map(item => `\t- ${item.product_name} (₱${item.selling_price.toFixed(2)})`).join('\n');
+        const itemsList = bulkItems
+          .map(
+            (item) =>
+              `\t- ${item.product_name} (₱${item.selling_price.toFixed(2)})`
+          )
+          .join('\n');
         const auditDetails = `Successfully listed ${bulkItems.length} new products to your store catalog:\n\n${itemsList}`;
 
-        await logAudit(
-          'BULK_PRODUCTS_CREATED',
-          auditDetails
-        );
+        await logAudit('BULK_PRODUCTS_CREATED', auditDetails);
       } else {
         const nameClean = formName.trim();
         const priceNum = parseFloat(formPrice);
@@ -394,7 +443,10 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
         }
 
         const stockQty = formHasStockLimit ? parseInt(formStockQuantity) : 0;
-        const alertQty = (formHasStockLimit && formLowStockAlert.trim() !== '') ? parseInt(formLowStockAlert) : null;
+        const alertQty =
+          formHasStockLimit && formLowStockAlert.trim() !== ''
+            ? parseInt(formLowStockAlert)
+            : null;
 
         const productPayload = {
           product_name: nameClean,
@@ -406,29 +458,39 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           image_url: formImageUrl.trim() || null,
           manufacturer_barcode: formManufacturerBarcode.trim() || null,
           manufacturer_source: formManufacturerSource,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         };
 
         if (isEditing && selectedProductId) {
-          const targetProduct = products.find(p => p.id === selectedProductId);
+          const targetProduct = products.find(
+            (p) => p.id === selectedProductId
+          );
           const changes: string[] = [];
           if (targetProduct) {
             if (targetProduct.product_name !== nameClean) {
-              changes.push(`Name: "${targetProduct.product_name}" -> "${nameClean}"`);
+              changes.push(
+                `Name: "${targetProduct.product_name}" -> "${nameClean}"`
+              );
             }
             const oldPrice = Number(targetProduct.selling_price || 0);
             if (oldPrice !== priceNum) {
-              changes.push(`Price: ₱${oldPrice.toFixed(2)} -> ₱${priceNum.toFixed(2)}`);
+              changes.push(
+                `Price: ₱${oldPrice.toFixed(2)} -> ₱${priceNum.toFixed(2)}`
+              );
             }
             const oldStock = Number(targetProduct.stock_quantity ?? 0);
             if (targetProduct.has_stock_limit !== formHasStockLimit) {
-              changes.push(`Stock Type: ${targetProduct.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${formHasStockLimit ? 'Limited' : 'Unlimited'}`);
+              changes.push(
+                `Stock Type: ${targetProduct.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${formHasStockLimit ? 'Limited' : 'Unlimited'}`
+              );
             } else if (formHasStockLimit && oldStock !== stockQty) {
               changes.push(`Stock Count: ${oldStock} -> ${stockQty}`);
             }
             const oldAlert = targetProduct.low_stock_alert ?? null;
             if (oldAlert !== alertQty) {
-              changes.push(`Low Stock Alert: ${oldAlert ?? 'None'} -> ${alertQty ?? 'None'}`);
+              changes.push(
+                `Low Stock Alert: ${oldAlert ?? 'None'} -> ${alertQty ?? 'None'}`
+              );
             }
             if (targetProduct.status !== formStatus) {
               changes.push(`Status: ${targetProduct.status} -> ${formStatus}`);
@@ -443,21 +505,23 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           if (error) throw error;
           toast.success('Product updated.');
 
-          const auditDetails = changes.length > 0
-            ? `Updated product "${nameClean}": ${changes.join(', ')}`
-            : `Updated product details for "${nameClean}".`;
+          const auditDetails =
+            changes.length > 0
+              ? `Updated product "${nameClean}": ${changes.join(', ')}`
+              : `Updated product details for "${nameClean}".`;
 
           try {
-            await logAudit(
-              'PRODUCT_UPDATED',
-              auditDetails,
-              selectedProductId
-            );
+            await logAudit('PRODUCT_UPDATED', auditDetails, selectedProductId);
           } catch (auditError) {
-            console.warn('Background audit logging failed silently:', auditError);
+            console.warn(
+              'Background audit logging failed silently:',
+              auditError
+            );
           }
-          
-          setSelectedProductIds(prev => prev.filter(id => id !== selectedProductId));
+
+          setSelectedProductIds((prev) =>
+            prev.filter((id) => id !== selectedProductId)
+          );
         } else {
           const { data, error } = await supabase
             .from('products')
@@ -487,12 +551,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   const handleDeleteProduct = async (id: string) => {
     try {
-      const targetProduct = products.find(p => p.id === id);
+      const targetProduct = products.find((p) => p.id === id);
 
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('products').delete().eq('id', id);
 
       if (error) throw error;
       toast.success('Product moved to Recycle Bin.');
@@ -518,8 +579,8 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
     if (selectedProductIds.length === 0) return;
 
     const targetTitles = products
-      .filter(p => selectedProductIds.includes(p.id))
-      .map(p => p.product_name)
+      .filter((p) => selectedProductIds.includes(p.id))
+      .map((p) => p.product_name)
       .join(', ');
 
     try {
@@ -549,10 +610,12 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   const filteredProducts = products.filter((p) => {
     const query = searchQuery.toLowerCase().trim();
-    const matchesSearch = query === '' || 
+    const matchesSearch =
+      query === '' ||
       p.product_name.toLowerCase().includes(query) ||
       p.barcode_id.toLowerCase().includes(query) ||
-      (p.manufacturer_barcode && p.manufacturer_barcode.toLowerCase().includes(query));
+      (p.manufacturer_barcode &&
+        p.manufacturer_barcode.toLowerCase().includes(query));
 
     if (!matchesSearch) return false;
 
@@ -560,20 +623,26 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
     if (selectedStatusFilter === 'active') return p.status === 'Active';
     if (selectedStatusFilter === 'inactive') return p.status === 'Inactive';
     if (selectedStatusFilter === 'low_stock') {
-      return p.has_stock_limit && p.low_stock_alert !== null && p.stock_quantity <= p.low_stock_alert;
+      return (
+        p.has_stock_limit &&
+        p.low_stock_alert !== null &&
+        p.stock_quantity <= p.low_stock_alert
+      );
     }
     if (selectedStatusFilter === 'unlimited') return !p.has_stock_limit;
     return true;
   });
 
-  const isAllSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id));
+  const isAllSelected =
+    filteredProducts.length > 0 &&
+    filteredProducts.every((p) => selectedProductIds.includes(p.id));
   const isSomeSelected = selectedProductIds.length > 0 && !isAllSelected;
 
   const handleToggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedProductIds([]);
     } else {
-      setSelectedProductIds(filteredProducts.map(p => p.id));
+      setSelectedProductIds(filteredProducts.map((p) => p.id));
     }
   };
 
@@ -591,9 +660,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
   };
 
   const handleRowClick = (product: Product) => {
-    setSelectedProductIds(prev =>
+    setSelectedProductIds((prev) =>
       prev.includes(product.id)
-        ? prev.filter(id => id !== product.id)
+        ? prev.filter((id) => id !== product.id)
         : [...prev, product.id]
     );
   };
@@ -619,22 +688,28 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       ) : null,
       headerClassName: 'w-12 text-center',
       cellClassName: 'text-center p-0',
-      render: (item) => isSelectionActive ? (
-        <label className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={selectedProductIds.includes(item.id)}
-            onChange={(e) => {
-              if (e.target.checked) {
-                setSelectedProductIds(prev => [...prev, item.id]);
-              } else {
-                setSelectedProductIds(prev => prev.filter(id => id !== item.id));
-              }
-            }}
-            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
-          />
-        </label>
-      ) : null
+      render: (item) =>
+        isSelectionActive ? (
+          <label
+            className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={selectedProductIds.includes(item.id)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedProductIds((prev) => [...prev, item.id]);
+                } else {
+                  setSelectedProductIds((prev) =>
+                    prev.filter((id) => id !== item.id)
+                  );
+                }
+              }}
+              className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
+            />
+          </label>
+        ) : null,
     },
     {
       key: 'barcode_id',
@@ -653,14 +728,13 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
           {/* High-Visibility Downward Barcode Preview Tooltip */}
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl pointer-events-none min-w-[220px] max-w-[280px] animate-scale-up">
-            
             {/* Top Arrow Indicator */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-1px] border-[6px] border-transparent border-b-white dark:border-b-slate-900" />
 
             {/* Crisp Barcode Canvas/SVG with Strict Integer Module Scaling & Quiet Zones */}
             <div className="bg-white p-3 rounded-xl border border-slate-100 dark:border-slate-800 w-full flex items-center justify-center overflow-hidden">
-              <BarcodeComponent 
-                value={item.barcode_id} 
+              <BarcodeComponent
+                value={item.barcode_id}
                 width={2}
                 height={50}
                 margin={0}
@@ -677,10 +751,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
                 {item.barcode_id}
               </p>
             </div>
-
           </div>
         </div>
-      )
+      ),
     },
     {
       key: 'product_name',
@@ -689,19 +762,21 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       render: (item) => (
         <div className="flex items-center gap-3 py-1">
           {item.image_url ? (
-            <img 
-              src={item.image_url} 
-              alt={item.product_name} 
-              className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${item.status === 'Inactive' ? 'grayscale opacity-75' : ''}`} 
+            <img
+              src={item.image_url}
+              alt={item.product_name}
+              className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${item.status === 'Inactive' ? 'grayscale opacity-75' : ''}`}
             />
           ) : (
             <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-lg shadow-inner shrink-0">
               {item.product_name[0]}
             </div>
           )}
-          <span className="font-semibold tracking-wide block text-sm">{item.product_name}</span>
+          <span className="font-semibold tracking-wide block text-sm">
+            {item.product_name}
+          </span>
         </div>
-      )
+      ),
     },
     {
       key: 'selling_price',
@@ -709,15 +784,20 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       sortable: true,
       render: (item) => (
         <span className="font-mono font-bold text-xs opacity-90">
-          ₱{Number(item.selling_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          ₱
+          {Number(item.selling_price).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
         </span>
-      )
+      ),
     },
     {
       key: 'stock_quantity',
       header: 'Inventory Stock',
       sortable: true,
-      sortValue: (item) => item.has_stock_limit ? item.stock_quantity : 999999,
+      sortValue: (item) =>
+        item.has_stock_limit ? item.stock_quantity : 999999,
       render: (item) => {
         if (!item.has_stock_limit) {
           return (
@@ -728,7 +808,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           );
         }
         const isOut = item.stock_quantity === 0;
-        const isLow = item.low_stock_alert !== null && item.stock_quantity <= item.low_stock_alert;
+        const isLow =
+          item.low_stock_alert !== null &&
+          item.stock_quantity <= item.low_stock_alert;
         if (isOut) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-[10px] text-red-500 border border-red-500/20 rounded-full font-bold tracking-wider uppercase">
@@ -751,7 +833,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
             {item.stock_quantity} UNITS
           </span>
         );
-      }
+      },
     },
     {
       key: 'status',
@@ -772,7 +854,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
             HIDDEN
           </span>
         );
-      }
+      },
     },
     {
       key: 'actions',
@@ -780,14 +862,19 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       headerClassName: 'text-right justify-end',
       cellClassName: 'text-right py-1',
       render: (item) => {
-        if (!isAdmin) return <span className="text-xs text-slate-400 dark:text-slate-500 font-bold">View Only</span>;
-        
+        if (!isAdmin)
+          return (
+            <span className="text-xs text-slate-400 dark:text-slate-500 font-bold">
+              View Only
+            </span>
+          );
+
         const isSelected = selectedProductIds.includes(item.id);
         if (isSelected) return null;
 
         return (
-          <div 
-            className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150" 
+          <div
+            className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Edit Button */}
@@ -813,20 +900,20 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
             </button>
           </div>
         );
-      }
-    }
+      },
+    },
   ];
 
-  const printableItems: PrintableItem[] = products.map(p => ({
+  const printableItems: PrintableItem[] = products.map((p) => ({
     id: p.id,
     barcode_id: p.barcode_id,
     product_name: p.product_name,
-    selling_price: p.selling_price
+    selling_price: p.selling_price,
   }));
 
   const selectedProductsForBulkEdit = products
-    .filter(p => selectedProductIds.includes(p.id))
-    .map(p => ({
+    .filter((p) => selectedProductIds.includes(p.id))
+    .map((p) => ({
       id: p.id,
       barcode_id: p.barcode_id,
       product_name: p.product_name,
@@ -840,12 +927,11 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
   return (
     <div className="space-y-6">
-      
       {/* Search and Status Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          
+
           <input
             type="text"
             value={searchQuery}
@@ -866,7 +952,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
         </div>
 
         <div className="flex items-center gap-2 justify-between">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Filter:
+          </span>
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
@@ -882,16 +970,17 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       </div>
 
       {/* Bulk actions sticky pin bar */}
-      {selectedProductIds.length > 0 && createPortal(
-        <ProductBulkActions 
-          selectedCount={selectedProductIds.length}
-          onClear={() => setSelectedProductIds([])}
-          onPrint={() => setShowPrintModal(true)} 
-          onBulkEdit={handleBulkEditClick} 
-          onBulkDelete={() => setShowBulkDeleteModal(true)} 
-        />,
-        document.body
-      )}
+      {selectedProductIds.length > 0 &&
+        createPortal(
+          <ProductBulkActions
+            selectedCount={selectedProductIds.length}
+            onClear={() => setSelectedProductIds([])}
+            onPrint={() => setShowPrintModal(true)}
+            onBulkEdit={handleBulkEditClick}
+            onBulkDelete={() => setShowBulkDeleteModal(true)}
+          />,
+          document.body
+        )}
 
       {/* Products Table & Mobile Cards */}
       {loading ? (
@@ -909,7 +998,9 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
             <PackageX className="w-8 h-8" />
           </div>
           <div className="space-y-1">
-            <h3 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">No products found</h3>
+            <h3 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">
+              No products found
+            </h3>
             <p className="text-xs text-slate-455 max-w-xs mx-auto leading-relaxed">
               No items match your active search configurations.
             </p>
@@ -919,18 +1010,21 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
         <>
           {/* MOBILE VIEW */}
           <div className="space-y-3 md:hidden">
-            
             {/* Select All Row on Mobile when Multi-Select Active */}
             {isSelectionActive && (
               <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
-                <label 
+                <label
                   className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
                   onClick={() => {
-                    const isAllSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id));
+                    const isAllSelected =
+                      filteredProducts.length > 0 &&
+                      filteredProducts.every((p) =>
+                        selectedProductIds.includes(p.id)
+                      );
                     if (isAllSelected) {
                       setSelectedProductIds([]);
                     } else {
-                      setSelectedProductIds(filteredProducts.map(p => p.id));
+                      setSelectedProductIds(filteredProducts.map((p) => p.id));
                     }
                   }}
                 >
@@ -938,16 +1032,29 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
                     type="checkbox"
                     ref={(el) => {
                       if (el) {
-                        const isAllSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id));
-                        el.indeterminate = selectedProductIds.length > 0 && !isAllSelected;
+                        const isAllSelected =
+                          filteredProducts.length > 0 &&
+                          filteredProducts.every((p) =>
+                            selectedProductIds.includes(p.id)
+                          );
+                        el.indeterminate =
+                          selectedProductIds.length > 0 && !isAllSelected;
                       }
                     }}
-                    checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedProductIds.includes(p.id))}
+                    checked={
+                      filteredProducts.length > 0 &&
+                      filteredProducts.every((p) =>
+                        selectedProductIds.includes(p.id)
+                      )
+                    }
                     onChange={() => {}}
                     className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
                   />
                   <span className="text-xs font-bold text-(--color-text)">
-                    Selected Products <span className="font-mono text-slate-400 font-normal">({selectedProductIds.length}/{filteredProducts.length})</span>
+                    Selected Products{' '}
+                    <span className="font-mono text-slate-400 font-normal">
+                      ({selectedProductIds.length}/{filteredProducts.length})
+                    </span>
                   </span>
                 </label>
 
@@ -966,18 +1073,20 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
               {filteredProducts.map((product) => {
                 const isSelected = selectedProductIds.includes(product.id);
                 const isHidden = product.status === 'Inactive';
-                
+
                 return (
-                  <div 
+                  <div
                     key={product.id}
                     onClick={() => {
-                      setSelectedProductIds(prev =>
-                        prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
+                      setSelectedProductIds((prev) =>
+                        prev.includes(product.id)
+                          ? prev.filter((id) => id !== product.id)
+                          : [...prev, product.id]
                       );
                     }}
                     className={`p-4 border rounded-2xl relative flex flex-col gap-3 transition-all duration-150 cursor-pointer ${
-                      isSelected 
-                        ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500 shadow-sm' 
+                      isSelected
+                        ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500 shadow-sm'
                         : isHidden
                           ? 'bg-slate-200/50 dark:bg-neutral-900/40 opacity-60 text-slate-455 dark:text-slate-500 border-(--border-color)'
                           : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-slate-700'
@@ -985,26 +1094,37 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
                   >
                     <div className="flex justify-between items-center">
                       {isSelectionActive ? (
-                        <label className="flex items-center gap-2 cursor-pointer py-1.5 pr-4 min-h-[36px]" onClick={(e) => e.stopPropagation()}>
+                        <label
+                          className="flex items-center gap-2 cursor-pointer py-1.5 pr-4 min-h-[36px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => {
-                              setSelectedProductIds(prev =>
-                                prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
+                              setSelectedProductIds((prev) =>
+                                prev.includes(product.id)
+                                  ? prev.filter((id) => id !== product.id)
+                                  : [...prev, product.id]
                               );
                             }}
                             className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73]"
                           />
-                          <span className="text-[10px] font-bold uppercase select-none">Select</span>
+                          <span className="text-[10px] font-bold uppercase select-none">
+                            Select
+                          </span>
                         </label>
                       ) : (
-                        <div className="w-1" /> 
+                        <div className="w-1" />
                       )}
-                      
-                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                        product.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-500/10 text-slate-455'
-                      }`}>
+
+                      <span
+                        className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                          product.status === 'Active'
+                            ? 'bg-emerald-500/10 text-emerald-400'
+                            : 'bg-slate-500/10 text-slate-455'
+                        }`}
+                      >
                         {product.status === 'Active' ? 'VISIBLE' : 'HIDDEN'}
                       </span>
                     </div>
@@ -1012,31 +1132,35 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
                     <div className="flex items-center justify-between gap-3 min-h-12 text-xs font-semibold">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         {product.image_url ? (
-                          <img 
-                            src={product.image_url} 
-                            alt={product.product_name} 
-                            className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${isHidden ? 'grayscale opacity-75' : ''}`} 
+                          <img
+                            src={product.image_url}
+                            alt={product.product_name}
+                            className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${isHidden ? 'grayscale opacity-75' : ''}`}
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0">
                             {product.product_name[0]}
                           </div>
                         )}
-                        
+
                         <div className="min-w-0 flex-1">
-                          <h4 className="font-semibold text-sm truncate leading-snug">{product.product_name}</h4>
-                          <p className="font-mono font-bold text-emerald-500 text-sm mt-0.5 leading-none">₱{product.selling_price.toFixed(2)}</p>
+                          <h4 className="font-semibold text-sm truncate leading-snug">
+                            {product.product_name}
+                          </h4>
+                          <p className="font-mono font-bold text-emerald-500 text-sm mt-0.5 leading-none">
+                            ₱{product.selling_price.toFixed(2)}
+                          </p>
                         </div>
                       </div>
 
                       {isSelected && (
                         <div className="bg-white p-2 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center animate-scale-up">
-                          <BarcodeComponent 
-                            value={product.barcode_id} 
-                            width={2} 
-                            height={36} 
-                            margin={8} 
-                            displayValue={false} 
+                          <BarcodeComponent
+                            value={product.barcode_id}
+                            width={2}
+                            height={36}
+                            margin={8}
+                            displayValue={false}
                           />
                         </div>
                       )}
@@ -1044,60 +1168,72 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
                     <div className="grid grid-cols-2 gap-2 border-t border-(--border-color) pt-2 text-[11px] leading-none">
                       <div className="space-y-1">
-                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">Stock Status</span>
+                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">
+                          Stock Status
+                        </span>
                         <span className="font-bold inline-block">
                           {!product.has_stock_limit ? (
                             <span className="text-blue-400">UNLIMITED</span>
                           ) : product.stock_quantity === 0 ? (
                             <span className="text-red-500">OUT OF STOCK</span>
                           ) : (
-                            <span className="text-slate-350">{product.stock_quantity} UNITS</span>
+                            <span className="text-slate-350">
+                              {product.stock_quantity} UNITS
+                            </span>
                           )}
                         </span>
                       </div>
-                      
+
                       <div className="space-y-1 text-right">
-                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">Code Number</span>
+                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">
+                          Code Number
+                        </span>
                         <span className="font-mono font-bold text-slate-400 dark:text-slate-300 inline-block">
                           {product.barcode_id}
                           {product.manufacturer_barcode && (
-                            <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-normal mt-1">MFG: {product.manufacturer_barcode}</span>
+                            <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-normal mt-1">
+                              MFG: {product.manufacturer_barcode}
+                            </span>
                           )}
                         </span>
                       </div>
                     </div>
 
-                    {isAdmin && isSelected && selectedProductIds.length === 1 && (
-                      <div 
-                        className="flex gap-2 mt-1 pt-2 border-t border-(--border-color) animate-slide-up"
-                        onClick={(e) => e.stopPropagation()} 
-                      >
-                        <button
-                          onClick={() => handleEditClick(product)}
-                          className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
+                    {isAdmin &&
+                      isSelected &&
+                      selectedProductIds.length === 1 && (
+                        <div
+                          className="flex gap-2 mt-1 pt-2 border-t border-(--border-color) animate-slide-up"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit Item
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(product.id)}
-                          className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Remove
-                        </button>
-                        
-                        <button
-                          onClick={() => {
-                            setSelectedProductIds(prev => prev.filter(id => id !== product.id));
-                          }}
-                          className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
-                          title="Close options"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
+                          <button
+                            onClick={() => handleEditClick(product)}
+                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit Item
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(product.id)}
+                            className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedProductIds((prev) =>
+                                prev.filter((id) => id !== product.id)
+                              );
+                            }}
+                            className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
+                            title="Close options"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                   </div>
                 );
               })}
@@ -1112,7 +1248,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
               itemsPerPage={itemsPerPage}
               loading={false}
               getRowClassName={getRowStyle}
-              onRowClick={handleRowClick} 
+              onRowClick={handleRowClick}
             />
           </div>
 
@@ -1136,7 +1272,7 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
 
       {/* Create / Edit Form Modal */}
       {showFormModal && (
-        <ProductFormModal 
+        <ProductFormModal
           isEditing={isEditing}
           formName={formName}
           setFormName={setFormName}
@@ -1165,149 +1301,58 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
           onFileUpload={handleFileUpload}
           onSave={handleSaveProduct}
           onClose={() => setShowFormModal(false)}
-          existingProducts={products} 
-          editingProductId={selectedProductId} 
+          existingProducts={products}
+          editingProductId={selectedProductId}
         />
       )}
 
       {/* Destructive Delete Confirm Dialog */}
-      {deleteConfirmId && createPortal((() => {
-        const productToDelete = products.find(p => p.id === deleteConfirmId);
-        if (!productToDelete) return null;
-        return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in text-xs text-(--color-text)">
-            <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up">
-              
-              <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
-                <Trash2 className="w-6 h-6 animate-bounce" />
-              </div>
-
-              <div className="space-y-1">
-                <h4 className="font-heading text-sm tracking-wider uppercase text-red-500">
-                  Confirm Deletion
-                </h4>
-                <p className="text-slate-455 text-[11px] font-medium leading-relaxed font-sans">
-                  You are about to move this item to your products recycle bin. You can recover it from the Recycle Bin within 30 days.
-                </p>
-              </div>
-
-              <div className="p-4 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner">
-                {productToDelete.image_url ? (
-                  <img 
-                    src={productToDelete.image_url} 
-                    alt={productToDelete.product_name} 
-                    className="w-16 h-16 rounded-xl object-cover border border-(--border-color) shadow-sm"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-lg uppercase shadow-inner">
-                    {productToDelete.product_name[0]}
+      {deleteConfirmId &&
+        createPortal(
+          (() => {
+            const productToDelete = products.find(
+              (p) => p.id === deleteConfirmId
+            );
+            if (!productToDelete) return null;
+            return (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in text-xs text-(--color-text)">
+                <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up">
+                  <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                    <Trash2 className="w-6 h-6 animate-bounce" />
                   </div>
-                )}
-                
-                <div className="min-w-0 flex-1 space-y-1">
-                  <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block leading-none">Catalog Item</span>
-                  <h5 className="font-extrabold text-sm truncate leading-snug text-(--color-text)">
-                    {productToDelete.product_name}
-                  </h5>
-                  
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 text-[10px]">
-                    <span className="font-mono font-bold text-slate-455">
-                      {productToDelete.barcode_id}
-                    </span>
-                    <span className="text-slate-500">•</span>
-                    <span className="font-semibold text-emerald-500">
-                      ₱{productToDelete.selling_price.toFixed(2)}
-                    </span>
+
+                  <div className="space-y-1">
+                    <h4 className="font-heading text-sm tracking-wider uppercase text-red-500">
+                      Confirm Deletion
+                    </h4>
+                    <p className="text-slate-455 text-[11px] font-medium leading-relaxed font-sans">
+                      You are about to move this item to your products recycle
+                      bin. You can recover it from the Recycle Bin within 30
+                      days.
+                    </p>
                   </div>
-                </div>
-              </div>
 
-              <div className="flex items-center justify-center gap-2.5 pt-2">
-                <button
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 hover:text-slate-200 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-                >
-                  No, Cancel
-                </button>
-                <button
-                  onClick={() => handleDeleteProduct(productToDelete.id)}
-                  className="px-5 py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })(), document.body)}
-
-      {/* Barcode Print Workspace Modal */}
-      {showPrintModal && (
-        <BarcodePrintModal 
-          products={printableItems}
-          initialSelectedIds={selectedProductIds}
-          onClose={() => setShowPrintModal(false)}
-        />
-      )}
-
-      {/* Spreadsheet Bulk Editor Modal */}
-      {showBulkEditModal && (
-        <BulkEditModal 
-          isOpen={showBulkEditModal}
-          onClose={() => setShowBulkEditModal(false)}
-          selectedProducts={selectedProductsForBulkEdit}
-          onSaveSuccess={() => {
-            setSelectedProductIds([]);
-            fetchProducts();
-          }}
-        />
-      )}
-
-      {/* Bulk Deletion Confirmation Modal */}
-      {showBulkDeleteModal && createPortal(
-        <div className="fixed inset-0 z-10000 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
-          <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up text-xs text-(--color-text)">
-            
-            <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
-              <Trash2 className="w-6 h-6 animate-bounce" />
-            </div>
-
-            <div className="space-y-1">
-              <h4 className="font-heading text-sm tracking-wider uppercase text-red-500">
-                Confirm Deletion
-              </h4>
-              <p className="text-slate-455 text-[11px] font-medium leading-relaxed font-sans">
-                You are about to move these <strong>{selectedProductIds.length}</strong> selected products to your products recycle bin. You can restore them from the Recycle Bin within 30 days.
-              </p>
-            </div>
-
-            {/* Scrollable grid list of cards */}
-            <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 my-4">
-              {products
-                .filter(p => selectedProductIds.includes(p.id))
-                .map((productToDelete) => (
-                  <div 
-                    key={productToDelete.id} 
-                    className="p-3 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner"
-                  >
+                  <div className="p-4 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner">
                     {productToDelete.image_url ? (
-                      <img 
-                        src={productToDelete.image_url} 
-                        alt={productToDelete.product_name} 
-                        className="w-12 h-12 rounded-xl object-cover border border-(--border-color) shadow-sm"
+                      <img
+                        src={productToDelete.image_url}
+                        alt={productToDelete.product_name}
+                        className="w-16 h-16 rounded-xl object-cover border border-(--border-color) shadow-sm"
                       />
                     ) : (
-                      <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-heading text-lg uppercase shadow-inner">
+                      <div className="w-16 h-16 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-lg uppercase shadow-inner">
                         {productToDelete.product_name[0]}
                       </div>
                     )}
-                    
+
                     <div className="min-w-0 flex-1 space-y-1">
-                      <span className="text-[9px] font-heading font-black tracking-widest text-rose-500 uppercase block leading-none">Catalog Item</span>
-                      <h5 className="font-bold text-xs truncate leading-snug text-(--color-text)">
+                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block leading-none">
+                        Catalog Item
+                      </span>
+                      <h5 className="font-extrabold text-sm truncate leading-snug text-(--color-text)">
                         {productToDelete.product_name}
                       </h5>
+
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 text-[10px]">
                         <span className="font-mono font-bold text-slate-455">
                           {productToDelete.barcode_id}
@@ -1319,30 +1364,133 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
                       </div>
                     </div>
                   </div>
-                ))}
-            </div>
 
-            <div className="flex items-center justify-center gap-2.5 pt-2">
-              <button
-                onClick={() => setShowBulkDeleteModal(false)}
-                className="px-4 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 hover:text-slate-200 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
-              >
-                No, Cancel
-              </button>
-              <button
-                onClick={handleSaveBulkDelete}
-                disabled={saving}
-                className="px-5 py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
-              >
-                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Confirm Delete
-              </button>
-            </div>
+                  <div className="flex items-center justify-center gap-2.5 pt-2">
+                    <button
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="px-4 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 hover:text-slate-200 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                    >
+                      No, Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProduct(productToDelete.id)}
+                      className="px-5 py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
+                    >
+                      Confirm Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })(),
+          document.body
+        )}
 
-          </div>
-        </div>,
-        document.body
+      {/* Barcode Print Workspace Modal */}
+      {showPrintModal && (
+        <BarcodePrintModal
+          products={printableItems}
+          initialSelectedIds={selectedProductIds}
+          onClose={() => setShowPrintModal(false)}
+        />
       )}
+
+      {/* Spreadsheet Bulk Editor Modal */}
+      {showBulkEditModal && (
+        <BulkEditModal
+          isOpen={showBulkEditModal}
+          onClose={() => setShowBulkEditModal(false)}
+          selectedProducts={selectedProductsForBulkEdit}
+          onSaveSuccess={() => {
+            setSelectedProductIds([]);
+            fetchProducts();
+          }}
+        />
+      )}
+
+      {/* Bulk Deletion Confirmation Modal */}
+      {showBulkDeleteModal &&
+        createPortal(
+          <div className="fixed inset-0 z-10000 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 text-center space-y-5 animate-scale-up text-xs text-(--color-text)">
+              <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                <Trash2 className="w-6 h-6 animate-bounce" />
+              </div>
+
+              <div className="space-y-1">
+                <h4 className="font-heading text-sm tracking-wider uppercase text-red-500">
+                  Confirm Deletion
+                </h4>
+                <p className="text-slate-455 text-[11px] font-medium leading-relaxed font-sans">
+                  You are about to move these{' '}
+                  <strong>{selectedProductIds.length}</strong> selected products
+                  to your products recycle bin. You can restore them from the
+                  Recycle Bin within 30 days.
+                </p>
+              </div>
+
+              {/* Scrollable grid list of cards */}
+              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 my-4">
+                {products
+                  .filter((p) => selectedProductIds.includes(p.id))
+                  .map((productToDelete) => (
+                    <div
+                      key={productToDelete.id}
+                      className="p-3 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner"
+                    >
+                      {productToDelete.image_url ? (
+                        <img
+                          src={productToDelete.image_url}
+                          alt={productToDelete.product_name}
+                          className="w-12 h-12 rounded-xl object-cover border border-(--border-color) shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-heading text-lg uppercase shadow-inner">
+                          {productToDelete.product_name[0]}
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <span className="text-[9px] font-heading font-black tracking-widest text-rose-500 uppercase block leading-none">
+                          Catalog Item
+                        </span>
+                        <h5 className="font-bold text-xs truncate leading-snug text-(--color-text)">
+                          {productToDelete.product_name}
+                        </h5>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 text-[10px]">
+                          <span className="font-mono font-bold text-slate-455">
+                            {productToDelete.barcode_id}
+                          </span>
+                          <span className="text-slate-500">•</span>
+                          <span className="font-semibold text-emerald-500">
+                            ₱{productToDelete.selling_price.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="flex items-center justify-center gap-2.5 pt-2">
+                <button
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 hover:text-slate-200 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  onClick={handleSaveBulkDelete}
+                  disabled={saving}
+                  className="px-5 py-2.5 bg-red-655 bg-red-900 hover:bg-red-700 text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold shadow-lg shadow-red-600/20"
+                >
+                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Product Recovery Bin Modal */}
       {showRecoveryModal && (
@@ -1356,59 +1504,61 @@ export const Products: React.FC<ProductsProps> = ({ hideHeaderActions = false })
       )}
 
       {/* MOBILE DIRECT ACTION BOTTOM BAR FOR PRODUCTS */}
-      {selectedProductIds.length === 0 && createPortal(
-        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
-          {/* Summary stats on the left */}
-          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-            <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
-              <Package className="w-3.5 h-3.5" />
-              <span className="text-[11px]">{products.length} Products</span>
+      {selectedProductIds.length === 0 &&
+        createPortal(
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+            {/* Summary stats on the left */}
+            <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+              <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
+                <Package className="w-3.5 h-3.5" />
+                <span className="text-[11px]">{products.length} Products</span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[11px] truncate">
+                  {stats.active} Active
+                </span>
+              </div>
             </div>
-            <span className="text-slate-300 dark:text-zinc-700">•</span>
-            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
-              <Layers className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[11px] truncate">{stats.active} Active</span>
-            </div>
-          </div>
 
-          {/* Direct 1-Tap Action Icon Buttons on the right */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {isAdmin && (
+            {/* Direct 1-Tap Action Icon Buttons on the right */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowRecoveryModal(true)}
+                  className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Recycle Bin"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => setShowRecoveryModal(true)}
-                className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                title="Recycle Bin"
+                onClick={() => setShowPrintModal(true)}
+                className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                title="Print Sheet Labels"
               >
-                <Trash2 className="w-4 h-4" />
+                <Printer className="w-4 h-4" />
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => setShowPrintModal(true)}
-              className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Print Sheet Labels"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={handleCreateClick}
-                className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
-                title="Add New Item"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="text-[10px] hidden xs:inline">Add</span>
-              </button>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleCreateClick}
+                  className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+                  title="Add New Item"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="text-[10px] hidden xs:inline">Add</span>
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

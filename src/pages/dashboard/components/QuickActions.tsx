@@ -1,5 +1,12 @@
 import React from 'react';
-import { QrCode, ShoppingBag, UserPlus, FileCheck, ArrowRight, Zap } from 'lucide-react';
+import {
+  QrCode,
+  ShoppingBag,
+  UserPlus,
+  FileCheck,
+  ArrowRight,
+  Zap,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface QuickActionsProps {
@@ -33,7 +40,6 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
 
       {/* 4-Item Balanced Matrix (2x2 on Mobile/Square, 4x1 on Large Desktop) */}
       <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3.5">
-        
         {/* 1. SCAN MEMBER (PRIMARY ACTION) */}
         <button
           id="btn-quick-scan-member"

@@ -1,26 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { 
-  RotateCcw, 
-  Calendar as CalendarIcon, 
+import {
+  RotateCcw,
+  Calendar as CalendarIcon,
   FileSpreadsheet,
-  Dumbbell
+  Dumbbell,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
-import type { 
-  DashboardMetrics, 
-  DashboardTab, 
-  TimeRangeFilter, 
-  RevenueTimelinePoint, 
-  TopProductMetric, 
-  AttendanceHourData, 
-  ExpiringMemberItem, 
-  LowStockProductItem, 
-  ActivityFeedItem, 
+import type {
+  DashboardMetrics,
+  DashboardTab,
+  TimeRangeFilter,
+  RevenueTimelinePoint,
+  TopProductMetric,
+  AttendanceHourData,
+  ExpiringMemberItem,
+  LowStockProductItem,
+  ActivityFeedItem,
   BirReportItem,
-  SubscriptionPlanBreakdown
+  SubscriptionPlanBreakdown,
 } from './types';
 import { fetchDashboardData } from './dashboardService';
 import { TopSummaryCards } from './components/TopSummaryCards';
@@ -61,14 +61,22 @@ export const Dashboard: React.FC = () => {
     newMembersThisMonth: 0,
   });
 
-  const [revenueTimeline, setRevenueTimeline] = useState<RevenueTimelinePoint[]>([]);
+  const [revenueTimeline, setRevenueTimeline] = useState<
+    RevenueTimelinePoint[]
+  >([]);
   const [topProducts, setTopProducts] = useState<TopProductMetric[]>([]);
-  const [attendanceHourly, setAttendanceHourly] = useState<AttendanceHourData[]>([]);
-  const [expiringSoonList, setExpiringSoonList] = useState<ExpiringMemberItem[]>([]);
+  const [attendanceHourly, setAttendanceHourly] = useState<
+    AttendanceHourData[]
+  >([]);
+  const [expiringSoonList, setExpiringSoonList] = useState<
+    ExpiringMemberItem[]
+  >([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockProductItem[]>([]);
   const [activityItems, setActivityItems] = useState<ActivityFeedItem[]>([]);
   const [birReportItems, setBirReportItems] = useState<BirReportItem[]>([]);
-  const [subscriptionBreakdown, setSubscriptionBreakdown] = useState<SubscriptionPlanBreakdown | undefined>(undefined);
+  const [subscriptionBreakdown, setSubscriptionBreakdown] = useState<
+    SubscriptionPlanBreakdown | undefined
+  >(undefined);
 
   // Load Data
   const loadData = useCallback(async () => {
@@ -99,15 +107,27 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     const channel = supabase
       .channel('dashboard-realtime-feed')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
-        loadData();
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => {
+          loadData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        () => {
+          loadData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'members' },
+        () => {
+          loadData();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -116,7 +136,9 @@ export const Dashboard: React.FC = () => {
   }, [loadData]);
 
   // Quick Navigation Handler
-  const handleCardClick = (target: 'members' | 'attendance' | 'sales' | 'expiring' | 'inventory') => {
+  const handleCardClick = (
+    target: 'members' | 'attendance' | 'sales' | 'expiring' | 'inventory'
+  ) => {
     switch (target) {
       case 'members':
         navigate('/members/list');
@@ -142,7 +164,6 @@ export const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-[#f0f4f8] dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 transition-colors duration-300">
       {/* Container with responsive bottom padding to clear mobile navigation bars */}
       <div className="p-3.5 sm:p-5 lg:p-7 pb-28 sm:pb-20 lg:pb-12 space-y-4 sm:space-y-6 max-w-7xl mx-auto select-none">
-        
         {/* ─── HEADER / GREETING BAR ─── */}
         <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
           <div className="min-w-0">
@@ -164,8 +185,15 @@ export const Dashboard: React.FC = () => {
                 <CalendarIcon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                 <span>{currentDateFormatted}</span>
               </span>
-              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
-              <span className="truncate">Staff: <span className="font-semibold text-slate-700 dark:text-slate-300">{user?.email || 'Active Staff'}</span></span>
+              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">
+                •
+              </span>
+              <span className="truncate">
+                Staff:{' '}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {user?.email || 'Active Staff'}
+                </span>
+              </span>
             </p>
           </div>
 
@@ -187,7 +215,9 @@ export const Dashboard: React.FC = () => {
               className="p-2.5 rounded-xl bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all shadow-2xs active:scale-95 disabled:opacity-60 cursor-pointer"
               title="Refresh Dashboard Feed"
             >
-              <RotateCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RotateCcw
+                className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
+              />
             </button>
           </div>
         </div>
@@ -225,9 +255,16 @@ export const Dashboard: React.FC = () => {
               metrics={metrics}
               expiringMembers={expiringSoonList}
               onRenewMember={(member) => {
-                navigate(`/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`, {
-                  state: { renewMemberId: member.member_id, memberName: member.full_name, triggerRenew: true }
-                });
+                navigate(
+                  `/members/list?renewMemberId=${encodeURIComponent(member.member_id)}&memberName=${encodeURIComponent(member.full_name)}`,
+                  {
+                    state: {
+                      renewMemberId: member.member_id,
+                      memberName: member.full_name,
+                      triggerRenew: true,
+                    },
+                  }
+                );
               }}
             />
             <InventoryAlertsSection

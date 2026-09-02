@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
-import { 
-  Search, 
-  Check, 
-  X, 
-  ShoppingCart, 
-  QrCode, 
-  SwitchCamera 
+import {
+  Search,
+  Check,
+  X,
+  ShoppingCart,
+  QrCode,
+  SwitchCamera,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -33,8 +33,10 @@ interface CartItem {
 const getCameraErrorMessage = (err: any): string => {
   const msg = typeof err === 'string' ? err : err?.message || String(err || '');
   const lower = msg.toLowerCase();
-  if (lower.includes('notallowederror') || lower.includes('permission')) return 'Permission denied by browser';
-  if (lower.includes('notreadableerror') || lower.includes('in use')) return 'Camera is busy or in use';
+  if (lower.includes('notallowederror') || lower.includes('permission'))
+    return 'Permission denied by browser';
+  if (lower.includes('notreadableerror') || lower.includes('in use'))
+    return 'Camera is busy or in use';
   if (lower.includes('notfounderror')) return 'Camera hardware not found';
   return msg || 'Camera initialization failed';
 };
@@ -51,12 +53,14 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const [amountReceived, setAmountReceived] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [ratesConfig, setRatesConfig] = useState<any>(null);
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
+    []
+  );
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
@@ -77,11 +81,18 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const stopAllCameraTracks = () => {
     if (scannerRef.current) {
       if (scannerRef.current.isScanning) {
-        scannerRef.current.stop().then(() => {
-          try { scannerRef.current?.clear(); } catch (e) {}
-        }).catch(() => {});
+        scannerRef.current
+          .stop()
+          .then(() => {
+            try {
+              scannerRef.current?.clear();
+            } catch (e) {}
+          })
+          .catch(() => {});
       } else {
-        try { scannerRef.current.clear(); } catch (e) {}
+        try {
+          scannerRef.current.clear();
+        } catch (e) {}
       }
       scannerRef.current = null;
     }
@@ -120,11 +131,19 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
   }, [isOpen]);
 
-  const getProductName = (p: any) => p.product_name || p.name || 'Unnamed Product';
-  const getProductPrice = (p: any) => Number(p.selling_price || p.sellingPrice || 0);
-  const getProductStock = (p: any) => p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 0);
+  const getProductName = (p: any) =>
+    p.product_name || p.name || 'Unnamed Product';
+  const getProductPrice = (p: any) =>
+    Number(p.selling_price || p.sellingPrice || 0);
+  const getProductStock = (p: any) =>
+    p.stock_quantity !== undefined
+      ? p.stock_quantity
+      : p.stock !== undefined
+        ? p.stock
+        : 0;
   const getProductBarcode = (p: any) => p.barcode_id || p.barcode || 'N/A';
-  const hasStockLimit = (p: any) => p.has_stock_limit === true || p.hasStockLimit === true;
+  const hasStockLimit = (p: any) =>
+    p.has_stock_limit === true || p.hasStockLimit === true;
 
   useEffect(() => {
     if (isOpen) {
@@ -137,37 +156,37 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
   }, [isOpen]);
 
- // Fetch camera list and default to back/rear camera when scanner becomes active
-useEffect(() => {
-  if (showLiveScanner) {
-    Html5Qrcode.getCameras()
-      .then((devices) => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
+  // Fetch camera list and default to back/rear camera when scanner becomes active
+  useEffect(() => {
+    if (showLiveScanner) {
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          if (devices && devices.length > 0) {
+            setCameras(devices);
 
-          // Find back/rear camera by label keywords
-          const backCam = devices.find((d) => {
-            const label = d.label.toLowerCase();
-            return (
-              label.includes('back') ||
-              label.includes('rear') ||
-              label.includes('environment') ||
-              label.includes('facing back')
-            );
-          });
+            // Find back/rear camera by label keywords
+            const backCam = devices.find((d) => {
+              const label = d.label.toLowerCase();
+              return (
+                label.includes('back') ||
+                label.includes('rear') ||
+                label.includes('environment') ||
+                label.includes('facing back')
+              );
+            });
 
-          // Default to back camera if found, otherwise fallback to first available
-          const defaultCameraId = backCam ? backCam.id : devices[0].id;
-          setSelectedCameraId(defaultCameraId);
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not list cameras:', err);
-      });
-  } else {
-    stopAllCameraTracks();
-  }
-}, [showLiveScanner]);
+            // Default to back camera if found, otherwise fallback to first available
+            const defaultCameraId = backCam ? backCam.id : devices[0].id;
+            setSelectedCameraId(defaultCameraId);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not list cameras:', err);
+        });
+    } else {
+      stopAllCameraTracks();
+    }
+  }, [showLiveScanner]);
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
     const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
@@ -185,7 +204,11 @@ useEffect(() => {
     const exactMatch = products.find((p: any) => {
       if (p.hidden) return false;
       const bc = (p.barcode_id || p.barcode || '').toLowerCase();
-      const mfg = (p.manufacturer_barcode || p.manufacturerBarcode || '').toLowerCase();
+      const mfg = (
+        p.manufacturer_barcode ||
+        p.manufacturerBarcode ||
+        ''
+      ).toLowerCase();
       return bc === trimmed.toLowerCase() || mfg === trimmed.toLowerCase();
     });
 
@@ -214,11 +237,11 @@ useEffect(() => {
               Html5QrcodeSupportedFormats.CODE_128,
               Html5QrcodeSupportedFormats.CODE_39,
               Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.UPC_A
+              Html5QrcodeSupportedFormats.UPC_A,
             ],
             experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true
-            }
+              useBarCodeDetectorIfSupported: true,
+            },
           });
           scannerRef.current = html5QrCode;
 
@@ -232,10 +255,13 @@ useEffect(() => {
               {
                 fps: 20,
                 qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                  const width = Math.floor(viewfinderWidth * 0.90);
+                  const width = Math.floor(viewfinderWidth * 0.9);
                   const height = Math.floor(viewfinderHeight * 0.65);
-                  return { width: Math.max(width, 240), height: Math.max(height, 120) };
-                }
+                  return {
+                    width: Math.max(width, 240),
+                    height: Math.max(height, 120),
+                  };
+                },
               },
               (decodedText) => {
                 handleBarcodeScanned(decodedText);
@@ -248,11 +274,16 @@ useEffect(() => {
               if (!isCancelled) {
                 const reason = getCameraErrorMessage(err);
                 if (cameras.length > 1) {
-                  const currentIndex = selectedCameraId ? cameras.findIndex(c => c.id === selectedCameraId) : -1;
-                  const nextCamera = cameras[(currentIndex + 1) % cameras.length];
+                  const currentIndex = selectedCameraId
+                    ? cameras.findIndex((c) => c.id === selectedCameraId)
+                    : -1;
+                  const nextCamera =
+                    cameras[(currentIndex + 1) % cameras.length];
                   stopAllCameraTracks();
                   setSelectedCameraId(nextCamera.id);
-                  toast.info(`Switching camera: ${nextCamera.label || 'Next Camera'}`);
+                  toast.info(
+                    `Switching camera: ${nextCamera.label || 'Next Camera'}`
+                  );
                 } else {
                   toast.error(`Camera Error: ${reason}`);
                   setShowLiveScanner(false);
@@ -261,7 +292,7 @@ useEffect(() => {
               }
             });
         } catch (e) {
-          console.error("Sales scanner init error:", e);
+          console.error('Sales scanner init error:', e);
         }
       }, 250);
 
@@ -284,18 +315,27 @@ useEffect(() => {
       if (p.hidden) return false;
       const name = getProductName(p).toLowerCase();
       const barcode = getProductBarcode(p).toLowerCase();
-      const mfgBarcode = (p.manufacturer_barcode || p.manufacturerBarcode || '').toLowerCase();
+      const mfgBarcode = (
+        p.manufacturer_barcode ||
+        p.manufacturerBarcode ||
+        ''
+      ).toLowerCase();
       return name.includes(q) || barcode.includes(q) || mfgBarcode.includes(q);
     });
   }, [products, searchTerm]);
 
   const gcashFee = useMemo(() => {
     if (paymentMethod !== 'GCash') return 0;
-    return ratesConfig?.gcash_fee !== undefined ? Number(ratesConfig.gcash_fee) : 10.00;
+    return ratesConfig?.gcash_fee !== undefined
+      ? Number(ratesConfig.gcash_fee)
+      : 10.0;
   }, [paymentMethod, ratesConfig]);
 
   const totalPayable = useMemo(() => {
-    const cartTotal = cart.reduce((sum, item) => sum + (getProductPrice(item.product) * item.quantity), 0);
+    const cartTotal = cart.reduce(
+      (sum, item) => sum + getProductPrice(item.product) * item.quantity,
+      0
+    );
     return cartTotal + gcashFee;
   }, [cart, gcashFee]);
 
@@ -309,7 +349,9 @@ useEffect(() => {
 
   const handleAddToCart = (product: any) => {
     const stock = getProductStock(product);
-    const existingIndex = cart.findIndex(item => item.product.id === product.id);
+    const existingIndex = cart.findIndex(
+      (item) => item.product.id === product.id
+    );
     const limitActive = hasStockLimit(product);
 
     if (existingIndex > -1) {
@@ -324,7 +366,7 @@ useEffect(() => {
     } else {
       setCart([...cart, { product, quantity: 1 }]);
     }
-    setSearchTerm(''); 
+    setSearchTerm('');
   };
 
   const handleUpdateQuantity = (idx: number, delta: number) => {
@@ -369,18 +411,18 @@ useEffect(() => {
     }
 
     isSubmittingRef.current = true;
-    setIsSubmitting(true); 
+    setIsSubmitting(true);
 
     try {
       const updatedProducts = products.map((p: any) => {
-        const cartItem = cart.find(item => item.product.id === p.id);
+        const cartItem = cart.find((item) => item.product.id === p.id);
         if (cartItem) {
           const stock = getProductStock(p);
           const limitActive = hasStockLimit(p);
           if (limitActive) {
             const newStock = Math.max(0, stock - cartItem.quantity);
-            return p.stock_quantity !== undefined 
-              ? { ...p, stock_quantity: newStock } 
+            return p.stock_quantity !== undefined
+              ? { ...p, stock_quantity: newStock }
               : { ...p, stock: newStock };
           }
         }
@@ -390,18 +432,24 @@ useEffect(() => {
       const now = new Date();
       const newTx = {
         id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
-        items: cart.map(item => ({
+        items: cart.map((item) => ({
           productId: item.product.id,
           productName: getProductName(item.product),
           quantity: item.quantity,
           price: getProductPrice(item.product),
         })),
-        productName: cart.map(item => `${item.quantity}x ${getProductName(item.product)}`).join(', '),
-        barcode: cart.map(item => getProductBarcode(item.product)).join(', '),
+        productName: cart
+          .map((item) => `${item.quantity}x ${getProductName(item.product)}`)
+          .join(', '),
+        barcode: cart.map((item) => getProductBarcode(item.product)).join(', '),
         quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
         paymentMethod,
-        amountReceived: paymentMethod === 'Cash' ? Number(amountReceived) : null,
-        changeCalculated: paymentMethod === 'Cash' ? Math.max(0, Number(amountReceived) - totalPayable) : null,
+        amountReceived:
+          paymentMethod === 'Cash' ? Number(amountReceived) : null,
+        changeCalculated:
+          paymentMethod === 'Cash'
+            ? Math.max(0, Number(amountReceived) - totalPayable)
+            : null,
         referenceNumber: paymentMethod === 'GCash' ? referenceNumber : null,
         totalAmount: totalPayable,
         createdAt: now.toISOString(),
@@ -423,7 +471,6 @@ useEffect(() => {
         setReferenceNumber('');
         onClose();
       }, 1500);
-
     } catch (err: any) {
       console.error('Sale execution error:', err);
       isSubmittingRef.current = false;
@@ -473,13 +520,17 @@ useEffect(() => {
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500" />
                 <input
                   type="text"
-                  placeholder={showLiveScanner ? "CAMERA SCANNER ACTIVE..." : "TYPE NAME OR SCAN BARCODE..."}
+                  placeholder={
+                    showLiveScanner
+                      ? 'CAMERA SCANNER ACTIVE...'
+                      : 'TYPE NAME OR SCAN BARCODE...'
+                  }
                   disabled={isSubmitting || showLiveScanner}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className={`w-full pl-10 pr-20 py-2.5 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs font-bold transition-all uppercase ${
-                    showLiveScanner 
-                      ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-900 text-slate-400' 
+                    showLiveScanner
+                      ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-900 text-slate-400'
                       : 'text-(--color-text) focus:border-blue-500'
                   }`}
                   autoFocus
@@ -501,8 +552,8 @@ useEffect(() => {
                   onClick={handleStartScan}
                   disabled={isSubmitting}
                   className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                    showLiveScanner 
-                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse' 
+                    showLiveScanner
+                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse'
                       : 'text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                   title="Scan Barcode / QR Code"
@@ -532,8 +583,11 @@ useEffect(() => {
                   </div>
 
                   <div className="relative w-full aspect-square max-w-55 mx-auto rounded-2xl overflow-hidden bg-black border-2 border-dashed border-blue-500/50 flex items-center justify-center shadow-inner">
-                    <div id="sales-qr-reader" className="w-full h-full object-cover" />
-                    
+                    <div
+                      id="sales-qr-reader"
+                      className="w-full h-full object-cover"
+                    />
+
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
                       <div className="w-full h-full border-2 border-blue-500 rounded-xl relative animate-pulse">
                         <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-4 border-l-4 border-blue-400" />
@@ -544,19 +598,19 @@ useEffect(() => {
                     </div>
                   </div>
 
-                 {/* CAMERA SWITCHER CONTROLS */}
-{cameras.length > 1 && (
-  <div className="flex items-center justify-center pt-2">
-    <button
-      type="button"
-      onClick={handleCycleCamera}
-      className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
-    >
-      <SwitchCamera className="w-4 h-4" />
-      <span>Switch Camera</span>
-    </button>
-  </div>
-)}
+                  {/* CAMERA SWITCHER CONTROLS */}
+                  {cameras.length > 1 && (
+                    <div className="flex items-center justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCycleCamera}
+                        className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                        <span>Switch Camera</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -569,7 +623,12 @@ useEffect(() => {
                     const limitActive = hasStockLimit(p);
                     const stock = getProductStock(p);
                     const isOutOfStock = limitActive && stock <= 0;
-                    const isLowStock = limitActive && !isOutOfStock && p.low_stock_alert !== null && p.low_stock_alert !== undefined && stock <= p.low_stock_alert;
+                    const isLowStock =
+                      limitActive &&
+                      !isOutOfStock &&
+                      p.low_stock_alert !== null &&
+                      p.low_stock_alert !== undefined &&
+                      stock <= p.low_stock_alert;
 
                     return (
                       <button
@@ -578,24 +637,40 @@ useEffect(() => {
                         disabled={isOutOfStock || isSubmitting}
                         onClick={() => handleAddToCart(p)}
                         className={`w-full p-2.5 flex items-center justify-between text-left transition-all hover:bg-slate-200/50 dark:hover:bg-zinc-800 ${
-                          isOutOfStock || isSubmitting ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+                          isOutOfStock || isSubmitting
+                            ? 'opacity-50 cursor-not-allowed pointer-events-none'
+                            : 'cursor-pointer'
                         }`}
                       >
                         <div>
-                          <div className="text-xs font-bold text-(--color-text) uppercase">{getProductName(p)}</div>
-                          <div className="text-[9px] text-slate-500 font-mono">Barcode: {getProductBarcode(p)}</div>
+                          <div className="text-xs font-bold text-(--color-text) uppercase">
+                            {getProductName(p)}
+                          </div>
+                          <div className="text-[9px] text-slate-500 font-mono">
+                            Barcode: {getProductBarcode(p)}
+                          </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs font-heading text-(--color-text) font-bold">₱{getProductPrice(p).toFixed(2)}</div>
+                          <div className="text-xs font-heading text-(--color-text) font-bold">
+                            ₱{getProductPrice(p).toFixed(2)}
+                          </div>
                           <div className="text-[9px] font-sans font-bold">
                             {isOutOfStock ? (
-                              <span className="text-red-500 font-black">NO STOCK (0)</span>
+                              <span className="text-red-500 font-black">
+                                NO STOCK (0)
+                              </span>
                             ) : isLowStock ? (
-                              <span className="text-amber-500 dark:text-amber-400 font-black">LOW STOCK ({stock})</span>
+                              <span className="text-amber-500 dark:text-amber-400 font-black">
+                                LOW STOCK ({stock})
+                              </span>
                             ) : !limitActive ? (
-                              <span className="text-blue-500 dark:text-blue-400">UNLIMITED</span>
+                              <span className="text-blue-500 dark:text-blue-400">
+                                UNLIMITED
+                              </span>
                             ) : (
-                              <span className="text-slate-400">Stock: {stock}</span>
+                              <span className="text-slate-400">
+                                Stock: {stock}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -627,8 +702,12 @@ useEffect(() => {
                       className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color) flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-(--color-text) truncate uppercase">{getProductName(item.product)}</h4>
-                        <span className="text-[10px] text-(--color-primary) font-heading font-bold mt-0.5 block">₱{getProductPrice(item.product).toFixed(2)}</span>
+                        <h4 className="font-bold text-(--color-text) truncate uppercase">
+                          {getProductName(item.product)}
+                        </h4>
+                        <span className="text-[10px] text-(--color-primary) font-heading font-bold mt-0.5 block">
+                          ₱{getProductPrice(item.product).toFixed(2)}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
@@ -640,7 +719,9 @@ useEffect(() => {
                         >
                           -
                         </button>
-                        <span className="font-heading w-4 text-center text-xs font-bold">{item.quantity}</span>
+                        <span className="font-heading w-4 text-center text-xs font-bold">
+                          {item.quantity}
+                        </span>
                         <button
                           type="button"
                           disabled={isSubmitting}
@@ -695,9 +776,13 @@ useEffect(() => {
 
                 {paymentMethod === 'Cash' ? (
                   <div className="space-y-1 pt-1">
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase block">Amount Received (PHP)</label>
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase block">
+                      Amount Received (PHP)
+                    </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm">₱</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm">
+                        ₱
+                      </span>
                       <input
                         type="number"
                         placeholder="0.00"
@@ -707,17 +792,25 @@ useEffect(() => {
                         className="w-full pl-8 pr-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-sm"
                       />
                     </div>
-                    
+
                     {amountReceived && (
                       <div className="text-xs font-sans text-emerald-600 dark:text-emerald-400 mt-1 flex justify-between font-bold">
                         <span>Calculated Change:</span>
-                        <span>₱{Math.max(0, Number(amountReceived) - totalPayable).toFixed(2)}</span>
+                        <span>
+                          ₱
+                          {Math.max(
+                            0,
+                            Number(amountReceived) - totalPayable
+                          ).toFixed(2)}
+                        </span>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="space-y-1 pt-1">
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase block">GCash Reference Number</label>
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase block">
+                      GCash Reference Number
+                    </label>
                     <input
                       type="text"
                       placeholder="Enter reference code..."
@@ -726,10 +819,11 @@ useEffect(() => {
                       onChange={(e) => setReferenceNumber(e.target.value)}
                       className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-xs uppercase"
                     />
-                    
+
                     {referenceNumber.trim().length >= 6 && (
                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans mt-1 flex items-center gap-1 font-bold">
-                        <Check className="w-3.5 h-3.5" /> GCash reference code recorded.
+                        <Check className="w-3.5 h-3.5" /> GCash reference code
+                        recorded.
                       </div>
                     )}
                   </div>
@@ -742,16 +836,22 @@ useEffect(() => {
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/50 border border-(--border-color) space-y-1.5 text-xs font-sans">
                 <div className="flex justify-between text-slate-500">
                   <span>Unique Items:</span>
-                  <span className="font-bold text-(--color-text)">{cart.length} items</span>
+                  <span className="font-bold text-(--color-text)">
+                    {cart.length} items
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Total Units:</span>
-                  <span className="font-bold text-(--color-text)">{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                  <span className="font-bold text-(--color-text)">
+                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                  </span>
                 </div>
                 {paymentMethod === 'GCash' && gcashFee > 0 && (
                   <div className="flex justify-between text-slate-500">
                     <span>GCash Fee Applied:</span>
-                    <span className="text-rose-500 font-bold">+₱{gcashFee.toFixed(2)}</span>
+                    <span className="text-rose-500 font-bold">
+                      +₱{gcashFee.toFixed(2)}
+                    </span>
                   </div>
                 )}
                 <div className="border-t border-(--border-color) pt-1.5 flex justify-between font-heading text-sm text-(--color-text)">
@@ -770,7 +870,9 @@ useEffect(() => {
                 disabled={cart.length === 0 || isSubmitting}
                 className={`py-3.5 w-full font-bold text-xs uppercase tracking-wider ${isSubmitting ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
               >
-                {isSubmitting ? 'PROCESSING TRANSACTION...' : 'COMPLETE TRANSACTION'}
+                {isSubmitting
+                  ? 'PROCESSING TRANSACTION...'
+                  : 'COMPLETE TRANSACTION'}
               </Button>
             </div>
           </motion.div>

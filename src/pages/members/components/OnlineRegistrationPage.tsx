@@ -1,20 +1,61 @@
 // src/pages/members/components/OnlineRegistrationPage.tsx
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-  CheckCircle2, Clock, Download, Copy, RefreshCw, Sparkles, 
-  User, Phone, Mail, Calendar, MapPin, HeartHandshake, ShieldCheck, 
-  CreditCard, Check, Sun, Moon, FileSignature, Eraser, Info, Users,
-  ChevronLeft, ChevronRight, Ban, ShieldAlert, PlusCircle, Ticket, AlertCircle, Trash2
+import {
+  CheckCircle2,
+  Clock,
+  Download,
+  Copy,
+  RefreshCw,
+  Sparkles,
+  User,
+  Phone,
+  Mail,
+  Calendar,
+  MapPin,
+  HeartHandshake,
+  ShieldCheck,
+  CreditCard,
+  Check,
+  Sun,
+  Moon,
+  FileSignature,
+  Eraser,
+  Info,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Ban,
+  ShieldAlert,
+  PlusCircle,
+  Ticket,
+  AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import type { OnlineRegistration, MembershipSettings } from '../../../types/members';
-import { registrationService, settingsService, DEFAULT_SETTINGS } from '../memberService';
-import { AgreementDocumentViewer, type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
+import type {
+  OnlineRegistration,
+  MembershipSettings,
+} from '../../../types/members';
+import {
+  registrationService,
+  settingsService,
+  DEFAULT_SETTINGS,
+} from '../memberService';
+import {
+  AgreementDocumentViewer,
+  type AgreementDocument,
+} from '../../../components/ui/AgreementDocumentViewer';
 
 import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
@@ -42,188 +83,221 @@ const calculateAge = (birthdayStr: string): number => {
 
 const getNextManilaMidnightMs = (): number => {
   const now = new Date();
-  const manilaDateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
+  const manilaDateStr = now.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila',
+  });
   const [month, day, year] = manilaDateStr.split('/').map(Number);
-  
-  const midnightUtcMs = Date.UTC(year, month - 1, day + 1, 0, 0, 0) - (8 * 60 * 60 * 1000);
+
+  const midnightUtcMs =
+    Date.UTC(year, month - 1, day + 1, 0, 0, 0) - 8 * 60 * 60 * 1000;
   return midnightUtcMs;
 };
 
 // Zod Validation Schema
-const registrationSchema = z.object({
-  last_name: z.string().min(1, 'Last name is required'),
-  first_name: z.string().min(1, 'First name is required'),
-  middle_initial: z.string().optional(),
-  suffix: z.string().optional(),
+const registrationSchema = z
+  .object({
+    last_name: z.string().min(1, 'Last name is required'),
+    first_name: z.string().min(1, 'First name is required'),
+    middle_initial: z.string().optional(),
+    suffix: z.string().optional(),
 
-  phone: z
-    .string()
-    .min(7, 'Please enter a valid phone number')
-    .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
-  email: z.string().email('Invalid email address').optional().or(z.literal('')),
-  gender: z.string().min(1, 'Please select your gender'),
-  birthday: z.string().min(1, 'Please select your birthday'),
-  
-  address: z.string().optional().or(z.literal('')),
-  
-  same_as_parent: z.boolean().optional(),
-  emergency_contact_name: z.string().optional().or(z.literal('')),
-  emergency_contact_relationship: z.string().optional().or(z.literal('')),
-  emergency_contact_phone: z
-    .string()
-    .optional()
-    .or(z.literal(''))
-    .refine((val) => !val || /^[0-9]+$/.test(val), {
-      message: 'Emergency phone must contain numbers only',
-    })
-    .refine((val) => !val || val.length >= 7, {
-      message: 'Emergency contact phone must be at least 7 digits',
+    phone: z
+      .string()
+      .min(7, 'Please enter a valid phone number')
+      .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
+    email: z
+      .string()
+      .email('Invalid email address')
+      .optional()
+      .or(z.literal('')),
+    gender: z.string().min(1, 'Please select your gender'),
+    birthday: z.string().min(1, 'Please select your birthday'),
+
+    address: z.string().optional().or(z.literal('')),
+
+    same_as_parent: z.boolean().optional(),
+    emergency_contact_name: z.string().optional().or(z.literal('')),
+    emergency_contact_relationship: z.string().optional().or(z.literal('')),
+    emergency_contact_phone: z
+      .string()
+      .optional()
+      .or(z.literal(''))
+      .refine((val) => !val || /^[0-9]+$/.test(val), {
+        message: 'Emergency phone must contain numbers only',
+      })
+      .refine((val) => !val || val.length >= 7, {
+        message: 'Emergency contact phone must be at least 7 digits',
+      }),
+
+    preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
+      message: 'Please select a membership plan',
     }),
-  
-  preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
-    message: 'Please select a membership plan',
-  }),
-  
-  agreement: z.boolean().refine((val) => val === true, {
-    message: 'You must certify and agree to the waiver terms before proceeding',
-  }),
 
-  // Minor Fields (12-17 Yrs)
-  parent_name: z.string().optional(),
-  parent_relationship: z.string().optional(),
-  parent_relationship_other: z.string().optional(),
-  parent_phone: z
-    .string()
-    .optional()
-    .refine((val) => !val || /^[0-9]+$/.test(val), {
-      message: 'Parent phone must contain numbers only',
+    agreement: z.boolean().refine((val) => val === true, {
+      message:
+        'You must certify and agree to the waiver terms before proceeding',
     }),
-  parent_email: z.string().email('Invalid parent email address').optional().or(z.literal('')),
-  applicant_signature: z.string().nullable().optional(),
-  parent_signature: z.string().nullable().optional(),
-}).superRefine((data, ctx) => {
-  if (!data.birthday) return;
 
-  const birthDate = new Date(data.birthday);
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const birthYear = birthDate.getFullYear();
+    // Minor Fields (12-17 Yrs)
+    parent_name: z.string().optional(),
+    parent_relationship: z.string().optional(),
+    parent_relationship_other: z.string().optional(),
+    parent_phone: z
+      .string()
+      .optional()
+      .refine((val) => !val || /^[0-9]+$/.test(val), {
+        message: 'Parent phone must contain numbers only',
+      }),
+    parent_email: z
+      .string()
+      .email('Invalid parent email address')
+      .optional()
+      .or(z.literal('')),
+    applicant_signature: z.string().nullable().optional(),
+    parent_signature: z.string().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.birthday) return;
 
-  if (isNaN(birthDate.getTime())) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Please enter a valid date',
-      path: ['birthday'],
-    });
-    return;
-  }
+    const birthDate = new Date(data.birthday);
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const birthYear = birthDate.getFullYear();
 
-  if (birthDate > today) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Birthday cannot be in the future',
-      path: ['birthday'],
-    });
-    return;
-  }
-
-  const age = calculateAge(data.birthday);
-  const MIN_BIRTH_YEAR = currentYear - 120;
-
-  if (age > 120 || birthYear < MIN_BIRTH_YEAR) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: `Please enter a valid birth year (between ${MIN_BIRTH_YEAR} and ${currentYear})`,
-      path: ['birthday'],
-    });
-    return;
-  }
-
-  if (age < 12) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Regular online membership is restricted for individuals under 12 years old.',
-      path: ['birthday'],
-    });
-    return;
-  }
-
-  if (age >= 12 && age < 18) {
-    if (!data.parent_name || data.parent_name.trim().length < 2) {
+    if (isNaN(birthDate.getTime())) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Parent / Legal Guardian full name is required for minor applicants',
-        path: ['parent_name'],
+        message: 'Please enter a valid date',
+        path: ['birthday'],
       });
+      return;
     }
 
-    if (!data.parent_relationship || data.parent_relationship.trim().length < 2) {
+    if (birthDate > today) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Relationship to applicant is required',
-        path: ['parent_relationship'],
+        message: 'Birthday cannot be in the future',
+        path: ['birthday'],
       });
+      return;
     }
 
-    if (data.parent_relationship === 'Other' && (!data.parent_relationship_other || data.parent_relationship_other.trim().length < 2)) {
+    const age = calculateAge(data.birthday);
+    const MIN_BIRTH_YEAR = currentYear - 120;
+
+    if (age > 120 || birthYear < MIN_BIRTH_YEAR) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Please specify your relationship to the applicant',
-        path: ['parent_relationship_other'],
+        message: `Please enter a valid birth year (between ${MIN_BIRTH_YEAR} and ${currentYear})`,
+        path: ['birthday'],
       });
+      return;
     }
 
-    if (!data.parent_phone || data.parent_phone.trim().length < 7) {
+    if (age < 12) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Parent / Legal Guardian phone number is required',
-        path: ['parent_phone'],
+        message:
+          'Regular online membership is restricted for individuals under 12 years old.',
+        path: ['birthday'],
       });
+      return;
     }
 
-    if (!data.same_as_parent) {
-      if (!data.emergency_contact_name || data.emergency_contact_name.trim().length < 2) {
+    if (age >= 12 && age < 18) {
+      if (!data.parent_name || data.parent_name.trim().length < 2) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Emergency contact name is required',
-          path: ['emergency_contact_name'],
+          message:
+            'Parent / Legal Guardian full name is required for minor applicants',
+          path: ['parent_name'],
         });
       }
 
-      if (!data.emergency_contact_relationship || data.emergency_contact_relationship.trim().length < 2) {
+      if (
+        !data.parent_relationship ||
+        data.parent_relationship.trim().length < 2
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Relationship is required',
-          path: ['emergency_contact_relationship'],
+          message: 'Relationship to applicant is required',
+          path: ['parent_relationship'],
         });
       }
 
-      if (!data.emergency_contact_phone || data.emergency_contact_phone.trim().length < 7) {
+      if (
+        data.parent_relationship === 'Other' &&
+        (!data.parent_relationship_other ||
+          data.parent_relationship_other.trim().length < 2)
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Emergency contact phone is required',
-          path: ['emergency_contact_phone'],
+          message: 'Please specify your relationship to the applicant',
+          path: ['parent_relationship_other'],
+        });
+      }
+
+      if (!data.parent_phone || data.parent_phone.trim().length < 7) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Parent / Legal Guardian phone number is required',
+          path: ['parent_phone'],
+        });
+      }
+
+      if (!data.same_as_parent) {
+        if (
+          !data.emergency_contact_name ||
+          data.emergency_contact_name.trim().length < 2
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Emergency contact name is required',
+            path: ['emergency_contact_name'],
+          });
+        }
+
+        if (
+          !data.emergency_contact_relationship ||
+          data.emergency_contact_relationship.trim().length < 2
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Relationship is required',
+            path: ['emergency_contact_relationship'],
+          });
+        }
+
+        if (
+          !data.emergency_contact_phone ||
+          data.emergency_contact_phone.trim().length < 7
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Emergency contact phone is required',
+            path: ['emergency_contact_phone'],
+          });
+        }
+      }
+
+      if (!data.applicant_signature) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Applicant signature is required for minor applicants',
+          path: ['applicant_signature'],
+        });
+      }
+
+      if (!data.parent_signature) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'Parent / Legal Guardian signature is required for minor applicants',
+          path: ['parent_signature'],
         });
       }
     }
-
-    if (!data.applicant_signature) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Applicant signature is required for minor applicants',
-        path: ['applicant_signature'],
-      });
-    }
-
-    if (!data.parent_signature) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Parent / Legal Guardian signature is required for minor applicants',
-        path: ['parent_signature'],
-      });
-    }
-  }
-});
+  });
 
 type RegistrationFormData = z.infer<typeof registrationSchema>;
 
@@ -250,7 +324,12 @@ interface SignaturePadProps {
   error?: string;
 }
 
-const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, error }) => {
+const SignaturePad: React.FC<SignaturePadProps> = ({
+  label,
+  value,
+  onChange,
+  error,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(!!value);
@@ -284,7 +363,9 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     }
   }, [value]);
 
-  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const getCoordinates = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -302,7 +383,9 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     };
   };
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const startDrawing = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -314,7 +397,9 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
     ctx.moveTo(x, y);
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const draw = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -366,15 +451,17 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
         ) : null}
       </div>
 
-      <div className={`relative rounded-xl overflow-hidden border-2 bg-white transition-colors ${
-        error 
-          ? 'border-red-500 ring-1 ring-red-500/50' 
-          : hasDrawn 
-          ? 'border-emerald-500 ring-1 ring-emerald-500/30' 
-          : isDrawing 
-          ? 'border-amber-400 ring-1 ring-amber-400/50' 
-          : 'border-slate-300 dark:border-zinc-700 hover:border-amber-400'
-      }`}>
+      <div
+        className={`relative rounded-xl overflow-hidden border-2 bg-white transition-colors ${
+          error
+            ? 'border-red-500 ring-1 ring-red-500/50'
+            : hasDrawn
+              ? 'border-emerald-500 ring-1 ring-emerald-500/30'
+              : isDrawing
+                ? 'border-amber-400 ring-1 ring-amber-400/50'
+                : 'border-slate-300 dark:border-zinc-700 hover:border-amber-400'
+        }`}
+      >
         <canvas
           ref={canvasRef}
           onMouseDown={startDrawing}
@@ -410,40 +497,46 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ label, value, onChange, err
 };
 
 export const OnlineRegistrationPage: React.FC = () => {
-
   const INITIAL_FORM_VALUES: RegistrationFormData = {
-  last_name: '',
-  first_name: '',
-  middle_initial: '',
-  suffix: '',
-  phone: '',
-  email: '',
-  gender: 'Male',
-  birthday: '',
-  address: '',
-  same_as_parent: true,
-  emergency_contact_name: '',
-  emergency_contact_relationship: '',
-  emergency_contact_phone: '',
-  preferred_plan: 'Monthly Membership',
-  agreement: false,
-  parent_name: '',
-  parent_relationship: 'Father',
-  parent_relationship_other: '',
-  parent_phone: '',
-  parent_email: '',
-  applicant_signature: null,
-  parent_signature: null,
-};
+    last_name: '',
+    first_name: '',
+    middle_initial: '',
+    suffix: '',
+    phone: '',
+    email: '',
+    gender: 'Male',
+    birthday: '',
+    address: '',
+    same_as_parent: true,
+    emergency_contact_name: '',
+    emergency_contact_relationship: '',
+    emergency_contact_phone: '',
+    preferred_plan: 'Monthly Membership',
+    agreement: false,
+    parent_name: '',
+    parent_relationship: 'Father',
+    parent_relationship_other: '',
+    parent_phone: '',
+    parent_email: '',
+    applicant_signature: null,
+    parent_signature: null,
+  };
 
-  const [agreementDocument, setAgreementDocument] = useState<AgreementDocument | null>(null);
+  const [agreementDocument, setAgreementDocument] =
+    useState<AgreementDocument | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+    return (
+      typeof document !== 'undefined' &&
+      document.documentElement.classList.contains('dark')
+    );
   });
 
-  const [activeRegistrations, setActiveRegistrations] = useState<StoredRegistration[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<StoredRegistration | null>(null);
+  const [activeRegistrations, setActiveRegistrations] = useState<
+    StoredRegistration[]
+  >([]);
+  const [selectedTicket, setSelectedTicket] =
+    useState<StoredRegistration | null>(null);
   const [viewMode, setViewMode] = useState<'form' | 'ticket' | 'list'>('form');
   const lastDraftJsonRef = useRef<string>(JSON.stringify(INITIAL_FORM_VALUES));
 
@@ -453,19 +546,23 @@ export const OnlineRegistrationPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Draft Auto-saving states
-  const [draftState, setDraftState] = useState<'saved' | 'saving' | 'idle'>('idle');
+  const [draftState, setDraftState] = useState<'saved' | 'saving' | 'idle'>(
+    'idle'
+  );
   const isRestoringDraft = useRef(false);
 
-  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] =
+    useState<MembershipSettings>(DEFAULT_SETTINGS);
 
-  
   useEffect(() => {
     settingsService.load().then(setSettings).catch(console.warn);
   }, []);
 
   // Sync Theme on Mount
   useEffect(() => {
-    const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isSystemDark = window.matchMedia(
+      '(prefers-color-scheme: dark)'
+    ).matches;
     const isDomDark = document.documentElement.classList.contains('dark');
     const isDomLight = document.documentElement.classList.contains('light');
 
@@ -510,85 +607,90 @@ export const OnlineRegistrationPage: React.FC = () => {
     mode: 'onTouched',
   });
 
- // Character-by-character Draft Auto-Save: ONLY triggers on actual keystrokes
-useEffect(() => {
-  let saveTimer: ReturnType<typeof setTimeout>;
+  // Character-by-character Draft Auto-Save: ONLY triggers on actual keystrokes
+  useEffect(() => {
+    let saveTimer: ReturnType<typeof setTimeout>;
 
-  const subscription = watch((formValues, { type }) => {
-    // 1. Strictly ignore if this was not an actual user typing event
-    if (!type || isRestoringDraft.current || isSubmitting) return;
+    const subscription = watch((formValues, { type }) => {
+      // 1. Strictly ignore if this was not an actual user typing event
+      if (!type || isRestoringDraft.current || isSubmitting) return;
 
-    const currentJson = JSON.stringify(formValues);
+      const currentJson = JSON.stringify(formValues);
 
-    // 2. Ignore if values haven't actually changed
-    if (currentJson === lastDraftJsonRef.current) return;
+      // 2. Ignore if values haven't actually changed
+      if (currentJson === lastDraftJsonRef.current) return;
 
-    // 3. If form matches initial empty state, clear draft and stay idle
-    if (currentJson === JSON.stringify(INITIAL_FORM_VALUES)) {
-      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
-      lastDraftJsonRef.current = currentJson;
-      setDraftState('idle');
-      return;
-    }
-
-    lastDraftJsonRef.current = currentJson;
-    setDraftState('saving');
-
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        const payload: RegistrationDraftPayload = {
-          data: formValues,
-          step: currentStep,
-          savedAt: Date.now(),
-        };
-        localStorage.setItem(ONLINE_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));
-        setDraftState('saved');
-      } catch (err) {
-        console.warn('Could not write draft to localStorage:', err);
+      // 3. If form matches initial empty state, clear draft and stay idle
+      if (currentJson === JSON.stringify(INITIAL_FORM_VALUES)) {
+        localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+        lastDraftJsonRef.current = currentJson;
         setDraftState('idle');
+        return;
       }
-    }, 400);
-  });
 
-  return () => {
-    subscription.unsubscribe();
-    clearTimeout(saveTimer);
-  };
-}, [watch, currentStep, isSubmitting]);
+      lastDraftJsonRef.current = currentJson;
+      setDraftState('saving');
+
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        try {
+          const payload: RegistrationDraftPayload = {
+            data: formValues,
+            step: currentStep,
+            savedAt: Date.now(),
+          };
+          localStorage.setItem(
+            ONLINE_REGISTRATION_DRAFT_KEY,
+            JSON.stringify(payload)
+          );
+          setDraftState('saved');
+        } catch (err) {
+          console.warn('Could not write draft to localStorage:', err);
+          setDraftState('idle');
+        }
+      }, 400);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(saveTimer);
+    };
+  }, [watch, currentStep, isSubmitting]);
 
   // Restore Draft with 24h Auto-Expiry Check
-useEffect(() => {
-  try {
-    const rawDraft = localStorage.getItem(ONLINE_REGISTRATION_DRAFT_KEY);
-    if (!rawDraft) {
-      lastDraftJsonRef.current = JSON.stringify(getValues());
-      return;
-    }
-
-    const parsed: RegistrationDraftPayload = JSON.parse(rawDraft);
-    const isExpired = Date.now() - (parsed.savedAt || 0) > DRAFT_MAX_AGE_MS;
-
-    if (isExpired) {
-      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
-      lastDraftJsonRef.current = JSON.stringify(getValues());
-    } else if (parsed.data) {
-      isRestoringDraft.current = true;
-      reset({ ...parsed.data });
-      lastDraftJsonRef.current = JSON.stringify(parsed.data);
-      if (parsed.step && parsed.step >= 1 && parsed.step <= 4) {
-        setCurrentStep(parsed.step);
+  useEffect(() => {
+    try {
+      const rawDraft = localStorage.getItem(ONLINE_REGISTRATION_DRAFT_KEY);
+      if (!rawDraft) {
+        lastDraftJsonRef.current = JSON.stringify(getValues());
+        return;
       }
-      setDraftState('saved');
-      toast.info('Registration draft restored.', { toastId: 'draft-restored' });
-      setTimeout(() => {
-        isRestoringDraft.current = false;
-      }, 100);
+
+      const parsed: RegistrationDraftPayload = JSON.parse(rawDraft);
+      const isExpired = Date.now() - (parsed.savedAt || 0) > DRAFT_MAX_AGE_MS;
+
+      if (isExpired) {
+        localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
+        lastDraftJsonRef.current = JSON.stringify(getValues());
+      } else if (parsed.data) {
+        isRestoringDraft.current = true;
+        reset({ ...parsed.data });
+        lastDraftJsonRef.current = JSON.stringify(parsed.data);
+        if (parsed.step && parsed.step >= 1 && parsed.step <= 4) {
+          setCurrentStep(parsed.step);
+        }
+        setDraftState('saved');
+        toast.info('Registration draft restored.', {
+          toastId: 'draft-restored',
+        });
+        setTimeout(() => {
+          isRestoringDraft.current = false;
+        }, 100);
+      }
+    } catch {
+      localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
     }
-  } catch {
-    localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
-  }
-}, [reset, getValues]);
+  }, [reset, getValues]);
 
   const watchedValues = watch();
 
@@ -636,11 +738,23 @@ useEffect(() => {
   const todayStr = new Date().toISOString().split('T')[0];
   const minDateStr = `${new Date().getFullYear() - 120}-01-01`;
 
-  const applicantAge = useMemo(() => calculateAge(watchedBirthday), [watchedBirthday]);
-  const isRestrictedUnder12 = useMemo(() => !!watchedBirthday && applicantAge < 12, [watchedBirthday, applicantAge]);
-  const isMinor = useMemo(() => !!watchedBirthday && applicantAge >= 12 && applicantAge < 18, [watchedBirthday, applicantAge]);
-  
-  const isTicketLimitReached = useMemo(() => activeRegistrations.length >= MAX_ACTIVE_TICKETS, [activeRegistrations]);
+  const applicantAge = useMemo(
+    () => calculateAge(watchedBirthday),
+    [watchedBirthday]
+  );
+  const isRestrictedUnder12 = useMemo(
+    () => !!watchedBirthday && applicantAge < 12,
+    [watchedBirthday, applicantAge]
+  );
+  const isMinor = useMemo(
+    () => !!watchedBirthday && applicantAge >= 12 && applicantAge < 18,
+    [watchedBirthday, applicantAge]
+  );
+
+  const isTicketLimitReached = useMemo(
+    () => activeRegistrations.length >= MAX_ACTIVE_TICKETS,
+    [activeRegistrations]
+  );
 
   const todayFormatted = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -650,7 +764,10 @@ useEffect(() => {
     });
   }, []);
 
-  const getFieldBorderClass = (fieldName: keyof RegistrationFormData, isWarning?: boolean) => {
+  const getFieldBorderClass = (
+    fieldName: keyof RegistrationFormData,
+    isWarning?: boolean
+  ) => {
     const val = watchedValues[fieldName];
     const err = errors[fieldName];
     const isTouched = touchedFields[fieldName];
@@ -663,14 +780,22 @@ useEffect(() => {
       return 'border-amber-400 dark:border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/30 text-slate-900 dark:text-white';
     }
 
-    if (!err && val !== undefined && val !== null && String(val).trim() !== '') {
+    if (
+      !err &&
+      val !== undefined &&
+      val !== null &&
+      String(val).trim() !== ''
+    ) {
       return 'border-emerald-500 dark:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-slate-900 dark:text-white';
     }
 
     return 'border-slate-300 dark:border-zinc-700 focus:border-amber-400 dark:focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30 text-slate-900 dark:text-white';
   };
 
-  const renderStatusBadge = (fieldName: keyof RegistrationFormData, isWarning?: boolean) => {
+  const renderStatusBadge = (
+    fieldName: keyof RegistrationFormData,
+    isWarning?: boolean
+  ) => {
     const val = watchedValues[fieldName];
     const err = errors[fieldName];
     const isTouched = touchedFields[fieldName];
@@ -681,8 +806,15 @@ useEffect(() => {
     if (isWarning) {
       return <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
     }
-    if (!err && val !== undefined && val !== null && String(val).trim() !== '') {
-      return <Check className="w-3.5 h-3.5 text-emerald-500 stroke-3 shrink-0" />;
+    if (
+      !err &&
+      val !== undefined &&
+      val !== null &&
+      String(val).trim() !== ''
+    ) {
+      return (
+        <Check className="w-3.5 h-3.5 text-emerald-500 stroke-3 shrink-0" />
+      );
     }
     return null;
   };
@@ -738,18 +870,26 @@ useEffect(() => {
     setIsSyncing(true);
     try {
       const serverQueue = await registrationService.getQueue();
-      
+
       const serverPendingIds = new Set(
         serverQueue
-          .filter((item: OnlineRegistration) => item.status === 'Pending' && !(item as any).is_archived)
+          .filter(
+            (item: OnlineRegistration) =>
+              item.status === 'Pending' && !(item as any).is_archived
+          )
           .map((item: OnlineRegistration) => item.id)
       );
 
-      const validTickets = localTickets.filter((t) => serverPendingIds.has(t.registrationId));
+      const validTickets = localTickets.filter((t) =>
+        serverPendingIds.has(t.registrationId)
+      );
 
       if (validTickets.length !== localTickets.length) {
         const removedCount = localTickets.length - validTickets.length;
-        localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(validTickets));
+        localStorage.setItem(
+          LOCAL_STORAGE_LIST_KEY,
+          JSON.stringify(validTickets)
+        );
         setActiveRegistrations(validTickets);
 
         toast.info(
@@ -759,7 +899,12 @@ useEffect(() => {
         );
 
         setSelectedTicket((prevSelected) => {
-          if (prevSelected && !validTickets.some((vt) => vt.registrationId === prevSelected.registrationId)) {
+          if (
+            prevSelected &&
+            !validTickets.some(
+              (vt) => vt.registrationId === prevSelected.registrationId
+            )
+          ) {
             if (validTickets.length > 0) {
               return validTickets[0];
             } else {
@@ -821,38 +966,77 @@ useEffect(() => {
   useEffect(() => {
     if (isMinor && watchedSameAsParent) {
       if (watchedParentName) {
-        setValue('emergency_contact_name', watchedParentName, { shouldValidate: true });
+        setValue('emergency_contact_name', watchedParentName, {
+          shouldValidate: true,
+        });
       }
       if (watchedParentRelationship) {
-        setValue('emergency_contact_relationship', watchedParentRelationship, { shouldValidate: true });
+        setValue('emergency_contact_relationship', watchedParentRelationship, {
+          shouldValidate: true,
+        });
       }
       if (watchedParentPhone) {
-        setValue('emergency_contact_phone', watchedParentPhone, { shouldValidate: true });
+        setValue('emergency_contact_phone', watchedParentPhone, {
+          shouldValidate: true,
+        });
       }
     }
-  }, [isMinor, watchedSameAsParent, watchedParentName, watchedParentRelationship, watchedParentPhone, setValue]);
+  }, [
+    isMinor,
+    watchedSameAsParent,
+    watchedParentName,
+    watchedParentRelationship,
+    watchedParentPhone,
+    setValue,
+  ]);
 
   const handleNextStep = async () => {
     if (currentStep === 1) {
-      const valid = await trigger(['last_name', 'first_name', 'middle_initial', 'suffix', 'phone', 'email', 'gender', 'birthday', 'address']);
+      const valid = await trigger([
+        'last_name',
+        'first_name',
+        'middle_initial',
+        'suffix',
+        'phone',
+        'email',
+        'gender',
+        'birthday',
+        'address',
+      ]);
       if (!valid) return;
 
       if (isRestrictedUnder12) {
-        toast.error("Registration is not allowed for applicants under 12 years old.");
+        toast.error(
+          'Registration is not allowed for applicants under 12 years old.'
+        );
         return;
       }
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (isMinor) {
-        const validParent = await trigger(['parent_name', 'parent_relationship', 'parent_relationship_other', 'parent_phone', 'parent_email']);
+        const validParent = await trigger([
+          'parent_name',
+          'parent_relationship',
+          'parent_relationship_other',
+          'parent_phone',
+          'parent_email',
+        ]);
         if (!validParent) return;
 
         if (!watchedSameAsParent) {
-          const validEmergency = await trigger(['emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone']);
+          const validEmergency = await trigger([
+            'emergency_contact_name',
+            'emergency_contact_relationship',
+            'emergency_contact_phone',
+          ]);
           if (!validEmergency) return;
         }
       } else {
-        const validEmergency = await trigger(['emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone']);
+        const validEmergency = await trigger([
+          'emergency_contact_name',
+          'emergency_contact_relationship',
+          'emergency_contact_phone',
+        ]);
         if (!validEmergency) return;
       }
       setCurrentStep(3);
@@ -869,7 +1053,9 @@ useEffect(() => {
 
   const onSubmit = async (data: RegistrationFormData) => {
     if (isTicketLimitReached) {
-      toast.error(`Limit reached! You can only have up to ${MAX_ACTIVE_TICKETS} active pre-registration tickets at a time.`);
+      toast.error(
+        `Limit reached! You can only have up to ${MAX_ACTIVE_TICKETS} active pre-registration tickets at a time.`
+      );
       return;
     }
 
@@ -879,13 +1065,16 @@ useEffect(() => {
       const registrationId = `REG-${randStr}`;
       const qrPayload = registrationId;
 
-      const mi = data.middle_initial?.trim() ? ` ${data.middle_initial.trim().replace('.', '')}.` : '';
+      const mi = data.middle_initial?.trim()
+        ? ` ${data.middle_initial.trim().replace('.', '')}.`
+        : '';
       const suff = data.suffix?.trim() ? ` ${data.suffix.trim()}` : '';
       const combinedFullName = `${data.last_name.trim()}, ${data.first_name.trim()}${mi}${suff}`;
 
-      const finalParentRelationship = data.parent_relationship === 'Other'
-        ? (data.parent_relationship_other?.trim() || 'Other')
-        : data.parent_relationship;
+      const finalParentRelationship =
+        data.parent_relationship === 'Other'
+          ? data.parent_relationship_other?.trim() || 'Other'
+          : data.parent_relationship;
 
       const newReg: OnlineRegistration = {
         id: registrationId,
@@ -907,7 +1096,7 @@ useEffect(() => {
         parent_name: isMinor ? data.parent_name : null,
         parent_relationship: isMinor ? finalParentRelationship : null,
         parent_phone: isMinor ? data.parent_phone : null,
-        parent_email: isMinor ? (data.parent_email || null) : null,
+        parent_email: isMinor ? data.parent_email || null : null,
         applicant_signature: isMinor ? data.applicant_signature : null,
         parent_signature: isMinor ? data.parent_signature : null,
         consent_date: isMinor ? new Date().toISOString() : null,
@@ -931,8 +1120,13 @@ useEffect(() => {
       };
 
       const existingList = loadRecentRegistrations();
-      const updatedList = [storedPayload, ...existingList.filter(item => item.registrationId !== registrationId)];
-      
+      const updatedList = [
+        storedPayload,
+        ...existingList.filter(
+          (item) => item.registrationId !== registrationId
+        ),
+      ];
+
       localStorage.setItem(LOCAL_STORAGE_LIST_KEY, JSON.stringify(updatedList));
       setActiveRegistrations(updatedList);
       setSelectedTicket(storedPayload);
@@ -946,7 +1140,9 @@ useEffect(() => {
     } catch (err: any) {
       const errorMsg = err?.message || '';
       if (errorMsg.includes('Maximum limit of 3 pending registrations')) {
-        toast.error('Limit Reached: You already have 3 pending registrations associated with this phone number.');
+        toast.error(
+          'Limit Reached: You already have 3 pending registrations associated with this phone number.'
+        );
       } else {
         toast.error(errorMsg || 'Submission failed. Please try again.');
       }
@@ -964,7 +1160,9 @@ useEffect(() => {
 
   const handleStartNewRegistration = () => {
     if (isTicketLimitReached) {
-      toast.warning(`Maximum of ${MAX_ACTIVE_TICKETS} active tickets reached. Please present your existing tickets at the reception desk.`);
+      toast.warning(
+        `Maximum of ${MAX_ACTIVE_TICKETS} active tickets reached. Please present your existing tickets at the reception desk.`
+      );
       setViewMode('list');
       return;
     }
@@ -1032,8 +1230,16 @@ useEffect(() => {
 
       ctx.fillStyle = '#475569';
       ctx.font = '500 12px sans-serif';
-      ctx.fillText('Present this QR code or Registration Code to the desk staff', 300, 685);
-      ctx.fillText('upon arrival at Wolf Palomar Gym to activate membership.', 300, 705);
+      ctx.fillText(
+        'Present this QR code or Registration Code to the desk staff',
+        300,
+        685
+      );
+      ctx.fillText(
+        'upon arrival at Wolf Palomar Gym to activate membership.',
+        300,
+        705
+      );
 
       const link = document.createElement('a');
       link.download = `Palomar_Registration_${targetTicket.registrationId}.png`;
@@ -1056,7 +1262,12 @@ useEffect(() => {
     return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
   };
 
-  const isSubmitDisabled = isSubmitting || !isAgreed || isRestrictedUnder12 || isTicketLimitReached || (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
+  const isSubmitDisabled =
+    isSubmitting ||
+    !isAgreed ||
+    isRestrictedUnder12 ||
+    isTicketLimitReached ||
+    (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
 
   const wizardSteps = [
     { id: 1, label: 'Personal' },
@@ -1067,13 +1278,14 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen w-full bg-(--bg-page) text-(--color-text) py-8 px-4 sm:px-6 flex flex-col items-center justify-center transition-colors duration-300">
-      
       {/* Top Utility Bar */}
       <div className="w-full max-w-2xl flex justify-between items-center mb-6 px-2 select-none">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse" />
-          <span className="text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">Self-Service Portal</span>
-          
+          <span className="text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">
+            Self-Service Portal
+          </span>
+
           {/* Real-time Draft Saving Status Indicator */}
           {viewMode === 'form' && draftState !== 'idle' && (
             <div className="hidden sm:flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-800 text-[9px] font-mono font-bold text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-zinc-700 animate-fade-in">
@@ -1113,7 +1325,9 @@ useEffect(() => {
             className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer shadow-xs flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
             title="Refresh and sync ticket status with server"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`}
+            />
             <span className="hidden sm:inline">Refresh</span>
           </button>
 
@@ -1124,11 +1338,15 @@ useEffect(() => {
                 onClick={handleStartNewRegistration}
                 disabled={isTicketLimitReached}
                 className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
-                  viewMode === 'form' 
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                  viewMode === 'form'
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 } ${isTicketLimitReached ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isTicketLimitReached ? `Maximum limit of ${MAX_ACTIVE_TICKETS} tickets reached` : ''}
+                title={
+                  isTicketLimitReached
+                    ? `Maximum limit of ${MAX_ACTIVE_TICKETS} tickets reached`
+                    : ''
+                }
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>New Form</span>
@@ -1145,13 +1363,16 @@ useEffect(() => {
                   }
                 }}
                 className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
-                  viewMode !== 'form' 
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs' 
+                  viewMode !== 'form'
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Ticket className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Active Tickets ({activeRegistrations.length}/{MAX_ACTIVE_TICKETS})</span>
+                <span>
+                  Active Tickets ({activeRegistrations.length}/
+                  {MAX_ACTIVE_TICKETS})
+                </span>
               </button>
             </div>
           )}
@@ -1162,16 +1383,24 @@ useEffect(() => {
             className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs"
             title="Toggle Dark/Light Mode"
           >
-            {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+            {isDarkMode ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-600" />
+            )}
           </button>
         </div>
       </div>
 
       {/* Top Hero Header */}
       <div className="text-center max-w-lg mb-6 space-y-2 select-none animate-fade-in">
-        <img 
-          src={isDarkMode ? (gymLogoDark || gymLogoFallback) : (gymLogoLight || gymLogoFallback)} 
-          alt="Wolf Palomar Fitness Gym" 
+        <img
+          src={
+            isDarkMode
+              ? gymLogoDark || gymLogoFallback
+              : gymLogoLight || gymLogoFallback
+          }
+          alt="Wolf Palomar Fitness Gym"
           className="h-14 sm:h-16 mx-auto object-contain drop-shadow-md"
           onError={(e) => {
             (e.currentTarget as HTMLElement).style.display = 'none';
@@ -1181,23 +1410,26 @@ useEffect(() => {
           Join Wolf Palomar Fitness Gym
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto font-medium">
-          {viewMode === 'form' ? 'Complete your membership pre-registration setup.' : 'Manage your recent membership registration tickets.'}
+          {viewMode === 'form'
+            ? 'Complete your membership pre-registration setup.'
+            : 'Manage your recent membership registration tickets.'}
         </p>
       </div>
 
       {/* Main Container Card */}
       <div className="w-full max-w-2xl bg-(--bg-card) border border-(--border-color) rounded-3xl p-5 sm:p-8 shadow-2xl transition-all duration-300">
-        
         {/* ================= VIEW 1: ACTIVE TICKETS LIST ================= */}
         {viewMode === 'list' && activeRegistrations.length > 0 && (
           <div className="space-y-5 animate-fade-in text-left select-none">
             <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
               <div>
                 <h2 className="font-heading text-sm uppercase tracking-wider font-bold text-slate-900 dark:text-white">
-                  Recent Active Pre-Registrations ({activeRegistrations.length}/{MAX_ACTIVE_TICKETS})
+                  Recent Active Pre-Registrations ({activeRegistrations.length}/
+                  {MAX_ACTIVE_TICKETS})
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  Tickets active until 12:00 AM Manila Time ready for desk checkout.
+                  Tickets active until 12:00 AM Manila Time ready for desk
+                  checkout.
                 </p>
               </div>
 
@@ -1209,7 +1441,9 @@ useEffect(() => {
                   className="p-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-white/5"
                   title="Check ticket status from server"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`}
+                  />
                   <span>Sync</span>
                 </button>
 
@@ -1272,7 +1506,6 @@ useEffect(() => {
         {/* ================= VIEW 2: TICKET DETAILED VIEW ================= */}
         {viewMode === 'ticket' && selectedTicket && (
           <div className="space-y-6 text-center animate-fade-in select-none py-2">
-            
             {activeRegistrations.length > 1 && (
               <div className="flex justify-start">
                 <button
@@ -1280,7 +1513,8 @@ useEffect(() => {
                   onClick={() => setViewMode('list')}
                   className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" /> Back to All Tickets ({activeRegistrations.length})
+                  <ChevronLeft className="w-3.5 h-3.5" /> Back to All Tickets (
+                  {activeRegistrations.length})
                 </button>
               </div>
             )}
@@ -1297,18 +1531,21 @@ useEffect(() => {
                 {selectedTicket.fullName}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Please present the QR code below or registration ID to reception desk staff to activate your subscription.
+                Please present the QR code below or registration ID to reception
+                desk staff to activate your subscription.
               </p>
             </div>
 
             <div className="p-5 bg-white rounded-2xl max-w-xs mx-auto border border-slate-200 shadow-inner space-y-3">
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`} 
-                alt="Registration QR Code" 
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`}
+                alt="Registration QR Code"
                 className="w-52 h-52 sm:w-60 sm:h-60 mx-auto block object-contain"
               />
               <div className="border-t border-slate-100 pt-2">
-                <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase tracking-widest">Manual Registration Code</span>
+                <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase tracking-widest">
+                  Manual Registration Code
+                </span>
                 <span className="text-lg font-mono font-black text-[#123c73] block tracking-wider mt-0.5">
                   {selectedTicket.registrationId}
                 </span>
@@ -1318,7 +1555,8 @@ useEffect(() => {
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full text-xs font-mono font-bold">
               <Clock className="w-4 h-4" />
               <span>
-                Ticket valid for: {getTimeRemaining(selectedTicket.expiresAt)} (Until 12 AM Manila)
+                Ticket valid for: {getTimeRemaining(selectedTicket.expiresAt)}{' '}
+                (Until 12 AM Manila)
               </span>
             </div>
 
@@ -1330,7 +1568,9 @@ useEffect(() => {
                 className="py-3 px-3 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 dark:border-zinc-700"
                 title="Sync with server"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`} />
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`}
+                />
                 <span>Refresh</span>
               </button>
 
@@ -1347,8 +1587,16 @@ useEffect(() => {
                 onClick={() => handleCopyCode(selectedTicket.registrationId)}
                 className="py-3 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/10"
               >
-                {copiedId === selectedTicket.registrationId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedId === selectedTicket.registrationId ? 'Copied!' : 'Copy'}</span>
+                {copiedId === selectedTicket.registrationId ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {copiedId === selectedTicket.registrationId
+                    ? 'Copied!'
+                    : 'Copy'}
+                </span>
               </button>
 
               <button
@@ -1356,7 +1604,7 @@ useEffect(() => {
                 onClick={handleStartNewRegistration}
                 disabled={isTicketLimitReached}
                 className={`py-3 px-3 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all border-none ${
-                  !isTicketLimitReached 
+                  !isTicketLimitReached
                     ? 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 cursor-pointer'
                     : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-60'
                 }`}
@@ -1364,24 +1612,30 @@ useEffect(() => {
                 <PlusCircle className="w-3.5 h-3.5" /> New Form
               </button>
             </div>
-
           </div>
         )}
 
         {/* ================= VIEW 3: WIZARD FORM ================= */}
         {viewMode === 'form' && (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-left">
-            
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="space-y-6 text-left"
+          >
             {/* Limit Banner Alert */}
             {isTicketLimitReached && (
               <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-start gap-3 shadow-xs">
                 <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="space-y-1 text-left">
                   <span className="font-heading text-xs uppercase tracking-wider font-black block text-amber-500">
-                    ⚠️ Maximum Active Ticket Limit Reached ({MAX_ACTIVE_TICKETS}/{MAX_ACTIVE_TICKETS})
+                    ⚠️ Maximum Active Ticket Limit Reached ({MAX_ACTIVE_TICKETS}
+                    /{MAX_ACTIVE_TICKETS})
                   </span>
                   <p className="text-[11px] font-medium leading-relaxed">
-                    You currently have 3 active pre-registration tickets. To maintain network security and prevent system abuse, new registration submissions are locked until your current tickets expire at midnight (12:00 AM Manila Time) or are processed at the gym front desk.
+                    You currently have 3 active pre-registration tickets. To
+                    maintain network security and prevent system abuse, new
+                    registration submissions are locked until your current
+                    tickets expire at midnight (12:00 AM Manila Time) or are
+                    processed at the gym front desk.
                   </p>
                 </div>
               </div>
@@ -1391,9 +1645,11 @@ useEffect(() => {
             <div className="select-none">
               <div className="flex items-center justify-between relative mb-2">
                 <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-zinc-800 -translate-y-1/2 z-0" />
-                <div 
+                <div
                   className="absolute top-1/2 left-0 h-0.5 bg-[#123c73] dark:bg-[#bf0202] -translate-y-1/2 z-0 transition-all duration-300"
-                  style={{ width: `${((currentStep - 1) / (wizardSteps.length - 1)) * 100}%` }}
+                  style={{
+                    width: `${((currentStep - 1) / (wizardSteps.length - 1)) * 100}%`,
+                  }}
                 />
 
                 {wizardSteps.map((step) => {
@@ -1401,19 +1657,32 @@ useEffect(() => {
                   const isCompleted = currentStep > step.id;
 
                   return (
-                    <div key={step.id} className="relative z-10 flex flex-col items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-heading text-xs transition-all ${
-                        isCompleted
-                          ? 'bg-emerald-500 text-white shadow-md'
-                          : isActive
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white ring-4 ring-blue-500/20 dark:ring-red-500/20'
-                          : 'bg-slate-200 dark:bg-zinc-800 text-slate-500'
-                      }`}>
-                        {isCompleted ? <Check className="w-4 h-4 stroke-3" /> : step.id}
+                    <div
+                      key={step.id}
+                      className="relative z-10 flex flex-col items-center"
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-heading text-xs transition-all ${
+                          isCompleted
+                            ? 'bg-emerald-500 text-white shadow-md'
+                            : isActive
+                              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white ring-4 ring-blue-500/20 dark:ring-red-500/20'
+                              : 'bg-slate-200 dark:bg-zinc-800 text-slate-500'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <Check className="w-4 h-4 stroke-3" />
+                        ) : (
+                          step.id
+                        )}
                       </div>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${
-                        isActive ? 'text-[#123c73] dark:text-[#bf0202]' : 'text-slate-400'
-                      }`}>
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${
+                          isActive
+                            ? 'text-[#123c73] dark:text-[#bf0202]'
+                            : 'text-slate-400'
+                        }`}
+                      >
                         {step.label}
                       </span>
                     </div>
@@ -1433,7 +1702,6 @@ useEffect(() => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  
                   {/* Last Name */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
@@ -1452,7 +1720,9 @@ useEffect(() => {
                       />
                     </div>
                     {errors.last_name && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.last_name.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.last_name.message}
+                      </p>
                     )}
                   </div>
 
@@ -1474,7 +1744,9 @@ useEffect(() => {
                       />
                     </div>
                     {errors.first_name && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.first_name.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.first_name.message}
+                      </p>
                     )}
                   </div>
 
@@ -1483,7 +1755,10 @@ useEffect(() => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          M.I. <span className="text-slate-400 font-normal">(optional)</span>
+                          M.I.{' '}
+                          <span className="text-slate-400 font-normal">
+                            (optional)
+                          </span>
                         </label>
                         {renderStatusBadge('middle_initial')}
                       </div>
@@ -1499,7 +1774,10 @@ useEffect(() => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Suffix <span className="text-slate-400 font-normal">(optional)</span>
+                          Suffix{' '}
+                          <span className="text-slate-400 font-normal">
+                            (optional)
+                          </span>
                         </label>
                         {renderStatusBadge('suffix')}
                       </div>
@@ -1528,14 +1806,16 @@ useEffect(() => {
                         {...register('phone', {
                           onChange: (e) => {
                             e.target.value = e.target.value.replace(/\D/g, '');
-                          }
+                          },
                         })}
                         placeholder="09171234567"
                         className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('phone')}`}
                       />
                     </div>
                     {errors.phone && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.phone.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.phone.message}
+                      </p>
                     )}
                   </div>
 
@@ -1543,7 +1823,10 @@ useEffect(() => {
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
                       <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Email Address <span className="text-slate-400 font-normal">(optional)</span>
+                        Email Address{' '}
+                        <span className="text-slate-400 font-normal">
+                          (optional)
+                        </span>
                       </label>
                       {renderStatusBadge('email')}
                     </div>
@@ -1557,7 +1840,9 @@ useEffect(() => {
                       />
                     </div>
                     {errors.email && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.email.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.email.message}
+                      </p>
                     )}
                   </div>
 
@@ -1576,10 +1861,14 @@ useEffect(() => {
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                       <option value="Non-Binary">Non-Binary</option>
-                      <option value="Prefer not to say">Prefer not to say</option>
+                      <option value="Prefer not to say">
+                        Prefer not to say
+                      </option>
                     </select>
                     {errors.gender && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.gender.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.gender.message}
+                      </p>
                     )}
                   </div>
 
@@ -1592,14 +1881,21 @@ useEffect(() => {
                       <div className="flex items-center gap-1.5">
                         {renderStatusBadge('birthday', isMinor)}
                         {watchedBirthday && (
-                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                            isRestrictedUnder12
-                              ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                              : isMinor 
-                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' 
-                              : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                          }`}>
-                            Age: {applicantAge} {isRestrictedUnder12 ? '(Restricted)' : isMinor ? '(Minor)' : '(Adult)'}
+                          <span
+                            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                              isRestrictedUnder12
+                                ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                                : isMinor
+                                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                            }`}
+                          >
+                            Age: {applicantAge}{' '}
+                            {isRestrictedUnder12
+                              ? '(Restricted)'
+                              : isMinor
+                                ? '(Minor)'
+                                : '(Adult)'}
                           </span>
                         )}
                       </div>
@@ -1615,7 +1911,9 @@ useEffect(() => {
                       />
                     </div>
                     {errors.birthday && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">{errors.birthday.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.birthday.message}
+                      </p>
                     )}
                   </div>
 
@@ -1624,10 +1922,15 @@ useEffect(() => {
                       <Ban className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                       <div className="space-y-1 text-left">
                         <span className="font-heading text-xs uppercase tracking-wider font-black block text-red-500">
-                          ❌ Registration Prohibited: Age {applicantAge} Years Old
+                          ❌ Registration Prohibited: Age {applicantAge} Years
+                          Old
                         </span>
                         <p className="text-[11px] font-medium leading-relaxed">
-                          Regular online membership is strictly not permitted for children under 12 years old. Gym access for ages 0–11 is allowed only in supervised youth programs with management approval and continuous parent/legal guardian presence on site.
+                          Regular online membership is strictly not permitted
+                          for children under 12 years old. Gym access for ages
+                          0–11 is allowed only in supervised youth programs with
+                          management approval and continuous parent/legal
+                          guardian presence on site.
                         </p>
                       </div>
                     </div>
@@ -1637,8 +1940,12 @@ useEffect(() => {
                     <div className="sm:col-span-2 p-3.5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-start gap-2.5 text-left">
                       <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <div className="text-[11px] font-medium leading-relaxed">
-                        <span className="font-bold block">Minor Applicant Policy (Age: {applicantAge} Yrs)</span>
-                        Registration is permitted with parent/legal guardian consent, signed waiver, and parent/guardian e-signatures required in the next steps.
+                        <span className="font-bold block">
+                          Minor Applicant Policy (Age: {applicantAge} Yrs)
+                        </span>
+                        Registration is permitted with parent/legal guardian
+                        consent, signed waiver, and parent/guardian e-signatures
+                        required in the next steps.
                       </div>
                     </div>
                   )}
@@ -1647,7 +1954,10 @@ useEffect(() => {
                   <div className="space-y-1 sm:col-span-2">
                     <div className="flex justify-between items-center">
                       <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                        Home Address <span className="text-slate-400 font-normal">(optional)</span>
+                        Home Address{' '}
+                        <span className="text-slate-400 font-normal">
+                          (optional)
+                        </span>
                       </label>
                       {renderStatusBadge('address')}
                     </div>
@@ -1661,7 +1971,6 @@ useEffect(() => {
                       />
                     </div>
                   </div>
-
                 </div>
               </div>
             )}
@@ -1672,7 +1981,9 @@ useEffect(() => {
                 <div className="flex items-center gap-2 border-b border-(--border-color) pb-2 select-none">
                   <HeartHandshake className="w-4 h-4 text-(--color-primary-light)" />
                   <h2 className="font-heading text-xs tracking-widest text-slate-900 dark:text-white uppercase font-bold">
-                    {isMinor ? 'Step 2: Parent / Legal Guardian Details' : 'Step 2: Emergency Contact'}
+                    {isMinor
+                      ? 'Step 2: Parent / Legal Guardian Details'
+                      : 'Step 2: Emergency Contact'}
                   </h2>
                 </div>
 
@@ -1681,7 +1992,8 @@ useEffect(() => {
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Parent / Legal Guardian Full Name <span className="text-red-500">*</span>
+                          Parent / Legal Guardian Full Name{' '}
+                          <span className="text-red-500">*</span>
                         </label>
                         {renderStatusBadge('parent_name')}
                       </div>
@@ -1692,14 +2004,17 @@ useEffect(() => {
                         className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_name')}`}
                       />
                       {errors.parent_name && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_name.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.parent_name.message}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Relationship to Applicant <span className="text-red-500">*</span>
+                          Relationship to Applicant{' '}
+                          <span className="text-red-500">*</span>
                         </label>
                         {renderStatusBadge('parent_relationship')}
                       </div>
@@ -1713,7 +2028,9 @@ useEffect(() => {
                         <option value="Other">Other (specify)</option>
                       </select>
                       {errors.parent_relationship && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_relationship.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.parent_relationship.message}
+                        </p>
                       )}
                     </div>
 
@@ -1721,7 +2038,8 @@ useEffect(() => {
                       <div className="space-y-1">
                         <div className="flex justify-between items-center">
                           <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                            Specify Relationship <span className="text-red-500">*</span>
+                            Specify Relationship{' '}
+                            <span className="text-red-500">*</span>
                           </label>
                           {renderStatusBadge('parent_relationship_other')}
                         </div>
@@ -1732,7 +2050,9 @@ useEffect(() => {
                           className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_relationship_other')}`}
                         />
                         {errors.parent_relationship_other && (
-                          <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_relationship_other.message}</p>
+                          <p className="text-[10px] text-red-500 font-medium mt-1">
+                            {errors.parent_relationship_other.message}
+                          </p>
                         )}
                       </div>
                     )}
@@ -1740,7 +2060,8 @@ useEffect(() => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Parent Phone Number <span className="text-red-500">*</span>
+                          Parent Phone Number{' '}
+                          <span className="text-red-500">*</span>
                         </label>
                         {renderStatusBadge('parent_phone')}
                       </div>
@@ -1749,20 +2070,25 @@ useEffect(() => {
                         {...register('parent_phone', {
                           onChange: (e) => {
                             e.target.value = e.target.value.replace(/\D/g, '');
-                          }
+                          },
                         })}
                         placeholder="09170000000"
                         className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_phone')}`}
                       />
                       {errors.parent_phone && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.parent_phone.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.parent_phone.message}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Parent Email Address <span className="text-slate-400 font-normal">(optional)</span>
+                          Parent Email Address{' '}
+                          <span className="text-slate-400 font-normal">
+                            (optional)
+                          </span>
                         </label>
                         {renderStatusBadge('parent_email')}
                       </div>
@@ -1781,7 +2107,10 @@ useEffect(() => {
                           {...register('same_as_parent')}
                           className="w-4 h-4 rounded border-slate-300 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer"
                         />
-                        <span>Use Parent / Legal Guardian as Primary Emergency Contact</span>
+                        <span>
+                          Use Parent / Legal Guardian as Primary Emergency
+                          Contact
+                        </span>
                       </label>
                       <Users className="w-4 h-4 text-slate-400" />
                     </div>
@@ -1793,7 +2122,14 @@ useEffect(() => {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Emergency Contact Name {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                          Emergency Contact Name{' '}
+                          {isMinor ? (
+                            <span className="text-red-500">*</span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">
+                              (optional)
+                            </span>
+                          )}
                         </label>
                         {renderStatusBadge('emergency_contact_name')}
                       </div>
@@ -1804,14 +2140,23 @@ useEffect(() => {
                         className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_name')}`}
                       />
                       {errors.emergency_contact_name && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_name.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.emergency_contact_name.message}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Relationship {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                          Relationship{' '}
+                          {isMinor ? (
+                            <span className="text-red-500">*</span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">
+                              (optional)
+                            </span>
+                          )}
                         </label>
                         {renderStatusBadge('emergency_contact_relationship')}
                       </div>
@@ -1822,14 +2167,23 @@ useEffect(() => {
                         className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_relationship')}`}
                       />
                       {errors.emergency_contact_relationship && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_relationship.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.emergency_contact_relationship.message}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                          Emergency Contact Phone {isMinor ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                          Emergency Contact Phone{' '}
+                          {isMinor ? (
+                            <span className="text-red-500">*</span>
+                          ) : (
+                            <span className="text-slate-400 font-normal">
+                              (optional)
+                            </span>
+                          )}
                         </label>
                         {renderStatusBadge('emergency_contact_phone')}
                       </div>
@@ -1839,15 +2193,20 @@ useEffect(() => {
                           type="tel"
                           {...register('emergency_contact_phone', {
                             onChange: (e) => {
-                              e.target.value = e.target.value.replace(/\D/g, '');
-                            }
+                              e.target.value = e.target.value.replace(
+                                /\D/g,
+                                ''
+                              );
+                            },
                           })}
                           placeholder="09189876543"
                           className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_phone')}`}
                         />
                       </div>
                       {errors.emergency_contact_phone && (
-                        <p className="text-[10px] text-red-500 font-medium mt-1">{errors.emergency_contact_phone.message}</p>
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.emergency_contact_phone.message}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -1867,7 +2226,11 @@ useEffect(() => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div
-                    onClick={() => setValue('preferred_plan', 'Monthly Membership', { shouldValidate: true })}
+                    onClick={() =>
+                      setValue('preferred_plan', 'Monthly Membership', {
+                        shouldValidate: true,
+                      })
+                    }
                     className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
                       selectedPlan === 'Monthly Membership'
                         ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
@@ -1895,13 +2258,18 @@ useEffect(() => {
                         ₱{settings.monthly_plan_price.toLocaleString()}
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-1">
-                        Unlimited gym entry for 30 days with ₱0 check-in fee. Ideal for active lifters.
+                        Unlimited gym entry for 30 days with ₱0 check-in fee.
+                        Ideal for active lifters.
                       </p>
                     </div>
                   </div>
 
                   <div
-                    onClick={() => setValue('preferred_plan', 'Yearly Membership', { shouldValidate: true })}
+                    onClick={() =>
+                      setValue('preferred_plan', 'Yearly Membership', {
+                        shouldValidate: true,
+                      })
+                    }
                     className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
                       selectedPlan === 'Yearly Membership'
                         ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
@@ -1929,7 +2297,9 @@ useEffect(() => {
                         ₱{settings.yearly_plan_price.toLocaleString()}
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-1">
-                        Access valid for 365 days. Reduced entry check-in fee (₱{settings.yearly_member_checkin_fee.toLocaleString()}/visit).
+                        Access valid for 365 days. Reduced entry check-in fee (₱
+                        {settings.yearly_member_checkin_fee.toLocaleString()}
+                        /visit).
                       </p>
                     </div>
                   </div>
@@ -1948,47 +2318,70 @@ useEffect(() => {
                 </div>
 
                 <div className="p-5 rounded-3xl bg-(--bg-input) border border-(--border-color) space-y-4 text-left">
-                  
                   {isMinor && (
                     <>
                       <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-400/40 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
                         <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                        <span><strong>Required minor consent:</strong> both the applicant and parent or legal guardian must provide a signature before the registration can be submitted.</span>
+                        <span>
+                          <strong>Required minor consent:</strong> both the
+                          applicant and parent or legal guardian must provide a
+                          signature before the registration can be submitted.
+                        </span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <SignaturePad
                           label="Applicant Signature *"
                           value={watchedApplicantSignature || null}
-                          onChange={(dataUrl) => setValue('applicant_signature', dataUrl, { shouldValidate: true })}
+                          onChange={(dataUrl) =>
+                            setValue('applicant_signature', dataUrl, {
+                              shouldValidate: true,
+                            })
+                          }
                           error={errors.applicant_signature?.message}
                         />
 
                         <SignaturePad
                           label="Parent / Guardian Signature *"
                           value={watchedParentSignature || null}
-                          onChange={(dataUrl) => setValue('parent_signature', dataUrl, { shouldValidate: true })}
+                          onChange={(dataUrl) =>
+                            setValue('parent_signature', dataUrl, {
+                              shouldValidate: true,
+                            })
+                          }
                           error={errors.parent_signature?.message}
                         />
                       </div>
 
                       <div className="flex justify-between items-center text-xs font-semibold pt-1 border-t border-(--border-color)">
-                        <span className="text-slate-400 uppercase text-[10px]">Consent Date</span>
-                        <span className="font-mono text-slate-800 dark:text-slate-200">{todayFormatted}</span>
+                        <span className="text-slate-400 uppercase text-[10px]">
+                          Consent Date
+                        </span>
+                        <span className="font-mono text-slate-800 dark:text-slate-200">
+                          {todayFormatted}
+                        </span>
                       </div>
 
                       <div className="p-3.5 rounded-xl bg-(--bg-card) border border-(--border-color) text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                        "I am the parent or legal guardian of the applicant named above. I have read and understood the Terms & Conditions and Privacy Policy, including the rules for safe equipment use, prohibited conduct, membership payments, and minors. I voluntarily give permission for the applicant to participate and accept responsibility for the applicant's compliance with these rules."
+                        "I am the parent or legal guardian of the applicant
+                        named above. I have read and understood the Terms &
+                        Conditions and Privacy Policy, including the rules for
+                        safe equipment use, prohibited conduct, membership
+                        payments, and minors. I voluntarily give permission for
+                        the applicant to participate and accept responsibility
+                        for the applicant's compliance with these rules."
                       </div>
                     </>
                   )}
 
-                  <div className={`p-4 rounded-2xl border-2 transition-all ${
-                    errors.agreement
-                      ? 'bg-red-500/5 border-red-500'
-                      : isAgreed
-                      ? 'bg-emerald-500/10 border-emerald-500'
-                      : 'bg-amber-500/5 border-amber-400'
-                  }`}>
+                  <div
+                    className={`p-4 rounded-2xl border-2 transition-all ${
+                      errors.agreement
+                        ? 'bg-red-500/5 border-red-500'
+                        : isAgreed
+                          ? 'bg-emerald-500/10 border-emerald-500'
+                          : 'bg-amber-500/5 border-amber-400'
+                    }`}
+                  >
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1998,17 +2391,54 @@ useEffect(() => {
                       <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-snug">
                         {isMinor ? (
                           <>
-                            I certify that I am the lawful parent/guardian, the information is accurate, and I agree to the <button type="button" onClick={() => setAgreementDocument('terms')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={() => setAgreementDocument('privacy')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button> for the applicant. <span className="text-red-500">*</span>
+                            I certify that I am the lawful parent/guardian, the
+                            information is accurate, and I agree to the{' '}
+                            <button
+                              type="button"
+                              onClick={() => setAgreementDocument('terms')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              Terms &amp; Conditions
+                            </button>{' '}
+                            and{' '}
+                            <button
+                              type="button"
+                              onClick={() => setAgreementDocument('privacy')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              Privacy Policy
+                            </button>{' '}
+                            for the applicant.{' '}
+                            <span className="text-red-500">*</span>
                           </>
                         ) : (
                           <>
-                            I certify that all information is accurate and I agree to the <button type="button" onClick={() => setAgreementDocument('terms')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Terms &amp; Conditions</button> and <button type="button" onClick={() => setAgreementDocument('privacy')} className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer">Privacy Policy</button>. <span className="text-red-500">*</span>
+                            I certify that all information is accurate and I
+                            agree to the{' '}
+                            <button
+                              type="button"
+                              onClick={() => setAgreementDocument('terms')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              Terms &amp; Conditions
+                            </button>{' '}
+                            and{' '}
+                            <button
+                              type="button"
+                              onClick={() => setAgreementDocument('privacy')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              Privacy Policy
+                            </button>
+                            . <span className="text-red-500">*</span>
                           </>
                         )}
                       </span>
                     </label>
                     {errors.agreement && (
-                      <p className="text-[10px] text-red-500 font-medium mt-2">{errors.agreement.message}</p>
+                      <p className="text-[10px] text-red-500 font-medium mt-2">
+                        {errors.agreement.message}
+                      </p>
                     )}
                   </div>
 
@@ -2016,20 +2446,25 @@ useEffect(() => {
                     <div className="flex items-start gap-2 text-[10px] text-slate-400 leading-relaxed italic">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
                       <span>
-                        Electronic signatures provided here carry the same legal standing as physical handwritten signatures under Philippine Law (Republic Act No. 8792 - Electronic Commerce Act).
+                        Electronic signatures provided here carry the same legal
+                        standing as physical handwritten signatures under
+                        Philippine Law (Republic Act No. 8792 - Electronic
+                        Commerce Act).
                       </span>
                     </div>
                   )}
-
                 </div>
               </div>
             )}
 
-            <AgreementDocumentViewer isOpen={agreementDocument !== null} onClose={() => setAgreementDocument(null)} initialDocument={agreementDocument || 'terms'} />
+            <AgreementDocumentViewer
+              isOpen={agreementDocument !== null}
+              onClose={() => setAgreementDocument(null)}
+              initialDocument={agreementDocument || 'terms'}
+            />
 
             {/* WIZARD BUTTONS */}
             <div className="flex justify-between items-center pt-4 border-t border-(--border-color) select-none">
-              
               {currentStep > 1 ? (
                 <button
                   type="button"
@@ -2075,18 +2510,14 @@ useEffect(() => {
                   )}
                 </button>
               )}
-
             </div>
-
           </form>
         )}
-
       </div>
 
       <footer className="mt-8 text-center text-[10px] text-slate-400 font-mono select-none uppercase tracking-widest">
         Wolf Palomar Fitness Management • Public Self-Service Portal
       </footer>
-
     </div>
   );
 };

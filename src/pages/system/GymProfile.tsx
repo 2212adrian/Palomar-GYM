@@ -3,19 +3,20 @@ import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
 import { compressImage } from '../../lib/imageCompressor';
-import { 
-  Building, 
-  Upload, 
-  Trash2, 
-  Image as ImageIcon, 
+import {
+  Building,
+  Upload,
+  Trash2,
+  Image as ImageIcon,
   Info,
   ExternalLink,
-  Lock
+  Lock,
 } from 'lucide-react';
 
 const DEFAULT_GYM_CONFIG = {
   gymName: 'WOLF PALOMAR GYM',
-  gymDescription: 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
+  gymDescription:
+    'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
   gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
   contactName1: 'Staff Ryan',
   contactNumber1: '09762607481',
@@ -23,22 +24,38 @@ const DEFAULT_GYM_CONFIG = {
   contactNumber2: '09123456789',
   emailAddress: 'contact@wolfpalomargym.com',
   gymLogo: '',
-  carouselImages: [] as string[]
+  carouselImages: [] as string[],
 };
 
 export const GymProfile: React.FC = () => {
   const { user } = useAuthStore();
 
   const [gymName, setGymName] = useState<string>(DEFAULT_GYM_CONFIG.gymName);
-  const [gymDescription, setGymDescription] = useState<string>(DEFAULT_GYM_CONFIG.gymDescription);
-  const [gymAddress, setGymAddress] = useState<string>(DEFAULT_GYM_CONFIG.gymAddress);
-  const [contactName1, setContactName1] = useState<string>(DEFAULT_GYM_CONFIG.contactName1);
-  const [contactNumber1, setContactNumber1] = useState<string>(DEFAULT_GYM_CONFIG.contactNumber1);
-  const [contactName2, setContactName2] = useState<string>(DEFAULT_GYM_CONFIG.contactName2);
-  const [contactNumber2, setContactNumber2] = useState<string>(DEFAULT_GYM_CONFIG.contactNumber2);
-  const [emailAddress, setEmailAddress] = useState<string>(DEFAULT_GYM_CONFIG.emailAddress);
+  const [gymDescription, setGymDescription] = useState<string>(
+    DEFAULT_GYM_CONFIG.gymDescription
+  );
+  const [gymAddress, setGymAddress] = useState<string>(
+    DEFAULT_GYM_CONFIG.gymAddress
+  );
+  const [contactName1, setContactName1] = useState<string>(
+    DEFAULT_GYM_CONFIG.contactName1
+  );
+  const [contactNumber1, setContactNumber1] = useState<string>(
+    DEFAULT_GYM_CONFIG.contactNumber1
+  );
+  const [contactName2, setContactName2] = useState<string>(
+    DEFAULT_GYM_CONFIG.contactName2
+  );
+  const [contactNumber2, setContactNumber2] = useState<string>(
+    DEFAULT_GYM_CONFIG.contactNumber2
+  );
+  const [emailAddress, setEmailAddress] = useState<string>(
+    DEFAULT_GYM_CONFIG.emailAddress
+  );
   const [gymLogo, setGymLogo] = useState<string>(DEFAULT_GYM_CONFIG.gymLogo);
-  const [carouselImages, setCarouselImages] = useState<string[]>(DEFAULT_GYM_CONFIG.carouselImages);
+  const [carouselImages, setCarouselImages] = useState<string[]>(
+    DEFAULT_GYM_CONFIG.carouselImages
+  );
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -63,15 +80,18 @@ export const GymProfile: React.FC = () => {
       if (data) {
         const parsedConfig = {
           gymName: data.gym_name || DEFAULT_GYM_CONFIG.gymName,
-          gymDescription: data.gym_description || DEFAULT_GYM_CONFIG.gymDescription,
+          gymDescription:
+            data.gym_description || DEFAULT_GYM_CONFIG.gymDescription,
           gymAddress: data.gym_address || DEFAULT_GYM_CONFIG.gymAddress,
           contactName1: data.contact_name_1 || DEFAULT_GYM_CONFIG.contactName1,
-          contactNumber1: data.contact_number_1 || DEFAULT_GYM_CONFIG.contactNumber1,
+          contactNumber1:
+            data.contact_number_1 || DEFAULT_GYM_CONFIG.contactNumber1,
           contactName2: data.contact_name_2 || DEFAULT_GYM_CONFIG.contactName2,
-          contactNumber2: data.contact_number_2 || DEFAULT_GYM_CONFIG.contactNumber2,
+          contactNumber2:
+            data.contact_number_2 || DEFAULT_GYM_CONFIG.contactNumber2,
           emailAddress: data.email_address || DEFAULT_GYM_CONFIG.emailAddress,
           gymLogo: data.gym_logo || '',
-          carouselImages: data.carousel_images || []
+          carouselImages: data.carousel_images || [],
         };
 
         setGymName(parsedConfig.gymName);
@@ -100,7 +120,11 @@ export const GymProfile: React.FC = () => {
 
     const channel = supabase
       .channel('gym_profile_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gym_profile' }, fetchGymProfile)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gym_profile' },
+        fetchGymProfile
+      )
       .subscribe();
 
     return () => {
@@ -118,29 +142,30 @@ export const GymProfile: React.FC = () => {
     contactNumber2,
     emailAddress,
     gymLogo,
-    carouselImages
+    carouselImages,
   };
 
-  const isDirty = Boolean(initialConfig && (
-    gymName !== initialConfig.gymName ||
-    gymDescription !== initialConfig.gymDescription ||
-    gymAddress !== initialConfig.gymAddress ||
-    contactName1 !== initialConfig.contactName1 ||
-    contactNumber1 !== initialConfig.contactNumber1 ||
-    contactName2 !== initialConfig.contactName2 ||
-    contactNumber2 !== initialConfig.contactNumber2 ||
-    emailAddress !== initialConfig.emailAddress ||
-    gymLogo !== initialConfig.gymLogo ||
-    JSON.stringify(carouselImages) !== JSON.stringify(initialConfig.carouselImages)
-  ));
+  const isDirty = Boolean(
+    initialConfig &&
+    (gymName !== initialConfig.gymName ||
+      gymDescription !== initialConfig.gymDescription ||
+      gymAddress !== initialConfig.gymAddress ||
+      contactName1 !== initialConfig.contactName1 ||
+      contactNumber1 !== initialConfig.contactNumber1 ||
+      contactName2 !== initialConfig.contactName2 ||
+      contactNumber2 !== initialConfig.contactNumber2 ||
+      emailAddress !== initialConfig.emailAddress ||
+      gymLogo !== initialConfig.gymLogo ||
+      JSON.stringify(carouselImages) !==
+        JSON.stringify(initialConfig.carouselImages))
+  );
 
   const handleSaveConfig = async () => {
     setIsSaving(true);
     const current = currentConfigRef.current;
     try {
-      const { error } = await supabase
-        .from('gym_profile')
-        .upsert([{
+      const { error } = await supabase.from('gym_profile').upsert([
+        {
           id: 1,
           gym_name: current.gymName,
           gym_description: current.gymDescription,
@@ -153,8 +178,9 @@ export const GymProfile: React.FC = () => {
           gym_logo: current.gymLogo,
           carousel_images: current.carouselImages,
           updated_at: new Date().toISOString(),
-          updated_by: user?.id
-        }]);
+          updated_by: user?.id,
+        },
+      ]);
 
       if (error) throw error;
 
@@ -171,7 +197,8 @@ export const GymProfile: React.FC = () => {
   useEffect(() => {
     const handleSaveTrigger = () => handleSaveConfig();
     window.addEventListener('trigger-rates-save', handleSaveTrigger);
-    return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, []);
 
   useEffect(() => {
@@ -192,20 +219,25 @@ export const GymProfile: React.FC = () => {
       }
     };
     window.addEventListener('trigger-rates-cancel', handleCancelTrigger);
-    return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
   }, []);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-      detail: { isDirty, isSaving } 
-    }));
+    window.dispatchEvent(
+      new CustomEvent('settings-dirty-state', {
+        detail: { isDirty, isSaving },
+      })
+    );
   }, [isDirty, isSaving]);
 
   useEffect(() => {
     return () => {
-      window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-        detail: { isDirty: false, isSaving: false } 
-      }));
+      window.dispatchEvent(
+        new CustomEvent('settings-dirty-state', {
+          detail: { isDirty: false, isSaving: false },
+        })
+      );
     };
   }, []);
 
@@ -239,7 +271,9 @@ export const GymProfile: React.FC = () => {
     }
   };
 
-  const handleCarouselUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCarouselUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
@@ -263,9 +297,11 @@ export const GymProfile: React.FC = () => {
       }
     });
 
-    const newImages = (await Promise.all(compressedPromises)).filter(Boolean) as string[];
+    const newImages = (await Promise.all(compressedPromises)).filter(
+      Boolean
+    ) as string[];
     setCarouselImages((prev) => [...prev, ...newImages]);
-    
+
     if (files.length > remainingSlots) {
       toast.warn(`Only uploaded ${remainingSlots} images. Limit is 6.`);
     } else {
@@ -290,15 +326,14 @@ export const GymProfile: React.FC = () => {
           Gym Profile
         </h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Configure business details, contact directories, and login screen media layouts.
+          Configure business details, contact directories, and login screen
+          media layouts.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
         {/* Left Side: Forms */}
         <div className="lg:col-span-7 space-y-6">
-          
           <div className="p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <Building className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
@@ -307,7 +342,12 @@ export const GymProfile: React.FC = () => {
 
             <div className="grid gap-4">
               <div className="grid gap-1.5">
-                <label htmlFor="gymNameInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Gym Name</label>
+                <label
+                  htmlFor="gymNameInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                >
+                  Gym Name
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
@@ -325,7 +365,12 @@ export const GymProfile: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="gymDescriptionInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Gym Description</label>
+                <label
+                  htmlFor="gymDescriptionInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                >
+                  Gym Description
+                </label>
                 {isLoading ? (
                   <div className="h-20 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
@@ -343,7 +388,12 @@ export const GymProfile: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5">
-                <label htmlFor="gymAddressInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Physical Address</label>
+                <label
+                  htmlFor="gymAddressInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                >
+                  Physical Address
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
@@ -363,7 +413,12 @@ export const GymProfile: React.FC = () => {
               {/* Two Contacts Section */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 dark:border-white/5 pt-4">
                 <div className="grid gap-1.5">
-                  <label htmlFor="contactName1Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Name 1</label>
+                  <label
+                    htmlFor="contactName1Input"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                  >
+                    Contact Name 1
+                  </label>
                   {isLoading ? (
                     <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
@@ -381,7 +436,12 @@ export const GymProfile: React.FC = () => {
                 </div>
 
                 <div className="grid gap-1.5">
-                  <label htmlFor="contactNumber1Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Number 1</label>
+                  <label
+                    htmlFor="contactNumber1Input"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                  >
+                    Contact Number 1
+                  </label>
                   {isLoading ? (
                     <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
@@ -399,7 +459,12 @@ export const GymProfile: React.FC = () => {
                 </div>
 
                 <div className="grid gap-1.5 pt-1.5">
-                  <label htmlFor="contactName2Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Name 2</label>
+                  <label
+                    htmlFor="contactName2Input"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                  >
+                    Contact Name 2
+                  </label>
                   {isLoading ? (
                     <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
@@ -417,7 +482,12 @@ export const GymProfile: React.FC = () => {
                 </div>
 
                 <div className="grid gap-1.5 pt-1.5">
-                  <label htmlFor="contactNumber2Input" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Contact Number 2</label>
+                  <label
+                    htmlFor="contactNumber2Input"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                  >
+                    Contact Number 2
+                  </label>
                   {isLoading ? (
                     <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
@@ -436,7 +506,12 @@ export const GymProfile: React.FC = () => {
               </div>
 
               <div className="grid gap-1.5 border-t border-slate-200 dark:border-white/5 pt-4">
-                <label htmlFor="emailAddressInput" className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Business Email Address</label>
+                <label
+                  htmlFor="emailAddressInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                >
+                  Business Email Address
+                </label>
                 {isLoading ? (
                   <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
@@ -468,13 +543,19 @@ export const GymProfile: React.FC = () => {
                 {isLoading ? (
                   <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] animate-pulse" />
                 ) : gymLogo ? (
-                  <img src={gymLogo} alt="Logo preview" className="w-full h-full object-contain" />
+                  <img
+                    src={gymLogo}
+                    alt="Logo preview"
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
                   <Building className="w-6 h-6 text-slate-400" />
                 )}
               </div>
               <div className="text-center sm:text-left space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">Gym Logo</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
+                  Gym Logo
+                </span>
                 <input
                   type="file"
                   id="logoUpload"
@@ -536,14 +617,24 @@ export const GymProfile: React.FC = () => {
               {isLoading ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                   {[...Array(3)].map((_, idx) => (
-                    <div key={idx} className="aspect-video bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 animate-pulse" />
+                    <div
+                      key={idx}
+                      className="aspect-video bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 animate-pulse"
+                    />
                   ))}
                 </div>
               ) : carouselImages.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                   {carouselImages.map((src, index) => (
-                    <div key={index} className="relative aspect-video rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-[#13161a] group animate-slide-up shadow-xs">
-                      <img src={src} alt={`Carousel ${index + 1}`} className="w-full h-full object-cover" />
+                    <div
+                      key={index}
+                      className="relative aspect-video rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-[#13161a] group animate-slide-up shadow-xs"
+                    >
+                      <img
+                        src={src}
+                        alt={`Carousel ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
                       <button
                         type="button"
                         onClick={() => removeCarouselImage(index)}
@@ -564,7 +655,6 @@ export const GymProfile: React.FC = () => {
               )}
             </div>
           </div>
-
         </div>
 
         {/* Right Side: Live Terminal Preview Info */}
@@ -578,7 +668,11 @@ export const GymProfile: React.FC = () => {
 
               <div className="p-4 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/15 dark:border-blue-500/20 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>To ensure your brand identity, logo, address, and active carousels render cleanly on high-definition monitors, we have created a dedicated sandboxed viewer.</span>
+                <span>
+                  To ensure your brand identity, logo, address, and active
+                  carousels render cleanly on high-definition monitors, we have
+                  created a dedicated sandboxed viewer.
+                </span>
               </div>
             </div>
 
@@ -591,7 +685,9 @@ export const GymProfile: React.FC = () => {
                   Secure Sandboxed Preview
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                  Open the actual live Login screen in a separate, non-functional tab. It will display your current unsaved drafts cleanly in both Light and Dark themes.
+                  Open the actual live Login screen in a separate,
+                  non-functional tab. It will display your current unsaved
+                  drafts cleanly in both Light and Dark themes.
                 </p>
               </div>
 
@@ -604,10 +700,8 @@ export const GymProfile: React.FC = () => {
                 Open Live Login Preview
               </button>
             </div>
-
           </div>
         </div>
-
       </div>
     </div>
   );

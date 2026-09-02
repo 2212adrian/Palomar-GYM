@@ -11,12 +11,7 @@ import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { AvatarImage, compressImage } from './PersonalAccount';
 import { isSuperAdmin } from '../../constants/auth';
-import { 
-  Loader2, 
-  Trash2, 
-  ShieldAlert, 
-  UserX 
-} from 'lucide-react';
+import { Loader2, Trash2, ShieldAlert, UserX } from 'lucide-react';
 
 interface DraftChange {
   role?: 'admin' | 'staff';
@@ -63,7 +58,7 @@ export const UserManagement: React.FC = () => {
         .from('profiles')
         .select('*')
         .order('username', { ascending: true });
-      
+
       if (error) throw error;
       setUsersList(data || []);
     } catch (err: any) {
@@ -96,20 +91,26 @@ export const UserManagement: React.FC = () => {
   const isDirty = Object.keys(drafts).length > 0;
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-      detail: { isDirty, isSaving } 
-    }));
+    window.dispatchEvent(
+      new CustomEvent('settings-dirty-state', {
+        detail: { isDirty, isSaving },
+      })
+    );
   }, [isDirty, isSaving]);
 
   useEffect(() => {
     return () => {
-      window.dispatchEvent(new CustomEvent('settings-dirty-state', { 
-        detail: { isDirty: false, isSaving: false } 
-      }));
+      window.dispatchEvent(
+        new CustomEvent('settings-dirty-state', {
+          detail: { isDirty: false, isSaving: false },
+        })
+      );
     };
   }, []);
 
-  const handleSaveAllDrafts = async (currentDrafts: Record<string, DraftChange>) => {
+  const handleSaveAllDrafts = async (
+    currentDrafts: Record<string, DraftChange>
+  ) => {
     const keys = Object.keys(currentDrafts);
     if (keys.length === 0) return;
 
@@ -117,7 +118,7 @@ export const UserManagement: React.FC = () => {
       setIsSaving(true);
       const updatePromises = keys.map(async (id) => {
         const draft = currentDrafts[id];
-        const target = usersList.find(u => u.id === id);
+        const target = usersList.find((u) => u.id === id);
         if (!target) return;
 
         const payload: Record<string, any> = {};
@@ -158,7 +159,8 @@ export const UserManagement: React.FC = () => {
       handleSaveAllDrafts(drafts);
     };
     window.addEventListener('trigger-rates-save', handleSaveTrigger);
-    return () => window.removeEventListener('trigger-rates-save', handleSaveTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-save', handleSaveTrigger);
   }, [drafts, usersList]);
 
   useEffect(() => {
@@ -167,13 +169,14 @@ export const UserManagement: React.FC = () => {
       toast.info('Changes discarded.');
     };
     window.addEventListener('trigger-rates-cancel', handleCancelTrigger);
-    return () => window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
+    return () =>
+      window.removeEventListener('trigger-rates-cancel', handleCancelTrigger);
   }, []);
 
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName.trim()) {
-      toast.error("User name / Display identity is required.");
+      toast.error('User name / Display identity is required.');
       return;
     }
 
@@ -182,18 +185,21 @@ export const UserManagement: React.FC = () => {
 
     if (authMethod === 'email') {
       if (!newUserEmail.trim()) {
-        toast.error("Working email address is required.");
+        toast.error('Working email address is required.');
         return;
       }
       finalEmail = newUserEmail.trim().toLowerCase();
-      finalPassword = Math.random().toString(36).slice(-10) + 'A1!' + Date.now().toString().slice(-4);
+      finalPassword =
+        Math.random().toString(36).slice(-10) +
+        'A1!' +
+        Date.now().toString().slice(-4);
     } else {
       if (!newUserLoginName.trim()) {
-        toast.error("Login username is required.");
+        toast.error('Login username is required.');
         return;
       }
       if (newUserPassword.length < 6) {
-        toast.error("Manual password must be at least 6 characters.");
+        toast.error('Manual password must be at least 6 characters.');
         return;
       }
       finalEmail = `${newUserLoginName.trim().toLowerCase()}@palomargym.noemail`;
@@ -207,7 +213,7 @@ export const UserManagement: React.FC = () => {
         new_email: finalEmail,
         new_password: finalPassword,
         new_name: newUserName.trim(),
-        new_role: newUserRole
+        new_role: newUserRole,
       });
 
       if (error) throw error;
@@ -225,15 +231,22 @@ export const UserManagement: React.FC = () => {
           type: 'signup',
           email: finalEmail,
           options: {
-            emailRedirectTo: `${window.location.origin}/confirm-signup`
-          }
+            emailRedirectTo: `${window.location.origin}/confirm-signup`,
+          },
         });
 
         if (resendError) {
-          console.warn('SMTP confirmation dispatch bypassed:', resendError.message);
-          toast.info(`Account registered, but verification email could not be sent: ${resendError.message}`);
+          console.warn(
+            'SMTP confirmation dispatch bypassed:',
+            resendError.message
+          );
+          toast.info(
+            `Account registered, but verification email could not be sent: ${resendError.message}`
+          );
         } else {
-          toast.success(`Pre-registration successful! Verification email has been sent to ${finalEmail}`);
+          toast.success(
+            `Pre-registration successful! Verification email has been sent to ${finalEmail}`
+          );
         }
       } else {
         toast.success(`Account for ${newUserName} successfully registered!`);
@@ -241,13 +254,19 @@ export const UserManagement: React.FC = () => {
 
       if (newUserAvatar && registeredUserId) {
         try {
-          const processedFile = await compressImage(newUserAvatar, 100 * 1024).catch(() => newUserAvatar);
+          const processedFile = await compressImage(
+            newUserAvatar,
+            100 * 1024
+          ).catch(() => newUserAvatar);
           const fileExt = processedFile.name.split('.').pop() || 'jpg';
           const filePath = `${registeredUserId}/avatar-${Date.now()}.${fileExt}`;
 
           const { error: uploadError } = await supabase.storage
             .from('avatars')
-            .upload(filePath, processedFile, { cacheControl: '3600', upsert: true });
+            .upload(filePath, processedFile, {
+              cacheControl: '3600',
+              upsert: true,
+            });
 
           if (uploadError) throw uploadError;
 
@@ -270,15 +289,18 @@ export const UserManagement: React.FC = () => {
 
       fetchUsers();
     } catch (err: any) {
-      const errMsg = err.message || "";
-      if (errMsg.includes('users_email_partial_key') || errMsg.includes('duplicate key value')) {
+      const errMsg = err.message || '';
+      if (
+        errMsg.includes('users_email_partial_key') ||
+        errMsg.includes('duplicate key value')
+      ) {
         toast.error(
           authMethod === 'email'
             ? 'This email address is already registered in the system.'
             : 'This username is already taken. Please choose a different one.'
         );
       } else {
-        toast.error(err.message || "Failed to pre-register system user.");
+        toast.error(err.message || 'Failed to pre-register system user.');
       }
     } finally {
       setIsCreatingUser(false);
@@ -302,23 +324,26 @@ export const UserManagement: React.FC = () => {
       setIsDeletingUser(deleteTargetUser.id);
 
       if (deleteTargetUser.avatar_url) {
-        const cleanPath = deleteTargetUser.avatar_url.includes('/avatars/') 
-          ? deleteTargetUser.avatar_url.split('/avatars/').pop() 
+        const cleanPath = deleteTargetUser.avatar_url.includes('/avatars/')
+          ? deleteTargetUser.avatar_url.split('/avatars/').pop()
           : deleteTargetUser.avatar_url;
 
         if (cleanPath) {
           const { error: storageError } = await supabase.storage
             .from('avatars')
             .remove([cleanPath]);
-          
+
           if (storageError) {
-            console.warn('Optional avatar storage cleanup skipped:', storageError.message);
+            console.warn(
+              'Optional avatar storage cleanup skipped:',
+              storageError.message
+            );
           }
         }
       }
 
       const { error } = await supabase.rpc('admin_delete_user', {
-        target_user_id: deleteTargetUser.id
+        target_user_id: deleteTargetUser.id,
       });
 
       if (error) throw error;
@@ -327,9 +352,11 @@ export const UserManagement: React.FC = () => {
         'USER_DELETED',
         `Permanently deleted staff/admin account "${deleteTargetUser.email}".`,
         deleteTargetUser.id
-      );  
+      );
 
-      toast.success(`Account for "${deleteTargetUser.username}" deleted successfully.`);
+      toast.success(
+        `Account for "${deleteTargetUser.username}" deleted successfully.`
+      );
       setDeleteModalOpen(false);
       setDeleteTargetUser(null);
       setDeleteConfirmText('');
@@ -342,17 +369,19 @@ export const UserManagement: React.FC = () => {
   };
 
   const handleToggleUserStatus = (
-    targetId: string, 
-    currentStatus: 'active' | 'inactive' | 'pending', 
+    targetId: string,
+    currentStatus: 'active' | 'inactive' | 'pending',
     targetRole: string
   ) => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own account status.');
       return;
     }
-    
+
     if (targetRole === 'admin' && !isSuperAdmin) {
-      toast.error('Administrator account statuses can only be modified by the Superadmin.');
+      toast.error(
+        'Administrator account statuses can only be modified by the Superadmin.'
+      );
       return;
     }
 
@@ -360,17 +389,22 @@ export const UserManagement: React.FC = () => {
       toast.info(`Account status is pending first verification verification.`);
       return;
     }
-    
-    setDrafts(prev => {
+
+    setDrafts((prev) => {
       const draft = prev[targetId] || {};
-      const targetUser = usersList.find(u => u.id === targetId);
+      const targetUser = usersList.find((u) => u.id === targetId);
       const originalStatus = targetUser?.status || 'active';
-      
-      const nextStatus: 'active' | 'inactive' = (draft.status || currentStatus) === 'inactive' ? 'active' : 'inactive';
+
+      const nextStatus: 'active' | 'inactive' =
+        (draft.status || currentStatus) === 'inactive' ? 'active' : 'inactive';
 
       const updatedDraft: DraftChange = { ...draft, status: nextStatus };
 
-      if (updatedDraft.status === originalStatus && (updatedDraft.role === undefined || updatedDraft.role === (targetUser?.role || 'staff'))) {
+      if (
+        updatedDraft.status === originalStatus &&
+        (updatedDraft.role === undefined ||
+          updatedDraft.role === (targetUser?.role || 'staff'))
+      ) {
         const { [targetId]: _, ...rest } = prev;
         return rest;
       }
@@ -379,22 +413,30 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  const handleToggleUserRole = (targetId: string, currentRole: 'admin' | 'staff') => {
+  const handleToggleUserRole = (
+    targetId: string,
+    currentRole: 'admin' | 'staff'
+  ) => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own permission role.');
       return;
     }
 
-    setDrafts(prev => {
+    setDrafts((prev) => {
       const draft = prev[targetId] || {};
-      const targetUser = usersList.find(u => u.id === targetId);
+      const targetUser = usersList.find((u) => u.id === targetId);
       const originalRole = targetUser?.role || 'staff';
-      
-      const nextRole: 'admin' | 'staff' = (draft.role || currentRole) === 'admin' ? 'staff' : 'admin';
+
+      const nextRole: 'admin' | 'staff' =
+        (draft.role || currentRole) === 'admin' ? 'staff' : 'admin';
 
       const updatedDraft: DraftChange = { ...draft, role: nextRole };
 
-      if (updatedDraft.role === originalRole && (updatedDraft.status === undefined || updatedDraft.status === (targetUser?.status || 'active'))) {
+      if (
+        updatedDraft.role === originalRole &&
+        (updatedDraft.status === undefined ||
+          updatedDraft.status === (targetUser?.status || 'active'))
+      ) {
         const { [targetId]: _, ...rest } = prev;
         return rest;
       }
@@ -404,7 +446,7 @@ export const UserManagement: React.FC = () => {
   };
 
   const systemUsers = [...usersList];
-  const currentUserIncluded = systemUsers.some(u => u.id === user?.id);
+  const currentUserIncluded = systemUsers.some((u) => u.id === user?.id);
   if (!currentUserIncluded && profile) {
     systemUsers.unshift({
       id: user?.id,
@@ -412,7 +454,7 @@ export const UserManagement: React.FC = () => {
       role: profile.role,
       avatar_url: profile.avatar_url,
       email: user?.email,
-      is_self: true
+      is_self: true,
     });
   }
 
@@ -433,18 +475,24 @@ export const UserManagement: React.FC = () => {
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
-                <span className="text-(--color-text) opacity-90">{u.username || 'System Account'}</span>
+                <span className="text-(--color-text) opacity-90">
+                  {u.username || 'System Account'}
+                </span>
                 {isSelfUser && (
-                  <span className="text-[8px] bg-(--color-primary) text-white rounded px-1.5 py-0.5 font-mono uppercase font-bold tracking-wider">YOU</span>
+                  <span className="text-[8px] bg-(--color-primary) text-white rounded px-1.5 py-0.5 font-mono uppercase font-bold tracking-wider">
+                    YOU
+                  </span>
                 )}
               </div>
               {isLocalAccount && (
-                <span className="text-[9px] text-amber-500 font-mono tracking-tight font-semibold">Non-Email Account</span>
+                <span className="text-[9px] text-amber-500 font-mono tracking-tight font-semibold">
+                  Non-Email Account
+                </span>
               )}
             </div>
           </div>
         );
-      }
+      },
     },
     {
       key: 'email',
@@ -454,7 +502,7 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
         const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
-        
+
         return (
           <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
             {isLocalAccount ? (
@@ -464,7 +512,7 @@ export const UserManagement: React.FC = () => {
             )}
           </span>
         );
-      }
+      },
     },
     {
       key: 'role',
@@ -483,15 +531,18 @@ export const UserManagement: React.FC = () => {
         }
 
         const draft = drafts[u.id];
-        const isModified = draft && draft.role !== undefined && draft.role !== u.role;
+        const isModified =
+          draft && draft.role !== undefined && draft.role !== u.role;
         const currentRole = draft?.role || u.role || 'staff';
 
         const getRoleBadge = (role: string) => (
-          <span className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
-            role === 'admin' 
-              ? 'bg-rose-500/10 text-rose-455 border border-rose-500/20' 
-              : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-          }`}>
+          <span
+            className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
+              role === 'admin'
+                ? 'bg-rose-500/10 text-rose-455 border border-rose-500/20'
+                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+            }`}
+          >
             {role}
           </span>
         );
@@ -522,7 +573,7 @@ export const UserManagement: React.FC = () => {
             )}
           </button>
         );
-      }
+      },
     },
     {
       key: 'status',
@@ -532,7 +583,8 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
 
         const draft = drafts[u.id];
-        const isModified = draft && draft.status !== undefined && draft.status !== u.status;
+        const isModified =
+          draft && draft.status !== undefined && draft.status !== u.status;
         const currentStatus = draft?.status || u.status || 'pending';
 
         const getStatusBadge = (status: string) => {
@@ -567,11 +619,13 @@ export const UserManagement: React.FC = () => {
         return (
           <button
             type="button"
-            onClick={() => handleToggleUserStatus(
-              u.id, 
-              u.status || 'pending', 
-              u.role || 'staff'
-            )}
+            onClick={() =>
+              handleToggleUserStatus(
+                u.id,
+                u.status || 'pending',
+                u.role || 'staff'
+              )
+            }
             title="Click to toggle account status draft"
             className="cursor-pointer hover:opacity-80 transition-opacity outline-none text-left"
           >
@@ -590,7 +644,7 @@ export const UserManagement: React.FC = () => {
             )}
           </button>
         );
-      }
+      },
     },
     {
       key: 'actions',
@@ -601,12 +655,19 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
 
         if (isSelfUser) {
-          return <span className="text-xs text-slate-500 italic font-semibold">Locked</span>;
+          return (
+            <span className="text-xs text-slate-500 italic font-semibold">
+              Locked
+            </span>
+          );
         }
 
         if (u.role === 'admin' && u.status === 'active' && !isSuperAdmin) {
           return (
-            <span className="text-xs text-slate-500 italic font-semibold" title="Active administrators can only be deleted by the Superadmin">
+            <span
+              className="text-xs text-slate-500 italic font-semibold"
+              title="Active administrators can only be deleted by the Superadmin"
+            >
               Protected
             </span>
           );
@@ -628,20 +689,22 @@ export const UserManagement: React.FC = () => {
             )}
           </button>
         );
-      }
-    }
+      },
+    },
   ];
 
   return (
     <div className="space-y-8 font-body text-(--color-text)">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">User Management</h2>
+          <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
+            User Management
+          </h2>
           <p className="text-sm text-slate-400 mt-1 font-medium">
-            Pre-register staff accounts and manage system user permissions. 
+            Pre-register staff accounts and manage system user permissions.
           </p>
         </div>
-        
+
         <button
           onClick={() => setIsCreateModalOpen(true)}
           className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto"
@@ -678,13 +741,24 @@ export const UserManagement: React.FC = () => {
         {deleteTargetUser && (
           <div className="space-y-4 font-body text-left">
             <p className="text-xs text-slate-400 leading-normal font-bold">
-              Are you sure you want to permanently delete user <strong className="text-(--color-text) font-extrabold font-heading">"{deleteTargetUser.username}"</strong>? This action cannot be undone.
+              Are you sure you want to permanently delete user{' '}
+              <strong className="text-(--color-text) font-extrabold font-heading">
+                "{deleteTargetUser.username}"
+              </strong>
+              ? This action cannot be undone.
             </p>
 
             {deleteTargetUser.status !== 'pending' ? (
               <div className="space-y-2">
-                <label htmlFor="deleteConfirmInput" className="text-[10px] font-bold uppercase tracking-wider text-slate-450">
-                  To confirm, type the username <span className="font-mono text-(--color-text) select-all font-extrabold">{deleteTargetUser.username}</span> below:
+                <label
+                  htmlFor="deleteConfirmInput"
+                  className="text-[10px] font-bold uppercase tracking-wider text-slate-450"
+                >
+                  To confirm, type the username{' '}
+                  <span className="font-mono text-(--color-text) select-all font-extrabold">
+                    {deleteTargetUser.username}
+                  </span>{' '}
+                  below:
                 </label>
                 <input
                   id="deleteConfirmInput"
@@ -697,7 +771,8 @@ export const UserManagement: React.FC = () => {
               </div>
             ) : (
               <p className="text-[11px] text-amber-505 font-bold bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl">
-                * Note: Since this invitation status is pending, no input verification is required to discard it.
+                * Note: Since this invitation status is pending, no input
+                verification is required to discard it.
               </p>
             )}
 
@@ -735,7 +810,10 @@ export const UserManagement: React.FC = () => {
         onClose={() => setIsCreateModalOpen(false)}
         title="Pre-Register Account"
       >
-        <form onSubmit={handleCreateUserSubmit} className="text-left w-full space-y-4 font-body">
+        <form
+          onSubmit={handleCreateUserSubmit}
+          className="text-left w-full space-y-4 font-body"
+        >
           <div className="flex bg-(--bg-card) p-1 rounded-xl border border-(--border-color)">
             <button
               type="button"
@@ -757,7 +835,7 @@ export const UserManagement: React.FC = () => {
                   : 'text-slate-400 hover:text-(--color-text)'
               }`}
             >
-              No Email 
+              No Email
             </button>
           </div>
 
@@ -803,7 +881,10 @@ export const UserManagement: React.FC = () => {
                   onChange={(e) => setNewUserLoginName(e.target.value)}
                   className="field-input text-xs"
                 />
-                <label htmlFor="newUserLoginName" className="field-label text-xs">
+                <label
+                  htmlFor="newUserLoginName"
+                  className="field-label text-xs"
+                >
                   Login Username
                 </label>
               </div>
@@ -818,7 +899,10 @@ export const UserManagement: React.FC = () => {
                   onChange={(e) => setNewUserPassword(e.target.value)}
                   className="field-input text-xs pr-10"
                 />
-                <label htmlFor="newUserPassword" className="field-label text-xs">
+                <label
+                  htmlFor="newUserPassword"
+                  className="field-label text-xs"
+                >
                   Login Password
                 </label>
               </div>
@@ -826,13 +910,18 @@ export const UserManagement: React.FC = () => {
           )}
 
           <div className="grid gap-1.5">
-            <label htmlFor="newUserRole" className="text-[10px] font-bold uppercase tracking-wider text-slate-455">
+            <label
+              htmlFor="newUserRole"
+              className="text-[10px] font-bold uppercase tracking-wider text-slate-455"
+            >
               Assigned Permissions
             </label>
             <select
               id="newUserRole"
               value={newUserRole}
-              onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'staff')}
+              onChange={(e) =>
+                setNewUserRole(e.target.value as 'admin' | 'staff')
+              }
               title="Select assigned permission role levels"
               aria-label="Select assigned permission role levels"
               className="w-full px-3 py-2.5 border border-(--border-color) rounded-xl text-xs bg-(--bg-page) text-(--color-text) uppercase font-bold tracking-wider outline-none focus:ring-1 focus:ring-(--color-primary) transition-all cursor-pointer"
@@ -896,10 +985,9 @@ export const UserManagement: React.FC = () => {
           <div className="flex items-start gap-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-normal">
             <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
             <span>
-              {authMethod === 'email' 
-                ? "This generates a temporary entry and emails a magic link to the recipient so they can configure their own security password."
-                : "This configures a custom handle and manual login keys. The user will log in on-site using their unique username."
-              }
+              {authMethod === 'email'
+                ? 'This generates a temporary entry and emails a magic link to the recipient so they can configure their own security password.'
+                : 'This configures a custom handle and manual login keys. The user will log in on-site using their unique username.'}
             </span>
           </div>
 

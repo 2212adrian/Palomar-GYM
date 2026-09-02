@@ -1,5 +1,12 @@
 import React from 'react';
-import { Activity, UserCheck, ShoppingBag, UserPlus, Clock, RotateCcw } from 'lucide-react';
+import {
+  Activity,
+  UserCheck,
+  ShoppingBag,
+  UserPlus,
+  Clock,
+  RotateCcw,
+} from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import type { ActivityFeedItem } from '../types';
 import { formatPHP } from '../dashboardService';
@@ -18,12 +25,18 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
   const getIcon = (type: ActivityFeedItem['type']) => {
     switch (type) {
       case 'checkin':
-        return <UserCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+        return (
+          <UserCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+        );
       case 'sale':
-        return <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+        return (
+          <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+        );
       case 'membership_new':
       case 'membership_renew':
-        return <UserPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
+        return (
+          <UserPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+        );
       default:
         return <Activity className="w-4 h-4 text-slate-500" />;
     }
@@ -74,7 +87,9 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
               className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Refresh Activity Feed"
             >
-              <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <RotateCcw
+                className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`}
+              />
             </button>
           )}
         </div>
@@ -100,7 +115,9 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
                       <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                         {act.title}
                       </span>
-                      <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-sm shrink-0 ${getBadgeStyle(act.badgeVariant)}`}>
+                      <span
+                        className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-sm shrink-0 ${getBadgeStyle(act.badgeVariant)}`}
+                      >
                         {act.badgeText}
                       </span>
                     </div>

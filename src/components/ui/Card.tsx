@@ -14,9 +14,9 @@ export interface CardProps {
   onClick?: () => void;
 }
 
-export const Card: React.FC<CardProps> = ({ 
-  children, 
-  isFlipped, 
+export const Card: React.FC<CardProps> = ({
+  children,
+  isFlipped,
   className = 'w-[360px] sm:w-[410px] min-h-[670px]',
   expandable = false,
   badgeText,
@@ -59,7 +59,6 @@ export const Card: React.FC<CardProps> = ({
     // Default solid design card shell (used for Login & Recovery)
     return (
       <div className="relative overflow-hidden flex flex-col justify-between h-full bg-white dark:bg-[#0e1117] border border-slate-200/80 dark:border-white/10 p-6 sm:p-7 rounded-[28px] shadow-2xl transition-colors duration-500">
-        
         {/* Top Left Pill Badge */}
         {badgeText && (
           <div className="absolute top-5 left-5 z-20">
@@ -72,9 +71,9 @@ export const Card: React.FC<CardProps> = ({
         {/* Top Right Decorative Wave Fluid SVG */}
         {showWave && (
           <div className="absolute top-0 right-0 w-36 h-24 overflow-hidden pointer-events-none rounded-tr-[28px] z-10">
-            <svg 
-              viewBox="0 0 150 100" 
-              preserveAspectRatio="none" 
+            <svg
+              viewBox="0 0 150 100"
+              preserveAspectRatio="none"
               className="w-full h-full text-blue-600 dark:text-red-600 opacity-90 transition-colors duration-500"
             >
               <path fill="currentColor" d="M0,0 C50,40 100,0 150,60 L150,0 Z" />
@@ -88,13 +87,15 @@ export const Card: React.FC<CardProps> = ({
   };
 
   return (
-    <div 
+    <div
       onClick={handleClick}
       className={`flip-card transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] select-none relative ${className} ${
         expandable ? 'cursor-pointer group' : ''
       } ${isExpanded ? 'expanded' : ''} ${mounted ? 'opacity-100' : 'opacity-0'}`}
     >
-      <div className={`flip-card-inner h-full w-full ${isFlipped ? 'flipped' : ''}`}>
+      <div
+        className={`flip-card-inner h-full w-full ${isFlipped ? 'flipped' : ''}`}
+      >
         {renderInnerContent()}
       </div>
     </div>

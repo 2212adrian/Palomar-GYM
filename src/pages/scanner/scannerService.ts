@@ -10,7 +10,13 @@ export interface HybridMemberResult {
   phone: string;
   email?: string;
   avatarUrl?: string | null;
-  status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended' | 'Scheduled' | 'Voided';
+  status:
+    | 'Active'
+    | 'Expires Soon'
+    | 'Expired'
+    | 'Suspended'
+    | 'Scheduled'
+    | 'Voided';
   membershipPlan: string;
   startDate: string;
   expDate: string;
@@ -64,9 +70,11 @@ export const resolveAvatarUrl = (rawUrl?: string | null): string | null => {
   // Relative storage path: check 'avatars' and 'member-avatars' buckets
   try {
     const cleanPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
-    
+
     // Default bucket check
-    const bucket = cleanPath.startsWith('member-avatars/') ? 'member-avatars' : 'avatars';
+    const bucket = cleanPath.startsWith('member-avatars/')
+      ? 'member-avatars'
+      : 'avatars';
     const filePath = cleanPath.replace(/^(avatars|member-avatars)\//, '');
 
     const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
@@ -76,14 +84,16 @@ export const resolveAvatarUrl = (rawUrl?: string | null): string | null => {
   }
 };
 
-export const parseScannedMemberCode = (rawCode: string): { fullCode: string; memberIdPart: string } => {
+export const parseScannedMemberCode = (
+  rawCode: string
+): { fullCode: string; memberIdPart: string } => {
   let fullCode = (rawCode || '').trim();
 
   // 1. Unwrap JSON payload if present
   if (fullCode.startsWith('{') && fullCode.endsWith('}')) {
     try {
       const parsed = JSON.parse(fullCode);
-      fullCode = 
+      fullCode =
         parsed.receipt_no ||
         parsed.receiptNumber ||
         parsed.receipt_number ||
@@ -110,12 +120,12 @@ export const parseScannedMemberCode = (rawCode: string): { fullCode: string; mem
   if (fullCode.startsWith('http://') || fullCode.startsWith('https://')) {
     try {
       const url = new URL(fullCode);
-      const queryId = 
-        url.searchParams.get('rec') || 
-        url.searchParams.get('receipt') || 
-        url.searchParams.get('receipt_no') || 
-        url.searchParams.get('id') || 
-        url.searchParams.get('memberId') || 
+      const queryId =
+        url.searchParams.get('rec') ||
+        url.searchParams.get('receipt') ||
+        url.searchParams.get('receipt_no') ||
+        url.searchParams.get('id') ||
+        url.searchParams.get('memberId') ||
         url.searchParams.get('token');
 
       if (queryId) {
@@ -169,12 +179,14 @@ export const scannerService = {
     // 1. STRICT RECEIPT VALIDATION (REC-XXXXXXXXXX)
     // =========================================================================
     if (
-      searchIdUpper.startsWith('REC-') || 
-      fullCodeUpper.startsWith('REC-') || 
-      searchIdUpper.startsWith('REC') || 
+      searchIdUpper.startsWith('REC-') ||
+      fullCodeUpper.startsWith('REC-') ||
+      searchIdUpper.startsWith('REC') ||
       fullCodeUpper.startsWith('REC')
     ) {
-      const targetRec = searchIdUpper.startsWith('REC') ? searchIdUpper : fullCodeUpper;
+      const targetRec = searchIdUpper.startsWith('REC')
+        ? searchIdUpper
+        : fullCodeUpper;
       try {
         // A. Search SPECIFIC subscription tied to this receipt number
         const { data: subData } = await supabase
@@ -193,14 +205,18 @@ export const scannerService = {
 
           if (subData.status === 'Voided' || subData.voided_at) {
             calculatedStatus = 'Voided';
-            validityNote = '⛔ VOIDED RECEIPT: This subscription was voided and cannot be used.';
+            validityNote =
+              '⛔ VOIDED RECEIPT: This subscription was voided and cannot be used.';
           } else if (member.status === 'Suspended') {
             calculatedStatus = 'Suspended';
-            validityNote = '⛔ SUSPENDED ACCOUNT: Member account is currently suspended.';
+            validityNote =
+              '⛔ SUSPENDED ACCOUNT: Member account is currently suspended.';
           } else if (now < startDate) {
             // FUTURE / SCHEDULED SUBSCRIPTION
             calculatedStatus = 'Scheduled';
-            const daysUntil = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            const daysUntil = Math.ceil(
+              (startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+            );
             validityNote = `⏳ FUTURE RECEIPT: Plan starts on ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (in ${daysUntil} days). Not active for entry today.`;
           } else if (now > endDate || subData.status === 'Expired') {
             // EXPIRED SUBSCRIPTION
@@ -208,7 +224,12 @@ export const scannerService = {
             validityNote = `❌ EXPIRED RECEIPT: This receipt expired on ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. It cannot be reused.`;
           } else {
             // CURRENTLY ACTIVE
-            const remainingDays = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            const remainingDays = Math.max(
+              0,
+              Math.ceil(
+                (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+              )
+            );
             if (remainingDays <= 7) {
               calculatedStatus = 'Expires Soon';
             } else {
@@ -226,14 +247,25 @@ export const scannerService = {
             .order('check_in_time', { ascending: false })
             .limit(1);
 
-          const remainingDays = (calculatedStatus === 'Active' || calculatedStatus === 'Expires Soon')
-            ? Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
-            : 0;
+          const remainingDays =
+            calculatedStatus === 'Active' || calculatedStatus === 'Expires Soon'
+              ? Math.max(
+                  0,
+                  Math.ceil(
+                    (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+                  )
+                )
+              : 0;
 
-          const planName = subData.plan_name 
-            || (subData.plan_type ? `${subData.plan_type.toUpperCase()} MEMBERSHIP` : 'Active Membership');
+          const planName =
+            subData.plan_name ||
+            (subData.plan_type
+              ? `${subData.plan_type.toUpperCase()} MEMBERSHIP`
+              : 'Active Membership');
 
-          const photoUrl = resolveAvatarUrl(member.image_url || member.avatar_url);
+          const photoUrl = resolveAvatarUrl(
+            member.image_url || member.avatar_url
+          );
 
           return {
             type: 'member',
@@ -247,16 +279,24 @@ export const scannerService = {
               avatarUrl: photoUrl,
               status: calculatedStatus,
               membershipPlan: planName,
-              startDate: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              expDate: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              startDate: startDate.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              }),
+              expDate: endDate.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              }),
               remainingDays,
               alreadyCheckedInToday: Boolean(todayAtt && todayAtt.length > 0),
               todayCheckInTime: todayAtt?.[0]?.check_in_time,
               receiptNumber: subData.receipt_number || targetRec,
               receiptType: 'subscription',
               receiptValidityNote: validityNote,
-              isSpecificReceiptScan: true
-            }
+              isSpecificReceiptScan: true,
+            },
           };
         }
 
@@ -273,7 +313,9 @@ export const scannerService = {
           const todayStr = new Date().toISOString().split('T')[0];
           const receiptDateStr = createdAt.toISOString().split('T')[0];
           const isToday = todayStr === receiptDateStr;
-          const photoUrl = resolveAvatarUrl(member?.image_url || member?.avatar_url);
+          const photoUrl = resolveAvatarUrl(
+            member?.image_url || member?.avatar_url
+          );
 
           return {
             type: 'member',
@@ -286,18 +328,27 @@ export const scannerService = {
               email: member?.email || '',
               avatarUrl: photoUrl,
               status: isToday ? 'Active' : 'Expired',
-              membershipPlan: receiptData.item_description || 'Walk-In Daily Pass',
-              startDate: createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              expDate: createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              membershipPlan:
+                receiptData.item_description || 'Walk-In Daily Pass',
+              startDate: createdAt.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              }),
+              expDate: createdAt.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              }),
               remainingDays: isToday ? 1 : 0,
               alreadyCheckedInToday: false,
               receiptNumber: receiptData.id,
               receiptType: 'walk_in',
-              receiptValidityNote: isToday 
-                ? '✅ Valid daily walk-in pass (Issued today).' 
+              receiptValidityNote: isToday
+                ? '✅ Valid daily walk-in pass (Issued today).'
                 : `❌ EXPIRED RECEIPT: Daily pass was only valid on ${receiptDateStr}.`,
-              isSpecificReceiptScan: true
-            }
+              isSpecificReceiptScan: true,
+            },
           };
         }
       } catch (e) {
@@ -309,7 +360,10 @@ export const scannerService = {
     // 2. LOOKUP ONLINE LOBBY PRE-REGISTRATION TICKET (REG-XXXXXXXXX)
     // =========================================================================
     try {
-      if (searchIdUpper.startsWith('REG-') || fullCodeUpper.startsWith('REG-')) {
+      if (
+        searchIdUpper.startsWith('REG-') ||
+        fullCodeUpper.startsWith('REG-')
+      ) {
         const { data: regData } = await supabase
           .from('online_registrations')
           .select('*')
@@ -321,7 +375,7 @@ export const scannerService = {
           return {
             type: 'registration',
             rawCode,
-            registration: regData
+            registration: regData,
           };
         }
       }
@@ -340,7 +394,14 @@ export const scannerService = {
 
       const cardMatch = (allCards || []).find((c: any) => {
         const cNum = (c.card_number || '').toLowerCase();
-        const cTok = (c.security_token || c.token || c.card_token || c.qr_code || c.id || '').toLowerCase();
+        const cTok = (
+          c.security_token ||
+          c.token ||
+          c.card_token ||
+          c.qr_code ||
+          c.id ||
+          ''
+        ).toLowerCase();
         const fc = fullCode.toLowerCase();
         const mid = memberIdPart.toLowerCase();
 
@@ -387,7 +448,9 @@ export const scannerService = {
           .from('members')
           .select('*')
           .is('deleted_at', null)
-          .or(`member_id.ilike.${resolvedMemberId},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`)
+          .or(
+            `member_id.ilike.${resolvedMemberId},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`
+          )
           .maybeSingle();
 
         if (dbMember) {
@@ -416,13 +479,16 @@ export const scannerService = {
 
         // Check if there is an upcoming future subscription
         const upcomingSub = !currentActiveSub
-          ? subsList.find((s) => new Date(s.start_date) > now && s.status === 'Active')
+          ? subsList.find(
+              (s) => new Date(s.start_date) > now && s.status === 'Active'
+            )
           : null;
 
         // Latest past subscription
-        const latestPastSub = !currentActiveSub && !upcomingSub && subsList.length > 0 
-          ? subsList[0] 
-          : null;
+        const latestPastSub =
+          !currentActiveSub && !upcomingSub && subsList.length > 0
+            ? subsList[0]
+            : null;
 
         let calculatedStatus: HybridMemberResult['status'] = 'Expired';
         let planName = 'No Active Plan';
@@ -435,12 +501,28 @@ export const scannerService = {
           calculatedStatus = 'Suspended';
           validityNote = 'Member account is currently suspended.';
         } else if (currentActiveSub) {
-          planName = currentActiveSub.plan_name || `${currentActiveSub.plan_type.toUpperCase()} MEMBERSHIP`;
-          startDateStr = new Date(currentActiveSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          expDateStr = new Date(currentActiveSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          planName =
+            currentActiveSub.plan_name ||
+            `${currentActiveSub.plan_type.toUpperCase()} MEMBERSHIP`;
+          startDateStr = new Date(
+            currentActiveSub.start_date
+          ).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          expDateStr = new Date(currentActiveSub.end_date).toLocaleDateString(
+            'en-US',
+            { month: 'short', day: 'numeric', year: 'numeric' }
+          );
 
           const endDate = new Date(currentActiveSub.end_date);
-          remainingDays = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+          remainingDays = Math.max(
+            0,
+            Math.ceil(
+              (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+            )
+          );
 
           if (remainingDays <= 7) {
             calculatedStatus = 'Expires Soon';
@@ -449,15 +531,31 @@ export const scannerService = {
           }
         } else if (upcomingSub) {
           calculatedStatus = 'Scheduled';
-          planName = upcomingSub.plan_name || `${upcomingSub.plan_type.toUpperCase()} MEMBERSHIP`;
-          startDateStr = new Date(upcomingSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          expDateStr = new Date(upcomingSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          planName =
+            upcomingSub.plan_name ||
+            `${upcomingSub.plan_type.toUpperCase()} MEMBERSHIP`;
+          startDateStr = new Date(upcomingSub.start_date).toLocaleDateString(
+            'en-US',
+            { month: 'short', day: 'numeric', year: 'numeric' }
+          );
+          expDateStr = new Date(upcomingSub.end_date).toLocaleDateString(
+            'en-US',
+            { month: 'short', day: 'numeric', year: 'numeric' }
+          );
           validityNote = `No active plan for today. Upcoming subscription starts on ${startDateStr}.`;
         } else if (latestPastSub) {
           calculatedStatus = 'Expired';
-          planName = latestPastSub.plan_name || `${latestPastSub.plan_type.toUpperCase()} MEMBERSHIP`;
-          startDateStr = new Date(latestPastSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          expDateStr = new Date(latestPastSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          planName =
+            latestPastSub.plan_name ||
+            `${latestPastSub.plan_type.toUpperCase()} MEMBERSHIP`;
+          startDateStr = new Date(latestPastSub.start_date).toLocaleDateString(
+            'en-US',
+            { month: 'short', day: 'numeric', year: 'numeric' }
+          );
+          expDateStr = new Date(latestPastSub.end_date).toLocaleDateString(
+            'en-US',
+            { month: 'short', day: 'numeric', year: 'numeric' }
+          );
           validityNote = `Plan expired on ${expDateStr}.`;
         }
 
@@ -472,7 +570,9 @@ export const scannerService = {
           .limit(1);
 
         const alreadyCheckedInToday = Boolean(todayAtt && todayAtt.length > 0);
-        const photoUrl = resolveAvatarUrl(member.image_url || member.avatar_url);
+        const photoUrl = resolveAvatarUrl(
+          member.image_url || member.avatar_url
+        );
 
         return {
           type: 'member',
@@ -493,8 +593,8 @@ export const scannerService = {
             todayCheckInTime: todayAtt?.[0]?.check_in_time,
             receiptNumber: currentActiveSub?.receipt_number || null,
             receiptValidityNote: validityNote,
-            isSpecificReceiptScan: false
-          }
+            isSpecificReceiptScan: false,
+          },
         };
       }
     } catch (e) {
@@ -521,11 +621,14 @@ export const scannerService = {
         .from('products')
         .select('*')
         .is('deleted_at', null)
-        .or(`barcode_id.ilike.${codeRaw},manufacturer_barcode.ilike.${codeRaw},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg},barcode_id.ilike.${idPart},manufacturer_barcode.ilike.${idPart}`)
+        .or(
+          `barcode_id.ilike.${codeRaw},manufacturer_barcode.ilike.${codeRaw},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg},barcode_id.ilike.${idPart},manufacturer_barcode.ilike.${idPart}`
+        )
         .maybeSingle();
 
       if (product) {
-        const isHidden = product.status === 'Inactive' || Boolean(product.is_hidden);
+        const isHidden =
+          product.status === 'Inactive' || Boolean(product.is_hidden);
         return {
           type: 'product',
           rawCode,
@@ -539,8 +642,8 @@ export const scannerService = {
             hasStockLimit: Boolean(product.has_stock_limit),
             status: product.status || (isHidden ? 'Inactive' : 'Active'),
             isHidden,
-            imageUrl: product.image_url || null
-          }
+            imageUrl: product.image_url || null,
+          },
         };
       }
     } catch (e) {
@@ -549,7 +652,7 @@ export const scannerService = {
 
     return {
       type: 'unknown',
-      rawCode
+      rawCode,
     };
-  }
+  },
 };

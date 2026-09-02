@@ -31,7 +31,8 @@ const resolveImageSource = (
     img.crossOrigin = 'anonymous';
 
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Failed to load image source for compression'));
+    img.onerror = () =>
+      reject(new Error('Failed to load image source for compression'));
 
     if (typeof source === 'string') {
       img.src = source;
@@ -40,7 +41,8 @@ const resolveImageSource = (
       reader.onload = (e) => {
         img.src = e.target?.result as string;
       };
-      reader.onerror = () => reject(new Error('Failed to read image file data'));
+      reader.onerror = () =>
+        reject(new Error('Failed to read image file data'));
       reader.readAsDataURL(source);
     }
   });
@@ -56,8 +58,14 @@ export async function compressImageTo1024(
 ): Promise<CompressResult> {
   const imageElement = await resolveImageSource(source);
 
-  const srcWidth = 'videoWidth' in imageElement ? (imageElement as any).videoWidth : imageElement.width;
-  const srcHeight = 'videoHeight' in imageElement ? (imageElement as any).videoHeight : imageElement.height;
+  const srcWidth =
+    'videoWidth' in imageElement
+      ? (imageElement as any).videoWidth
+      : imageElement.width;
+  const srcHeight =
+    'videoHeight' in imageElement
+      ? (imageElement as any).videoHeight
+      : imageElement.height;
 
   if (!srcWidth || !srcHeight) {
     throw new Error('Invalid image dimensions detected');
@@ -86,7 +94,17 @@ export async function compressImageTo1024(
       ctx.imageSmoothingQuality = 'high';
 
       // Draw center-cropped square
-      ctx.drawImage(imageElement, sx, sy, minSide, minSide, 0, 0, targetDim, targetDim);
+      ctx.drawImage(
+        imageElement,
+        sx,
+        sy,
+        minSide,
+        minSide,
+        0,
+        0,
+        targetDim,
+        targetDim
+      );
 
       const mimeType = 'image/webp';
       const dataUrl = canvas.toDataURL(mimeType, quality);
@@ -133,13 +151,18 @@ export async function compressImageTo1024(
 }
 
 // Backward-compatibility aliases
-export const compressImageTo64x64 = (s: any) => compressImageTo1024(s, 1024, 0.85);
-export const compressImageTo64KB = (s: any) => compressImageTo1024(s, 1024, 0.85);
+export const compressImageTo64x64 = (s: any) =>
+  compressImageTo1024(s, 1024, 0.85);
+export const compressImageTo64KB = (s: any) =>
+  compressImageTo1024(s, 1024, 0.85);
 
 /**
  * Extracts the storage file path from a Supabase public URL or relative path string.
  */
-export function extractAvatarPath(url?: string | null, bucketName = MEMBER_AVATARS_BUCKET): string | null {
+export function extractAvatarPath(
+  url?: string | null,
+  bucketName = MEMBER_AVATARS_BUCKET
+): string | null {
   if (!url || typeof url !== 'string' || !url.trim()) return null;
   const trimmed = url.trim();
 
@@ -150,10 +173,16 @@ export function extractAvatarPath(url?: string | null, bucketName = MEMBER_AVATA
 
   try {
     if (trimmed.includes(`/storage/v1/object/public/${bucketName}/`)) {
-      return decodeURIComponent(trimmed.split(`/storage/v1/object/public/${bucketName}/`)[1].split('?')[0]);
+      return decodeURIComponent(
+        trimmed
+          .split(`/storage/v1/object/public/${bucketName}/`)[1]
+          .split('?')[0]
+      );
     }
     if (trimmed.includes(`/${bucketName}/`)) {
-      return decodeURIComponent(trimmed.split(`/${bucketName}/`)[1].split('?')[0]);
+      return decodeURIComponent(
+        trimmed.split(`/${bucketName}/`)[1].split('?')[0]
+      );
     }
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return decodeURIComponent(trimmed.replace(/^\/+/, '').split('?')[0]);
@@ -180,7 +209,10 @@ export async function deleteMemberAvatarFromBucket(
 
   // 1. Add specific file path if available from URL
   if (currentImageUrl) {
-    const explicitPath = extractAvatarPath(currentImageUrl, MEMBER_AVATARS_BUCKET);
+    const explicitPath = extractAvatarPath(
+      currentImageUrl,
+      MEMBER_AVATARS_BUCKET
+    );
     if (explicitPath) {
       filesToDelete.add(explicitPath);
     }
@@ -189,7 +221,9 @@ export async function deleteMemberAvatarFromBucket(
   const cleanId = (memberId || '').replace(/[^a-zA-Z0-9_-]/g, '_').trim();
   if (!cleanId) {
     if (filesToDelete.size > 0) {
-      await supabase.storage.from(MEMBER_AVATARS_BUCKET).remove(Array.from(filesToDelete));
+      await supabase.storage
+        .from(MEMBER_AVATARS_BUCKET)
+        .remove(Array.from(filesToDelete));
     }
     return;
   }
@@ -236,7 +270,10 @@ export async function deleteMemberAvatarFromBucket(
       .remove(fileArray);
 
     if (error) {
-      console.warn(`Failed to delete files from '${MEMBER_AVATARS_BUCKET}':`, error.message);
+      console.warn(
+        `Failed to delete files from '${MEMBER_AVATARS_BUCKET}':`,
+        error.message
+      );
     }
   }
 }
@@ -250,7 +287,11 @@ export async function uploadMemberProfilePhoto(
   memberId: string
 ): Promise<UploadAvatarResult> {
   // 1. Process image to 1024x1024 square HD WebP
-  const { blob, dataUrl, sizeBytes } = await compressImageTo1024(source, 1024, 0.85);
+  const { blob, dataUrl, sizeBytes } = await compressImageTo1024(
+    source,
+    1024,
+    0.85
+  );
 
   const cleanId = (memberId || 'member').replace(/[^a-zA-Z0-9_-]/g, '_');
   const fileExt = blob.type === 'image/webp' ? 'webp' : 'jpg';
@@ -274,7 +315,10 @@ export async function uploadMemberProfilePhoto(
       });
 
     if (uploadError) {
-      console.warn(`Storage upload to '${MEMBER_AVATARS_BUCKET}' failed:`, uploadError.message);
+      console.warn(
+        `Storage upload to '${MEMBER_AVATARS_BUCKET}' failed:`,
+        uploadError.message
+      );
 
       return {
         publicUrl: dataUrl,
@@ -309,7 +353,12 @@ export async function uploadMemberAvatar(
   let memberId = '';
   let source: File | Blob | HTMLCanvasElement | string = '';
 
-  if (typeof arg1 === 'string' && (arg2 instanceof Blob || arg2 instanceof HTMLCanvasElement || typeof arg2 === 'string')) {
+  if (
+    typeof arg1 === 'string' &&
+    (arg2 instanceof Blob ||
+      arg2 instanceof HTMLCanvasElement ||
+      typeof arg2 === 'string')
+  ) {
     memberId = arg1;
     source = arg2;
   } else {

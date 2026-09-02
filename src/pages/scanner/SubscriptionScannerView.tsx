@@ -1,16 +1,20 @@
 // src/pages/scanner/SubscriptionScannerView.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  X, 
-  Calendar, 
-  Clock, 
+import {
+  X,
+  Calendar,
+  Clock,
   ArrowRight,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { memberService, subscriptionService, cardService } from '../members/memberService';
+import {
+  memberService,
+  subscriptionService,
+  cardService,
+} from '../members/memberService';
 import type { Member, Subscription, MemberCard } from '../../types/members';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -48,10 +52,9 @@ interface SubscriptionData {
   remainingDays: number;
 }
 
-export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = ({
-  scannedCode,
-  onClearScan,
-}) => {
+export const SubscriptionScannerView: React.FC<
+  SubscriptionScannerViewProps
+> = ({ scannedCode, onClearScan }) => {
   const navigate = useNavigate();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -88,8 +91,8 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
                 openWizard: true,
                 initialStep: 1,
                 initialIntakeMode: 'Manual',
-                prefillData: regData
-              }
+                prefillData: regData,
+              },
             });
             return;
           }
@@ -103,24 +106,27 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
 
         const { fullCode, memberIdPart } = parseScannedMemberCode(scannedCode);
 
-        const cardMatch = allCards.find((c: MemberCard) => 
-          c.card_number.toLowerCase() === fullCode.toLowerCase() ||
-          c.card_number.toLowerCase() === memberIdPart.toLowerCase()
+        const cardMatch = allCards.find(
+          (c: MemberCard) =>
+            c.card_number.toLowerCase() === fullCode.toLowerCase() ||
+            c.card_number.toLowerCase() === memberIdPart.toLowerCase()
         );
 
         const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
 
-        const member = allMembers.find((m: Member) => 
-          m.member_id.toLowerCase() === targetMemberId.toLowerCase() ||
-          m.member_id.toLowerCase() === fullCode.toLowerCase() ||
-          m.phone === fullCode ||
-          m.id === fullCode
+        const member = allMembers.find(
+          (m: Member) =>
+            m.member_id.toLowerCase() === targetMemberId.toLowerCase() ||
+            m.member_id.toLowerCase() === fullCode.toLowerCase() ||
+            m.phone === fullCode ||
+            m.id === fullCode
         );
 
         if (member) {
           playBeepSound();
           const activeSub = allSubscriptions.find(
-            (s: Subscription) => s.member_id === member.member_id && s.status === 'Active'
+            (s: Subscription) =>
+              s.member_id === member.member_id && s.status === 'Active'
           );
 
           const now = new Date();
@@ -134,11 +140,22 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
             calculatedStatus = 'Suspended';
           } else if (activeSub) {
             planName = activeSub.plan_name || 'Active Membership';
-            startDateStr = new Date(activeSub.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            expDateStr = new Date(activeSub.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            startDateStr = new Date(activeSub.start_date).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            );
+            expDateStr = new Date(activeSub.end_date).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            );
 
             const endDate = new Date(activeSub.end_date);
-            remainingDays = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            remainingDays = Math.max(
+              0,
+              Math.ceil(
+                (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+              )
+            );
 
             if (remainingDays <= 0) {
               calculatedStatus = 'Expired';
@@ -158,7 +175,7 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
             planName,
             startDate: startDateStr,
             expDate: expDateStr,
-            remainingDays
+            remainingDays,
           });
         } else {
           setNotFound(true);
@@ -194,7 +211,9 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
       {isLoading ? (
         <div className="py-8 text-center space-y-2">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Checking Subscription Plan...</p>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Checking Subscription Plan...
+          </p>
         </div>
       ) : subData ? (
         <div className="space-y-4 pt-1">
@@ -202,7 +221,11 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white overflow-hidden flex items-center justify-center font-black text-lg shrink-0 border border-blue-500/40">
                 {subData.avatarUrl ? (
-                  <img src={subData.avatarUrl} alt={subData.fullName} className="w-full h-full object-cover" />
+                  <img
+                    src={subData.avatarUrl}
+                    alt={subData.fullName}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <span>{subData.fullName[0]?.toUpperCase()}</span>
                 )}
@@ -211,7 +234,9 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
                 <h3 className="font-bold text-base text-(--color-text) truncate uppercase">
                   {subData.fullName}
                 </h3>
-                <p className="text-xs text-slate-500 font-mono">ID: {subData.memberId}</p>
+                <p className="text-xs text-slate-500 font-mono">
+                  ID: {subData.memberId}
+                </p>
               </div>
             </div>
 
@@ -264,8 +289,12 @@ export const SubscriptionScannerView: React.FC<SubscriptionScannerViewProps> = (
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-(--color-text) uppercase">NO SUBSCRIPTION FOUND</h3>
-            <p className="text-xs text-slate-500 font-mono mt-1">"{scannedCode}"</p>
+            <h3 className="font-bold text-sm text-(--color-text) uppercase">
+              NO SUBSCRIPTION FOUND
+            </h3>
+            <p className="text-xs text-slate-500 font-mono mt-1">
+              "{scannedCode}"
+            </p>
           </div>
           <Button
             type="button"

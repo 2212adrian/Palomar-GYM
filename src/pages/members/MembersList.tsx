@@ -1,12 +1,34 @@
 // src/pages/members/MembersList.tsx
 
-import React, { useState, useMemo, useEffect, useContext, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useContext,
+  useRef,
+  useCallback,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { 
-  Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2,
-  CheckCircle2, AlertTriangle, Check
+import {
+  Users,
+  Eye,
+  CreditCard,
+  RotateCcw,
+  Plus,
+  Search,
+  Settings,
+  X,
+  UserX,
+  UserCheck,
+  QrCode,
+  Filter,
+  MoreVertical,
+  Printer,
+  Trash2,
+  CheckCircle2,
+  AlertTriangle,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -21,18 +43,31 @@ import { HeaderActionsContext } from '../../routes';
 import { supabase } from '../../lib/supabase/client';
 
 // Import Shared Types
-import type { 
-  Member, Subscription, MemberCard, OnlineRegistration, MembershipSettings
+import type {
+  Member,
+  Subscription,
+  MemberCard,
+  OnlineRegistration,
+  MembershipSettings,
 } from '../../types/members';
 
 // Import Services
-import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from './memberService';
+import {
+  memberService,
+  subscriptionService,
+  cardService,
+  settingsService,
+  DEFAULT_SETTINGS,
+} from './memberService';
 
 // Import Modals & Views
 import { OnlineQueue } from './components/OnlineQueue';
 import { MemberProfileView } from './components/MemberProfileView';
 import { MemberRecycleBin } from './components/MemberRecycleBin';
-import { StaffPlansConsole, IntakeWizardModal } from './components/SubscriptionPlan'; 
+import {
+  StaffPlansConsole,
+  IntakeWizardModal,
+} from './components/SubscriptionPlan';
 import { DigitalQRCardModal } from './components/DigitalQRCardModal';
 import { ManualCardTemplateModal } from './components/ManualCardTemplateModal';
 import { MemberCardPrintModal } from './components/MemberCardPrintModal';
@@ -43,17 +78,19 @@ interface MembersListProps {
   hideHeaderActions?: boolean;
 }
 
-type FilterChip = 
-  | 'all' 
-  | 'suspended' 
-  | 'with_sub' 
-  | 'expiring' 
-  | 'expired' 
-  | 'has_card' 
+type FilterChip =
+  | 'all'
+  | 'suspended'
+  | 'with_sub'
+  | 'expiring'
+  | 'expired'
+  | 'has_card'
   | 'unclaimed_card'
   | 'no_card';
 
-export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = false }) => {
+export const MembersList: React.FC<MembersListProps> = ({
+  hideHeaderActions = false,
+}) => {
   const { setActions } = useContext(HeaderActionsContext);
   const location = useLocation();
   const navigate = useNavigate();
@@ -64,36 +101,58 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     return location.pathname.includes('/plans');
   }, [location.pathname]);
 
-  const [activeTab, setActiveTab] = useState<'Directory' | 'Queue'>('Directory');
+  const [activeTab, setActiveTab] = useState<'Directory' | 'Queue'>(
+    'Directory'
+  );
   const [members, setMembers] = useState<Member[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
-  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] =
+    useState<MembershipSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChip, setActiveChip] = useState<FilterChip>('all');
-  
+
   // Selection state for multi-select batch operations
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
 
   // Modals state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isRecycleOpen, setIsRecycleOpen] = useState(false);
-  const [selectedProfileMember, setSelectedProfileMember] = useState<Member | null>(null);
-  const [wizardPrefillMember, setWizardPrefillMember] = useState<Member | undefined>(undefined);
-  const [wizardPrefill, setWizardPrefill] = useState<OnlineRegistration | undefined>(undefined);
+  const [selectedProfileMember, setSelectedProfileMember] =
+    useState<Member | null>(null);
+  const [wizardPrefillMember, setWizardPrefillMember] = useState<
+    Member | undefined
+  >(undefined);
+  const [wizardPrefill, setWizardPrefill] = useState<
+    OnlineRegistration | undefined
+  >(undefined);
+
+  // Batch Card Purchase Modal State
+  const [isBatchBuyCardModalOpen, setIsBatchBuyCardModalOpen] = useState(false);
+  const [batchPayMethod, setBatchPayMethod] = useState<'Cash' | 'GCash'>(
+    'Cash'
+  );
+  const [batchGcashRef, setBatchGcashRef] = useState('');
+  const [isProcessingBatchPay, setIsProcessingBatchPay] = useState(false);
 
   // Claim Physical Card Modal State
-  const [claimModalData, setClaimModalData] = useState<{ member: Member; card: MemberCard } | null>(null);
+  const [claimModalData, setClaimModalData] = useState<{
+    member: Member;
+    card: MemberCard;
+  } | null>(null);
   const [claimNotes, setClaimNotes] = useState('');
   const [isClaiming, setIsClaiming] = useState(false);
 
   // Mobile Action Sheet State
-  const [mobileActionSheetMember, setMobileActionSheetMember] = useState<Member | null>(null);
+  const [mobileActionSheetMember, setMobileActionSheetMember] =
+    useState<Member | null>(null);
 
   // Card modal state
   const [qrModalMember, setQrModalMember] = useState<Member | null>(null);
-  const [manualModalMember, setManualModalMember] = useState<Member | null>(null);
+  const [manualModalMember, setManualModalMember] = useState<Member | null>(
+    null
+  );
   const [showBatchCardModal, setShowBatchCardModal] = useState<boolean>(false);
 
   // Action Menu state (Desktop Dropdown)
@@ -104,15 +163,64 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   const itemsPerPage = useResponsiveItemsPerPage();
 
+  // Replacement toggle (enabled by default when staff wants to charge for lost/damaged card)
+  const [chargeReplacements, setChargeReplacements] = useState(true);
+
+  // Break down selected members into Unpaid (New) and Already Paid (Replacements)
+  const batchMemberBreakdown = useMemo(() => {
+    const selectedMembers = members.filter((m) =>
+      selectedMemberIds.includes(m.id)
+    );
+
+    const newCardMembers: Member[] = [];
+    const replacementMembers: Member[] = [];
+
+    selectedMembers.forEach((m) => {
+      const card = cards.find(
+        (c) =>
+          c.member_id === m.member_id &&
+          c.status === 'Active' &&
+          c.card_type !== 'None'
+      );
+      if (card && card.payment_status === 'PAID') {
+        replacementMembers.push(m);
+      } else {
+        newCardMembers.push(m);
+      }
+    });
+
+    const payableMembers = chargeReplacements
+      ? [...newCardMembers, ...replacementMembers]
+      : newCardMembers;
+
+    const fee = settings.card_printing_fee || 50;
+    const totalPrice = payableMembers.length * fee;
+
+    return {
+      newCardMembers,
+      replacementMembers,
+      payableMembers,
+      totalPrice,
+      fee,
+    };
+  }, [
+    members,
+    selectedMemberIds,
+    cards,
+    chargeReplacements,
+    settings.card_printing_fee,
+  ]);
+
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const [membersData, subsData, cardsData, settingsData] = await Promise.all([
-        memberService.getAll(),
-        subscriptionService.getAll(),
-        cardService.getAll(),
-        settingsService.load().catch(() => DEFAULT_SETTINGS)
-      ]);
+      const [membersData, subsData, cardsData, settingsData] =
+        await Promise.all([
+          memberService.getAll(),
+          subscriptionService.getAll(),
+          cardService.getAll(),
+          settingsService.load().catch(() => DEFAULT_SETTINGS),
+        ]);
       setMembers(membersData);
       setSubscriptions(subsData);
       setCards(cardsData);
@@ -128,9 +236,26 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   useEffect(() => {
     const channel = supabase
       .channel('realtime-members-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, () => fetchMembers())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => fetchMembers())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => fetchMembers())
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'receipts' },
+        () => fetchMembers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions' },
+        () => fetchMembers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'members' },
+        () => fetchMembers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'member_cards' },
+        () => fetchMembers()
+      )
       .subscribe();
 
     return () => {
@@ -151,10 +276,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   // Launch Print Modal pre-selecting all "No Card Issued" members if no checkboxes selected
   const handleOpenPrintModal = useCallback(() => {
     if (selectedMemberIds.length === 0) {
-      const unissuedIds = members.filter(m => {
-        const c = cards.find((card: MemberCard) => card.member_id === m.member_id && card.status === 'Active');
-        return !c || c.card_type === 'None';
-      }).map(m => m.id);
+      const unissuedIds = members
+        .filter((m) => {
+          const c = cards.find(
+            (card: MemberCard) =>
+              card.member_id === m.member_id && card.status === 'Active'
+          );
+          return !c || c.card_type === 'None';
+        })
+        .map((m) => m.id);
       setSelectedMemberIds(unissuedIds);
     }
     setShowBatchCardModal(true);
@@ -187,8 +317,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         searchInputRef.current?.focus();
-      } else if (e.key === '/' && document.activeElement !== searchInputRef.current) {
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement?.tagName || ''))) return;
+      } else if (
+        e.key === '/' &&
+        document.activeElement !== searchInputRef.current
+      ) {
+        if (
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(
+            document.activeElement?.tagName || ''
+          )
+        )
+          return;
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -207,13 +345,20 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
     if (loading || members.length === 0 || hasTriggeredRenewRef.current) return;
 
     const searchParams = new URLSearchParams(location.search);
-    const renewMemberId = searchParams.get('renewMemberId') || (location.state as any)?.renewMemberId;
-    const memberName = searchParams.get('memberName') || (location.state as any)?.memberName;
+    const renewMemberId =
+      searchParams.get('renewMemberId') ||
+      (location.state as any)?.renewMemberId;
+    const memberName =
+      searchParams.get('memberName') || (location.state as any)?.memberName;
 
     if (renewMemberId || memberName) {
-      const targetMember = members.find(m => 
-        (renewMemberId && (m.member_id === renewMemberId || m.id === renewMemberId)) ||
-        (memberName && m.full_name?.toLowerCase().trim() === memberName.toLowerCase().trim())
+      const targetMember = members.find(
+        (m) =>
+          (renewMemberId &&
+            (m.member_id === renewMemberId || m.id === renewMemberId)) ||
+          (memberName &&
+            m.full_name?.toLowerCase().trim() ===
+              memberName.toLowerCase().trim())
       );
 
       if (targetMember) {
@@ -221,15 +366,18 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         setSearchQuery(targetMember.full_name || targetMember.member_id);
 
         const now = Date.now();
-        const memberActiveSubs = subscriptions.filter(s => {
-          if (s.member_id !== targetMember.member_id || s.status === 'Voided') return false;
+        const memberActiveSubs = subscriptions.filter((s) => {
+          if (s.member_id !== targetMember.member_id || s.status === 'Voided')
+            return false;
           if (!s.end_date) return false;
           const endMs = new Date(s.end_date).getTime();
           return endMs >= now;
         });
 
         if (memberActiveSubs.length > 1) {
-          toast.warning(`Cannot auto-renew: ${targetMember.full_name} has ${memberActiveSubs.length} active subscriptions. Please manage contracts individually.`);
+          toast.warning(
+            `Cannot auto-renew: ${targetMember.full_name} has ${memberActiveSubs.length} active subscriptions. Please manage contracts individually.`
+          );
           navigate('/members/list', { replace: true, state: {} });
         } else {
           setWizardPrefillMember(targetMember);
@@ -239,119 +387,169 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         }
       }
     }
-  }, [loading, members, subscriptions, location.search, location.state, navigate]);
+  }, [
+    loading,
+    members,
+    subscriptions,
+    location.search,
+    location.state,
+    navigate,
+  ]);
 
   /**
    * Resolves currently active subscription for a member where start_date <= now <= end_date
    */
-  const getActiveSubscription = useCallback((memberId: string): Subscription | undefined => {
-    const now = Date.now();
-    return subscriptions.find((s: Subscription) => {
-      if (s.member_id !== memberId || s.status === 'Voided') return false;
-      const startMs = new Date(s.start_date).getTime();
-      const endMs = new Date(s.end_date).getTime();
-      return startMs <= now && endMs >= now;
-    });
-  }, [subscriptions]);
+  const getActiveSubscription = useCallback(
+    (memberId: string): Subscription | undefined => {
+      const now = Date.now();
+      return subscriptions.find((s: Subscription) => {
+        if (s.member_id !== memberId || s.status === 'Voided') return false;
+        const startMs = new Date(s.start_date).getTime();
+        const endMs = new Date(s.end_date).getTime();
+        return startMs <= now && endMs >= now;
+      });
+    },
+    [subscriptions]
+  );
 
   /**
    * Finds any queued/scheduled renewal subscription for a member that starts in the future
    */
-  const getQueuedSubscription = useCallback((memberId: string): Subscription | undefined => {
-    const now = Date.now();
-    return subscriptions.find((s: Subscription) => {
-      if (s.member_id !== memberId || s.status === 'Voided') return false;
-      const startMs = new Date(s.start_date).getTime();
-      return startMs > now;
-    });
-  }, [subscriptions]);
+  const getQueuedSubscription = useCallback(
+    (memberId: string): Subscription | undefined => {
+      const now = Date.now();
+      return subscriptions.find((s: Subscription) => {
+        if (s.member_id !== memberId || s.status === 'Voided') return false;
+        const startMs = new Date(s.start_date).getTime();
+        return startMs > now;
+      });
+    },
+    [subscriptions]
+  );
 
   /**
    * Gets the most recent subscription record for details display
    */
-  const getLatestSubscriptionRecord = useCallback((memberId: string): Subscription | undefined => {
-    const memberSubs = subscriptions
-      .filter((s: Subscription) => s.member_id === memberId && s.status !== 'Voided')
-      .sort((a, b) => new Date(b.created_at || b.start_date).getTime() - new Date(a.created_at || a.start_date).getTime());
-    
-    return memberSubs[0];
-  }, [subscriptions]);
+  const getLatestSubscriptionRecord = useCallback(
+    (memberId: string): Subscription | undefined => {
+      const memberSubs = subscriptions
+        .filter(
+          (s: Subscription) => s.member_id === memberId && s.status !== 'Voided'
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.created_at || b.start_date).getTime() -
+            new Date(a.created_at || a.start_date).getTime()
+        );
 
-  const getActiveCard = useCallback((memberId: string): MemberCard | undefined => {
-    return cards.find((c: MemberCard) => c.member_id === memberId && c.status === 'Active');
-  }, [cards]);
+      return memberSubs[0];
+    },
+    [subscriptions]
+  );
+
+  const getActiveCard = useCallback(
+    (memberId: string): MemberCard | undefined => {
+      return cards.find(
+        (c: MemberCard) => c.member_id === memberId && c.status === 'Active'
+      );
+    },
+    [cards]
+  );
 
   // Subscription Details Formatter
-  const getSubscriptionDetails = useCallback((memberId: string) => {
-    const activeSub = getActiveSubscription(memberId);
-    const queuedSub = getQueuedSubscription(memberId);
-    const latestSub = getLatestSubscriptionRecord(memberId);
+  const getSubscriptionDetails = useCallback(
+    (memberId: string) => {
+      const activeSub = getActiveSubscription(memberId);
+      const queuedSub = getQueuedSubscription(memberId);
+      const latestSub = getLatestSubscriptionRecord(memberId);
 
-    if (!activeSub && !latestSub) {
+      if (!activeSub && !latestSub) {
+        return {
+          hasSub: false,
+          canRenew: true,
+          planName: 'Profile Only',
+          statusLabel: 'No Subscription',
+          badgeStyle:
+            'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30',
+          dotColor: 'bg-slate-400',
+          subscribedAt: null,
+          queuedPlan: null,
+        };
+      }
+
+      const targetSub = activeSub || latestSub!;
+      const endMs = new Date(targetSub.end_date).getTime();
+      const now = Date.now();
+      const isPast = !isNaN(endMs) && endMs < now;
+
+      // 1. EXPIRED CONTRACT STATE
+      if (isPast) {
+        return {
+          hasSub: false,
+          canRenew: true,
+          planName:
+            targetSub.plan_name ||
+            (targetSub.plan_type === 'yearly'
+              ? 'Yearly Membership'
+              : 'Monthly Membership'),
+          statusLabel: 'Expired',
+          badgeStyle:
+            'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40 font-extrabold',
+          dotColor: 'bg-rose-500',
+          subscribedAt: targetSub.start_date
+            ? new Date(targetSub.start_date).toLocaleDateString()
+            : null,
+          queuedPlan: null,
+        };
+      }
+
+      // 2. TRULY ACTIVE CONTRACT STATE
+      const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
+
+      let badgeStyle =
+        'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-bold';
+      let statusLabel = `${diffDays} Days remaining`;
+      let dotColor = 'bg-emerald-500';
+
+      if (diffDays <= 3) {
+        badgeStyle =
+          'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-extrabold';
+        statusLabel = `${diffDays} Days Left (Renew)`;
+        dotColor = 'bg-amber-500';
+      } else if (diffDays <= 7) {
+        badgeStyle =
+          'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-bold';
+        statusLabel = `${diffDays} Days Left`;
+        dotColor = 'bg-amber-500';
+      }
+
+      const subDate = new Date(targetSub.created_at || targetSub.start_date);
+      const dateFormatted = !isNaN(subDate.getTime())
+        ? `${subDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+        : null;
+
       return {
-        hasSub: false,
-        canRenew: true,
-        planName: 'Profile Only',
-        statusLabel: 'No Subscription',
-        badgeStyle: 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30',
-        dotColor: 'bg-slate-400',
-        subscribedAt: null,
-        queuedPlan: null
+        hasSub: true,
+        canRenew: diffDays <= 30 && !queuedSub,
+        planName:
+          targetSub.plan_name ||
+          (targetSub.plan_type === 'yearly'
+            ? 'Yearly Membership'
+            : 'Monthly Membership'),
+        statusLabel,
+        badgeStyle,
+        dotColor,
+        subscribedAt: dateFormatted,
+        queuedPlan: queuedSub
+          ? queuedSub.plan_name ||
+            (queuedSub.plan_type === 'yearly'
+              ? 'Yearly Membership'
+              : 'Monthly Membership')
+          : null,
       };
-    }
-
-    const targetSub = activeSub || latestSub!;
-    const endMs = new Date(targetSub.end_date).getTime();
-    const now = Date.now();
-    const isPast = !isNaN(endMs) && endMs < now;
-
-    // 1. EXPIRED CONTRACT STATE
-    if (isPast) {
-      return {
-        hasSub: false,
-        canRenew: true,
-        planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
-        statusLabel: 'Expired',
-        badgeStyle: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40 font-extrabold',
-        dotColor: 'bg-rose-500',
-        subscribedAt: targetSub.start_date ? new Date(targetSub.start_date).toLocaleDateString() : null,
-        queuedPlan: null
-      };
-    }
-
-    // 2. TRULY ACTIVE CONTRACT STATE
-    const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
-    
-    let badgeStyle = 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-bold';
-    let statusLabel = `${diffDays} Days remaining`;
-    let dotColor = 'bg-emerald-500';
-
-    if (diffDays <= 3) {
-      badgeStyle = 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-extrabold';
-      statusLabel = `${diffDays} Days Left (Renew)`;
-      dotColor = 'bg-amber-500';
-    } else if (diffDays <= 7) {
-      badgeStyle = 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-bold';
-      statusLabel = `${diffDays} Days Left`;
-      dotColor = 'bg-amber-500';
-    }
-
-    const subDate = new Date(targetSub.created_at || targetSub.start_date);
-    const dateFormatted = !isNaN(subDate.getTime())
-      ? `${subDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-      : null;
-
-    return {
-      hasSub: true,
-      canRenew: diffDays <= 30 && !queuedSub,
-      planName: targetSub.plan_name || (targetSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership'),
-      statusLabel,
-      badgeStyle,
-      dotColor,
-      subscribedAt: dateFormatted,
-      queuedPlan: queuedSub ? (queuedSub.plan_name || (queuedSub.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership')) : null
-    };
-  }, [getActiveSubscription, getQueuedSubscription, getLatestSubscriptionRecord]);
+    },
+    [getActiveSubscription, getQueuedSubscription, getLatestSubscriptionRecord]
+  );
 
   // Metric Summary Calculations
   const stats = useMemo(() => {
@@ -377,7 +575,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       total: members.length,
       activeSubscriptions: activeSubsCount,
       expiringSoon: expiringSoonCount,
-      suspendedMembers: members.filter(m => m.status === 'Suspended').length,
+      suspendedMembers: members.filter((m) => m.status === 'Suspended').length,
     };
   }, [members, subscriptions]);
 
@@ -385,7 +583,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('members-kpi-update', {
-        detail: stats
+        detail: stats,
       })
     );
   }, [stats]);
@@ -396,35 +594,45 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
     return {
       all: members.length,
-      suspended: members.filter(m => m.status === 'Suspended').length,
-      with_sub: members.filter(m => !!getActiveSubscription(m.member_id)).length,
-      expiring: members.filter(m => {
+      suspended: members.filter((m) => m.status === 'Suspended').length,
+      with_sub: members.filter((m) => !!getActiveSubscription(m.member_id))
+        .length,
+      expiring: members.filter((m) => {
         const sub = getActiveSubscription(m.member_id);
         if (!sub) return false;
-        const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil(
+          (new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24)
+        );
         return diffDays >= 0 && diffDays <= 7;
       }).length,
-      expired: members.filter(m => {
+      expired: members.filter((m) => {
         const activeSub = getActiveSubscription(m.member_id);
         if (activeSub) return false;
         const latestSub = getLatestSubscriptionRecord(m.member_id);
         if (!latestSub) return false;
         return new Date(latestSub.end_date).getTime() < now;
       }).length,
-      has_card: members.filter(m => {
+      has_card: members.filter((m) => {
         const card = getActiveCard(m.member_id);
         return card && card.card_type !== 'None';
       }).length,
-      unclaimed_card: members.filter(m => {
+      unclaimed_card: members.filter((m) => {
         const card = getActiveCard(m.member_id);
-        return card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED';
+        return (
+          card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED'
+        );
       }).length,
-      no_card: members.filter(m => {
+      no_card: members.filter((m) => {
         const card = getActiveCard(m.member_id);
         return !card || card.card_type === 'None';
       }).length,
     };
-  }, [members, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
+  }, [
+    members,
+    getActiveSubscription,
+    getLatestSubscriptionRecord,
+    getActiveCard,
+  ]);
 
   // Filtered Members
   const filteredMembers = useMemo(() => {
@@ -437,7 +645,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       const phone = (m.phone || '').toLowerCase();
       const email = (m.email || '').toLowerCase();
 
-      const matchesSearch = q === '' ||
+      const matchesSearch =
+        q === '' ||
         fullName.includes(q) ||
         memberId.includes(q) ||
         phone.includes(q) ||
@@ -453,7 +662,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         case 'expiring': {
           const sub = getActiveSubscription(m.member_id);
           if (!sub) return false;
-          const diffDays = Math.ceil((new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24));
+          const diffDays = Math.ceil(
+            (new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24)
+          );
           return diffDays >= 0 && diffDays <= 7;
         }
         case 'expired': {
@@ -469,7 +680,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         }
         case 'unclaimed_card': {
           const card = getActiveCard(m.member_id);
-          return card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED';
+          return (
+            card &&
+            card.card_type !== 'None' &&
+            card.claim_status === 'UNCLAIMED'
+          );
         }
         case 'no_card': {
           const card = getActiveCard(m.member_id);
@@ -480,21 +695,31 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           return true;
       }
     });
-  }, [members, searchQuery, activeChip, getActiveSubscription, getLatestSubscriptionRecord, getActiveCard]);
+  }, [
+    members,
+    searchQuery,
+    activeChip,
+    getActiveSubscription,
+    getLatestSubscriptionRecord,
+    getActiveCard,
+  ]);
 
-  const isAllSelected = filteredMembers.length > 0 && filteredMembers.every(m => selectedMemberIds.includes(m.id));
+  const isAllSelected =
+    filteredMembers.length > 0 &&
+    filteredMembers.every((m) => selectedMemberIds.includes(m.id));
   const isSomeSelected = selectedMemberIds.length > 0 && !isAllSelected;
 
   const handleToggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedMemberIds([]);
     } else {
-      setSelectedMemberIds(filteredMembers.map(m => m.id));
+      setSelectedMemberIds(filteredMembers.map((m) => m.id));
     }
   };
 
   // Mobile Paginated Slice
-  const totalMobilePages = Math.ceil(filteredMembers.length / itemsPerPage) || 1;
+  const totalMobilePages =
+    Math.ceil(filteredMembers.length / itemsPerPage) || 1;
   const paginatedMobileMembers = useMemo(() => {
     const start = (mobilePage - 1) * itemsPerPage;
     return filteredMembers.slice(start, start + itemsPerPage);
@@ -503,7 +728,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const handleToggleSuspend = async (memberItem: Member) => {
     const nextStatus = memberItem.status === 'Active' ? 'Suspended' : 'Active';
     try {
-      await memberService.update(memberItem.id, { status: nextStatus }, 'Admin Staff');
+      await memberService.update(
+        memberItem.id,
+        { status: nextStatus },
+        'Admin Staff'
+      );
       toast.success(`Member set to ${nextStatus}.`);
       fetchMembers();
     } catch (err: any) {
@@ -514,9 +743,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const isSelectionActive = selectedMemberIds.length > 0;
 
   const handleRowClick = (member: Member) => {
-    setSelectedMemberIds(prev =>
+    setSelectedMemberIds((prev) =>
       prev.includes(member.id)
-        ? prev.filter(id => id !== member.id)
+        ? prev.filter((id) => id !== member.id)
         : [...prev, member.id]
     );
   };
@@ -555,8 +784,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       headerClassName: 'w-10 text-center',
       cellClassName: 'text-center p-0',
       render: (item) => (
-        <label 
-          className="flex items-center justify-center w-full h-10 py-1 cursor-pointer transition-colors hover:bg-slate-500/5 select-none" 
+        <label
+          className="flex items-center justify-center w-full h-10 py-1 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <input
@@ -564,15 +793,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             checked={selectedMemberIds.includes(item.id)}
             onChange={(e) => {
               if (e.target.checked) {
-                setSelectedMemberIds(prev => [...prev, item.id]);
+                setSelectedMemberIds((prev) => [...prev, item.id]);
               } else {
-                setSelectedMemberIds(prev => prev.filter(id => id !== item.id));
+                setSelectedMemberIds((prev) =>
+                  prev.filter((id) => id !== item.id)
+                );
               }
             }}
             className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
           />
         </label>
-      )
+      ),
     },
     {
       key: 'full_name',
@@ -604,7 +835,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             </span>
           </div>
         </div>
-      )
+      ),
     },
     {
       key: 'subscription',
@@ -624,18 +855,23 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             </span>
 
             <div className="flex flex-wrap items-center gap-1">
-              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase border ${subInfo.badgeStyle}`}>
+              <span
+                className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase border ${subInfo.badgeStyle}`}
+              >
                 {subInfo.statusLabel}
               </span>
               {subInfo.queuedPlan && (
-                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase border bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30" title="Queued renewal after current plan expires">
+                <span
+                  className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase border bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                  title="Queued renewal after current plan expires"
+                >
                   Queued: {subInfo.queuedPlan}
                 </span>
               )}
             </div>
           </div>
         );
-      }
+      },
     },
     {
       key: 'card_printed',
@@ -644,8 +880,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       sortValue: (item) => {
         const cardObj = getActiveCard(item.member_id);
         if (!cardObj || cardObj.card_type === 'None') return '1_NO_CARD';
-        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED') return '2_PAID_UNCLAIMED';
-        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED') return '3_PAID_CLAIMED';
+        if (
+          cardObj.payment_status === 'PAID' &&
+          cardObj.claim_status === 'UNCLAIMED'
+        )
+          return '2_PAID_UNCLAIMED';
+        if (
+          cardObj.payment_status === 'PAID' &&
+          cardObj.claim_status === 'CLAIMED'
+        )
+          return '3_PAID_CLAIMED';
         return '4_NO_CARD';
       },
       render: (item) => {
@@ -653,7 +897,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         const isQr = cardObj?.card_type === 'QR';
 
         // 1. NO CARD (gray inactive)
-        if (!cardObj || cardObj.card_type === 'None' || cardObj.payment_status !== 'PAID') {
+        if (
+          !cardObj ||
+          cardObj.card_type === 'None' ||
+          cardObj.payment_status !== 'PAID'
+        ) {
           return (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
@@ -663,12 +911,20 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         }
 
         // 2. PAID • UNCLAIMED (Yellow)
-        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED') {
+        if (
+          cardObj.payment_status === 'PAID' &&
+          cardObj.claim_status === 'UNCLAIMED'
+        ) {
           return (
-            <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="flex items-center gap-1.5 flex-wrap"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
-                onClick={() => isQr ? setQrModalMember(item) : setManualModalMember(item)}
+                onClick={() =>
+                  isQr ? setQrModalMember(item) : setManualModalMember(item)
+                }
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:opacity-85 cursor-pointer transition-opacity"
                 title="Physical card fee is paid but card is not yet claimed by member. Click to view."
               >
@@ -693,7 +949,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         }
 
         // 3. PAID • CLAIMED (Green)
-        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED') {
+        if (
+          cardObj.payment_status === 'PAID' &&
+          cardObj.claim_status === 'CLAIMED'
+        ) {
           return (
             <button
               type="button"
@@ -721,7 +980,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             <span>NO CARD</span>
           </span>
         );
-      }
+      },
     },
     {
       key: 'actions',
@@ -731,12 +990,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         const subInfo = getSubscriptionDetails(item.member_id);
 
         return (
-          <div 
+          <div
             className="opacity-90 group-hover/row:opacity-100 transition-opacity duration-150 flex items-center justify-end gap-1.5 select-none relative"
             onClick={(e) => e.stopPropagation()}
           >
             {subInfo.canRenew && (
-              <button 
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setWizardPrefillMember(item);
@@ -745,11 +1004,12 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 className="px-2.5 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg cursor-pointer border border-emerald-500/30 inline-flex items-center gap-1 text-[10px] font-heading tracking-wider uppercase font-extrabold transition-colors shadow-xs"
                 title="Enroll or renew member subscription contract"
               >
-                <CreditCard className="w-3 h-3" /> {subInfo.hasSub ? 'Renew' : 'Subscribe'}
+                <CreditCard className="w-3 h-3" />{' '}
+                {subInfo.hasSub ? 'Renew' : 'Subscribe'}
               </button>
             )}
-            
-            <button 
+
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedProfileMember(item);
@@ -766,7 +1026,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setOpenActionMenuId(openActionMenuId === item.id ? null : item.id);
+                  setOpenActionMenuId(
+                    openActionMenuId === item.id ? null : item.id
+                  );
                 }}
                 className="p-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-(--color-text) cursor-pointer transition-colors shadow-xs"
                 title="More Options"
@@ -775,7 +1037,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
               </button>
 
               {openActionMenuId === item.id && (
-                <div 
+                <div
                   onClick={(e) => e.stopPropagation()}
                   className="absolute right-0 top-full mt-1.5 w-48 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl z-30 p-1.5 space-y-1 font-body text-xs text-left animate-fade-in"
                 >
@@ -813,16 +1075,24 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     }}
                     className="w-full px-3.5 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 cursor-pointer"
                   >
-                    {item.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                    <span>{item.status === 'Active' ? 'Suspend Member' : 'Activate Member'}</span>
+                    {item.status === 'Active' ? (
+                      <UserX className="w-4 h-4" />
+                    ) : (
+                      <UserCheck className="w-4 h-4" />
+                    )}
+                    <span>
+                      {item.status === 'Active'
+                        ? 'Suspend Member'
+                        : 'Activate Member'}
+                    </span>
                   </button>
                 </div>
               )}
             </div>
           </div>
         );
-      }
-    }
+      },
+    },
   ];
 
   // Header Actions Sync
@@ -855,10 +1125,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             </Button>
 
             <Button
-              onClick={() => { 
-                setWizardPrefillMember(undefined); 
-                setWizardPrefill(undefined); 
-                setIsWizardOpen(true); 
+              onClick={() => {
+                setWizardPrefillMember(undefined);
+                setWizardPrefill(undefined);
+                setIsWizardOpen(true);
               }}
               variant="primary"
               className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
@@ -876,7 +1146,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         setActions(null);
       }
     };
-  }, [activeTab, setActions, hideHeaderActions, isPlansPath, members, handleOpenPrintModal]);
+  }, [
+    activeTab,
+    setActions,
+    hideHeaderActions,
+    isPlansPath,
+    members,
+    handleOpenPrintModal,
+  ]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenActionMenuId(null);
@@ -888,13 +1165,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   useEffect(() => {
     if (location.state?.openMemberId && members.length > 0) {
       const targetMember = members.find(
-        (m) => m.member_id === location.state.openMemberId || m.id === location.state.openMemberId
+        (m) =>
+          m.member_id === location.state.openMemberId ||
+          m.id === location.state.openMemberId
       );
       if (targetMember) {
         setActiveChip('expiring');
         setSelectedProfileMember(targetMember);
         setSearchQuery(targetMember.full_name);
-        toast.info(`Viewing expiring member: "${targetMember.full_name}"`, { toastId: `expiring-${targetMember.id}` });
+        toast.info(`Viewing expiring member: "${targetMember.full_name}"`, {
+          toastId: `expiring-${targetMember.id}`,
+        });
         window.history.replaceState({}, document.title);
       }
     }
@@ -902,12 +1183,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in text-xs md:text-sm text-(--color-text)">
-      
       {isPlansPath ? (
         <div className="space-y-4">
           <div className="flex items-center gap-2 border-b border-(--border-color) pb-4 select-none">
             <Settings className="w-5 h-5 text-(--color-primary-light)" />
-            <h2 className="font-heading text-base tracking-wider uppercase text-slate-800 dark:text-white">Active Counter Plan Catalog</h2>
+            <h2 className="font-heading text-base tracking-wider uppercase text-slate-800 dark:text-white">
+              Active Counter Plan Catalog
+            </h2>
           </div>
           <StaffPlansConsole />
         </div>
@@ -917,16 +1199,20 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           <div className="flex border-b border-(--border-color) bg-(--bg-card) p-1 rounded-t-3xl select-none">
             {[
               { id: 'Directory', icon: Users, label: 'Members Directory' },
-              { id: 'Queue', icon: CreditCard, label: 'Online Registration Queue' }
-            ].map(item => {
+              {
+                id: 'Queue',
+                icon: CreditCard,
+                label: 'Online Registration Queue',
+              },
+            ].map((item) => {
               const Icon = item.icon;
               return (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
                   className={`flex-1 py-3 px-4 font-heading text-xs md:text-sm tracking-wider uppercase font-extrabold cursor-pointer flex items-center justify-center gap-2 transition-all ${
-                    activeTab === item.id 
-                      ? 'border-b-2 border-[#123c73] dark:border-[#bf0202] text-slate-900 dark:text-white' 
+                    activeTab === item.id
+                      ? 'border-b-2 border-[#123c73] dark:border-[#bf0202] text-slate-900 dark:text-white'
                       : 'border-b-2 border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                   }`}
                 >
@@ -940,17 +1226,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           <div className="mt-3 md:mt-4 space-y-3 md:space-y-4">
             {activeTab === 'Directory' && (
               <div className="space-y-3 md:space-y-4 pb-40 md:pb-24">
-
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
                 <div className="space-y-2.5 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
-                  
                   <div className="relative w-full">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       ref={searchInputRef}
                       type="text"
                       value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
+                      onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search profiles by Name, ID, Phone, or Email..."
                       className="w-full pl-10 pr-10 py-2 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-bold text-xs md:text-sm text-(--color-text) focus:border-blue-500 transition-all"
                     />
@@ -974,14 +1258,42 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
                     {[
                       { id: 'all', label: 'All', count: chipCounts.all },
-                      { id: 'with_sub', label: 'Subscription', count: chipCounts.with_sub },
-                      { id: 'expiring', label: 'Expiring', count: chipCounts.expiring },
-                      { id: 'expired', label: 'Expired', count: chipCounts.expired },
-                      { id: 'unclaimed_card', label: 'Unclaimed Cards', count: chipCounts.unclaimed_card },
-                      { id: 'has_card', label: 'Has Card', count: chipCounts.has_card },
-                      { id: 'no_card', label: 'No Card', count: chipCounts.no_card },
-                      { id: 'suspended', label: 'Suspended', count: chipCounts.suspended },
-                    ].map(chip => (
+                      {
+                        id: 'with_sub',
+                        label: 'Subscription',
+                        count: chipCounts.with_sub,
+                      },
+                      {
+                        id: 'expiring',
+                        label: 'Expiring',
+                        count: chipCounts.expiring,
+                      },
+                      {
+                        id: 'expired',
+                        label: 'Expired',
+                        count: chipCounts.expired,
+                      },
+                      {
+                        id: 'unclaimed_card',
+                        label: 'Unclaimed Cards',
+                        count: chipCounts.unclaimed_card,
+                      },
+                      {
+                        id: 'has_card',
+                        label: 'Has Card',
+                        count: chipCounts.has_card,
+                      },
+                      {
+                        id: 'no_card',
+                        label: 'No Card',
+                        count: chipCounts.no_card,
+                      },
+                      {
+                        id: 'suspended',
+                        label: 'Suspended',
+                        count: chipCounts.suspended,
+                      },
+                    ].map((chip) => (
                       <button
                         key={chip.id}
                         type="button"
@@ -993,17 +1305,18 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         }`}
                       >
                         <span>{chip.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full font-mono text-[10px] font-bold ${
-                          activeChip === chip.id
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
-                        }`}>
+                        <span
+                          className={`px-1.5 py-0.2 rounded-full font-mono text-[10px] font-bold ${
+                            activeChip === chip.id
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
                           {chip.count}
                         </span>
                       </button>
                     ))}
                   </div>
-
                 </div>
 
                 {/* DESKTOP TABLE VIEW (HIGH DENSITY COMPACT ROWS) */}
@@ -1017,9 +1330,17 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                         <Skeleton height={28} width={70} />
                       </div>
                       {Array.from({ length: 8 }).map((_, idx) => (
-                        <div key={idx} className="flex items-center justify-between py-2 px-3 border-b border-(--border-color)/40 last:border-none">
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between py-2 px-3 border-b border-(--border-color)/40 last:border-none"
+                        >
                           <div className="flex items-center gap-2.5 w-1/3">
-                            <Skeleton circle width={38} height={38} className="shrink-0" />
+                            <Skeleton
+                              circle
+                              width={38}
+                              height={38}
+                              className="shrink-0"
+                            />
                             <div className="space-y-1 flex-1">
                               <Skeleton height={14} width="70%" />
                               <Skeleton height={10} width="50%" />
@@ -1030,7 +1351,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                             <Skeleton height={16} width={90} borderRadius={6} />
                           </div>
                           <div className="w-1/5">
-                            <Skeleton height={24} width={105} borderRadius={8} />
+                            <Skeleton
+                              height={24}
+                              width={105}
+                              borderRadius={8}
+                            />
                           </div>
                           <div className="flex items-center justify-end gap-1.5">
                             <Skeleton height={28} width={65} borderRadius={8} />
@@ -1045,7 +1370,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-400 mx-auto flex items-center justify-center">
                         <Search className="w-5 h-5" />
                       </div>
-                      <h4 className="font-heading font-bold text-sm text-(--color-text)">No members match query</h4>
+                      <h4 className="font-heading font-bold text-sm text-(--color-text)">
+                        No members match query
+                      </h4>
                       <p className="text-xs text-slate-400 max-w-sm mx-auto">
                         {searchQuery || activeChip !== 'all'
                           ? 'Try modifying your search keywords or reset chip filters.'
@@ -1099,16 +1426,28 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   {loading ? (
                     <div className="space-y-2.5">
                       {Array.from({ length: 4 }).map((_, idx) => (
-                        <div key={idx} className="p-3.5 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-2.5">
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-2.5"
+                        >
                           <div className="flex items-center justify-between gap-2.5">
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                              <Skeleton circle width={38} height={38} className="shrink-0" />
+                              <Skeleton
+                                circle
+                                width={38}
+                                height={38}
+                                className="shrink-0"
+                              />
                               <div className="flex-1 space-y-1">
                                 <Skeleton height={14} width="65%" />
                                 <Skeleton height={10} width="40%" />
                               </div>
                             </div>
-                            <Skeleton height={20} width={60} borderRadius={16} />
+                            <Skeleton
+                              height={20}
+                              width={60}
+                              borderRadius={16}
+                            />
                           </div>
                           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color)">
                             <Skeleton height={20} width="80%" />
@@ -1122,7 +1461,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-400 mx-auto flex items-center justify-center">
                         <Search className="w-5 h-5" />
                       </div>
-                      <h4 className="font-heading font-bold text-xs text-(--color-text)">No members match query</h4>
+                      <h4 className="font-heading font-bold text-xs text-(--color-text)">
+                        No members match query
+                      </h4>
                       <p className="text-xs text-slate-400 max-w-xs mx-auto">
                         Modify search or filter chips to find profiles.
                       </p>
@@ -1144,7 +1485,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       {/* Select All Row on Mobile */}
                       {isSelectionActive && (
                         <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[44px]">
-                          <label 
+                          <label
                             className="flex items-center gap-2.5 cursor-pointer py-1.5 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1"
                             onClick={handleToggleSelectAll}
                           >
@@ -1154,11 +1495,15 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                 if (el) el.indeterminate = isSomeSelected;
                               }}
                               checked={isAllSelected}
-                              onChange={() => {}} 
+                              onChange={() => {}}
                               className="w-4 h-4 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
                             />
                             <span className="text-xs font-bold text-(--color-text)">
-                              Selected Members <span className="font-mono text-slate-400 font-normal">({selectedMemberIds.length}/{filteredMembers.length})</span>
+                              Selected Members{' '}
+                              <span className="font-mono text-slate-400 font-normal">
+                                ({selectedMemberIds.length}/
+                                {filteredMembers.length})
+                              </span>
                             </span>
                           </label>
 
@@ -1174,9 +1519,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
                       {/* Mobile Cards Map */}
                       {paginatedMobileMembers.map((member) => {
-                        const subInfo = getSubscriptionDetails(member.member_id);
+                        const subInfo = getSubscriptionDetails(
+                          member.member_id
+                        );
                         const cardObj = getActiveCard(member.member_id);
-                        const isSelected = selectedMemberIds.includes(member.id);
+                        const isSelected = selectedMemberIds.includes(
+                          member.id
+                        );
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
 
@@ -1188,8 +1537,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                               isSelected
                                 ? 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500 shadow-md'
                                 : isSuspended
-                                ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-950 dark:text-amber-200'
-                                : 'bg-(--bg-card) border-(--border-color) shadow-xs active:scale-[0.99]'
+                                  ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-950 dark:text-amber-200'
+                                  : 'bg-(--bg-card) border-(--border-color) shadow-xs active:scale-[0.99]'
                             }`}
                           >
                             {/* Card Header: Checkbox + Avatar + Details + Status */}
@@ -1234,10 +1583,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                             {/* Plan & Security Details Grid */}
                             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-(--border-color)">
                               <div className="space-y-0.5">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">PLAN</span>
-                                <span className="font-extrabold text-xs text-(--color-text) block truncate">{subInfo.planName}</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                  PLAN
+                                </span>
+                                <span className="font-extrabold text-xs text-(--color-text) block truncate">
+                                  {subInfo.planName}
+                                </span>
                                 <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold uppercase border ${subInfo.badgeStyle}`}>
+                                  <span
+                                    className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold uppercase border ${subInfo.badgeStyle}`}
+                                  >
                                     {subInfo.statusLabel}
                                   </span>
                                   {subInfo.queuedPlan && (
@@ -1249,14 +1604,19 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                               </div>
 
                               <div className="space-y-0.5 text-right">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">BADGE STATUS</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                  BADGE STATUS
+                                </span>
                                 <div>
-                                  {!cardObj || cardObj.card_type === 'None' || cardObj.payment_status !== 'PAID' ? (
+                                  {!cardObj ||
+                                  cardObj.card_type === 'None' ||
+                                  cardObj.payment_status !== 'PAID' ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">
                                       <span className="w-1 h-1 rounded-full bg-slate-400" />
                                       <span>NO CARD</span>
                                     </span>
-                                  ) : cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED' ? (
+                                  ) : cardObj.payment_status === 'PAID' &&
+                                    cardObj.claim_status === 'UNCLAIMED' ? (
                                     <div className="flex flex-col items-end gap-1">
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
                                         <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />
@@ -1266,7 +1626,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setClaimModalData({ member, card: cardObj });
+                                          setClaimModalData({
+                                            member,
+                                            card: cardObj,
+                                          });
                                           setClaimNotes('');
                                         }}
                                         className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[8px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1"
@@ -1275,7 +1638,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                         <span>Claim</span>
                                       </button>
                                     </div>
-                                  ) : cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED' ? (
+                                  ) : cardObj.payment_status === 'PAID' &&
+                                    cardObj.claim_status === 'CLAIMED' ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1329,7 +1693,9 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                   className="flex-1 min-h-[40px] px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-emerald-500/20 transition-colors"
                                 >
                                   <CreditCard className="w-3.5 h-3.5" />
-                                  <span>{subInfo.hasSub ? 'Renew' : 'Subscribe'}</span>
+                                  <span>
+                                    {subInfo.hasSub ? 'Renew' : 'Subscribe'}
+                                  </span>
                                 </button>
                               )}
 
@@ -1345,7 +1711,6 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                 <MoreVertical className="w-4 h-4" />
                               </button>
                             </div>
-
                           </div>
                         );
                       })}
@@ -1359,14 +1724,20 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                           <div className="flex items-center gap-2">
                             <button
                               disabled={mobilePage === 1}
-                              onClick={() => setMobilePage(p => Math.max(1, p - 1))}
+                              onClick={() =>
+                                setMobilePage((p) => Math.max(1, p - 1))
+                              }
                               className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold disabled:opacity-40"
                             >
                               Prev
                             </button>
                             <button
                               disabled={mobilePage === totalMobilePages}
-                              onClick={() => setMobilePage(p => Math.min(totalMobilePages, p + 1))}
+                              onClick={() =>
+                                setMobilePage((p) =>
+                                  Math.min(totalMobilePages, p + 1)
+                                )
+                              }
                               className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold disabled:opacity-40"
                             >
                               Next
@@ -1377,17 +1748,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     </>
                   )}
                 </div>
-
               </div>
             )}
 
             {activeTab === 'Queue' && (
-              <OnlineQueue 
+              <OnlineQueue
                 onApproveLaunchWizard={(reg) => {
                   setWizardPrefill(reg);
                   setWizardPrefillMember(undefined);
                   setIsWizardOpen(true);
-                }} 
+                }}
               />
             )}
           </div>
@@ -1407,6 +1777,21 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsBatchBuyCardModalOpen(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>
+                Purchase Cards (₱
+                {(
+                  selectedMemberIds.length * (settings.card_printing_fee || 50)
+                ).toLocaleString()}
+                )
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowBatchCardModal(true)}
@@ -1435,90 +1820,116 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
             initial={{ y: 80, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 z-[210] bg-(--bg-card) text-(--color-text) p-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-3 select-none"
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-2.5 right-2.5 z-[210] bg-(--bg-card) text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none"
           >
-            <div className="flex items-center gap-2.5">
-              <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
                 {selectedMemberIds.length}
               </span>
-              <div>
-                <span className="font-heading text-xs font-bold uppercase tracking-wider block text-(--color-text) leading-none">
+              <div className="min-w-0">
+                <span className="font-heading text-[11px] font-bold uppercase tracking-wider block text-(--color-text) leading-none truncate">
                   Selected
                 </span>
                 <button
                   type="button"
                   onClick={() => setSelectedMemberIds([])}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 font-bold underline cursor-pointer mt-0.5"
+                  className="text-[9px] text-slate-400 hover:text-rose-500 font-bold underline cursor-pointer mt-0.5"
                 >
-                  Clear Selection
+                  Clear
                 </button>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowBatchCardModal(true)}
-              className="px-4 py-2 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-md active:scale-95 transition-transform"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Cards</span>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Batch Purchase Button with calculated fee */}
+              <button
+                type="button"
+                onClick={() => setIsBatchBuyCardModalOpen(true)}
+                className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-md active:scale-95 transition-transform"
+                title="Purchase cards for selected members"
+              >
+                <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Purchase (₱
+                  {(
+                    selectedMemberIds.length *
+                    (settings.card_printing_fee || 50)
+                  ).toLocaleString()}
+                  )
+                </span>
+              </button>
+
+              {/* Batch Print Button */}
+              <button
+                type="button"
+                onClick={() => setShowBatchCardModal(true)}
+                className="px-3 py-2 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 transition-transform"
+                title="Print cards for selected members"
+              >
+                <Printer className="w-3.5 h-3.5 shrink-0" />
+                <span>Print</span>
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* 3. MOBILE DIRECT ACTION BOTTOM BAR */}
-      {activeTab === 'Directory' && !isSelectionActive && createPortal(
-        <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
-          <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-            <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
-              <Users className="w-3.5 h-3.5" />
-              <span className="text-[11px]">{stats.total} Members</span>
+      {activeTab === 'Directory' &&
+        !isSelectionActive &&
+        createPortal(
+          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+            <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+              <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
+                <Users className="w-3.5 h-3.5" />
+                <span className="text-[11px]">{stats.total} Members</span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
+                <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[11px] truncate">
+                  {stats.activeSubscriptions} Active
+                </span>
+              </div>
             </div>
-            <span className="text-slate-300 dark:text-zinc-700">•</span>
-            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 truncate">
-              <UserCheck className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[11px] truncate">{stats.activeSubscriptions} Active</span>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsRecycleOpen(true)}
+                className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                title="Recycle Bin"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenPrintModal}
+                className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                title="Print Cards"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setWizardPrefillMember(undefined);
+                  setWizardPrefill(undefined);
+                  setIsWizardOpen(true);
+                }}
+                className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+                title="Enroll Member"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-[10px] hidden xs:inline">Enroll</span>
+              </button>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsRecycleOpen(true)}
-              className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Recycle Bin"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenPrintModal}
-              className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Print Cards"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setWizardPrefillMember(undefined);
-                setWizardPrefill(undefined);
-                setIsWizardOpen(true);
-              }}
-              className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
-              title="Enroll Member"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="text-[10px] hidden xs:inline">Enroll</span>
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 4. MOBILE SLIDE-UP ACTION SHEET */}
       <AnimatePresence>
@@ -1535,7 +1946,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 shadow-2xl space-y-4 pb-20"
             >
               <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto" />
@@ -1549,7 +1960,8 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                     {mobileActionSheetMember.full_name}
                   </h3>
                   <span className="text-xs font-mono text-slate-400 block">
-                    {mobileActionSheetMember.member_id} • {mobileActionSheetMember.phone}
+                    {mobileActionSheetMember.member_id} •{' '}
+                    {mobileActionSheetMember.phone}
                   </span>
                 </div>
               </div>
@@ -1604,8 +2016,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                   }}
                   className="w-full p-3.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
                 >
-                  {mobileActionSheetMember.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                  <span>{mobileActionSheetMember.status === 'Active' ? 'Suspend Member Access' : 'Reactivate Member Access'}</span>
+                  {mobileActionSheetMember.status === 'Active' ? (
+                    <UserX className="w-4 h-4" />
+                  ) : (
+                    <UserCheck className="w-4 h-4" />
+                  )}
+                  <span>
+                    {mobileActionSheetMember.status === 'Active'
+                      ? 'Suspend Member Access'
+                      : 'Reactivate Member Access'}
+                  </span>
                 </button>
 
                 <button
@@ -1623,14 +2043,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
       {/* MODALS */}
       {isWizardOpen && (
-        <IntakeWizardModal 
+        <IntakeWizardModal
           isOpen={isWizardOpen}
           initialIntakeMode="Manual"
           prefillData={wizardPrefill}
           prefillMember={wizardPrefillMember}
-          onClose={() => { 
-            setIsWizardOpen(false); 
-            setWizardPrefill(undefined); 
+          onClose={() => {
+            setIsWizardOpen(false);
+            setWizardPrefill(undefined);
             setWizardPrefillMember(undefined);
           }}
           onComplete={fetchMembers}
@@ -1638,7 +2058,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       )}
 
       {isRecycleOpen && (
-        <MemberRecycleBin 
+        <MemberRecycleBin
           isOpen={isRecycleOpen}
           onClose={() => setIsRecycleOpen(false)}
           onRestoreSuccess={fetchMembers}
@@ -1647,7 +2067,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
 
       <AnimatePresence>
         {selectedProfileMember && (
-          <MemberProfileView 
+          <MemberProfileView
             member={selectedProfileMember}
             onClose={() => setSelectedProfileMember(null)}
             onMutationSuccess={fetchMembers}
@@ -1683,8 +2103,243 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           members={members}
           initialSelectedIds={selectedMemberIds}
           onClose={() => setShowBatchCardModal(false)}
+          onSuccess={fetchMembers}
         />
       )}
+
+      <Modal
+        isOpen={isBatchBuyCardModalOpen}
+        onClose={() => {
+          if (!isProcessingBatchPay) setIsBatchBuyCardModalOpen(false);
+        }}
+        title="BATCH PURCHASE PHYSICAL CARDS"
+        className="max-w-lg md:max-w-xl w-full p-6"
+      >
+        <div className="space-y-4 text-left font-body">
+          {/* 1. KPI Summary Banner */}
+          <div className="p-4 bg-gradient-to-r from-blue-600/10 via-blue-500/5 to-transparent border border-blue-500/20 rounded-2xl flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-heading font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                Total Payable Amount
+              </span>
+              <div className="text-2xl font-mono font-black text-(--color-text)">
+                ₱{batchMemberBreakdown.totalPrice.toFixed(2)}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Rate: ₱{batchMemberBreakdown.fee} •{' '}
+                {batchMemberBreakdown.payableMembers.length} of{' '}
+                {selectedMemberIds.length} members billed
+              </p>
+            </div>
+
+            <div className="text-right">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-mono font-bold bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>{batchMemberBreakdown.payableMembers.length} Cards</span>
+              </span>
+            </div>
+          </div>
+
+          {/* 2. Replacement Warning (Only if members already have a card) */}
+          {batchMemberBreakdown.replacementMembers.length > 0 && (
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 block">
+                  {batchMemberBreakdown.replacementMembers.length} member(s)
+                  already paid for a card
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={chargeReplacements}
+                    onChange={(e) => setChargeReplacements(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer"
+                  />
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Charge replacement fee (Lost or Damaged Card)
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Member List with Avatars */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5 px-1">
+              <span className="text-[10px] font-heading font-extrabold text-slate-400 uppercase tracking-wider">
+                Selected Members ({selectedMemberIds.length})
+              </span>
+            </div>
+
+            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
+              {members
+                .filter((m) => selectedMemberIds.includes(m.id))
+                .map((m) => {
+                  const isReplacement =
+                    batchMemberBreakdown.replacementMembers.some(
+                      (rm) => rm.id === m.id
+                    );
+                  const isCharged = isReplacement ? chargeReplacements : true;
+
+                  return (
+                    <div
+                      key={m.id}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
+                        !isCharged
+                          ? 'bg-slate-500/5 border-(--border-color) opacity-60'
+                          : 'bg-(--bg-card) border-(--border-color)'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <MemberAvatar
+                          src={m.image_url || m.avatar_url}
+                          name={m.full_name}
+                          size={32}
+                          roundedClassName="rounded-lg"
+                          className="shrink-0 border border-(--border-color)"
+                        />
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs block truncate text-(--color-text)">
+                            {m.full_name}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 block">
+                            {m.member_id}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0">
+                        {isReplacement ? (
+                          <span
+                            className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold uppercase border ${
+                              isCharged
+                                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                                : 'bg-slate-500/15 text-slate-400 border-slate-500/20 line-through'
+                            }`}
+                          >
+                            {isCharged
+                              ? `Replacement (₱${batchMemberBreakdown.fee})`
+                              : 'Skipped (₱0)'}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold uppercase border bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                            New Card (₱{batchMemberBreakdown.fee})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* 4. Payment Method Segmented Selector */}
+          <div className="space-y-2 pt-2 border-t border-(--border-color)">
+            <label className="text-[10px] font-heading font-extrabold text-slate-400 uppercase tracking-wider block">
+              Payment Method
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setBatchPayMethod('Cash')}
+                className={`py-2 px-3 rounded-xl border text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 transition-all ${
+                  batchPayMethod === 'Cash'
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                    : 'bg-(--bg-page) text-slate-400 border-(--border-color) hover:text-(--color-text)'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Cash</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBatchPayMethod('GCash')}
+                className={`py-2 px-3 rounded-xl border text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 transition-all ${
+                  batchPayMethod === 'GCash'
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-md'
+                    : 'bg-(--bg-page) text-slate-400 border-(--border-color) hover:text-(--color-text)'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>GCash</span>
+              </button>
+            </div>
+
+            {batchPayMethod === 'GCash' && (
+              <div className="space-y-1 pt-1 animate-fade-in">
+                <input
+                  type="text"
+                  value={batchGcashRef}
+                  onChange={(e) => setBatchGcashRef(e.target.value)}
+                  placeholder="GCash Reference Number (Optional)"
+                  className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-xs text-(--color-text) outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* 5. Bottom Action Buttons */}
+          <div className="flex gap-2.5 justify-end pt-3 border-t border-(--border-color)">
+            <button
+              type="button"
+              disabled={isProcessingBatchPay}
+              onClick={() => setIsBatchBuyCardModalOpen(false)}
+              className="px-4 py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none transition-colors"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                isProcessingBatchPay ||
+                batchMemberBreakdown.payableMembers.length === 0
+              }
+              onClick={async () => {
+                setIsProcessingBatchPay(true);
+                try {
+                  const memberIds = batchMemberBreakdown.payableMembers.map(
+                    (m) => m.member_id
+                  );
+                  const fee = batchMemberBreakdown.fee;
+
+                  await cardService.batchPurchase(
+                    memberIds,
+                    batchPayMethod,
+                    fee,
+                    batchGcashRef,
+                    'Admin Staff'
+                  );
+
+                  toast.success(
+                    `Processed card payment for ${memberIds.length} member(s).`
+                  );
+                  setIsBatchBuyCardModalOpen(false);
+                  setSelectedMemberIds([]);
+                  setBatchGcashRef('');
+                  fetchMembers();
+                } catch (err: any) {
+                  toast.error(
+                    err.message || 'Failed to complete batch card purchase.'
+                  );
+                } finally {
+                  setIsProcessingBatchPay(false);
+                }
+              }}
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-extrabold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5 transition-all"
+            >
+              <Check className="w-4 h-4" />
+              <span>
+                {isProcessingBatchPay
+                  ? 'Processing...'
+                  : `Confirm (₱${batchMemberBreakdown.totalPrice.toFixed(2)})`}
+              </span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* QUICK CLAIM PHYSICAL MEMBERSHIP CARD MODAL */}
       <Modal
@@ -1698,15 +2353,30 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1">
             <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>Card Fee Paid (₱{(claimModalData?.card.card_fee_paid ?? settings.card_printing_fee ?? 50).toFixed(2)})</span>
+              <span>
+                Card Fee Paid (₱
+                {(
+                  claimModalData?.card.card_fee_paid ??
+                  settings.card_printing_fee ??
+                  50
+                ).toFixed(2)}
+                )
+              </span>
             </div>
             <p className="text-xs text-slate-400">
-              Card Token: <strong className="font-mono text-(--color-text)">{claimModalData?.card.card_number}</strong>
+              Card Token:{' '}
+              <strong className="font-mono text-(--color-text)">
+                {claimModalData?.card.card_number}
+              </strong>
             </p>
           </div>
 
           <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-            Confirm handover of physical membership card to member <strong className="text-slate-900 dark:text-white font-bold">{claimModalData?.member.full_name}</strong> ({claimModalData?.member.member_id}).
+            Confirm handover of physical membership card to member{' '}
+            <strong className="text-slate-900 dark:text-white font-bold">
+              {claimModalData?.member.full_name}
+            </strong>{' '}
+            ({claimModalData?.member.member_id}).
           </p>
 
           <div>
@@ -1738,8 +2408,14 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                 if (!claimModalData) return;
                 setIsClaiming(true);
                 try {
-                  await cardService.markClaimed(claimModalData.member.member_id, 'Admin Staff', claimNotes);
-                  toast.success(`Physical card for ${claimModalData.member.full_name} marked as CLAIMED.`);
+                  await cardService.markClaimed(
+                    claimModalData.member.member_id,
+                    'Admin Staff',
+                    claimNotes
+                  );
+                  toast.success(
+                    `Physical card for ${claimModalData.member.full_name} marked as CLAIMED.`
+                  );
                   setClaimModalData(null);
                   setClaimNotes('');
                   fetchMembers();
@@ -1752,12 +2428,13 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
               className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />
-              <span>{isClaiming ? 'Saving...' : 'Confirm Release & Handover'}</span>
+              <span>
+                {isClaiming ? 'Saving...' : 'Confirm Release & Handover'}
+              </span>
             </button>
           </div>
         </div>
       </Modal>
-
     </div>
   );
 };

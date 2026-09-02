@@ -10,7 +10,9 @@ interface ProtectedRouteProps {
   allowedRoles?: ('admin' | 'staff')[];
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  allowedRoles,
+}) => {
   const { user, profile, loading, initialized } = useAuthStore() as any;
   const location = useLocation();
 
@@ -30,7 +32,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
 
   const isSuperAdminUser = isSuperAdmin(user?.email);
 
-  const userStatus = isSuperAdminUser ? 'active' : (profile?.status || user?.user_metadata?.status);
+  const userStatus = isSuperAdminUser
+    ? 'active'
+    : profile?.status || user?.user_metadata?.status;
   const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role;
 
   // Guard: Intercept and display suspension notice to deactivated users
@@ -46,7 +50,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
               Account Suspended
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-bold">
-              Your profile has been marked as inactive by a system administrator. You no longer have access to this terminal.
+              Your profile has been marked as inactive by a system
+              administrator. You no longer have access to this terminal.
             </p>
           </div>
           <button
@@ -67,7 +72,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   // Verify role authorizations on custom restricted nodes
   if (allowedRoles) {
     if (!effectiveRole || !allowedRoles.includes(effectiveRole)) {
-      const targetFallback = effectiveRole === 'staff' ? '/sales' : '/dashboard';
+      const targetFallback =
+        effectiveRole === 'staff' ? '/sales' : '/dashboard';
       return <Navigate to={targetFallback} replace />;
     }
   }

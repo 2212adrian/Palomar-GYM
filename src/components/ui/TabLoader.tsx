@@ -8,22 +8,22 @@ interface TabLoaderProps {
 }
 
 const STATUS_PHRASES = [
-  "Preparing your workspace...",
-  "Loading gym records...",
-  "Syncing latest data...",
-  "Fetching information...",
-  "Updating dashboard...",
-  "Loading member information...",
-  "Preparing system modules...",
-  "Organizing your data...",
-  "Checking for recent updates...",
-  "Finalizing your workspace..."
+  'Preparing your workspace...',
+  'Loading gym records...',
+  'Syncing latest data...',
+  'Fetching information...',
+  'Updating dashboard...',
+  'Loading member information...',
+  'Preparing system modules...',
+  'Organizing your data...',
+  'Checking for recent updates...',
+  'Finalizing your workspace...',
 ];
 
 export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
   const { isOnline } = useContext(TabLoadingContext);
   const [statusText, setStatusText] = useState(STATUS_PHRASES[0]);
-  
+
   // Track mounting state to completely remove SVGs from GPU rasterization when hidden
   const [shouldRender, setShouldRender] = useState(isVisible);
 
@@ -44,7 +44,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
 
   useEffect(() => {
     if (!isOnline) {
-      setStatusText("Network offline. Waiting to reconnect...");
+      setStatusText('Network offline. Waiting to reconnect...');
       return;
     }
 
@@ -66,7 +66,9 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
     for (let i = 0; i < 6; i++) {
       const angleDeg = 60 * i - 30;
       const angleRad = (Math.PI / 180) * angleDeg;
-      points.push(`${(cx + r * Math.cos(angleRad)).toFixed(2)},${(cy + r * Math.sin(angleRad)).toFixed(2)}`);
+      points.push(
+        `${(cx + r * Math.cos(angleRad)).toFixed(2)},${(cy + r * Math.sin(angleRad)).toFixed(2)}`
+      );
     }
     return points.join(' ');
   };
@@ -103,7 +105,9 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
   return (
     <div
       className={`fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-slate-50/95 dark:bg-[#070a13]/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
-        isVisible ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 scale-95 pointer-events-none'
+        isVisible
+          ? 'opacity-100 pointer-events-auto scale-100'
+          : 'opacity-0 scale-95 pointer-events-none'
       }`}
     >
       <style>{`
@@ -201,9 +205,13 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
         </div>
 
         <div className="mt-8 h-6 flex items-center justify-center">
-          <span className={`text-xs font-mono tracking-wider transition-colors duration-300 ${
-            !isOnline ? 'text-amber-600 dark:text-amber-500 font-semibold animate-pulse' : 'text-slate-500 dark:text-slate-400'
-          }`}>
+          <span
+            className={`text-xs font-mono tracking-wider transition-colors duration-300 ${
+              !isOnline
+                ? 'text-amber-600 dark:text-amber-500 font-semibold animate-pulse'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
             {statusText}
           </span>
         </div>
