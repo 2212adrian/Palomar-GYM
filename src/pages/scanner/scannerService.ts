@@ -374,11 +374,20 @@ export const scannerService = {
 
       // Direct Database fallback query if not in cache
       if (!member) {
+        // Check if scanned code is a card token UUID in cards table
+        const { data: dbCard } = await supabase
+          .from('cards')
+          .select('member_id')
+          .or(`card_number.eq.${fullCode},card_number.eq.${memberIdPart}`)
+          .maybeSingle();
+
+        const resolvedMemberId = dbCard?.member_id || memberIdPart;
+
         const { data: dbMember } = await supabase
           .from('members')
           .select('*')
           .is('deleted_at', null)
-          .or(`member_id.ilike.${memberIdPart},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`)
+          .or(`member_id.ilike.${resolvedMemberId},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`)
           .maybeSingle();
 
         if (dbMember) {

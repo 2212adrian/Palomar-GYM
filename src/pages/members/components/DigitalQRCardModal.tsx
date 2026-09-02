@@ -38,8 +38,8 @@ export const DigitalQRCardModal: React.FC<DigitalQRCardModalProps> = ({
     return d.toISOString().split('T')[0];
   }, [card?.expires_at]);
 
-  // Payload string strictly uses MEMBER_ID:EXPIRYDATE
-  const qrData = card?.card_number || `${member.member_id}:${expireDate}`;
+  // Payload string strictly uses secure UUID card token (or member_id fallback)
+  const qrData = card?.card_number || member.member_id;
   const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(qrData)}`;
 
   // Expiration calculation logic

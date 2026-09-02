@@ -31,11 +31,11 @@ export async function logAudit(
       userId = user.id;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('username, full_name, email')
+        .select('username, email')
         .eq('id', user.id)
         .maybeSingle();
 
-      actorUsername = profile?.full_name || profile?.username || user.email || 'System';
+      actorUsername = profile?.username || user.user_metadata?.full_name || user.email || 'System';
     }
 
     const cleanedDetails = sanitizeLogDetails(details);

@@ -550,12 +550,12 @@ export const Login: React.FC = () => {
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
         .from('profiles')
-        .select('status, full_name')
+        .select('status, username')
         .eq('id', loggedInUser?.id)
         .maybeSingle();
 
       const userStatus = dbProfile?.status || loggedInUser?.user_metadata?.status;
-      const targetName = dbProfile?.full_name || loggedInUser?.email || data.usernameOrEmail;
+      const targetName = dbProfile?.username || loggedInUser?.user_metadata?.full_name || loggedInUser?.email || data.usernameOrEmail;
 
       if (userStatus === 'inactive') {
         sessionStorage.removeItem('outroActive');

@@ -218,9 +218,9 @@ export const Dashboard: React.FC = () => {
         />
 
         {/* ─── 4. TWO-COLUMN SPLIT: MEMBERSHIPS / INVENTORY & ACTIVITY FEED ─── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
           {/* Left Column (Span 2 on Desktop): Membership Overview & Inventory Alerts */}
-          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+          <div className="xl:col-span-2 space-y-4 sm:space-y-6">
             <MembershipOverviewSection
               metrics={metrics}
               expiringMembers={expiringSoonList}
@@ -237,7 +237,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Right Column (Span 1 on Desktop): Real-time Chronological Activity Feed */}
-          <div className="lg:col-span-1">
+          <div className="xl:col-span-1">
             <RecentActivityFeed
               activities={activityItems}
               onRefresh={loadData}

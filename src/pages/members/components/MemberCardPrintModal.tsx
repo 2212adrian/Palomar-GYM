@@ -366,7 +366,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
           const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
           const isExp = new Date(finalExpDate) < new Date();
-          const qrPayload = `${m.member_id}:${finalExpDate}`;
+          const card = getMemberCard(m.member_id);
+          const qrPayload = card?.card_number || m.member_id;
           const qrRawUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
           const qrImgObj = await loadBase64Image(qrRawUrl);
 
@@ -599,7 +600,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
           const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
           
           const isExp = new Date(finalExpDate) < new Date();
-          const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+          const card = getMemberCard(m.member_id);
+          const qrPayload = card?.card_number || m.member_id;
           const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
           cardsGridHtml += `
@@ -1638,7 +1640,8 @@ ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
                             const activeSubExp = sub?.end_date ? new Date(sub.end_date).toISOString().split('T')[0] : 'NO ACTIVE PLAN';
                             const finalExpDate = overrideDates ? customExpireDate : (sub?.end_date ? activeSubExp : customExpireDate);
                             const isExp = new Date(finalExpDate) < new Date();
-                            const qrPayload = `${m.member_id}:${finalExpDate}:${new Date(issueDate).getTime()}`;
+                            const card = getMemberCard(m.member_id);
+                            const qrPayload = card?.card_number || m.member_id;
                             const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
                             return (

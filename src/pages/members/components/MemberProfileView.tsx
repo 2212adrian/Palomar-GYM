@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { 
   X, ShieldAlert, UserCheck, UserX, Trash2, Lock, Pencil, Save,
   ShieldCheck, FileSignature, Receipt as ReceiptIcon, Eye, AlertOctagon, CreditCard, RefreshCw,
-  User, Clock, QrCode, CalendarCheck, Camera
+  User, Clock, QrCode, CalendarCheck, Camera, CheckCircle2, AlertTriangle, Check
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from '../memberService';
@@ -69,6 +69,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   // Card Reissue & Unbind Modal States
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
   const [isUnbindModalOpen, setIsUnbindModalOpen] = useState(false);
+
+  // Physical Card Claim & Pay Fee Modal States
+  const [isMarkClaimModalOpen, setIsMarkClaimModalOpen] = useState(false);
+  const [claimNotesInput, setClaimNotesInput] = useState('');
+  const [isClaimingInProfile, setIsClaimingInProfile] = useState(false);
+
+  const [isPayCardModalOpen, setIsPayCardModalOpen] = useState(false);
+  const [payCardMethod, setPayCardMethod] = useState<'Cash' | 'GCash'>('Cash');
+  const [payCardGcashRef, setPayCardGcashRef] = useState('');
+  const [payCardAmountPaid, setPayCardAmountPaid] = useState<number>(50);
+  const [isPayingCard, setIsPayingCard] = useState(false);
 
   // Inline Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
@@ -269,6 +280,51 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message || 'Failed to unbind card.');
+    }
+  };
+
+  // Card Claim Handler
+  const handleConfirmMarkClaimed = async () => {
+    if (!currentCard) return;
+    setIsClaimingInProfile(true);
+    try {
+      await cardService.markClaimed(localMember.member_id, user?.email || 'Admin Staff', claimNotesInput);
+      toast.success(`Physical card for ${localMember.full_name} marked as CLAIMED.`);
+      setIsMarkClaimModalOpen(false);
+      setClaimNotesInput('');
+      setRefreshKey(prev => prev + 1);
+      await loadProfileCollections();
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to mark card as claimed.');
+    } finally {
+      setIsClaimingInProfile(false);
+    }
+  };
+
+  // Card Payment Handler
+  const handleConfirmPayCard = async () => {
+    if (!currentCard) return;
+    setIsPayingCard(true);
+    try {
+      const fee = 50;
+      await cardService.payCard(
+        localMember.member_id,
+        fee,
+        payCardMethod,
+        user?.email || 'Admin Staff',
+        undefined,
+        payCardMethod === 'GCash' ? payCardGcashRef : undefined
+      );
+      toast.success(`Physical card fee (₱50.00) recorded and marked as PAID.`);
+      setIsPayCardModalOpen(false);
+      setRefreshKey(prev => prev + 1);
+      await loadProfileCollections();
+      onMutationSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to record card fee payment.');
+    } finally {
+      setIsPayingCard(false);
     }
   };
 
@@ -850,6 +906,112 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   )}
                 </div>
               )}
+
+              {/* PHYSICAL MEMBERSHIP CARD TRACKING WIDGET */}
+              <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
+                <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
+                  <h4 className="font-heading text-xs text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2 font-bold">
+                    <CreditCard className="w-4 h-4 text-blue-500" /> Physical Membership Card
+                  </h4>
+                  {currentCard && currentCard.card_type !== 'None' && (
+                    <span className="text-[10px] font-mono font-bold text-slate-400">
+                      Token: {currentCard.card_number}
+                    </span>
+                  )}
+                </div>
+
+                {!currentCard || currentCard.card_type === 'None' ? (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <span className="text-slate-400">No security badge registered for this member.</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('Cards')}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                    >
+                      Issue Card
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Payment:</span>
+                        {currentCard.payment_status === 'PAID' ? (
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> PAID (₱{currentCard.card_fee_paid || 50}.00)
+                          </span>
+                        ) : (
+                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNPAID (₱0.00)
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Claim Status:</span>
+                        {currentCard.claim_status === 'CLAIMED' ? (
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> CLAIMED & HANDED OVER
+                          </span>
+                        ) : currentCard.claim_status === 'UNCLAIMED' ? (
+                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> PENDING PICKUP
+                          </span>
+                        ) : (
+                          <span className="font-mono font-medium text-slate-400">
+                            DIGITAL ONLY
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-(--border-color)">
+                      <div className="text-[11px] text-slate-400">
+                        {currentCard.claimed_at ? (
+                          <span>Claimed on {new Date(currentCard.claimed_at).toLocaleDateString()} {currentCard.claimed_by ? `by ${currentCard.claimed_by}` : ''}</span>
+                        ) : currentCard.payment_status === 'PAID' ? (
+                          <span className="text-amber-600 dark:text-amber-400 font-medium">Card fee paid. Ready for handover at the front desk.</span>
+                        ) : (
+                          <span>Card printing fee of ₱50.00 has not been paid yet.</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClaimNotesInput('');
+                              setIsMarkClaimModalOpen(true);
+                            }}
+                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Mark as Claimed
+                          </button>
+                        )}
+
+                        {currentCard.payment_status !== 'PAID' && (
+                          <button
+                            type="button"
+                            onClick={() => setIsPayCardModalOpen(true)}
+                            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" /> Pay Card Fee (₱50)
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('Cards')}
+                          className="px-3 py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                        >
+                          Manage Card
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* PERSONAL BIO & EMERGENCY CONTACT CARDS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1442,7 +1604,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               ? new Date(currentCard.issued_at).toLocaleDateString() 
               : new Date().toLocaleDateString();
 
-            const qrPayload = currentCard?.card_number || `${localMember.member_id}:${cardExpDateOnly}`;
+            const qrPayload = currentCard?.card_number || localMember.member_id;
             const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
 
             const handleSwitchCardTypeInDb = async (type: 'QR' | 'Manual') => {
@@ -1629,25 +1791,139 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   </div>
                 )}
 
-                {/* ACTION BUTTONS: REISSUE TOKEN & UNBIND CARD */}
+                {/* PHYSICAL MEMBERSHIP CARD LIFECYCLE & CLAIM STATUS PANEL */}
                 {currentCard && (
-                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
+                      <h5 className="text-xs font-heading font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <CreditCard className="w-4 h-4 text-blue-500" />
+                        PHYSICAL CARD PAYMENT & CLAIM TRACKING
+                      </h5>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                        currentCard.payment_status === 'PAID' && currentCard.claim_status === 'CLAIMED'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                          : currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                          : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                      }`}>
+                        {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'CLAIMED'
+                          ? '✓ PAID & CLAIMED'
+                          : currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED'
+                          ? '⚠ PAID • READY FOR PICKUP'
+                          : 'UNPAID'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      {/* Payment Status Card */}
+                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Card Fee Payment (₱50.00)
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Status:</span>
+                          {currentCard.payment_status === 'PAID' ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> PAID (₱{currentCard.card_fee_paid || 50}.00)
+                            </span>
+                          ) : (
+                            <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNPAID (₱0.00)
+                            </span>
+                          )}
+                        </div>
+                        {currentCard.receipt_number && (
+                          <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color)">
+                            <span className="text-slate-400 text-[11px]">Official Receipt:</span>
+                            <span className="font-mono text-[11px] font-bold text-blue-500">{currentCard.receipt_number}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Claim Status Card */}
+                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Handover & Claim State
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Claim Status:</span>
+                          {currentCard.claim_status === 'CLAIMED' ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> RELEASED TO MEMBER
+                            </span>
+                          ) : currentCard.claim_status === 'UNCLAIMED' ? (
+                            <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> UNCLAIMED (At Front Desk)
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-mono">NOT APPLICABLE</span>
+                          )}
+                        </div>
+                        {currentCard.claimed_at && (
+                          <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color) text-[11px]">
+                            <span className="text-slate-400">Released On:</span>
+                            <span className="font-mono text-slate-300">
+                              {new Date(currentCard.claimed_at).toLocaleDateString()} {currentCard.claimed_by ? `(${currentCard.claimed_by})` : ''}
+                            </span>
+                          </div>
+                        )}
+                        {currentCard.claim_notes && (
+                          <p className="text-[10px] text-slate-400 italic pt-0.5">
+                            "{currentCard.claim_notes}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ACTION BUTTONS: CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
+                {currentCard && (
+                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                    {currentCard.payment_status === 'PAID' && currentCard.claim_status === 'UNCLAIMED' ? (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setClaimNotesInput('');
+                          setIsMarkClaimModalOpen(true);
+                        }} 
+                        className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Mark as Claimed</span>
+                      </button>
+                    ) : currentCard.payment_status !== 'PAID' ? (
+                      <button 
+                        type="button"
+                        onClick={() => setIsPayCardModalOpen(true)} 
+                        className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>Pay Card Fee (₱50)</span>
+                      </button>
+                    ) : (
+                      <div className="min-h-[44px] px-3.5 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Claim Completed</span>
+                      </div>
+                    )}
+
                     <button 
                       type="button"
                       onClick={() => setIsReissueModalOpen(true)} 
-                      className="min-h-[44px] px-4 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
+                      className="min-h-[44px] px-3.5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
                     >
                       <RefreshCw className="w-4 h-4" />
-                      <span>Reissue Card Token</span>
+                      <span>Reissue Token</span>
                     </button>
 
                     <button 
                       type="button"
                       onClick={() => setIsUnbindModalOpen(true)} 
-                      className="min-h-[44px] px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
+                      className="min-h-[44px] px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
                     >
                       <Trash2 className="w-4 h-4" />
-                      <span>Unbind / Remove Card</span>
+                      <span>Unbind Card</span>
                     </button>
                   </div>
                 )}
@@ -2068,6 +2344,169 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </button>
             </div>
           </form>
+        </Modal>
+
+        {/* MARK AS CLAIMED / RELEASE PHYSICAL CARD MODAL */}
+        <Modal
+          isOpen={isMarkClaimModalOpen}
+          onClose={() => setIsMarkClaimModalOpen(false)}
+          title="RELEASE PHYSICAL MEMBERSHIP CARD"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-700 dark:text-emerald-300 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>Card Handover Verification</span>
+              </p>
+              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                Confirm that the printed physical card has been handed over directly to <strong>{localMember.full_name}</strong>.
+              </p>
+            </div>
+
+            <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs space-y-1 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Card Token:</span>
+                <span className="font-bold text-(--color-text)">{currentCard?.card_number || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Fee Payment:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">PAID (₱{currentCard?.card_fee_paid || 50}.00)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Staff In-Charge:</span>
+                <span className="text-(--color-text)">{user?.email || 'Admin Staff'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-400 block">
+                Handover Notes / Verification (Optional)
+              </label>
+              <input
+                type="text"
+                value={claimNotesInput}
+                onChange={(e) => setClaimNotesInput(e.target.value)}
+                placeholder="e.g. Handed over at front desk with signed waiver"
+                className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsMarkClaimModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isClaimingInProfile}
+                onClick={handleConfirmMarkClaimed}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>{isClaimingInProfile ? 'Updating...' : 'Confirm Card Claimed'}</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* PAY PHYSICAL CARD FEE MODAL */}
+        <Modal
+          isOpen={isPayCardModalOpen}
+          onClose={() => setIsPayCardModalOpen(false)}
+          title="PAY PHYSICAL CARD PRINTING FEE"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-600 dark:text-blue-300 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <CreditCard className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>Physical Card Printing Fee</span>
+              </p>
+              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                Collect <strong>₱50.00</strong> card fee for <strong>{localMember.full_name}</strong>. Upon payment, status will update to <strong>PAID • UNCLAIMED</strong> ready for handover.
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-400 font-bold block mb-1">Payment Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayCardMethod('Cash')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold uppercase cursor-pointer flex items-center justify-center gap-2 ${
+                      payCardMethod === 'Cash'
+                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        : 'bg-(--bg-page) text-slate-400 border-(--border-color)'
+                    }`}
+                  >
+                    <span>Cash</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayCardMethod('GCash')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold uppercase cursor-pointer flex items-center justify-center gap-2 ${
+                      payCardMethod === 'GCash'
+                        ? 'bg-blue-600 text-white border-blue-500'
+                        : 'bg-(--bg-page) text-slate-400 border-(--border-color)'
+                    }`}
+                  >
+                    <span>GCash</span>
+                  </button>
+                </div>
+              </div>
+
+              {payCardMethod === 'Cash' ? (
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold block">Amount Tendered (₱)</label>
+                  <input
+                    type="number"
+                    value={payCardAmountPaid}
+                    onChange={(e) => setPayCardAmountPaid(Number(e.target.value) || 0)}
+                    min={50}
+                    className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-sm text-(--color-text) outline-none"
+                  />
+                  {payCardAmountPaid > 50 && (
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono pt-1">
+                      Change: ₱{(payCardAmountPaid - 50).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold block">GCash Reference Number (Optional)</label>
+                  <input
+                    type="text"
+                    value={payCardGcashRef}
+                    onChange={(e) => setPayCardGcashRef(e.target.value)}
+                    placeholder="e.g. 100234589"
+                    className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-xs text-(--color-text) outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsPayCardModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isPayingCard || (payCardMethod === 'Cash' && payCardAmountPaid < 50)}
+                onClick={handleConfirmPayCard}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>{isPayingCard ? 'Processing...' : 'Record Payment (₱50.00)'}</span>
+              </button>
+            </div>
+          </div>
         </Modal>
 
         {/* INTAKE SUBSCRIPTION WIZARD MODAL */}

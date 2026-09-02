@@ -7,6 +7,9 @@ export type RegistrationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Expired'
 export type PaymentStatus = 'Pending' | 'Paid' | 'Cancelled' | 'Refunded';
 export type PaymentMethod = 'Cash' | 'GCash';
 
+export type CardPaymentStatus = 'NONE' | 'PAID' | 'REFUNDED';
+export type CardClaimStatus = 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED';
+
 export interface Member {
   id: string;
   member_id: string;
@@ -80,6 +83,13 @@ export interface MemberCard {
   card_type: 'QR' | 'Manual' | 'None';
   status: CardStatus;
   version: number;
+  payment_status: CardPaymentStatus;
+  claim_status: CardClaimStatus;
+  card_fee_paid?: number;
+  claimed_at?: string | null;
+  claimed_by?: string | null;
+  claim_notes?: string | null;
+  receipt_number?: string | null;
   issued_at: string;
   expires_at?: string;
   replaced_at?: string;

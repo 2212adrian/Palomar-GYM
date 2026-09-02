@@ -1360,8 +1360,32 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         );
       }
 
+      const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+
       if (addIdCard) {
-        await cardService.issue(targetMember.member_id, 'QR', 'Admin Staff');
+        await cardService.issue(
+          targetMember.member_id, 
+          'QR', 
+          'Admin Staff',
+          undefined,
+          'PAID',
+          'UNCLAIMED',
+          liveCardFee,
+          receiptNo
+        );
+      } else {
+        const existingCard = await cardService.getByMemberId(targetMember.member_id);
+        if (!existingCard) {
+          await cardService.issue(
+            targetMember.member_id,
+            'QR',
+            'Admin Staff',
+            undefined,
+            'NONE',
+            'NOT_APPLICABLE',
+            0
+          );
+        }
       }
 
       if (importedQueueReg) {
@@ -1371,8 +1395,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const now = new Date();
       const formattedDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + 
         now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-
-      const receiptNo = createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
 
       setFinishedIds({
         member_id: targetMember.member_id,

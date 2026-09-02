@@ -197,10 +197,10 @@ export const SystemLayout: React.FC = () => {
           </div>
 
           {/* Scrollable Main Content Pane */}
-          <div className="flex-1 relative min-w-0 px-1 sm:px-4 pt-14 sm:pt-16 h-full flex flex-col min-h-0">
+          <div className="flex-1 relative min-w-0 px-0 sm:px-2 md:px-3 pt-14 sm:pt-16 h-full flex flex-col min-h-0">
             <main 
               ref={mainScrollRef}
-              className={`flex-1 pt-0 pb-6 sm:pb-8 sm:px-8 lg:px-16 overflow-y-auto overflow-x-hidden ${
+              className={`flex-1 pt-0 pb-6 sm:pb-8 px-2 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-hidden ${
                 isTabLoading 
                   ? 'opacity-0 pointer-events-none' 
                   : 'opacity-100 transition-opacity duration-300'

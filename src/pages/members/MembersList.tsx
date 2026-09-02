@@ -5,7 +5,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   Users, Eye, CreditCard, RotateCcw, Plus, Search, Settings,
-  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2
+  X, UserX, UserCheck, QrCode, Filter, MoreVertical, Printer, Trash2,
+  CheckCircle2, AlertTriangle, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -14,17 +15,18 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { HeaderActionsContext } from '../../routes';
 import { supabase } from '../../lib/supabase/client';
 
 // Import Shared Types
 import type { 
-  Member, Subscription, MemberCard, OnlineRegistration
+  Member, Subscription, MemberCard, OnlineRegistration, MembershipSettings
 } from '../../types/members';
 
 // Import Services
-import { memberService, subscriptionService, cardService } from './memberService';
+import { memberService, subscriptionService, cardService, settingsService, DEFAULT_SETTINGS } from './memberService';
 
 // Import Modals & Views
 import { OnlineQueue } from './components/OnlineQueue';
@@ -48,6 +50,7 @@ type FilterChip =
   | 'expiring' 
   | 'expired' 
   | 'has_card' 
+  | 'unclaimed_card'
   | 'no_card';
 
 export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = false }) => {
@@ -65,6 +68,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const [members, setMembers] = useState<Member[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
+  const [settings, setSettings] = useState<MembershipSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChip, setActiveChip] = useState<FilterChip>('all');
@@ -78,6 +82,11 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const [selectedProfileMember, setSelectedProfileMember] = useState<Member | null>(null);
   const [wizardPrefillMember, setWizardPrefillMember] = useState<Member | undefined>(undefined);
   const [wizardPrefill, setWizardPrefill] = useState<OnlineRegistration | undefined>(undefined);
+
+  // Claim Physical Card Modal State
+  const [claimModalData, setClaimModalData] = useState<{ member: Member; card: MemberCard } | null>(null);
+  const [claimNotes, setClaimNotes] = useState('');
+  const [isClaiming, setIsClaiming] = useState(false);
 
   // Mobile Action Sheet State
   const [mobileActionSheetMember, setMobileActionSheetMember] = useState<Member | null>(null);
@@ -98,14 +107,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const [membersData, subsData, cardsData] = await Promise.all([
+      const [membersData, subsData, cardsData, settingsData] = await Promise.all([
         memberService.getAll(),
         subscriptionService.getAll(),
-        cardService.getAll()
+        cardService.getAll(),
+        settingsService.load().catch(() => DEFAULT_SETTINGS)
       ]);
       setMembers(membersData);
       setSubscriptions(subsData);
       setCards(cardsData);
+      if (settingsData) setSettings(settingsData);
     } catch (err: any) {
       console.error('Error fetching members data:', err);
       toast.error(err.message || 'Failed to load member records');
@@ -404,6 +415,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         const card = getActiveCard(m.member_id);
         return card && card.card_type !== 'None';
       }).length,
+      unclaimed_card: members.filter(m => {
+        const card = getActiveCard(m.member_id);
+        return card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED';
+      }).length,
       no_card: members.filter(m => {
         const card = getActiveCard(m.member_id);
         return !card || card.card_type === 'None';
@@ -451,6 +466,10 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
         case 'has_card': {
           const card = getActiveCard(m.member_id);
           return card && card.card_type !== 'None';
+        }
+        case 'unclaimed_card': {
+          const card = getActiveCard(m.member_id);
+          return card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED';
         }
         case 'no_card': {
           const card = getActiveCard(m.member_id);
@@ -624,40 +643,83 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
       sortable: true,
       sortValue: (item) => {
         const cardObj = getActiveCard(item.member_id);
-        if (!cardObj || cardObj.card_type === 'None') return 'AAA_NO_CARD';
-        return cardObj.card_type;
+        if (!cardObj || cardObj.card_type === 'None') return '1_NO_CARD';
+        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED') return '2_PAID_UNCLAIMED';
+        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED') return '3_PAID_CLAIMED';
+        return '4_NO_CARD';
       },
       render: (item) => {
         const cardObj = getActiveCard(item.member_id);
-        if (!cardObj || cardObj.card_type === 'None') {
+        const isQr = cardObj?.card_type === 'QR';
+
+        // 1. NO CARD (gray inactive)
+        if (!cardObj || cardObj.card_type === 'None' || cardObj.payment_status !== 'PAID') {
           return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/25">
-              No Card Issued
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+              <span>NO CARD</span>
             </span>
           );
         }
-        const isQr = cardObj.card_type === 'QR';
+
+        // 2. PAID • UNCLAIMED (Yellow)
+        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED') {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => isQr ? setQrModalMember(item) : setManualModalMember(item)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:opacity-85 cursor-pointer transition-opacity"
+                title="Physical card fee is paid but card is not yet claimed by member. Click to view."
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                <span>PAID • UNCLAIMED</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setClaimModalData({ member: item, card: cardObj });
+                  setClaimNotes('');
+                }}
+                className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1 transition-transform active:scale-95"
+                title="Mark this physical card as claimed by member"
+              >
+                <Check className="w-2.5 h-2.5" />
+                <span>Claim</span>
+              </button>
+            </div>
+          );
+        }
+
+        // 3. PAID • CLAIMED (Green)
+        if (cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED') {
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isQr) {
+                  setQrModalMember(item);
+                } else {
+                  setManualModalMember(item);
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 cursor-pointer hover:opacity-85 transition-opacity"
+              title="Physical card fee is paid and claimed by member. Click to view or print."
+            >
+              <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+              <span>PAID • CLAIMED</span>
+            </button>
+          );
+        }
+
+        // Fallback: NO CARD (gray inactive)
         return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isQr) {
-                setQrModalMember(item);
-              } else {
-                setManualModalMember(item);
-              }
-            }}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer hover:opacity-80 transition-opacity ${
-              isQr 
-                ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/40' 
-                : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40'
-            }`}
-            title="Click to view & print card"
-          >
-            {isQr ? <QrCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> : <CreditCard className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
-            <span>{isQr ? 'Digital QR Card' : 'Manual Card'}</span>
-          </button>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+            <span>NO CARD</span>
+          </span>
         );
       }
     },
@@ -915,6 +977,7 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                       { id: 'with_sub', label: 'Subscription', count: chipCounts.with_sub },
                       { id: 'expiring', label: 'Expiring', count: chipCounts.expiring },
                       { id: 'expired', label: 'Expired', count: chipCounts.expired },
+                      { id: 'unclaimed_card', label: 'Unclaimed Cards', count: chipCounts.unclaimed_card },
                       { id: 'has_card', label: 'Has Card', count: chipCounts.has_card },
                       { id: 'no_card', label: 'No Card', count: chipCounts.no_card },
                       { id: 'suspended', label: 'Suspended', count: chipCounts.suspended },
@@ -1188,11 +1251,31 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                               <div className="space-y-0.5 text-right">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">BADGE STATUS</span>
                                 <div>
-                                  {!cardObj || cardObj.card_type === 'None' ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-semibold bg-slate-500/10 text-slate-500 border border-slate-500/20">
-                                      No Card Issued
+                                  {!cardObj || cardObj.card_type === 'None' || cardObj.payment_status !== 'PAID' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                                      <span className="w-1 h-1 rounded-full bg-slate-400" />
+                                      <span>NO CARD</span>
                                     </span>
-                                  ) : (
+                                  ) : cardObj.payment_status === 'PAID' && cardObj.claim_status === 'UNCLAIMED' ? (
+                                    <div className="flex flex-col items-end gap-1">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                        <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />
+                                        <span>PAID • UNCLAIMED</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setClaimModalData({ member, card: cardObj });
+                                          setClaimNotes('');
+                                        }}
+                                        className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[8px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1"
+                                      >
+                                        <Check className="w-2.5 h-2.5" />
+                                        <span>Claim</span>
+                                      </button>
+                                    </div>
+                                  ) : cardObj.payment_status === 'PAID' && cardObj.claim_status === 'CLAIMED' ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1203,15 +1286,16 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
                                           setManualModalMember(member);
                                         }
                                       }}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[8px] font-bold border ${
-                                        isQr
-                                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-                                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                                      }`}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[8px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 cursor-pointer"
                                     >
-                                      {isQr ? <QrCode className="w-3 h-3 text-blue-500" /> : <CreditCard className="w-3 h-3 text-amber-500" />}
-                                      <span>{isQr ? 'QR Badge' : 'Manual Badge'}</span>
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                                      <span>PAID • CLAIMED</span>
                                     </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                                      <span className="w-1 h-1 rounded-full bg-slate-400" />
+                                      <span>NO CARD</span>
+                                    </span>
                                   )}
                                 </div>
                                 <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
@@ -1601,6 +1685,78 @@ export const MembersList: React.FC<MembersListProps> = ({ hideHeaderActions = fa
           onClose={() => setShowBatchCardModal(false)}
         />
       )}
+
+      {/* QUICK CLAIM PHYSICAL MEMBERSHIP CARD MODAL */}
+      <Modal
+        isOpen={!!claimModalData}
+        onClose={() => {
+          if (!isClaiming) setClaimModalData(null);
+        }}
+        title="RELEASE PHYSICAL MEMBERSHIP CARD"
+      >
+        <div className="space-y-4 text-left font-body">
+          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1">
+            <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span>Card Fee Paid (₱{(claimModalData?.card.card_fee_paid ?? settings.card_printing_fee ?? 50).toFixed(2)})</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Card Token: <strong className="font-mono text-(--color-text)">{claimModalData?.card.card_number}</strong>
+            </p>
+          </div>
+
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+            Confirm handover of physical membership card to member <strong className="text-slate-900 dark:text-white font-bold">{claimModalData?.member.full_name}</strong> ({claimModalData?.member.member_id}).
+          </p>
+
+          <div>
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Handover Remarks / Notes (Optional)
+            </label>
+            <input
+              type="text"
+              value={claimNotes}
+              onChange={(e) => setClaimNotes(e.target.value)}
+              placeholder="e.g. Handed over at front desk with free gym sticker"
+              className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none focus:border-emerald-500 font-medium text-(--color-text)"
+            />
+          </div>
+
+          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+            <button
+              type="button"
+              disabled={isClaiming}
+              onClick={() => setClaimModalData(null)}
+              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isClaiming}
+              onClick={async () => {
+                if (!claimModalData) return;
+                setIsClaiming(true);
+                try {
+                  await cardService.markClaimed(claimModalData.member.member_id, 'Admin Staff', claimNotes);
+                  toast.success(`Physical card for ${claimModalData.member.full_name} marked as CLAIMED.`);
+                  setClaimModalData(null);
+                  setClaimNotes('');
+                  fetchMembers();
+                } catch (err: any) {
+                  toast.error(err.message || 'Failed to mark card as claimed.');
+                } finally {
+                  setIsClaiming(false);
+                }
+              }}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4" />
+              <span>{isClaiming ? 'Saving...' : 'Confirm Release & Handover'}</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
     </div>
   );

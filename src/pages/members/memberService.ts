@@ -80,6 +80,21 @@ const isUUID = (str?: string | null): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
 };
 
+/**
+ * Generates a high-entropy cryptographically secure UUID token for membership cards.
+ * Replaces human-guessable patterns for security.
+ */
+export const generateCardTokenUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 const writeAudit = async (
   action: string,
   category: ActivityLog['category'],
@@ -660,6 +675,13 @@ export const cardService = {
       card_type: c.card_type as 'QR' | 'Manual' | 'None',
       status: (new Date(c.expires_at).getTime() < Date.now() ? 'Inactive' : c.status) as CardStatus,
       version: c.version || 1,
+      payment_status: (c.payment_status || 'NONE') as 'NONE' | 'PAID' | 'REFUNDED',
+      claim_status: (c.claim_status || 'NOT_APPLICABLE') as 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+      card_fee_paid: Number(c.card_fee_paid || 0),
+      claimed_at: c.claimed_at || null,
+      claimed_by: c.claimed_by || null,
+      claim_notes: c.claim_notes || null,
+      receipt_number: c.receipt_number || null,
       issued_at: c.issued_at,
       expires_at: c.expires_at,
       replacement_reason: c.replacement_reason || undefined,
@@ -693,6 +715,13 @@ export const cardService = {
       card_type: data.card_type as 'QR' | 'Manual' | 'None',
       status: isExpired ? 'Inactive' : (data.status as CardStatus),
       version: data.version || 1,
+      payment_status: (data.payment_status || 'NONE') as 'NONE' | 'PAID' | 'REFUNDED',
+      claim_status: (data.claim_status || 'NOT_APPLICABLE') as 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+      card_fee_paid: Number(data.card_fee_paid || 0),
+      claimed_at: data.claimed_at || null,
+      claimed_by: data.claimed_by || null,
+      claim_notes: data.claim_notes || null,
+      receipt_number: data.receipt_number || null,
       issued_at: data.issued_at,
       expires_at: data.expires_at,
       replacement_reason: data.replacement_reason || undefined,
@@ -705,7 +734,11 @@ export const cardService = {
     memberId: string, 
     type: 'QR' | 'Manual' | 'None', 
     user: string,
-    customExpireIso?: string
+    customExpireIso?: string,
+    paymentStatus: 'NONE' | 'PAID' | 'REFUNDED' = 'NONE',
+    claimStatus: 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED' = 'NOT_APPLICABLE',
+    cardFeePaid: number = 0,
+    receiptNo?: string
   ): Promise<MemberCard | null> => {
     if (!memberId) throw new Error('Member ID is required to issue card.');
 
@@ -725,10 +758,8 @@ export const cardService = {
       expiresIso = expDate.toISOString();
     }
 
-    const expiryDateOnly = expiresIso.split('T')[0];
-
-    // Payload string strictly uses MEMBER_ID:EXPIRYDATE
-    const cardNumber = `${memberId}:${expiryDateOnly}`;
+    // Payload string strictly uses a cryptographically secure UUID token
+    const cardNumber = generateCardTokenUuid();
 
     // Upsert into cards table (ensures 1 card per member restriction)
     const { data: cardRow, error: cardErr } = await supabase
@@ -739,6 +770,12 @@ export const cardService = {
         card_type: type,
         status: 'Active',
         version: 1,
+        payment_status: paymentStatus,
+        claim_status: claimStatus,
+        card_fee_paid: cardFeePaid,
+        receipt_number: receiptNo || null,
+        claimed_at: claimStatus === 'CLAIMED' ? nowIso : null,
+        claimed_by: claimStatus === 'CLAIMED' ? user : null,
         issued_at: nowIso,
         expires_at: expiresIso,
         updated_at: nowIso
@@ -751,7 +788,7 @@ export const cardService = {
       throw new Error(cardErr.message);
     }
 
-    await writeAudit('CARD_ISSUED', 'Cards', user, memberId, undefined, `Assigned new ${type} security token (${cardNumber}).`);
+    await writeAudit('CARD_ISSUED', 'Cards', user, memberId, undefined, `Assigned new ${type} security token (${cardNumber}). Payment: ${paymentStatus}, Claim: ${claimStatus}.`);
 
     return {
       id: cardRow.id,
@@ -760,6 +797,13 @@ export const cardService = {
       card_type: cardRow.card_type as 'QR' | 'Manual' | 'None',
       status: 'Active',
       version: cardRow.version,
+      payment_status: cardRow.payment_status as 'NONE' | 'PAID' | 'REFUNDED',
+      claim_status: cardRow.claim_status as 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+      card_fee_paid: Number(cardRow.card_fee_paid || 0),
+      claimed_at: cardRow.claimed_at,
+      claimed_by: cardRow.claimed_by,
+      claim_notes: cardRow.claim_notes,
+      receipt_number: cardRow.receipt_number,
       issued_at: cardRow.issued_at,
       expires_at: cardRow.expires_at,
       created_at: cardRow.created_at,
@@ -771,7 +815,11 @@ export const cardService = {
     memberId: string, 
     reason: string, 
     user: string,
-    customExpireIso?: string
+    customExpireIso?: string,
+    paymentStatus: 'NONE' | 'PAID' | 'REFUNDED' = 'PAID',
+    claimStatus: 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED' = 'UNCLAIMED',
+    cardFeePaid: number = 0,
+    receiptNo?: string
   ): Promise<MemberCard> => {
     if (!memberId) throw new Error('Member ID is required for card replacement.');
 
@@ -789,10 +837,8 @@ export const cardService = {
       expiresIso = expDate.toISOString();
     }
 
-    const expiryDateOnly = expiresIso.split('T')[0];
-
-    // Payload string strictly uses MEMBER_ID:EXPIRYDATE
-    const newCardNumber = `${memberId}:${expiryDateOnly}`;
+    // Payload string strictly uses a cryptographically secure UUID token
+    const newCardNumber = generateCardTokenUuid();
 
     // Overwrites old card row in cards table
     const { data: updated, error: cardErr } = await supabase
@@ -803,6 +849,12 @@ export const cardService = {
         card_type: currentType,
         status: 'Active',
         version: newVersion,
+        payment_status: paymentStatus,
+        claim_status: claimStatus,
+        card_fee_paid: cardFeePaid,
+        receipt_number: receiptNo || existing?.receipt_number || null,
+        claimed_at: claimStatus === 'CLAIMED' ? nowIso : null,
+        claimed_by: claimStatus === 'CLAIMED' ? user : null,
         issued_at: nowIso,
         expires_at: expiresIso,
         replacement_reason: reason,
@@ -825,6 +877,13 @@ export const cardService = {
       card_type: updated.card_type as 'QR' | 'Manual' | 'None',
       status: 'Active',
       version: updated.version,
+      payment_status: updated.payment_status as 'NONE' | 'PAID' | 'REFUNDED',
+      claim_status: updated.claim_status as 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+      card_fee_paid: Number(updated.card_fee_paid || 0),
+      claimed_at: updated.claimed_at,
+      claimed_by: updated.claimed_by,
+      claim_notes: updated.claim_notes,
+      receipt_number: updated.receipt_number,
       issued_at: updated.issued_at,
       expires_at: updated.expires_at,
       replaced_at: nowIso,
@@ -832,6 +891,206 @@ export const cardService = {
       created_at: updated.created_at,
       updated_at: updated.updated_at
     };
+  },
+
+  markClaimed: async (
+    memberId: string, 
+    user: string, 
+    notes?: string
+  ): Promise<MemberCard> => {
+    if (!memberId) throw new Error('Member ID is required to mark card as claimed.');
+
+    const nowIso = new Date().toISOString();
+
+    const { data: updated, error } = await supabase
+      .from('cards')
+      .update({
+        claim_status: 'CLAIMED',
+        claimed_at: nowIso,
+        claimed_by: user,
+        claim_notes: notes || null,
+        updated_at: nowIso
+      })
+      .eq('member_id', memberId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error marking card claimed:', error);
+      throw new Error(error.message);
+    }
+
+    await writeAudit(
+      'CARD_CLAIMED',
+      'Cards',
+      user,
+      memberId,
+      undefined,
+      `Physical card claimed and released to member. Notes: ${notes || 'None'}.`
+    );
+
+    return {
+      id: updated.id,
+      member_id: updated.member_id,
+      card_number: updated.card_number,
+      card_type: updated.card_type as 'QR' | 'Manual' | 'None',
+      status: updated.status as CardStatus,
+      version: updated.version,
+      payment_status: updated.payment_status as 'NONE' | 'PAID' | 'REFUNDED',
+      claim_status: 'CLAIMED',
+      card_fee_paid: Number(updated.card_fee_paid || 0),
+      claimed_at: updated.claimed_at,
+      claimed_by: updated.claimed_by,
+      claim_notes: updated.claim_notes,
+      receipt_number: updated.receipt_number,
+      issued_at: updated.issued_at,
+      expires_at: updated.expires_at,
+      created_at: updated.created_at,
+      updated_at: updated.updated_at
+    };
+  },
+
+  payCard: async (
+    memberId: string,
+    amount: number,
+    paymentMethod: PaymentMethod,
+    user: string,
+    receiptNo?: string,
+    gcashRefNo?: string
+  ): Promise<MemberCard> => {
+    if (!memberId) throw new Error('Member ID is required.');
+
+    // 1. Fetch member details
+    const { data: member, error: mErr } = await supabase
+      .from('members')
+      .select('*')
+      .eq('member_id', memberId)
+      .single();
+
+    if (mErr || !member) throw new Error('Member not found.');
+
+    const finalReceiptNo = receiptNo || `REC-CARD-${Date.now().toString().slice(-6)}`;
+    const nowIso = new Date().toISOString();
+
+    // 2. Insert receipt
+    const { error: rErr } = await supabase
+      .from('receipts')
+      .insert([{
+        id: finalReceiptNo,
+        member_id: memberId,
+        customer_name: member.full_name,
+        customer_type: 'Existing Member',
+        amount: amount,
+        base_price: 0,
+        gcash_fee: 0,
+        card_fee: amount,
+        gcash_ref_no: gcashRefNo || null,
+        payment_method: paymentMethod,
+        payment_status: 'Paid',
+        item_description: 'Physical Membership Card Fee'
+      }]);
+
+    if (rErr) {
+      console.warn('Receipt creation error on card payment:', rErr);
+    }
+
+    // 3. Upsert card record
+    const existing = await cardService.getByMemberId(memberId);
+    let cardRow: any;
+
+    if (existing) {
+      const { data: updated, error: uErr } = await supabase
+        .from('cards')
+        .update({
+          payment_status: 'PAID',
+          claim_status: 'UNCLAIMED',
+          card_fee_paid: amount,
+          receipt_number: finalReceiptNo,
+          claimed_at: null,
+          claimed_by: null,
+          updated_at: nowIso
+        })
+        .eq('member_id', memberId)
+        .select()
+        .single();
+
+      if (uErr) throw new Error(uErr.message);
+      cardRow = updated;
+    } else {
+      const expDate = new Date();
+      expDate.setFullYear(expDate.getFullYear() + 3);
+      const expIso = expDate.toISOString();
+      const cardNumber = generateCardTokenUuid();
+
+      const { data: inserted, error: iErr } = await supabase
+        .from('cards')
+        .insert([{
+          member_id: memberId,
+          card_number: cardNumber,
+          card_type: 'QR',
+          status: 'Active',
+          version: 1,
+          payment_status: 'PAID',
+          claim_status: 'UNCLAIMED',
+          card_fee_paid: amount,
+          receipt_number: finalReceiptNo,
+          issued_at: nowIso,
+          expires_at: expIso,
+          updated_at: nowIso
+        }])
+        .select()
+        .single();
+
+      if (iErr) throw new Error(iErr.message);
+      cardRow = inserted;
+    }
+
+    await writeAudit(
+      'CARD_PAID',
+      'Cards',
+      user,
+      memberId,
+      undefined,
+      `Paid physical card fee of ₱${amount.toFixed(2)} (${paymentMethod}). Receipt: ${finalReceiptNo}. Card ready for pickup.`
+    );
+
+    return {
+      id: cardRow.id,
+      member_id: cardRow.member_id,
+      card_number: cardRow.card_number,
+      card_type: cardRow.card_type as 'QR' | 'Manual' | 'None',
+      status: 'Active',
+      version: cardRow.version,
+      payment_status: 'PAID',
+      claim_status: 'UNCLAIMED',
+      card_fee_paid: amount,
+      claimed_at: null,
+      claimed_by: null,
+      receipt_number: finalReceiptNo,
+      issued_at: cardRow.issued_at,
+      expires_at: cardRow.expires_at,
+      created_at: cardRow.created_at,
+      updated_at: cardRow.updated_at
+    };
+  },
+
+  unbind: async (memberId: string, user: string): Promise<void> => {
+    if (!memberId) throw new Error('Member ID is required to unbind card.');
+
+    const { error } = await supabase
+      .from('cards')
+      .update({
+        status: 'Inactive',
+        updated_at: new Date().toISOString()
+      })
+      .eq('member_id', memberId);
+
+    if (error) {
+      console.error('Error unbinding card:', error);
+      throw new Error(error.message);
+    }
+
+    await writeAudit('CARD_UNBOUND', 'Cards', user, memberId, undefined, `Deactivated and unbound card credential.`);
   }
 };
 
