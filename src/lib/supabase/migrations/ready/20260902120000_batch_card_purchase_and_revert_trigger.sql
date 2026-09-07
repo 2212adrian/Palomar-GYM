@@ -25,19 +25,20 @@ BEGIN
             OR OLD.plan_name ILIKE '%Card Printing Fee%'
             OR OLD.plan_name ILIKE '%Card Fee%') THEN
             
-            IF OLD.receipt_number IS NOT NULL THEN
+            -- Soft-delete: revert status to NONE/NOT_APPLICABLE but PRESERVE receipt_number so restoration can find cards
+            IF (TG_OP = 'UPDATE' AND NEW.deleted_at IS NOT NULL) THEN
                 UPDATE public.cards
                 SET payment_status = 'NONE',
                     claim_status = 'NOT_APPLICABLE',
                     card_fee_paid = 0.00,
-                    receipt_number = NULL,
                     claimed_at = NULL,
                     claimed_by = NULL,
                     claim_notes = NULL,
                     updated_at = now()
-                WHERE receipt_number = OLD.receipt_number;
-
-                DELETE FROM public.receipts WHERE id = OLD.receipt_number;
+                WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
+                   OR (OLD.member_ids IS NOT NULL AND member_id = ANY(OLD.member_ids))
+                   OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
+            -- Physical hard delete: clean up receipts and detach receipt_number
             ELSE
                 UPDATE public.cards
                 SET payment_status = 'NONE',
@@ -48,7 +49,13 @@ BEGIN
                     claimed_by = NULL,
                     claim_notes = NULL,
                     updated_at = now()
-                WHERE member_id = OLD.member_id;
+                WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
+                   OR (OLD.member_ids IS NOT NULL AND member_id = ANY(OLD.member_ids))
+                   OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
+
+                IF OLD.receipt_number IS NOT NULL THEN
+                    DELETE FROM public.receipts WHERE id = OLD.receipt_number;
+                END IF;
             END IF;
         END IF;
 
@@ -60,23 +67,19 @@ BEGIN
             OR NEW.plan_name ILIKE '%Card Printing Fee%'
             OR NEW.plan_name ILIKE '%Card Fee%') THEN
             
-            IF NEW.receipt_number IS NOT NULL THEN
-                UPDATE public.cards
-                SET payment_status = 'PAID',
-                    claim_status = 'UNCLAIMED',
-                    card_fee_paid = COALESCE(NEW.card_fee, NEW.entry_fee, 50.00),
-                    receipt_number = NEW.receipt_number,
-                    updated_at = now()
-                WHERE receipt_number = NEW.receipt_number;
-            ELSE
-                UPDATE public.cards
-                SET payment_status = 'PAID',
-                    claim_status = 'UNCLAIMED',
-                    card_fee_paid = COALESCE(NEW.card_fee, NEW.entry_fee, 50.00),
-                    receipt_number = NEW.receipt_number,
-                    updated_at = now()
-                WHERE member_id = NEW.member_id;
-            END IF;
+            UPDATE public.cards
+            SET payment_status = 'PAID',
+                claim_status = 'UNCLAIMED',
+                card_fee_paid = CASE 
+                    WHEN NEW.member_ids IS NOT NULL AND cardinality(NEW.member_ids) > 0 
+                    THEN ROUND(COALESCE(NEW.card_fee, NEW.entry_fee, 50.00) / cardinality(NEW.member_ids), 2)
+                    ELSE COALESCE(NEW.card_fee, NEW.entry_fee, 50.00)
+                END,
+                receipt_number = COALESCE(NEW.receipt_number, cards.receipt_number),
+                updated_at = now()
+            WHERE (NEW.receipt_number IS NOT NULL AND receipt_number = NEW.receipt_number)
+               OR (NEW.member_ids IS NOT NULL AND member_id = ANY(NEW.member_ids))
+               OR (NEW.member_id IS NOT NULL AND member_id = NEW.member_id);
         END IF;
     END IF;
 
@@ -204,6 +207,7 @@ BEGIN
         payment_method,
         payment_status,
         item_description,
+        member_ids,
         created_at
     ) VALUES (
         v_batch_receipt_id,
@@ -218,6 +222,7 @@ BEGIN
         v_payment_method,
         'Paid',
         CASE WHEN v_count = 1 THEN 'Physical Membership Card Fee' ELSE 'Batch Physical Cards (' || v_count::text || ' pcs)' END,
+        p_member_ids,
         v_now
     );
 
@@ -237,6 +242,7 @@ BEGIN
         payment_method,
         receipt_number,
         staff_name,
+        member_ids,
         created_at
     ) VALUES (
         v_batch_checkin_id,
@@ -253,6 +259,7 @@ BEGIN
         v_payment_method,
         v_batch_receipt_id,
         COALESCE(p_staff_name, 'Admin Staff'),
+        p_member_ids,
         v_now
     );
 

@@ -11,11 +11,13 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
+  ChevronDown,
+  ChevronUp,
+  Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 
@@ -49,6 +51,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState('');
+  const [expandedStackKeys, setExpandedStackKeys] = useState<Set<string>>(new Set());
 
   // Local pagination parameters (5 items per page)
   const [currentPage, setCurrentPage] = useState(1);
@@ -257,14 +260,89 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     return meta;
   }, [groupedTransactions]);
 
-  const totalItems = groupedTransactions.length;
+  // Group identical deleted items together within batches so repeated sales form clean expandable stacks
+  const stackedTransactions = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        groupId: string;
+        productName: string;
+        isGroup: boolean;
+        totalAmount: number;
+        latestArchivedAt: string;
+        items: any[];
+      }
+    >();
+
+    groupedTransactions.forEach((tx) => {
+      const pName = (tx.productName || 'Sale Transaction').trim();
+      const key = `${tx.groupId}_${pName.toLowerCase()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          groupId: tx.groupId,
+          productName: pName,
+          isGroup: false,
+          totalAmount: 0,
+          latestArchivedAt: tx.archivedAt,
+          items: [],
+        });
+      }
+      const stack = map.get(key)!;
+      stack.items.push(tx);
+      stack.totalAmount += Number(tx.totalAmount || 0);
+      stack.isGroup = stack.items.length > 1;
+      if (
+        new Date(tx.archivedAt).getTime() >
+        new Date(stack.latestArchivedAt).getTime()
+      ) {
+        stack.latestArchivedAt = tx.archivedAt;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [groupedTransactions]);
+
+  const totalItems = stackedTransactions.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
 
-  const paginatedTransactions = useMemo(() => {
+  const paginatedStacks = useMemo(() => {
     const startIdx = (clampedPage - 1) * itemsPerPage;
-    return groupedTransactions.slice(startIdx, startIdx + itemsPerPage);
-  }, [groupedTransactions, clampedPage]);
+    return stackedTransactions.slice(startIdx, startIdx + itemsPerPage);
+  }, [stackedTransactions, clampedPage]);
+
+  const toggleStackExpansion = (key: string) => {
+    setExpandedStackKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const isStackFullySelected = (stack: any) => {
+    const restorable = stack.items.filter(
+      (i: any) => !getRestorationStatus(i).cannotRestore
+    );
+    if (restorable.length === 0) return false;
+    return restorable.every((i: any) => selectedIds.includes(i.id));
+  };
+
+  const handleStackSelect = (stack: any) => {
+    const restorable = stack.items.filter(
+      (i: any) => !getRestorationStatus(i).cannotRestore
+    );
+    const allSelected = isStackFullySelected(stack);
+    const ids = restorable.map((i: any) => i.id);
+
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...ids])));
+    }
+  };
 
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
@@ -376,7 +454,8 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   };
 
   const handleToggleSelectAll = () => {
-    const currentPageIds = paginatedTransactions
+    const currentPageIds = paginatedStacks
+      .flatMap((s) => s.items)
       .filter((t: any) => !getRestorationStatus(t).cannotRestore)
       .map((t: any) => t.id);
     const allSelectedOnPage =
@@ -397,88 +476,132 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const isSelectionActive = selectedIds.length > 0;
   let lastGroupTracker: string | null = null;
 
+  const formatFriendlySaleDetail = (tx: any) => {
+    const parts: string[] = [];
+
+    // Quantity if multiple items
+    let qty = 0;
+    if (Array.isArray(tx.items) && tx.items.length > 0) {
+      qty = tx.items.reduce(
+        (sum: number, item: any) => sum + (Number(item.quantity) || 1),
+        0
+      );
+    }
+    if (qty > 1) {
+      parts.push(`${qty} items`);
+    }
+
+    // Price
+    const amount = Number(tx.totalAmount || tx.total_amount || 0);
+    parts.push(`₱${amount.toFixed(2)}`);
+
+    // Payment method
+    if (tx.paymentMethod) {
+      parts.push(tx.paymentMethod);
+    }
+
+    // Deletion / sale time
+    const timeSource = tx.archivedAt || tx.created_at;
+    if (timeSource) {
+      try {
+        parts.push(format(new Date(timeSource), 'hh:mm a'));
+      } catch {
+        // ignore
+      }
+    }
+
+    return parts.join(' • ');
+  };
+
+  const currentPageTransactions = paginatedStacks.flatMap((s) => s.items);
+  const restorableTransactionsOnPage = currentPageTransactions.filter(
+    (t: any) => !getRestorationStatus(t).cannotRestore
+  );
+  const isAllOnPageSelected =
+    restorableTransactionsOnPage.length > 0 &&
+    restorableTransactionsOnPage.every((t: any) => selectedIds.includes(t.id));
+
+  if (!isOpen) return null;
+
   return createPortal(
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Daily Recycle Bin"
-      className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-9999"
-    >
-      {countdown && (
-        <span className="absolute top-6 right-13 text-[10px] font-mono font-black text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap">
-          Purge in: {countdown}
-        </span>
-      )}
-
-      <button
-        type="button"
-        disabled={loading}
-        onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
-      >
-        <X className="w-4.5 h-4.5" />
-      </button>
-
-      <div className="space-y-4 pt-2">
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
-          <span>
-            <strong>Caution:</strong> Restorable items are kept for up to 24
-            hours. Transactions older than 24 hours are locked and will be
-            permanently deleted at 12:00 AM Manila Time.
-          </span>
-        </div>
-
-        <div className="field-wrap">
-          <input
-            type="text"
-            placeholder=" "
-            disabled={loading}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="field-input pr-10"
-          />
-          <label className="field-label flex items-center gap-1.5 text-slate-455 uppercase tracking-widest text-[9px]">
-            <Search className="w-3.5 h-3.5" />
-            <span>Search Deletions...</span>
-          </label>
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-            >
-              CLEAR
-            </button>
-          )}
-        </div>
-
-        {totalItems > 0 && (
-          <div className="flex justify-between items-center bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
-            <button
-              onClick={handleToggleSelectAll}
-              disabled={
-                loading ||
-                paginatedTransactions.every(
-                  (t: any) => getRestorationStatus(t).cannotRestore
-                )
-              }
-              className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50"
-            >
-              {paginatedTransactions.length > 0 &&
-              paginatedTransactions
-                .filter((t: any) => !getRestorationStatus(t).cannotRestore)
-                .every((t: any) => selectedIds.includes(t.id)) ? (
-                <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
-              ) : (
-                <Square className="w-4 h-4 shrink-0" />
-              )}
-              <span>Select All on Page</span>
-            </button>
-            <span>{selectedIds.length} Selected</span>
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-left">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-md shadow-2xl z-10 flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden">
+        {/* Pinned Header (Stays at the top, unaffected by scroll) */}
+        <div className="p-5 pb-3 border-b border-(--border-color) flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2 pr-2 min-w-0">
+            <h3 className="font-heading tracking-widest uppercase text-base text-slate-900 dark:text-white truncate">
+              Daily Recycle Bin
+            </h3>
+            {countdown && (
+              <span className="text-[10px] font-mono font-black text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap shrink-0">
+                Purge in: {countdown}
+              </span>
+            )}
           </div>
-        )}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer shrink-0"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
 
-        <div className="space-y-3">
+        {/* Scrollable Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-3 min-h-0">
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+            <span>
+              <strong>Caution:</strong> Restorable items are kept for up to 24
+              hours. Transactions older than 24 hours are locked and will be
+              permanently deleted at 12:00 AM Manila Time.
+            </span>
+          </div>
+
+          <div className="field-wrap">
+            <input
+              type="text"
+              placeholder=" "
+              disabled={loading}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="field-input pr-10"
+            />
+            <label className="field-label flex items-center gap-1.5 text-slate-455 uppercase tracking-widest text-[9px]">
+              <Search className="w-3.5 h-3.5" />
+              <span>Search Deletions...</span>
+            </label>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+              >
+                CLEAR
+              </button>
+            )}
+          </div>
+
+          {totalItems > 0 && (
+            <div className="flex justify-between items-center bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
+              <button
+                onClick={handleToggleSelectAll}
+                disabled={loading || restorableTransactionsOnPage.length === 0}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50"
+              >
+                {isAllOnPageSelected ? (
+                  <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
+                ) : (
+                  <Square className="w-4 h-4 shrink-0" />
+                )}
+                <span>Select All on Page</span>
+              </button>
+              <span>{selectedIds.length} Selected</span>
+            </div>
+          )}
+
+          <div className="space-y-3">
           {loading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -497,30 +620,25 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                 </div>
               ))}
             </div>
-          ) : paginatedTransactions.length > 0 ? (
-            paginatedTransactions.map((tx: any) => {
-              const showGroupHeading = tx.groupId !== lastGroupTracker;
-              lastGroupTracker = tx.groupId;
-
-              const isSelected = selectedIds.includes(tx.id);
-              const groupSelected = isGroupFullySelected(tx.groupId);
-              const {
-                isExpired,
-                hasOutOfStock,
-                hasInsufficientStock,
-                productNotFound,
-                cannotRestore,
-              } = getRestorationStatus(tx);
+          ) : paginatedStacks.length > 0 ? (
+            paginatedStacks.map((stack) => {
+              const showGroupHeading = stack.groupId !== lastGroupTracker;
+              lastGroupTracker = stack.groupId;
+              const isExpanded = expandedStackKeys.has(stack.key);
+              const stackSelected = isStackFullySelected(stack);
+              const restorableItems = stack.items.filter(
+                (i: any) => !getRestorationStatus(i).cannotRestore
+              );
 
               return (
-                <div key={tx.id} className="space-y-1.5 animate-fade-in">
+                <div key={stack.key} className="space-y-1.5 animate-fade-in">
                   {showGroupHeading && (
                     <div className="flex items-center justify-between border-b border-(--border-color) pt-4 pb-1.5 select-none">
                       <button
                         type="button"
                         disabled={
                           loading ||
-                          (groupMeta[tx.groupId]?.ids || []).every((id) => {
+                          (groupMeta[stack.groupId]?.ids || []).every((id) => {
                             const item = deletedTransactions.find(
                               (t) => t.id === id
                             );
@@ -529,119 +647,279 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
                             );
                           })
                         }
-                        onClick={() => handleGroupSelect(tx.groupId)}
+                        onClick={() => handleGroupSelect(stack.groupId)}
                         className="flex items-center gap-2 cursor-pointer hover:opacity-80 text-left disabled:opacity-50"
                       >
-                        {groupSelected ? (
+                        {isGroupFullySelected(stack.groupId) ? (
                           <CheckSquare className="w-4 h-4 text-[var(--color-primary-light)] shrink-0" />
                         ) : (
                           <Square className="w-4 h-4 text-slate-400 dark:text-zinc-600 shrink-0" />
                         )}
                         <span className="text-[9px] font-heading tracking-widest text-[var(--color-primary-light)] uppercase font-bold">
-                          {groupMeta[tx.groupId]?.label}
+                          {groupMeta[stack.groupId]?.label}
                         </span>
                       </button>
                       <span className="text-[9px] text-slate-400 font-medium font-mono">
-                        ({groupMeta[tx.groupId]?.ids.length} item
-                        {groupMeta[tx.groupId]?.ids.length !== 1 && 's'})
+                        ({groupMeta[stack.groupId]?.ids.length} item
+                        {groupMeta[stack.groupId]?.ids.length !== 1 && 's'})
                       </span>
                     </div>
                   )}
 
-                  <div
-                    onClick={() =>
-                      !loading &&
-                      !cannotRestore &&
-                      handleRowSelect(tx.id, !cannotRestore)
-                    }
-                    className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-blue-500/10 border-blue-500'
-                        : cannotRestore
-                          ? 'bg-slate-200/50 dark:bg-zinc-950/50 border-dashed border-slate-300 dark:border-zinc-800 opacity-60 cursor-not-allowed'
-                          : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-(--border-color)'
-                    } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
+                  {stack.isGroup ? (
+                    /* Stacked Group Card for multiple identical deleted sales */
+                    <div className="border border-(--border-color) bg-slate-50 dark:bg-zinc-900/90 rounded-2xl overflow-hidden transition-all shadow-xs">
                       <div
-                        className="shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={loading || cannotRestore}
-                          checked={isSelected && !cannotRestore}
-                          onChange={() =>
-                            handleRowSelect(tx.id, !cannotRestore)
-                          }
-                          className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
-                        />
-                      </div>
-                      <div className="min-w-0 text-left">
-                        <span className="font-bold block text-[11px] text-(--color-text) truncate">
-                          {tx.productName}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
-                          {tx.receipt_no} • ₱{tx.totalAmount.toFixed(2)}
-                          {isExpired && (
-                            <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
-                              (Locked - Older than 24h)
-                            </span>
-                          )}
-                          {!isExpired && hasOutOfStock && (
-                            <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
-                              (Out of Stock)
-                            </span>
-                          )}
-                          {!isExpired &&
-                            !hasOutOfStock &&
-                            hasInsufficientStock && (
-                              <span className="text-amber-500 dark:text-amber-400 ml-2 font-bold">
-                                (Low Stock)
-                              </span>
-                            )}
-                          {!isExpired && productNotFound && (
-                            <span className="text-stone-500 dark:text-stone-400 ml-2 font-bold">
-                              (Missing Catalog Item)
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                    {cannotRestore ? (
-                      <span
-                        className={`py-1.5 px-3 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border ${
-                          isExpired
-                            ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 border-slate-400/20'
-                            : hasOutOfStock
-                              ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                              : hasInsufficientStock
-                                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                : 'bg-stone-500/10 text-stone-500 border-stone-500/20'
+                        onClick={() => handleStackSelect(stack)}
+                        className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                          stackSelected
+                            ? 'bg-blue-500/10'
+                            : 'hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                         }`}
                       >
-                        {isExpired
-                          ? 'Expired'
-                          : hasOutOfStock
-                            ? 'Out of Stock'
-                            : hasInsufficientStock
-                              ? 'Low Stock'
-                              : 'Missing Prod'}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={loading}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleBulkRestore([tx]);
-                        }}
-                        className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm"
-                      >
-                        Restore
-                      </button>
-                    )}
-                  </div>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={stackSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                          />
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-[11px] text-(--color-text) truncate">
+                                {stack.productName}
+                              </span>
+                              <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase flex items-center gap-1">
+                                <Layers className="w-2.5 h-2.5" />
+                                <span>×{stack.items.length} items</span>
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
+                              <span>{stack.items.length} records</span>
+                              {stack.totalAmount > 0 && (
+                                <span className="font-bold text-slate-600 dark:text-slate-300">
+                                  Total: ₱{stack.totalAmount.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            disabled={loading || restorableItems.length === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBulkRestore(restorableItems);
+                            }}
+                            className="py-1.5 px-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 transition-all shadow-xs"
+                          >
+                            Restore All ({restorableItems.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStackExpansion(stack.key);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Accordion Sub-Items List */}
+                      {isExpanded && (
+                        <div className="border-t border-(--border-color) bg-white/50 dark:bg-zinc-950/40 divide-y divide-(--border-color)">
+                          {stack.items.map((subTx: any) => {
+                            const isSubSelected = selectedIds.includes(subTx.id);
+                            const {
+                              isExpired,
+                              hasOutOfStock,
+                              hasInsufficientStock,
+                              cannotRestore,
+                            } = getRestorationStatus(subTx);
+
+                            return (
+                              <div
+                                key={subTx.id}
+                                onClick={() =>
+                                  !loading &&
+                                  !cannotRestore &&
+                                  handleRowSelect(subTx.id, !cannotRestore)
+                                }
+                                className={`p-2.5 pl-8 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
+                                  isSubSelected
+                                    ? 'bg-blue-500/10'
+                                    : cannotRestore
+                                      ? 'opacity-60 cursor-not-allowed'
+                                      : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <input
+                                    type="checkbox"
+                                    disabled={loading || cannotRestore}
+                                    checked={isSubSelected && !cannotRestore}
+                                    onChange={() =>
+                                      handleRowSelect(subTx.id, !cannotRestore)
+                                    }
+                                    className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                                  />
+                                  <div className="min-w-0 text-left font-mono">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
+                                      {subTx.receipt_no} • ₱
+                                      {subTx.totalAmount.toFixed(2)}
+                                    </span>
+                                    {cannotRestore && (
+                                      <span className="text-[9px] text-rose-500 font-bold">
+                                        {isExpired
+                                          ? '(Expired > 24h)'
+                                          : hasOutOfStock
+                                            ? '(Out of Stock)'
+                                            : hasInsufficientStock
+                                              ? '(Low Stock)'
+                                              : '(Missing Catalog Item)'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {!cannotRestore && (
+                                  <button
+                                    type="button"
+                                    disabled={loading}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleBulkRestore([subTx]);
+                                    }}
+                                    className="py-1 px-2 bg-emerald-500/80 hover:bg-emerald-600 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
+                                  >
+                                    Restore
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Single Record (No Grouping Needed) */
+                    (() => {
+                      const tx = stack.items[0];
+                      const isSelected = selectedIds.includes(tx.id);
+                      const {
+                        isExpired,
+                        hasOutOfStock,
+                        hasInsufficientStock,
+                        productNotFound,
+                        cannotRestore,
+                      } = getRestorationStatus(tx);
+
+                      return (
+                        <div
+                          onClick={() =>
+                            !loading &&
+                            !cannotRestore &&
+                            handleRowSelect(tx.id, !cannotRestore)
+                          }
+                          className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-blue-500/10 border-blue-500'
+                              : cannotRestore
+                                ? 'bg-slate-200/50 dark:bg-zinc-950/50 border-dashed border-slate-300 dark:border-zinc-800 opacity-60 cursor-not-allowed'
+                                : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-(--border-color)'
+                          } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className="shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={loading || cannotRestore}
+                                checked={isSelected && !cannotRestore}
+                                onChange={() =>
+                                  handleRowSelect(tx.id, !cannotRestore)
+                                }
+                                className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
+                              />
+                            </div>
+                            <div className="min-w-0 text-left">
+                              <span className="font-bold block text-[11px] text-(--color-text) truncate">
+                                {tx.productName}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
+                                {tx.receipt_no} • ₱{tx.totalAmount.toFixed(2)}
+                                {isExpired && (
+                                  <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
+                                    (Locked - Older than 24h)
+                                  </span>
+                                )}
+                                {!isExpired && hasOutOfStock && (
+                                  <span className="text-rose-500 dark:text-rose-400 ml-2 font-bold">
+                                    (Out of Stock)
+                                  </span>
+                                )}
+                                {!isExpired &&
+                                  !hasOutOfStock &&
+                                  hasInsufficientStock && (
+                                    <span className="text-amber-500 dark:text-amber-400 ml-2 font-bold">
+                                      (Low Stock)
+                                    </span>
+                                  )}
+                                {!isExpired && productNotFound && (
+                                  <span className="text-stone-500 dark:text-stone-400 ml-2 font-bold">
+                                    (Missing Catalog Item)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                          {cannotRestore ? (
+                            <span
+                              className={`py-1.5 px-3 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold shrink-0 border ${
+                                isExpired
+                                  ? 'bg-slate-300 dark:bg-zinc-800 text-slate-500 dark:text-slate-455 border-slate-400/20'
+                                  : hasOutOfStock
+                                    ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                                    : hasInsufficientStock
+                                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                      : 'bg-stone-500/10 text-stone-500 border-stone-500/20'
+                              }`}
+                            >
+                              {isExpired
+                                ? 'Expired'
+                                : hasOutOfStock
+                                  ? 'Out of Stock'
+                                  : hasInsufficientStock
+                                    ? 'Low Stock'
+                                    : 'Missing Prod'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBulkRestore([tx]);
+                              }}
+                              className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm"
+                            >
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               );
             })

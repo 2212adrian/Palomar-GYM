@@ -224,6 +224,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'cards' },
+        () => loadProfileCollections()
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'member_cards' },
         () => loadProfileCollections()
       )
@@ -375,7 +380,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     try {
       if (currentCard) {
         const { error } = await supabase
-          .from('member_cards')
+          .from('cards')
           .update({
             status: 'Deactivated',
             updated_at: new Date().toISOString(),
@@ -428,7 +433,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     setIsUndoingClaim(true);
     try {
       const { error } = await supabase
-        .from('member_cards')
+        .from('cards')
         .update({
           claim_status: 'UNCLAIMED',
           claimed_at: null,

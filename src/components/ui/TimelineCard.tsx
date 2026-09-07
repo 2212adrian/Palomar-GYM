@@ -38,6 +38,8 @@ export interface LogRecord {
   status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended';
   isSubscription?: boolean;
   deletable?: boolean;
+  receiptNumber?: string | null;
+  memberIds?: string[];
 }
 
 export interface SaleRecord {

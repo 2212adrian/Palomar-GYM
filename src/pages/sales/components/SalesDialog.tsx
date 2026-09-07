@@ -485,8 +485,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         stopAllCameraTracks();
         onClose();
       }}
-      title="RECORD SALE TRANSACTION"
-      className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body relative text-left"
+      title={isSuccess ? 'SALE CONFIRMED' : 'RECORD SALE TRANSACTION'}
+      className={`w-full max-w-md mx-auto my-auto ${
+        isSuccess ? 'p-6 sm:p-8' : 'p-6'
+      } overflow-y-auto max-h-[85vh] font-body relative text-left`}
     >
       <button
         type="button"
@@ -879,20 +881,55 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         ) : (
           <motion.div
             key="sales-success"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.85, y: 16 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: 0,
+              transition: {
+                type: 'spring',
+                damping: 24,
+                stiffness: 280,
+                duration: 0.4,
+              },
+            }}
+            exit={{
+              opacity: 0,
+              scale: 0.9,
+              y: -16,
+              transition: { duration: 0.25, ease: 'easeInOut' },
+            }}
             className="py-12 flex flex-col items-center justify-center space-y-4"
           >
-            <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
-              <Check className="w-8 h-8" />
-            </div>
-            <h2 className="font-heading text-lg font-bold tracking-wider text-(--color-text)] uppercase">
+            <motion.div
+              initial={{ scale: 0, rotate: -30 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{
+                type: 'spring',
+                damping: 18,
+                stiffness: 300,
+                delay: 0.08,
+              }}
+              className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/25 ring-4 ring-emerald-500/20"
+            >
+              <Check className="w-8 h-8 stroke-[3]" />
+            </motion.div>
+            <motion.h2
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.3 }}
+              className="font-black text-xl text-(--color-text) uppercase tracking-wider font-heading text-center"
+            >
               SALE AUTHORIZED
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs text-center font-body animate-pulse uppercase font-semibold">
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.22, duration: 0.3 }}
+              className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-xs text-center uppercase tracking-wide"
+            >
               Transaction committed to ledger, stock inventory updated.
-            </p>
+            </motion.p>
           </motion.div>
         )}
       </AnimatePresence>

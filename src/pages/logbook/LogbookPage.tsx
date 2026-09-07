@@ -404,6 +404,8 @@ export const LogbookPage: React.FC = () => {
               status: 'Active',
               isSubscription: Boolean(row.is_subscription),
               deletable: Boolean(row.deletable),
+              receiptNumber: row.receipt_number || null,
+              memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
             }));
           }
         } catch (rpcErr: any) {
@@ -473,6 +475,8 @@ export const LogbookPage: React.FC = () => {
                 status: 'Active',
                 isSubscription: false,
                 deletable: true,
+                receiptNumber: a.receipt_number || null,
+                memberIds: Array.isArray(a.member_ids) ? a.member_ids : [],
               });
             });
 
@@ -497,6 +501,8 @@ export const LogbookPage: React.FC = () => {
                 status: 'Active',
                 isSubscription: true,
                 deletable: false,
+                receiptNumber: r.id || null,
+                memberIds: Array.isArray(r.member_ids) ? r.member_ids : [],
               });
             });
 
@@ -782,6 +788,183 @@ export const LogbookPage: React.FC = () => {
   };
 
   // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
+  const deactivateCardsForLogRecord = async (log: LogRecord) => {
+    const isCard =
+      log.customerType === 'Card' ||
+      String(log.categoryOrPlan || '').toLowerCase().includes('card');
+    if (!isCard) return;
+
+    const targetMemberIds: string[] = [];
+    if (log.memberId) targetMemberIds.push(log.memberId);
+    if (Array.isArray(log.memberIds) && log.memberIds.length > 0) {
+      log.memberIds.forEach((id) => targetMemberIds.push(id));
+    }
+
+    if (log.receiptNumber) {
+      await supabase
+        .from('cards')
+        .update({
+          payment_status: 'NONE',
+          claim_status: 'NOT_APPLICABLE',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('receipt_number', log.receiptNumber);
+
+      const [rcptRes, cardRes] = await Promise.allSettled([
+        supabase
+          .from('receipts')
+          .select('member_ids, member_id')
+          .eq('id', log.receiptNumber)
+          .maybeSingle(),
+        supabase
+          .from('cards')
+          .select('member_id')
+          .eq('receipt_number', log.receiptNumber),
+      ]);
+
+      if (rcptRes.status === 'fulfilled' && rcptRes.value.data) {
+        const r = rcptRes.value.data;
+        if (r.member_id) targetMemberIds.push(r.member_id);
+        if (Array.isArray(r.member_ids)) {
+          r.member_ids.forEach((id: string) => targetMemberIds.push(id));
+        }
+      }
+      if (cardRes.status === 'fulfilled' && cardRes.value.data) {
+        cardRes.value.data.forEach((c: any) => {
+          if (c.member_id) targetMemberIds.push(c.member_id);
+        });
+      }
+    }
+
+    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(Boolean);
+    if (uniqueMemberIds.length > 0) {
+      const { data: memberRows } = await supabase
+        .from('members')
+        .select('id, member_id')
+        .or(
+          `member_id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')}),id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')})`
+        );
+
+      const allPossibleIds = Array.from(
+        new Set([
+          ...uniqueMemberIds,
+          ...(memberRows || []).map((m: any) => m.id),
+          ...(memberRows || []).map((m: any) => m.member_id),
+        ])
+      ).filter(Boolean);
+
+      await supabase
+        .from('cards')
+        .update({
+          payment_status: 'NONE',
+          claim_status: 'NOT_APPLICABLE',
+          updated_at: new Date().toISOString(),
+        })
+        .in('member_id', allPossibleIds);
+
+      await supabase
+        .from('member_cards')
+        .update({
+          payment_status: 'NONE',
+          deleted_at: new Date().toISOString(),
+        })
+        .in('member_id', allPossibleIds);
+    }
+
+    window.dispatchEvent(new CustomEvent('member-refresh'));
+    window.dispatchEvent(new CustomEvent('cards-refresh'));
+  };
+
+  const reactivateCardsForLogRecord = async (log: LogRecord) => {
+    const isCard =
+      log.customerType === 'Card' ||
+      String(log.categoryOrPlan || '').toLowerCase().includes('card');
+    if (!isCard) return;
+
+    const targetMemberIds: string[] = [];
+    if (log.memberId) targetMemberIds.push(log.memberId);
+    if (Array.isArray(log.memberIds) && log.memberIds.length > 0) {
+      log.memberIds.forEach((id) => targetMemberIds.push(id));
+    }
+
+    if (log.receiptNumber) {
+      await supabase
+        .from('cards')
+        .update({
+          status: 'Active',
+          payment_status: 'PAID',
+          claim_status: 'UNCLAIMED',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('receipt_number', log.receiptNumber);
+
+      const [rcptRes, cardRes] = await Promise.allSettled([
+        supabase
+          .from('receipts')
+          .select('member_ids, member_id')
+          .eq('id', log.receiptNumber)
+          .maybeSingle(),
+        supabase
+          .from('cards')
+          .select('member_id')
+          .eq('receipt_number', log.receiptNumber),
+      ]);
+
+      if (rcptRes.status === 'fulfilled' && rcptRes.value.data) {
+        const r = rcptRes.value.data;
+        if (r.member_id) targetMemberIds.push(r.member_id);
+        if (Array.isArray(r.member_ids)) {
+          r.member_ids.forEach((id: string) => targetMemberIds.push(id));
+        }
+      }
+      if (cardRes.status === 'fulfilled' && cardRes.value.data) {
+        cardRes.value.data.forEach((c: any) => {
+          if (c.member_id) targetMemberIds.push(c.member_id);
+        });
+      }
+    }
+
+    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(Boolean);
+    if (uniqueMemberIds.length > 0) {
+      const { data: memberRows } = await supabase
+        .from('members')
+        .select('id, member_id')
+        .or(
+          `member_id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')}),id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')})`
+        );
+
+      const allPossibleIds = Array.from(
+        new Set([
+          ...uniqueMemberIds,
+          ...(memberRows || []).map((m: any) => m.id),
+          ...(memberRows || []).map((m: any) => m.member_id),
+        ])
+      ).filter(Boolean);
+
+      await supabase
+        .from('cards')
+        .update({
+          status: 'Active',
+          payment_status: 'PAID',
+          claim_status: 'UNCLAIMED',
+          updated_at: new Date().toISOString(),
+        })
+        .in('member_id', allPossibleIds);
+
+      await supabase
+        .from('member_cards')
+        .update({
+          status: 'Active',
+          payment_status: 'PAID',
+          deleted_at: null,
+        })
+        .in('member_id', allPossibleIds);
+    }
+
+    window.dispatchEvent(new CustomEvent('member-refresh'));
+    window.dispatchEvent(new CustomEvent('cards-refresh'));
+  };
+
   const handleConfirmDelete = useCallback(
     async (id: string) => {
       const stagedLog = stagedDeletionsRef.current.find(
@@ -801,23 +984,8 @@ export const LogbookPage: React.FC = () => {
 
         if (error) throw error;
 
-        // 2. If it's a Card transaction, deactivate/soft-delete in member_cards
-        const isCard =
-          stagedLog.customerType === 'Card' ||
-          String(stagedLog.categoryOrPlan || '')
-            .toLowerCase()
-            .includes('card');
-
-        if (stagedLog.memberId && isCard) {
-          await supabase
-            .from('member_cards')
-            .update({
-              status: 'Inactive',
-              payment_status: 'UNPAID',
-              deleted_at: new Date().toISOString(),
-            })
-            .eq('member_id', stagedLog.memberId);
-        }
+        // 2. If it's a Card transaction, deactivate in cards table
+        await deactivateCardsForLogRecord(stagedLog);
 
         toast.success(
           `Record for "${stagedLog.customerName}" moved to Recycle Bin.`
@@ -881,23 +1049,7 @@ export const LogbookPage: React.FC = () => {
     });
 
     // Re-activate member card if it was a card transaction
-    const isCard =
-      stagedLog.customerType === 'Card' ||
-      String(stagedLog.categoryOrPlan || '')
-        .toLowerCase()
-        .includes('card');
-
-    if (stagedLog.memberId && isCard) {
-      supabase
-        .from('member_cards')
-        .update({
-          status: 'Active',
-          payment_status: 'PAID',
-          deleted_at: null,
-        })
-        .eq('member_id', stagedLog.memberId)
-        .then();
-    }
+    reactivateCardsForLogRecord(stagedLog);
 
     setStagedDeletions((prev) =>
       prev.filter((item) => String(item.id) !== String(id))
@@ -930,25 +1082,9 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
 
-    // Re-activate all cards in member_cards
+    // Re-activate all cards in cards table
     itemsToRestore.forEach((log) => {
-      const isCard =
-        log.customerType === 'Card' ||
-        String(log.categoryOrPlan || '')
-          .toLowerCase()
-          .includes('card');
-
-      if (log.memberId && isCard) {
-        supabase
-          .from('member_cards')
-          .update({
-            status: 'Active',
-            payment_status: 'PAID',
-            deleted_at: null,
-          })
-          .eq('member_id', log.memberId)
-          .then();
-      }
+      reactivateCardsForLogRecord(log);
     });
 
     setStagedDeletions([]);
@@ -1004,23 +1140,7 @@ export const LogbookPage: React.FC = () => {
             .eq('id', log.id)
             .then();
 
-          const isCard =
-            log.customerType === 'Card' ||
-            String(log.categoryOrPlan || '')
-              .toLowerCase()
-              .includes('card');
-
-          if (log.memberId && isCard) {
-            supabase
-              .from('member_cards')
-              .update({
-                status: 'Inactive',
-                payment_status: 'UNPAID',
-                deleted_at: new Date().toISOString(),
-              })
-              .eq('member_id', log.memberId)
-              .then();
-          }
+          deactivateCardsForLogRecord(log);
         });
       }
     };

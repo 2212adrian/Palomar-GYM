@@ -7,6 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
   X,
@@ -1076,8 +1077,10 @@ export const LogbookRecordAttendance: React.FC<
         stopAllCameraTracks();
         onClose();
       }}
-      title="Reception Check-In"
-      className="w-full mx-auto my-auto p-4 sm:p-5 overflow-visible transition-all duration-300 relative text-left max-w-lg"
+      title={isSuccess ? 'CHECK-IN CONFIRMED' : 'Reception Check-In'}
+      className={`w-full mx-auto my-auto ${
+        isSuccess ? 'max-w-md p-6 sm:p-8' : 'max-w-lg p-4 sm:p-5'
+      } overflow-visible transition-all duration-300 relative text-left`}
     >
       <button
         type="button"
@@ -1092,8 +1095,15 @@ export const LogbookRecordAttendance: React.FC<
         <X className="w-5 h-5" />
       </button>
 
-      {!isSuccess ? (
-        <div className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans">
+      <AnimatePresence mode="wait">
+        {!isSuccess ? (
+          <motion.div
+            key="attendance-form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.2 } }}
+            className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans"
+          >
           {/* FILTER MODE TOGGLE SWITCH */}
           {!selectedClient && (
             <div className="flex bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
@@ -1862,20 +1872,62 @@ export const LogbookRecordAttendance: React.FC<
               )}
             </div>
           )}
-        </div>
+        </motion.div>
       ) : (
-        <div className="py-12 flex flex-col items-center justify-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
-            <Check className="w-8 h-8" />
-          </div>
-          <h2 className="font-black text-xl text-(--color-text) uppercase tracking-wider">
+        <motion.div
+          key="attendance-success"
+          initial={{ opacity: 0, scale: 0.85, y: 16 }}
+          animate={{
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            transition: {
+              type: 'spring',
+              damping: 24,
+              stiffness: 280,
+              duration: 0.4,
+            },
+          }}
+          exit={{
+            opacity: 0,
+            scale: 0.9,
+            y: -16,
+            transition: { duration: 0.25, ease: 'easeInOut' },
+          }}
+          className="py-12 flex flex-col items-center justify-center space-y-4"
+        >
+          <motion.div
+            initial={{ scale: 0, rotate: -30 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{
+              type: 'spring',
+              damping: 18,
+              stiffness: 300,
+              delay: 0.08,
+            }}
+            className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/25 ring-4 ring-emerald-500/20"
+          >
+            <Check className="w-8 h-8 stroke-[3]" />
+          </motion.div>
+          <motion.h2
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.3 }}
+            className="font-black text-xl text-(--color-text) uppercase tracking-wider font-heading text-center"
+          >
             CHECK-IN AUTHORIZED
-          </h2>
-          <p className="text-xs font-semibold text-slate-500 max-w-xs text-center uppercase">
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.22, duration: 0.3 }}
+            className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-xs text-center uppercase tracking-wide"
+          >
             Attendance record filed in the gym logbook.
-          </p>
-        </div>
+          </motion.p>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* MEMBER PHOTO VERIFICATION LIGHTBOX MODAL */}
       {photoModal && (

@@ -253,13 +253,22 @@ export const MembersList: React.FC<MembersListProps> = ({
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'cards' },
+        () => fetchMembers()
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'member_cards' },
         () => fetchMembers()
       )
       .subscribe();
 
+    const handleRefresh = () => fetchMembers();
+    window.addEventListener('member-refresh', handleRefresh);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('member-refresh', handleRefresh);
     };
   }, [fetchMembers]);
 

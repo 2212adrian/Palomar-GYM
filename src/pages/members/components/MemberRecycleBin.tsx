@@ -12,6 +12,9 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
+  ChevronDown,
+  ChevronUp,
+  Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -42,6 +45,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedStackKeys, setExpandedStackKeys] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -154,14 +158,87 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
     return meta;
   }, [groupedItems]);
 
-  const totalItems = groupedItems.length;
+  // Group duplicate or identical deleted members within batches so repeated deletions form clean expandable stacks
+  const stackedMembers = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        groupId: string;
+        full_name: string;
+        member_id: string;
+        phone: string | null;
+        avatar_url: string | null;
+        isGroup: boolean;
+        latestDeletedAt: string;
+        items: any[];
+      }
+    >();
+
+    groupedItems.forEach((m) => {
+      const name = (m.full_name || 'Member').trim();
+      const key = `${m.groupId}_${name.toLowerCase()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          groupId: m.groupId,
+          full_name: name,
+          member_id: m.member_id,
+          phone: m.phone || null,
+          avatar_url: m.avatar_url || null,
+          isGroup: false,
+          latestDeletedAt: m.deleted_at || new Date().toISOString(),
+          items: [],
+        });
+      }
+      const stack = map.get(key)!;
+      stack.items.push(m);
+      stack.isGroup = stack.items.length > 1;
+      if (
+        m.deleted_at &&
+        new Date(m.deleted_at).getTime() >
+          new Date(stack.latestDeletedAt).getTime()
+      ) {
+        stack.latestDeletedAt = m.deleted_at;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [groupedItems]);
+
+  const totalItems = stackedMembers.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
 
-  const paginatedItems = useMemo(() => {
+  const paginatedStacks = useMemo(() => {
     const startIdx = (clampedPage - 1) * itemsPerPage;
-    return groupedItems.slice(startIdx, startIdx + itemsPerPage);
-  }, [groupedItems, clampedPage]);
+    return stackedMembers.slice(startIdx, startIdx + itemsPerPage);
+  }, [stackedMembers, clampedPage]);
+
+  const toggleStackExpansion = (key: string) => {
+    setExpandedStackKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const isStackFullySelected = (stack: any) => {
+    if (stack.items.length === 0) return false;
+    return stack.items.every((i: any) => selectedIds.includes(i.id));
+  };
+
+  const handleStackSelect = (stack: any) => {
+    const allSelected = isStackFullySelected(stack);
+    const ids = stack.items.map((i: any) => i.id);
+
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...ids])));
+    }
+  };
 
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
@@ -214,10 +291,12 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   };
 
   const handleToggleSelectAll = () => {
-    const currentPageIds = paginatedItems.map((t: any) => t.id);
-    const allSelectedOnPage = currentPageIds.every((id) =>
-      selectedIds.includes(id)
-    );
+    const currentPageIds = paginatedStacks
+      .flatMap((s) => s.items)
+      .map((t: any) => t.id);
+    const allSelectedOnPage =
+      currentPageIds.length > 0 &&
+      currentPageIds.every((id) => selectedIds.includes(id));
 
     if (allSelectedOnPage) {
       setSelectedIds((prev) =>
@@ -232,6 +311,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
 
   const isSelectionActive = selectedIds.length > 0;
   let lastGroupTracker: string | null = null;
+
+  const currentPageItems = paginatedStacks.flatMap((s) => s.items);
+  const isAllOnPageSelected =
+    currentPageItems.length > 0 &&
+    currentPageItems.every((t: any) => selectedIds.includes(t.id));
 
   if (!isOpen) return null;
 
@@ -291,8 +375,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                 disabled={loading}
                 className="flex items-center gap-2 cursor-pointer hover:opacity-85 text-left disabled:opacity-50 border-none bg-transparent font-bold text-slate-500"
               >
-                {paginatedItems.length > 0 &&
-                paginatedItems.every((t: any) => selectedIds.includes(t.id)) ? (
+                {isAllOnPageSelected ? (
                   <CheckSquare className="w-4 h-4 text-(--color-primary-light) shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 shrink-0" />
@@ -326,104 +409,244 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                   </div>
                 ))}
               </div>
-            ) : paginatedItems.length > 0 ? (
-              paginatedItems.map((item: any) => {
-                const showGroupHeading = item.groupId !== lastGroupTracker;
-                lastGroupTracker = item.groupId;
-
-                const isSelected = selectedIds.includes(item.id);
-                const groupSelected = isGroupFullySelected(item.groupId);
-                const daysRemaining = getDaysRemaining(item.deleted_at);
+            ) : paginatedStacks.length > 0 ? (
+              paginatedStacks.map((stack) => {
+                const showGroupHeading = stack.groupId !== lastGroupTracker;
+                lastGroupTracker = stack.groupId;
+                const isExpanded = expandedStackKeys.has(stack.key);
+                const stackSelected = isStackFullySelected(stack);
+                const daysRemaining = getDaysRemaining(stack.latestDeletedAt);
 
                 return (
-                  <div key={item.id} className="space-y-1.5 animate-fade-in">
+                  <div key={stack.key} className="space-y-1.5 animate-fade-in">
                     {showGroupHeading && (
                       <div className="flex items-center justify-between border-b border-(--border-color) pt-4 pb-1.5 select-none">
                         <button
                           type="button"
                           disabled={loading}
-                          onClick={() => handleGroupSelect(item.groupId)}
+                          onClick={() => handleGroupSelect(stack.groupId)}
                           className="flex items-center gap-2 cursor-pointer hover:opacity-80 text-left disabled:opacity-50 font-bold border-none bg-transparent"
                         >
-                          {groupSelected ? (
+                          {isGroupFullySelected(stack.groupId) ? (
                             <CheckSquare className="w-4 h-4 text-(--color-primary-light) shrink-0" />
                           ) : (
                             <Square className="w-4 h-4 text-slate-400 dark:text-zinc-600 shrink-0" />
                           )}
                           <span className="text-[9px] font-heading tracking-widest text-(--color-primary-light) uppercase">
-                            {groupMeta[item.groupId]?.label}
+                            {groupMeta[stack.groupId]?.label}
                           </span>
                         </button>
                         <span className="text-[9px] text-slate-400 font-medium font-mono">
-                          ({groupMeta[item.groupId]?.ids.length} item
-                          {groupMeta[item.groupId]?.ids.length !== 1 && 's'})
+                          ({groupMeta[stack.groupId]?.ids.length} item
+                          {groupMeta[stack.groupId]?.ids.length !== 1 && 's'})
                         </span>
                       </div>
                     )}
 
-                    <div
-                      onClick={() => !loading && handleRowSelect(item.id)}
-                      className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                        isSelected
-                          ? 'bg-blue-500/10 border-blue-500'
-                          : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
-                      } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
+                    {stack.isGroup ? (
+                      /* Grouped Card for multiple identical/repeated deleted members */
+                      <div className="border border-(--border-color) bg-(--bg-page) rounded-2xl overflow-hidden transition-all shadow-xs">
                         <div
-                          className="shrink-0"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={() => handleStackSelect(stack)}
+                          className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                            stackSelected
+                              ? 'bg-blue-500/10'
+                              : 'hover:bg-slate-100 dark:hover:bg-zinc-800/60'
+                          }`}
                         >
-                          <input
-                            type="checkbox"
-                            disabled={loading}
-                            checked={isSelected}
-                            onChange={() => handleRowSelect(item.id)}
-                            className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary)"
-                          />
-                        </div>
-                        <div className="min-w-0 text-left flex items-center gap-3">
-                          {item.avatar_url ? (
-                            <img
-                              src={item.avatar_url}
-                              alt={item.full_name}
-                              className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={stackSelected}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
                             />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
-                              {(item.full_name || 'M')[0]}
+                            <div className="min-w-0 text-left flex items-center gap-3 flex-1">
+                              {stack.avatar_url ? (
+                                <img
+                                  src={stack.avatar_url}
+                                  alt={stack.full_name}
+                                  className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
+                                  {(stack.full_name || 'M')[0]}
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-[11px] text-(--color-text) truncate">
+                                    {stack.full_name}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase flex items-center gap-1">
+                                    <Layers className="w-2.5 h-2.5" />
+                                    <span>×{stack.items.length} records</span>
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                  {stack.member_id} • {stack.phone || 'No phone'}
+                                </div>
+                              </div>
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <span className="font-bold block text-[11px] text-(--color-text) truncate">
-                              {item.full_name}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
-                              {item.member_id} • {item.phone || 'No phone'}
-                            </span>
+                          </div>
+
+                          <div
+                            className="flex items-center gap-2 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {daysRemaining && (
+                              <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
+                                {daysRemaining}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => handleBulkRestore(stack.items)}
+                              className="py-1.5 px-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
+                            >
+                              Restore All ({stack.items.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleStackExpansion(stack.key)}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-4 h-4" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
                           </div>
                         </div>
-                      </div>
 
-                      <div
-                        className="flex items-center gap-2 shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {daysRemaining && (
-                          <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
-                            {daysRemaining}
-                          </span>
+                        {/* Accordion Sub-Items */}
+                        {isExpanded && (
+                          <div className="border-t border-(--border-color) bg-white/50 dark:bg-zinc-950/40 divide-y divide-(--border-color)">
+                            {stack.items.map((subItem: any) => {
+                              const isSubSelected = selectedIds.includes(
+                                subItem.id
+                              );
+                              return (
+                                <div
+                                  key={subItem.id}
+                                  onClick={() =>
+                                    !loading && handleRowSelect(subItem.id)
+                                  }
+                                  className={`p-2.5 pl-8 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
+                                    isSubSelected
+                                      ? 'bg-blue-500/10'
+                                      : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                    <input
+                                      type="checkbox"
+                                      disabled={loading}
+                                      checked={isSubSelected}
+                                      onChange={() =>
+                                        handleRowSelect(subItem.id)
+                                      }
+                                      className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                                    />
+                                    <div className="min-w-0 text-left font-mono">
+                                      <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
+                                        Member ID: {subItem.member_id} • System ID:{' '}
+                                        {subItem.id.slice(0, 8)}...
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={loading}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleBulkRestore([subItem]);
+                                    }}
+                                    className="py-1 px-2 bg-emerald-500/80 hover:bg-emerald-600 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
+                                  >
+                                    Restore
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={() => handleBulkRestore([item])}
-                          className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
-                        >
-                          Restore
-                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      /* Single Member Item */
+                      (() => {
+                        const item = stack.items[0];
+                        const isSelected = selectedIds.includes(item.id);
+
+                        return (
+                          <div
+                            onClick={() => !loading && handleRowSelect(item.id)}
+                            className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-blue-500/10 border-blue-500'
+                                : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
+                            } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className="shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  disabled={loading}
+                                  checked={isSelected}
+                                  onChange={() => handleRowSelect(item.id)}
+                                  className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary)"
+                                />
+                              </div>
+                              <div className="min-w-0 text-left flex items-center gap-3">
+                                {item.avatar_url ? (
+                                  <img
+                                    src={item.avatar_url}
+                                    alt={item.full_name}
+                                    className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
+                                    {(item.full_name || 'M')[0]}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <span className="font-bold block text-[11px] text-(--color-text) truncate">
+                                    {item.full_name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
+                                    {item.member_id} • {item.phone || 'No phone'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {daysRemaining && (
+                                <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
+                                  {daysRemaining}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={loading}
+                                onClick={() => handleBulkRestore([item])}
+                                className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
+                              >
+                                Restore
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    )}
                   </div>
                 );
               })
