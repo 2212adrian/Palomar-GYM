@@ -1,3 +1,9 @@
+-- ============================================================================
+-- Migration: Batch Card Purchase, Attendance Revert Triggers, and Column Fixes
+-- File: 20260902120000_batch_card_purchase_and_revert_trigger.sql
+-- ============================================================================
+
+-- 1. Ensure 'Card' exists on customer_type_enum if an enum is used
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'customer_type_enum') THEN
@@ -11,11 +17,41 @@ END $$;
 
 BEGIN;
 
--- 1. Trigger Function: Automatically Revert Card Status on Logbook Delete/Soft-Delete & Restore
+-- ============================================================================
+-- 2. SCHEMA FIX: Add Missing Columns to public.receipts and public.attendance
+-- ============================================================================
+
+-- Fix for: column "member_ids" of relation "receipts" does not exist
+ALTER TABLE public.receipts 
+    ADD COLUMN IF NOT EXISTS member_ids text[],
+    ADD COLUMN IF NOT EXISTS card_fee numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS base_price numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS gcash_fee numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS gcash_ref_no text;
+
+-- Fix for: record "old" has no field "member_ids"
+ALTER TABLE public.attendance 
+    ADD COLUMN IF NOT EXISTS member_ids text[],
+    ADD COLUMN IF NOT EXISTS receipt_number text,
+    ADD COLUMN IF NOT EXISTS card_fee numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS base_price numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS gcash_fee numeric(10,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS gcash_ref_no text,
+    ADD COLUMN IF NOT EXISTS staff_name text,
+    ADD COLUMN IF NOT EXISTS deleted_at timestamptz DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS deleted_by uuid DEFAULT NULL;
+
+-- Ensure unique index on public.cards(member_id) for ON CONFLICT upsert
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_member_id_unique ON public.cards (member_id);
+
+-- ============================================================================
+-- 3. Trigger Function: Automatically Revert Card Status on Logbook Delete/Restore
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION public.handle_card_revert_on_attendance_change()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- [CASE A] When an attendance row is deleted or soft-deleted (moved to Recycle Bin)
+    -- [CASE A] Attendance row soft-deleted (Recycle Bin) or hard-deleted
     IF (TG_OP = 'UPDATE' AND NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL) 
        OR (TG_OP = 'DELETE') THEN
         
@@ -25,7 +61,7 @@ BEGIN
             OR OLD.plan_name ILIKE '%Card Printing Fee%'
             OR OLD.plan_name ILIKE '%Card Fee%') THEN
             
-            -- Soft-delete: revert status to NONE/NOT_APPLICABLE but PRESERVE receipt_number so restoration can find cards
+            -- Soft-delete: revert status to NONE/NOT_APPLICABLE but PRESERVE receipt_number so restore works
             IF (TG_OP = 'UPDATE' AND NEW.deleted_at IS NOT NULL) THEN
                 UPDATE public.cards
                 SET payment_status = 'NONE',
@@ -36,9 +72,24 @@ BEGIN
                     claim_notes = NULL,
                     updated_at = now()
                 WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
-                   OR (OLD.member_ids IS NOT NULL AND member_id = ANY(OLD.member_ids))
+                   OR (OLD.member_ids IS NOT NULL AND cardinality(OLD.member_ids) > 0 AND member_id = ANY(OLD.member_ids))
                    OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
-            -- Physical hard delete: clean up receipts and detach receipt_number
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'member_cards') THEN
+                    UPDATE public.member_cards
+                    SET payment_status = 'NONE',
+                        claim_status = 'NOT_APPLICABLE',
+                        card_fee_paid = 0.00,
+                        claimed_at = NULL,
+                        claimed_by = NULL,
+                        claim_notes = NULL,
+                        updated_at = now()
+                    WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
+                       OR (OLD.member_ids IS NOT NULL AND cardinality(OLD.member_ids) > 0 AND member_id = ANY(OLD.member_ids))
+                       OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
+                END IF;
+
+            -- Physical hard delete: detach receipt_number and clean up receipt
             ELSE
                 UPDATE public.cards
                 SET payment_status = 'NONE',
@@ -50,8 +101,23 @@ BEGIN
                     claim_notes = NULL,
                     updated_at = now()
                 WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
-                   OR (OLD.member_ids IS NOT NULL AND member_id = ANY(OLD.member_ids))
+                   OR (OLD.member_ids IS NOT NULL AND cardinality(OLD.member_ids) > 0 AND member_id = ANY(OLD.member_ids))
                    OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'member_cards') THEN
+                    UPDATE public.member_cards
+                    SET payment_status = 'NONE',
+                        claim_status = 'NOT_APPLICABLE',
+                        card_fee_paid = 0.00,
+                        receipt_number = NULL,
+                        claimed_at = NULL,
+                        claimed_by = NULL,
+                        claim_notes = NULL,
+                        updated_at = now()
+                    WHERE (OLD.receipt_number IS NOT NULL AND receipt_number = OLD.receipt_number)
+                       OR (OLD.member_ids IS NOT NULL AND cardinality(OLD.member_ids) > 0 AND member_id = ANY(OLD.member_ids))
+                       OR (OLD.member_id IS NOT NULL AND member_id = OLD.member_id);
+                END IF;
 
                 IF OLD.receipt_number IS NOT NULL THEN
                     DELETE FROM public.receipts WHERE id = OLD.receipt_number;
@@ -78,8 +144,24 @@ BEGIN
                 receipt_number = COALESCE(NEW.receipt_number, cards.receipt_number),
                 updated_at = now()
             WHERE (NEW.receipt_number IS NOT NULL AND receipt_number = NEW.receipt_number)
-               OR (NEW.member_ids IS NOT NULL AND member_id = ANY(NEW.member_ids))
+               OR (NEW.member_ids IS NOT NULL AND cardinality(NEW.member_ids) > 0 AND member_id = ANY(NEW.member_ids))
                OR (NEW.member_id IS NOT NULL AND member_id = NEW.member_id);
+
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'member_cards') THEN
+                UPDATE public.member_cards
+                SET payment_status = 'PAID',
+                    claim_status = 'UNCLAIMED',
+                    card_fee_paid = CASE 
+                        WHEN NEW.member_ids IS NOT NULL AND cardinality(NEW.member_ids) > 0 
+                        THEN ROUND(COALESCE(NEW.card_fee, NEW.entry_fee, 50.00) / cardinality(NEW.member_ids), 2)
+                        ELSE COALESCE(NEW.card_fee, NEW.entry_fee, 50.00)
+                    END,
+                    receipt_number = COALESCE(NEW.receipt_number, member_cards.receipt_number),
+                    updated_at = now()
+                WHERE (NEW.receipt_number IS NOT NULL AND receipt_number = NEW.receipt_number)
+                   OR (NEW.member_ids IS NOT NULL AND cardinality(NEW.member_ids) > 0 AND member_id = ANY(NEW.member_ids))
+                   OR (NEW.member_id IS NOT NULL AND member_id = NEW.member_id);
+            END IF;
         END IF;
     END IF;
 
@@ -87,14 +169,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Reattach trigger safely
+-- Reattach trigger cleanly
 DROP TRIGGER IF EXISTS tr_card_revert_on_attendance_change ON public.attendance;
 CREATE TRIGGER tr_card_revert_on_attendance_change
     AFTER UPDATE OR DELETE ON public.attendance
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_card_revert_on_attendance_change();
 
--- 2. Consolidated Batch Purchase Member Cards RPC
+-- ============================================================================
+-- 4. Consolidated Batch Purchase Member Cards RPC
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION public.batch_purchase_member_cards(
     p_member_ids text[],
     p_payment_method text,
@@ -120,7 +205,7 @@ DECLARE
     v_now timestamptz := now();
     v_expires timestamptz := now() + interval '3 years';
     v_payment_method public.payment_method_enum;
-    v_customer_type public.customer_type_enum;
+    v_customer_type text := 'Card';
 BEGIN
     IF lower(COALESCE(p_payment_method, 'Cash')) LIKE '%gcash%' THEN
         v_payment_method := 'GCash'::public.payment_method_enum;
@@ -128,7 +213,6 @@ BEGIN
         v_payment_method := 'Cash'::public.payment_method_enum;
     END IF;
 
-    v_customer_type := 'Card'::public.customer_type_enum;
     v_batch_receipt_id := 'REC-CARD-' || to_char(v_now AT TIME ZONE 'Asia/Manila', 'YYMMDD') || '-' || substr(md5(random()::text || clock_timestamp()::text), 1, 6);
     v_batch_checkin_id := 'CHK-' || to_char(v_now AT TIME ZONE 'Asia/Manila', 'YYMMDD') || '-' || substr(md5(random()::text || clock_timestamp()::text), 1, 6);
 
@@ -145,6 +229,7 @@ BEGIN
                 v_first_member_id := v_member.member_id;
             END IF;
 
+            -- Upsert into public.cards
             INSERT INTO public.cards (
                 member_id,
                 card_number,
@@ -178,6 +263,38 @@ BEGIN
                 card_fee_paid = p_card_fee,
                 receipt_number = v_batch_receipt_id,
                 updated_at = v_now;
+
+            -- Sync to public.member_cards if table exists
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'member_cards') THEN
+                INSERT INTO public.member_cards (
+                    member_id,
+                    card_number,
+                    card_type,
+                    status,
+                    version,
+                    payment_status,
+                    claim_status,
+                    card_fee_paid,
+                    receipt_number,
+                    issued_at,
+                    expires_at,
+                    updated_at
+                ) VALUES (
+                    v_member.member_id,
+                    gen_random_uuid()::text,
+                    'QR',
+                    'Active',
+                    1,
+                    'PAID',
+                    'UNCLAIMED',
+                    p_card_fee,
+                    v_batch_receipt_id,
+                    v_now,
+                    v_expires,
+                    v_now
+                )
+                ON CONFLICT (card_number) DO NOTHING;
+            END IF;
         END IF;
     END LOOP;
 
@@ -213,7 +330,7 @@ BEGIN
         v_batch_receipt_id,
         v_first_member_id,
         v_summary_names,
-        v_customer_type,
+        v_customer_type::public.customer_type_enum,
         v_total_amount,
         0.00,
         0.00,
@@ -248,7 +365,7 @@ BEGIN
         v_batch_checkin_id,
         v_first_member_id,
         v_summary_names,
-        v_customer_type,
+        v_customer_type::public.customer_type_enum,
         v_now,
         CASE WHEN v_count = 1 THEN 'Physical Membership Card' ELSE 'Batch Physical Cards (' || v_count::text || ' pcs)' END,
         v_total_amount,
@@ -267,7 +384,13 @@ BEGIN
 END;
 $$;
 
--- 3. Update get_sanitized_logbook RPC Function
+-- ============================================================================
+-- 5. Drop and Recreate get_sanitized_logbook Function with receipt_number & member_ids
+-- ============================================================================
+
+DROP FUNCTION IF EXISTS public.get_sanitized_logbook(date);
+DROP FUNCTION IF EXISTS public.get_sanitized_logbook();
+
 CREATE OR REPLACE FUNCTION public.get_sanitized_logbook(target_date date default null)
 RETURNS TABLE (
     id text,
@@ -284,7 +407,9 @@ RETURNS TABLE (
     gcash_ref_no text,
     payment_status text,
     is_subscription boolean,
-    deletable boolean
+    deletable boolean,
+    receipt_number text,
+    member_ids text[]
 )
 LANGUAGE sql
 SECURITY DEFINER
@@ -308,7 +433,9 @@ AS $$
         a.gcash_ref_no::text AS gcash_ref_no,
         CASE WHEN COALESCE(a.entry_fee, 0.00) > 0 THEN 'Paid' ELSE 'Promo' END::text AS payment_status,
         false AS is_subscription,
-        true AS deletable
+        true AS deletable,
+        a.receipt_number::text AS receipt_number,
+        COALESCE(a.member_ids, ARRAY[]::text[])::text[] AS member_ids
     FROM public.attendance a, ref_date rd
     WHERE a.deleted_at IS NULL
       AND (a.check_in_time AT TIME ZONE 'Asia/Manila')::date = rd.d
@@ -330,7 +457,9 @@ AS $$
         r.gcash_ref_no::text AS gcash_ref_no,
         'Paid'::text AS payment_status,
         true AS is_subscription,
-        false AS deletable
+        false AS deletable,
+        r.id::text AS receipt_number,
+        COALESCE(r.member_ids, ARRAY[]::text[])::text[] AS member_ids
     FROM public.receipts r, ref_date rd
     WHERE (r.created_at AT TIME ZONE 'Asia/Manila')::date = rd.d
       AND r.customer_type::text <> 'Card'
@@ -338,8 +467,11 @@ AS $$
     ORDER BY "timestamp" DESC;
 $$;
 
--- 4. Grant Execution Privileges
+-- ============================================================================
+-- 6. Permissions
+-- ============================================================================
+
 GRANT EXECUTE ON FUNCTION public.get_sanitized_logbook(date) TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION public.batch_purchase_member_cards(text[], text, numeric, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.batch_purchase_member_cards(text[], text, numeric, text, text) TO authenticated, anon;
 
 COMMIT;
