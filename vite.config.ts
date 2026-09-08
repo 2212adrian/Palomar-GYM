@@ -1,14 +1,14 @@
-import { defineConfig, loadEnv } from 'vite';
+// vite.config.ts
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
 
   console.log('======================');
   console.log('Vite Mode:', mode);
-  console.log('VITE_API_URL:', env.VITE_APP_URL);
+  console.log('VITE_APP_URL:', 'http://localhost:3000');
   console.log('======================');
 
   return {
@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: 'auto',
         includeAssets: [
           'favicon.svg',
           'apple-touch-icon.png',
@@ -27,11 +28,11 @@ export default defineConfig(({ mode }) => {
         manifest: {
           id: '/',
           name: 'Palomar GYM',
-          short_name: 'PalomarGym',
+          short_name: 'Wolf GYM',
           description:
             'Gym Management System with members, attendance logbook, sales, and scanner.',
           theme_color: '#123c73',
-          background_color: '#0c0e12',
+          background_color: '#d1020c',
           display: 'standalone',
           display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
           orientation: 'any',
@@ -58,66 +59,15 @@ export default defineConfig(({ mode }) => {
               purpose: 'maskable',
             },
           ],
-          shortcuts: [
-            {
-              name: 'Smart Scanner Station',
-              short_name: 'Scanner',
-              description: 'Open Front Desk Camera Scanner',
-              url: '/scanner',
-              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
-            },
-            {
-              name: 'Attendance Logbook',
-              short_name: 'Logbook',
-              description: 'View Daily Logbook & Card Taps',
-              url: '/logbook',
-              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
-            },
-            {
-              name: 'Gym Members List',
-              short_name: 'Members',
-              description: 'Manage Gym Member Profiles',
-              url: '/members',
-              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
-            },
-          ],
         },
         workbox: {
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,mp3,woff,woff2}'],
-          runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'gstatic-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-          ],
+          cleanupOutdatedCaches: true,
         },
         devOptions: {
-          enabled: false,
+          enabled: true,           // Enables PWA in 'npm run dev'
+          type: 'module',          // Serves virtual in-memory sw, avoids ENOENT
+          suppressWarnings: true,
         },
       }),
     ],
