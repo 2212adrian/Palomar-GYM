@@ -14,7 +14,7 @@ const mode = modeArg ? modeArg.split('=')[1] : (process.env.NODE_ENV || 'product
 const noUpload = args.includes('--no-upload') || args.includes('--manual');
 
 console.log(`\n======================================================`);
-console.log(`⚙️  Release Publisher [${mode.toUpperCase()}] | Upload: ${noUpload ? 'MANUAL' : 'AUTO (Catbox)'}`);
+console.log(`⚙️  Release Publisher [${mode.toUpperCase()}]`);
 console.log(`======================================================`);
 
 // 2. Load environment variables
@@ -37,19 +37,19 @@ const version = pkg.version;
 const isDev = mode === 'development';
 const customFileName = `${pkg.name}-v${version}${isDev ? '-dev' : ''}.apk`;
 
-// 4. Locate APK
+// 4. Locate compiled APK
 const apkPaths = [
   path.resolve(rootDir, 'android/app/build/outputs/apk/release/app-release.apk'),
   path.resolve(rootDir, 'android/app/build/outputs/apk/release/app-release-unsigned.apk'),
 ];
-const apkPath = apkPaths.find((p) => fs.existsSync(p));
+const rawApkPath = apkPaths.find((p) => fs.existsSync(p));
 
-if (!apkPath) {
+if (!rawApkPath) {
   console.error(`❌ No release APK found in android/app/build/outputs/apk/release/`);
   process.exit(1);
 }
 
-const stats = fs.statSync(apkPath);
+const stats = fs.statSync(rawApkPath);
 const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
 // 5. Extract release notes from CHANGELOG.md
@@ -69,12 +69,9 @@ if (!releaseNotes) {
   releaseNotes = `${pkg.name} v${version} (${mode}) update.`;
 }
 
-console.log(`📦 File: ${customFileName} (${fileSizeMB} MB)`);
-console.log(`📍 Path: ${apkPath}`);
-
+// 6. Check existing row in Supabase
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// 6. Check existing row to preserve existing download_url if in manual mode
 const { data: existingRow } = await supabase
   .from('app_releases')
   .select('download_url')
@@ -84,26 +81,57 @@ const { data: existingRow } = await supabase
 
 let downloadUrl = existingRow?.download_url || 'https://paste-your-download-link-here.com';
 let storageHost = 'Catbox CDN';
+let isPlanB = false;
 
-// 7. Auto-upload to Catbox (or fallback to manual if flagged/blocked)
+// 7. Auto-upload attempt (5 retries) or Plan B
+const MAX_RETRIES = 5;
+let uploadSuccess = false;
+
 if (noUpload) {
-  console.log('⏭️  Skipping Catbox upload (--no-upload flag enabled).');
-  storageHost = 'Manual / Catbox CDN';
+  console.log('\n⏭️  Skipping Catbox upload (--no-upload requested).');
+  isPlanB = true;
 } else {
-  console.log('\n🚀 Uploading APK to Catbox CDN...');
-  try {
-    const catbox = new Catbox(CATBOX_USER_HASH);
-    downloadUrl = await catbox.uploadFile({ path: apkPath });
-    storageHost = 'Catbox CDN';
-    console.log(`✅ Uploaded to Catbox: ${downloadUrl}`);
-  } catch (err) {
-    console.warn(`\n⚠️  Catbox upload failed (${err.message}).`);
-    console.warn(`👉 ISP is likely blocking Catbox. Switching to manual mode.`);
-    storageHost = 'Manual / Catbox CDN';
+  console.log(`\n🚀 Uploading APK to Catbox CDN (Max ${MAX_RETRIES} attempts)...`);
+  const catbox = new Catbox(CATBOX_USER_HASH);
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`⏳ [Attempt ${attempt}/${MAX_RETRIES}] Connecting & uploading...`);
+      downloadUrl = await catbox.uploadFile({ path: rawApkPath });
+      storageHost = 'Catbox CDN';
+      uploadSuccess = true;
+      console.log(`✅ Uploaded to Catbox: ${downloadUrl}`);
+      break;
+    } catch (err) {
+      console.warn(`⚠️  Attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`);
+      if (attempt < MAX_RETRIES) {
+        console.log(`🔄 Waiting 2 seconds before retry...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+  }
+
+  if (!uploadSuccess) {
+    console.warn(`\n⚠️  All 5 upload attempts failed (ISP/Catbox connection error).`);
+    console.log(`🛡️  Proceeding to PLAN B: Renaming file for manual upload...`);
+    isPlanB = true;
   }
 }
 
-// 8. Upsert: Only ONE row exists for dev and ONE for prod
+// ─── PLAN B: RENAME FILE & SHOW DIRECTORY ───
+const outputDir = path.dirname(rawApkPath);
+const renamedApkPath = path.resolve(outputDir, customFileName);
+
+// Copy/rename file to match the desired package name (e.g. palomar-gym-v0.24.3.apk)
+if (rawApkPath !== renamedApkPath) {
+  fs.copyFileSync(rawApkPath, renamedApkPath);
+}
+
+if (isPlanB) {
+  storageHost = 'Manual / Catbox CDN';
+}
+
+// 8. Upsert release row into Supabase
 console.log(`\n📝 Upserting release in Supabase for [${mode}]...`);
 const { error: dbError } = await supabase.from('app_releases').upsert(
   {
@@ -126,14 +154,27 @@ if (dbError) {
   process.exit(1);
 }
 
+// 9. Final Output & Instructions
 console.log(`\n======================================================`);
-console.log(`🎉 RELEASE UPSERT SUCCESSFUL [${mode.toUpperCase()}]`);
-console.log(`======================================================`);
-console.log(`📦 File:        ${customFileName} (${fileSizeMB} MB)`);
-console.log(`🔗 URL in DB:   ${downloadUrl}`);
+if (isPlanB) {
+  // Parse project ID to generate a direct link to the Supabase Table Editor
+  const projectRef = SUPABASE_URL.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1];
+  const supabaseTableUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}/editor`
+    : 'https://supabase.com/dashboard';
 
-if (downloadUrl.includes('paste-your-download-link') || noUpload) {
-  console.log(`\n👉 MANUAL ACTION:`);
-  console.log(`1. Upload: ${apkPath}`);
-  console.log(`2. Paste link into Supabase 'download_url' for [${mode}].\n`);
+  console.log(`📁 PLAN B ACTIVATED: MANUAL UPLOAD READY`);
+  console.log(`======================================================`);
+  console.log(`📦 File:          ${customFileName} (${fileSizeMB} MB)`);
+  console.log(`📂 Folder:        ${outputDir}`);
+  console.log(`📍 Full Filepath: ${renamedApkPath}`);
+  console.log(`\n👉 INSTRUCTIONS:`);
+  console.log(`1. Upload APK here:     👉 https://catbox.moe/`);
+  console.log(`2. Open Supabase Table: 👉 ${supabaseTableUrl}`);
+  console.log(`3. Paste the Catbox URL into 'download_url' for [${mode}].\n`);
+} else {
+  console.log(`🎉 RELEASE COMPLETE [${mode.toUpperCase()}]`);
+  console.log(`======================================================`);
+  console.log(`📦 File:        ${customFileName} (${fileSizeMB} MB)`);
+  console.log(`🔗 Catbox URL:  ${downloadUrl}\n`);
 }
