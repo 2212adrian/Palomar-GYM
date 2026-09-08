@@ -446,7 +446,6 @@ export const SystemInformation: React.FC = () => {
     { label: 'System Version', value: `v${APP_VERSION}` },
     { label: 'Build Number', value: buildNumber },
     { label: 'Environment', value: detectedEnvironment },
-    { label: 'Database Provider', value: 'PostgreSQL (Supabase Cloud)' },
   ];
 
   const recordBreakdownData = useMemo<RecordBreakdownItem[]>(() => {

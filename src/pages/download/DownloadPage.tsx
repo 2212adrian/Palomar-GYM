@@ -7,8 +7,7 @@ import {
   Download,
   QrCode,
   ArrowUp,
-  CheckCircle2,
-  ExternalLink,
+  Printer,
   ShieldCheck,
   Cpu,
   HardDrive,
@@ -17,15 +16,10 @@ import {
   Sun,
   Moon,
   Zap,
-  ChevronDown,
-  Layers,
-  Printer,
-  X,
   FileCheck,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 
 import landscapeLogoDark from '../../assets/landscape-logo-dark.webp';
