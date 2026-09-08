@@ -13,6 +13,7 @@ import { RevenueGoalsPage } from '../pages/dashboard/RevenueGoalsPage';
 import { IncidentReports } from '../pages/reports/IncidentReports';
 import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
+import { DownloadPage } from '../pages/download/DownloadPage';
 
 // Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
@@ -156,6 +157,7 @@ const HeaderLayout: React.FC = () => {
 const router = createBrowserRouter([
   // Public Routes (Outside of the secure console layout shell)
   { path: '/login', element: <Login /> },
+  { path: '/download', element: <DownloadPage standalone={true} /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/confirm-signup', element: <ConfirmSignUp /> },
 

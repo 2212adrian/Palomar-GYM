@@ -14,6 +14,8 @@ import {
   Sun,
   Moon,
   User,
+  ChevronDown,
+  Download,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -32,6 +34,9 @@ import {
   AgreementDocumentViewer,
   type AgreementDocument,
 } from '../../components/ui/AgreementDocumentViewer';
+
+// Download Page component mounted directly below the Login section
+import { DownloadPage } from '../download/DownloadPage';
 
 // Dynamic version retrieval from package.json
 import pkg from '../../../package.json';
@@ -179,7 +184,13 @@ export const Login: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginStarted, setLoginStarted] = useState<boolean>(false);
   const [loginResting, setLoginResting] = useState<boolean>(false);
+
+  // Horizontal Flip state (Login <-> Forgot Password)
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
+
+  // Vertical Slide state (Login Screen <-> Download Page)
+  const [isDownloadOpen, setIsDownloadOpen] = useState<boolean>(false);
+
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
   const [isMobile, setIsMobile] = useState<boolean>(
@@ -210,6 +221,21 @@ export const Login: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Keyboard shortcut: Escape returns from download page or recovery mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isDownloadOpen) {
+          setIsDownloadOpen(false);
+        } else if (isFlipped) {
+          setIsFlipped(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDownloadOpen, isFlipped]);
 
   useEffect(() => {
     const loadBranding = async () => {
@@ -461,7 +487,14 @@ export const Login: React.FC = () => {
 
   // Parallax Effect
   useEffect(() => {
-    if (!initialized || !isReady || !isAssetPreloaded || isLoggingIn) return;
+    if (
+      !initialized ||
+      !isReady ||
+      !isAssetPreloaded ||
+      isLoggingIn ||
+      isDownloadOpen
+    )
+      return;
 
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
     if (isTouch) return;
@@ -544,7 +577,7 @@ export const Login: React.FC = () => {
         rafId.current = null;
       }
     };
-  }, [initialized, isReady, isAssetPreloaded, isLoggingIn]);
+  }, [initialized, isReady, isAssetPreloaded, isLoggingIn, isDownloadOpen]);
 
   const triggerShake = (
     setter: React.Dispatch<React.SetStateAction<boolean>>
@@ -1090,231 +1123,297 @@ export const Login: React.FC = () => {
         }}
       />
 
-      {/* Ambient Mobile Liquid Background Orbs */}
-      <div className="block sm:hidden absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
-        <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-indigo-400/20 to-sky-300/30 dark:from-red-600/25 dark:via-rose-800/15 dark:to-indigo-950/30 blur-3xl" />
-        <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-indigo-500/20 via-blue-300/20 to-purple-400/15 dark:from-rose-950/30 dark:via-red-900/20 dark:to-indigo-900/20 blur-3xl" />
-      </div>
-
-      {/* Live Preview Mode Overlay Banner */}
-      {isPreview && (
-        <div className="absolute top-0 inset-x-0 z-[200] bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2 select-none">
-          <span>
-            ✨ Live Brand Preview Mode (Form Inputs &amp; Actions Disabled)
-          </span>
-          <button
-            onClick={() => window.close()}
-            className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors pointer-events-auto"
-          >
-            Close Preview
-          </button>
-        </div>
-      )}
-
-      {/* Theme Toggle Switch */}
-      <button
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className={`absolute top-4 right-4 z-[200] flex items-center gap-2.5 bg-white/80 dark:bg-neutral-900/80 border border-slate-200/80 dark:border-white/10 rounded-full px-3.5 py-2 shadow-lg backdrop-blur-xl cursor-pointer hover:opacity-95 transition-all duration-700 ease-out select-none pointer-events-auto ${
-          isLoggingIn
-            ? 'opacity-0 translate-y-4 pointer-events-none'
-            : isReady
-              ? 'opacity-100 translate-y-0'
-              : 'opacity-0 -translate-y-4 pointer-events-none'
-        }`}
-      >
-        <div
-          className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden"
-          aria-hidden="true"
-        >
-          {theme === 'dark' ? (
-            <>
-              <span className="w-3 h-3 bg-[#0c0e12]" />
-              <span className="w-3 h-3 bg-[#dc2626]" />
-              <span className="w-3 h-3 bg-[#161920]" />
-            </>
-          ) : (
-            <>
-              <span className="w-3 h-3 bg-[#f0f4f8]" />
-              <span className="w-3 h-3 bg-[#2563eb]" />
-              <span className="w-3 h-3 bg-[#ffffff]" />
-            </>
-          )}
-        </div>
-        <span className="text-slate-700 dark:text-slate-300 text-[10px] font-black tracking-widest flex items-center gap-1 font-body">
-          {theme === 'dark' ? (
-            <>
-              <Sun className="w-3.5 h-3.5 text-amber-400" />
-              <span>LIGHT</span>
-            </>
-          ) : (
-            <>
-              <Moon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>DARK</span>
-            </>
-          )}
-        </span>
-      </button>
-
-      {/* ─── MAIN SPLIT CONTAINER ─── */}
+      {/* ─── GLOBAL VERTICAL SLIDING WRAPPER (LOGIN <-> DOWNLOAD) ─── */}
       <div
-        className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}
+        className="w-full h-full transition-transform duration-700 ease-[cubic-bezier(0.77,0,0.175,1)] will-change-transform"
+        style={{
+          transform: isDownloadOpen ? 'translateY(-100%)' : 'translateY(0%)',
+        }}
       >
-        {/* LEFT COLUMN / LOGIN */}
-        <div
-          className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
-            isLoggingIn
-              ? 'opacity-0 scale-95 translate-y-2 pointer-events-none filter blur-[1px]'
-              : isFlipped
-                ? 'opacity-0 pointer-events-none'
-                : 'opacity-100 pointer-events-auto'
-          }`}
-          style={{
-            transformStyle: 'flat',
-            transform: isLoggingIn
-              ? 'scale(0.95) translateY(8px)'
-              : isFlipped
-                ? 'translateX(-101%)'
-                : 'translateX(0)',
-          }}
-        >
-          <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7" />
-
-          {!isMobile ? (
-            <div className="w-[420px] max-w-full relative z-10">
-              <Card
-                isLoggingIn={isLoggingIn}
-                className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
-                badgeText={`v${APP_VERSION}`}
-                showWave={true}
-              >
-                {renderLoginForm()}
-              </Card>
-            </div>
-          ) : (
-            <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
-              {renderLoginForm()}
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT PANEL (Carousel & Gym Details) */}
-        <div
-          className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
-            isLoggingIn ? 'opacity-90' : 'opacity-100'
-          } ${isFlipped ? 'carousel-flipped' : ''}`}
-          style={{
-            transformStyle: 'flat',
-            transform: isFlipped ? 'translateX(-43vw)' : 'translateX(0)',
-          }}
-        >
-          <div
-            ref={carouselBgRef}
-            className="carousel-bg-wrapper absolute inset-0 bg-[#0c0e12]"
-            style={{
-              willChange: 'transform',
-              backgroundPosition: 'center',
-              backgroundSize: 'cover',
-              transform: 'scale(1.12)',
-            }}
-          >
-            {isAssetPreloaded &&
-              activeCarouselImages.map((image: string, index: number) => (
-                <img
-                  key={index}
-                  src={image}
-                  alt={`Gym view ${index + 1}`}
-                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                    activeSlide === index ? 'opacity-100' : 'opacity-0'
-                  }`}
-                />
-              ))}
+        {/* ========================================================================= */}
+        {/* SECTION 1: AUTH VIEWPORT (LOGIN, RECOVERY & CAROUSEL)                      */}
+        {/* ========================================================================= */}
+        <div className="relative w-full h-screen shrink-0 overflow-hidden">
+          {/* Ambient Mobile Liquid Background Orbs */}
+          <div className="block sm:hidden absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
+            <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-indigo-400/20 to-sky-300/30 dark:from-red-600/25 dark:via-rose-800/15 dark:to-indigo-950/30 blur-3xl" />
+            <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-indigo-500/20 via-blue-300/20 to-purple-400/15 dark:from-rose-950/30 dark:via-red-900/20 dark:to-indigo-900/20 blur-3xl" />
           </div>
 
-          <div className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2 pointer-events-none" />
+          {/* Live Preview Mode Overlay Banner */}
+          {isPreview && (
+            <div className="absolute top-0 inset-x-0 z-[200] bg-blue-600 text-white text-[10px] font-heading tracking-widest uppercase py-2 text-center shadow-md animate-slide-up flex items-center justify-center gap-2 select-none">
+              <span>
+                ✨ Live Brand Preview Mode (Form Inputs &amp; Actions Disabled)
+              </span>
+              <button
+                onClick={() => window.close()}
+                className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors pointer-events-auto"
+              >
+                Close Preview
+              </button>
+            </div>
+          )}
 
-          <div
-            className={`carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none transition-all duration-700 ease-out ${
+          {/* Theme Toggle Switch */}
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className={`absolute top-4 right-4 z-[200] flex items-center gap-2.5 bg-white/80 dark:bg-neutral-900/80 border border-slate-200/80 dark:border-white/10 rounded-full px-3.5 py-2 shadow-lg backdrop-blur-xl cursor-pointer hover:opacity-95 transition-all duration-700 ease-out select-none pointer-events-auto ${
               isLoggingIn
-                ? 'opacity-0 scale-95 translate-y-3 filter blur-[1px]'
-                : 'opacity-100'
+                ? 'opacity-0 translate-y-4 pointer-events-none'
+                : isReady
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 -translate-y-4 pointer-events-none'
             }`}
           >
-            <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
-              BEYOND <br />
-              <TypewriterText phrases={TYPEWRITER_PHRASES} />
-            </h2>
+            <div
+              className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden"
+              aria-hidden="true"
+            >
+              {theme === 'dark' ? (
+                <>
+                  <span className="w-3 h-3 bg-[#0c0e12]" />
+                  <span className="w-3 h-3 bg-[#dc2626]" />
+                  <span className="w-3 h-3 bg-[#161920]" />
+                </>
+              ) : (
+                <>
+                  <span className="w-3 h-3 bg-[#f0f4f8]" />
+                  <span className="w-3 h-3 bg-[#2563eb]" />
+                  <span className="w-3 h-3 bg-[#ffffff]" />
+                </>
+              )}
+            </div>
+            <span className="text-slate-700 dark:text-slate-300 text-[10px] font-black tracking-widest flex items-center gap-1 font-body">
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span>LIGHT</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>DARK</span>
+                </>
+              )}
+            </span>
+          </button>
 
-            <Card expandable={true} variant="glass" className="max-w-lg h-auto">
-              <p className="text-xs text-slate-200 leading-relaxed font-bold">
-                {activeGymDescription}
-                <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-normal animate-slide-up space-y-3">
-                  <span className="block border-t border-white/10 pt-3">
-                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
-                      LOCATION
-                    </strong>
-                    <span className="text-slate-300">{activeGymAddress}</span>
-                  </span>
-                  <span className="block">
-                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
-                      DIRECT SUPPORT
-                    </strong>
-                    <span className="text-slate-300">
-                      {activeContactName1}: {activeContactNumber1}
-                      {activeContactName2 &&
-                        ` | ${activeContactName2}: ${activeContactNumber2}`}
+          {/* ─── MAIN SPLIT CONTAINER ─── */}
+          <div
+            className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}
+          >
+            {/* LEFT COLUMN / LOGIN */}
+            <div
+              className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
+                isLoggingIn
+                  ? 'opacity-0 scale-95 translate-y-2 pointer-events-none filter blur-[1px]'
+                  : isFlipped
+                    ? 'opacity-0 pointer-events-none'
+                    : 'opacity-100 pointer-events-auto'
+              }`}
+              style={{
+                transformStyle: 'flat',
+                transform: isLoggingIn
+                  ? 'scale(0.95) translateY(8px)'
+                  : isFlipped
+                    ? 'translateX(-101%)'
+                    : 'translateX(0)',
+              }}
+            >
+              <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7" />
+
+              {!isMobile ? (
+                <div className="w-[420px] max-w-full relative z-10">
+                  <Card
+                    isLoggingIn={isLoggingIn}
+                    className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
+                    badgeText={`v${APP_VERSION}`}
+                    showWave={true}
+                  >
+                    {renderLoginForm()}
+                  </Card>
+                </div>
+              ) : (
+                <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
+                  {renderLoginForm()}
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT PANEL (Carousel & Gym Details) */}
+            <div
+              className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
+                isLoggingIn ? 'opacity-90' : 'opacity-100'
+              } ${isFlipped ? 'carousel-flipped' : ''}`}
+              style={{
+                transformStyle: 'flat',
+                transform: isFlipped ? 'translateX(-43vw)' : 'translateX(0)',
+              }}
+            >
+              <div
+                ref={carouselBgRef}
+                className="carousel-bg-wrapper absolute inset-0 bg-[#0c0e12]"
+                style={{
+                  willChange: 'transform',
+                  backgroundPosition: 'center',
+                  backgroundSize: 'cover',
+                  transform: 'scale(1.12)',
+                }}
+              >
+                {isAssetPreloaded &&
+                  activeCarouselImages.map((image: string, index: number) => (
+                    <img
+                      key={index}
+                      src={image}
+                      alt={`Gym view ${index + 1}`}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                        activeSlide === index ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    />
+                  ))}
+              </div>
+
+              <div className="carousel-overlay absolute inset-y-0 -left-2 -right-2 z-2 pointer-events-none" />
+
+              <div
+                className={`carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none transition-all duration-700 ease-out ${
+                  isLoggingIn
+                    ? 'opacity-0 scale-95 translate-y-3 filter blur-[1px]'
+                    : 'opacity-100'
+                }`}
+              >
+                <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
+                  BEYOND <br />
+                  <TypewriterText phrases={TYPEWRITER_PHRASES} />
+                </h2>
+
+                <Card
+                  expandable={true}
+                  variant="glass"
+                  className="max-w-lg h-auto"
+                >
+                  <p className="text-xs text-slate-200 leading-relaxed font-bold">
+                    {activeGymDescription}
+                    <span className="hidden group-[.expanded]:block mt-4 text-[11px] text-slate-400 leading-relaxed font-body font-normal animate-slide-up space-y-3">
+                      <span className="block border-t border-white/10 pt-3">
+                        <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
+                          LOCATION
+                        </strong>
+                        <span className="text-slate-300">
+                          {activeGymAddress}
+                        </span>
+                      </span>
+                      <span className="block">
+                        <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
+                          DIRECT SUPPORT
+                        </strong>
+                        <span className="text-slate-300">
+                          {activeContactName1}: {activeContactNumber1}
+                          {activeContactName2 &&
+                            ` | ${activeContactName2}: ${activeContactNumber2}`}
+                        </span>
+                      </span>
+                      <span className="block">
+                        <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
+                          EMAIL COMMUNICATIONS
+                        </strong>
+                        <span className="text-slate-300">
+                          {activeEmailAddress}
+                        </span>
+                      </span>
                     </span>
-                  </span>
-                  <span className="block">
-                    <strong className="text-white uppercase tracking-wider text-[9px] block mb-0.5">
-                      EMAIL COMMUNICATIONS
-                    </strong>
-                    <span className="text-slate-300">{activeEmailAddress}</span>
-                  </span>
-                </span>
-              </p>
-              <div className="block group-[.expanded]:hidden text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
-                CLICK TO EXPAND GYM INFORMATION
+                  </p>
+                  <div className="block group-[.expanded]:hidden text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                    CLICK TO EXPAND GYM INFORMATION
+                  </div>
+                  <div className="hidden group-[.expanded]:block text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                    CLICK TO COLLAPSE GYM INFORMATION
+                  </div>
+                </Card>
               </div>
-              <div className="hidden group-[.expanded]:block text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
-                CLICK TO COLLAPSE GYM INFORMATION
-              </div>
-            </Card>
+
+              <div className="auth-divider-line auth-line-left pointer-events-none" />
+              <div className="auth-divider-line auth-line-right pointer-events-none" />
+            </div>
+
+            {/* RECOVERY VIEW */}
+            <div
+              className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
+                isFlipped && !isLoggingIn
+                  ? 'pointer-events-auto opacity-100 z-20'
+                  : 'pointer-events-none opacity-0 invisible z-0'
+              }`}
+              style={{
+                transform: isFlipped
+                  ? 'translateX(0) scale(1)'
+                  : 'translateX(100%) scale(0.95)',
+              }}
+            >
+              <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.18] dark:opacity-[0.1] dark:invert transition-opacity duration-300 sm:-top-14 sm:left-4 sm:w-[110%] sm:h-[110%] sm:-rotate-7" />
+
+              {!isMobile ? (
+                <div className="w-[420px] max-w-full relative z-10">
+                  <Card
+                    isLoggingIn={isLoggingIn}
+                    className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
+                    showWave={true}
+                  >
+                    {renderRecoveryForm()}
+                  </Card>
+                </div>
+              ) : (
+                <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
+                  {renderRecoveryForm()}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="auth-divider-line auth-line-left pointer-events-none" />
-          <div className="auth-divider-line auth-line-right pointer-events-none" />
-        </div>
-
-        {/* RECOVERY VIEW */}
-        <div
-          className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
-            isFlipped && !isLoggingIn
-              ? 'pointer-events-auto opacity-100 z-20'
-              : 'pointer-events-none opacity-0 invisible z-0'
-          }`}
-          style={{
-            transform: isFlipped
-              ? 'translateX(0) scale(1)'
-              : 'translateX(100%) scale(0.95)',
-          }}
-        >
-          <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.18] dark:opacity-[0.1] dark:invert transition-opacity duration-300 sm:-top-14 sm:left-4 sm:w-[110%] sm:h-[110%] sm:-rotate-7" />
-
-          {!isMobile ? (
-            <div className="w-[420px] max-w-full relative z-10">
-              <Card
-                isLoggingIn={isLoggingIn}
-                className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
-                showWave={true}
+          {/* ─── INDICATOR BUTTON: SLIDE DOWN TO REVEAL DOWNLOAD PAGE ─── */}
+          {!isLoggingIn && (
+            <div
+              className={`absolute bottom-3 sm:bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none transition-all duration-700 ease-out ${
+                isReady
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-4'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setIsDownloadOpen(true)}
+                className="pointer-events-auto group flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/85 dark:bg-[#161920]/90 border border-slate-200/90 dark:border-white/10 shadow-lg hover:shadow-xl dark:shadow-red-950/20 backdrop-blur-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-red-500 cursor-pointer select-none"
+                aria-label="Slide down to download apps and terminal client"
               >
-                {renderRecoveryForm()}
-              </Card>
-            </div>
-          ) : (
-            <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
-              {renderRecoveryForm()}
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-red-600" />
+                </span>
+
+                <Download className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
+
+                <span className="text-[10.5px] font-heading font-black tracking-widest uppercase">
+                  DOWNLOAD APPS &amp; TERMINAL
+                </span>
+
+                <ChevronDown className="w-4 h-4 text-blue-600 dark:text-red-500 transition-transform duration-300 group-hover:translate-y-0.5 animate-bounce" />
+              </button>
             </div>
           )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* SECTION 2: DOWNLOAD VIEWPORT (MOBILE FIRST, RESPONSIVE, INNER SCROLL)    */}
+        {/* ========================================================================= */}
+        <div className="relative w-full h-screen shrink-0 overflow-y-auto overflow-x-hidden scrollbar-none">
+          <DownloadPage
+            standalone={false}
+            onBackToLogin={() => setIsDownloadOpen(false)}
+            theme={theme}
+            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            gymLogo={activeLogo}
+            appVersion={APP_VERSION}
+          />
         </div>
       </div>
 

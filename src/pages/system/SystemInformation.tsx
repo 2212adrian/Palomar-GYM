@@ -21,12 +21,18 @@ import {
   Mail,
   ExternalLink,
   AlertTriangle,
+  Download,
+  CheckCircle2,
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
+
+// Capacitor Native Platform Support
+import { Capacitor } from '@capacitor/core';
 
 // Dynamic version retrieval from package.json
 import pkg from '../../../package.json';
@@ -54,6 +60,15 @@ interface RecordBreakdownItem {
   sizeBytes: number;
   purpose: string;
   status: 'Active' | 'Operational' | 'System';
+}
+
+interface RemoteRelease {
+  version: string;
+  fileName: string;
+  downloadUrl: string;
+  fileSizeBytes: number;
+  releaseNotes?: string;
+  createdAt?: string;
 }
 
 type LegalModalType = 'terms' | 'privacy' | 'developer' | null;
@@ -142,6 +157,26 @@ const formatBytes = (bytes: number, decimals = 2): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
+/**
+ * Semver comparison: returns true if candidate is newer than current
+ */
+const isNewerVersion = (candidate: string, current: string): boolean => {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/i, '')
+      .split('.')
+      .map((part) => parseInt(part, 10) || 0);
+
+  const [cMaj, cMin, cPatch] = parse(candidate);
+  const [curMaj, curMin, curPatch] = parse(current);
+
+  if (cMaj > curMaj) return true;
+  if (cMaj < curMaj) return false;
+  if (cMin > curMin) return true;
+  if (cMin < curMin) return false;
+  return cPatch > curPatch;
+};
+
 export const SystemInformation: React.FC = () => {
   const [activeModal, setActiveModal] = useState<LegalModalType>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -158,6 +193,15 @@ export const SystemInformation: React.FC = () => {
     Array<{ table_name: string; record_count: number; size_bytes: number }>
   >([]);
 
+  // ─── CAPACITOR & RELEASE UPDATE STATES ──────────────────────────────────────
+  const isNative = useMemo(() => Capacitor.isNativePlatform(), []);
+  const currentNativePlatform = useMemo(() => Capacitor.getPlatform(), []); // 'android' | 'ios' | 'web'
+  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
+  const [latestRelease, setLatestRelease] = useState<RemoteRelease | null>(
+    null
+  );
+  const [hasUpdate, setHasUpdate] = useState<boolean>(false);
+
   const APP_VERSION = pkg.version;
 
   // Compute Build Metadata
@@ -171,8 +215,9 @@ export const SystemInformation: React.FC = () => {
 
   const detectedEnvironment = useMemo(() => {
     if (typeof window === 'undefined') return 'Production';
-    const hostname = window.location.hostname;
+    if (isNative) return `Capacitor (${currentNativePlatform.toUpperCase()})`;
 
+    const hostname = window.location.hostname;
     if (
       hostname.includes('localhost') ||
       hostname.includes('dev-wolfpalomar')
@@ -182,11 +227,83 @@ export const SystemInformation: React.FC = () => {
     if (hostname === 'wolfpalomar.vercel.app') {
       return 'Production';
     }
-
     return hostname.includes('vercel.app') && !hostname.includes('dev-')
       ? 'Production'
       : 'Development';
-  }, []);
+  }, [isNative, currentNativePlatform]);
+
+  // ─── CHECK FOR APP UPDATES ──────────────────────────────────────────────────
+  const checkForAppUpdate = useCallback(
+    async (isManualTrigger = false) => {
+      try {
+        setCheckingUpdate(true);
+
+        // Default platform search: If on native Android, look for 'android'; otherwise default to 'android' or 'windows'
+        const targetPlatform =
+          currentNativePlatform === 'ios' ? 'ios' : 'android';
+
+        const { data, error: releaseErr } = await supabase
+          .from('app_releases')
+          .select('*')
+          .eq('platform', targetPlatform)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (releaseErr) throw releaseErr;
+
+        if (data && data.version) {
+          let downloadUrl = data.storage_path;
+
+          // Resolve internal Supabase path if not full external URL
+          if (
+            !data.storage_path.startsWith('http://') &&
+            !data.storage_path.startsWith('https://')
+          ) {
+            const { data: pubData } = supabase.storage
+              .from('app-releases')
+              .getPublicUrl(data.storage_path, { download: data.file_name });
+            downloadUrl = pubData.publicUrl;
+          }
+
+          const remoteInfo: RemoteRelease = {
+            version: data.version,
+            fileName: data.file_name,
+            downloadUrl,
+            fileSizeBytes: data.file_size_bytes || 0,
+            releaseNotes: data.release_notes,
+            createdAt: data.created_at,
+          };
+
+          setLatestRelease(remoteInfo);
+
+          const updateAvailable = isNewerVersion(data.version, APP_VERSION);
+          setHasUpdate(updateAvailable);
+
+          if (isManualTrigger) {
+            if (updateAvailable) {
+              toast.info(`New version v${data.version} available!`);
+            } else {
+              toast.success('System is already up to date!');
+            }
+          }
+        } else {
+          setHasUpdate(false);
+          if (isManualTrigger) toast.success('System is up to date.');
+        }
+      } catch (err: any) {
+        console.warn('Update check failed:', err.message);
+        if (isManualTrigger) toast.error('Could not verify latest version.');
+      } finally {
+        setCheckingUpdate(false);
+      }
+    },
+    [APP_VERSION, currentNativePlatform]
+  );
+
+  // ─── EXECUTE UPDATE DOWNLOAD / LAUNCH ───────────────────────────────────────
+  const handlePerformUpdate = async () => {};
 
   const fetchSystemStats = useCallback(async () => {
     try {
@@ -278,7 +395,8 @@ export const SystemInformation: React.FC = () => {
 
   useEffect(() => {
     fetchSystemStats();
-  }, [fetchSystemStats]);
+    checkForAppUpdate(false);
+  }, [fetchSystemStats, checkForAppUpdate]);
 
   const displayedMetrics = useMemo<StorageMetric[]>(() => {
     const dbSize = dbSizeBytes ?? 0;
@@ -434,7 +552,7 @@ export const SystemInformation: React.FC = () => {
     },
   ];
 
-  // Primary 4 Telemetry Directory Items: Members, Logbook, Sales, Products
+  // Primary 4 Telemetry Directory Items
   const registryItems = useMemo(() => {
     const getCount = (name: string) =>
       dbTables.find((t) => t.table_name === name)?.record_count || 0;
@@ -467,8 +585,8 @@ export const SystemInformation: React.FC = () => {
   }, [dbTables]);
 
   return (
-    <div className="space-y-8 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
-      {/* Header & Controls */}
+    <div className="space-y-6 sm:space-y-8 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2">
+      {/* ─── HEADER & CONTROLS ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
@@ -492,19 +610,111 @@ export const SystemInformation: React.FC = () => {
               Configure Exact Disk Telemetry
             </button>
           )}
-          <button
-            type="button"
-            onClick={fetchSystemStats}
-            disabled={loading}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-100 text-xs py-2 px-3.5 rounded-xl border border-slate-300 dark:border-zinc-700 font-bold tracking-wider transition-all duration-200 cursor-pointer shadow-xs select-none disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600 dark:text-red-500' : 'text-slate-600 dark:text-slate-300'}`}
-            />
-            <span>{loading ? 'SYNCING...' : 'SYNC STATUS'}</span>
-          </button>
         </div>
       </div>
+
+      {/* ─── TOP-PRIORITY UPDATE STATUS CARD (PRIORITIZED FIRST) ─── */}
+      {hasUpdate && latestRelease ? (
+        /* ACTIVE UPDATE DETECTED BANNER */
+        <div className="relative overflow-hidden p-6 sm:p-7 rounded-3xl bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-blue-500/5 dark:from-red-600/15 dark:via-rose-600/10 dark:to-transparent border-2 border-blue-500/40 dark:border-red-600/40 shadow-xl backdrop-blur-xl animate-slide-up">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2.5 max-w-2xl">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600 dark:bg-red-600" />
+                </span>
+                <span className="px-3 py-1 rounded-full bg-blue-600 text-white dark:bg-red-600 font-heading font-black text-[10px] tracking-widest uppercase shadow-md">
+                  UPDATE AVAILABLE • v{latestRelease.version}
+                </span>
+                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                  Current: v{APP_VERSION} → New: v{latestRelease.version}
+                </span>
+              </div>
+
+              <h2 className="text-xl sm:text-2xl font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white">
+                New {isNative ? 'Capacitor Client' : 'Terminal Release'} Ready
+                to Install
+              </h2>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                {latestRelease.releaseNotes ||
+                  'An official software update has been published with high-speed performance enhancements, check-in stability improvements, and terminal security patches.'}
+              </p>
+
+              <div className="flex items-center gap-4 text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-1">
+                <span>File: {latestRelease.fileName}</span>
+                {latestRelease.fileSizeBytes > 0 && (
+                  <span>Size: {formatBytes(latestRelease.fileSizeBytes)}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <button
+                type="button"
+                onClick={handlePerformUpdate}
+                className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black text-xs tracking-widest uppercase shadow-lg shadow-blue-500/25 dark:shadow-red-600/30 hover:scale-105 active:scale-98 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+              >
+                <Download className="w-4 h-4 animate-bounce" />
+                <span>DOWNLOAD &amp; INSTALL UPDATE</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => checkForAppUpdate(true)}
+                disabled={checkingUpdate}
+                className="py-3 px-4 rounded-2xl bg-white/80 dark:bg-neutral-800/80 hover:bg-white dark:hover:bg-neutral-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 font-heading font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin' : ''}`}
+                />
+                <span>Re-Check</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* SYSTEM UP TO DATE CARD (CLEAN VERIFIED STATUS) */
+        <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-white/5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-heading font-black text-sm uppercase tracking-wider text-slate-900 dark:text-white">
+                  SYSTEM UP TO DATE
+                </h3>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase tracking-wider">
+                  v{APP_VERSION} STABLE
+                </span>
+                {isNative && (
+                  <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    {currentNativePlatform.toUpperCase()} CLIENT
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+                You are running the latest verified build of Wolf Palomar Gym
+                Management.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => checkForAppUpdate(true)}
+            disabled={checkingUpdate}
+            className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/10 font-heading font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin text-blue-600 dark:text-red-500' : ''}`}
+            />
+            <span>{checkingUpdate ? 'CHECKING...' : 'CHECK FOR UPDATES'}</span>
+          </button>
+        </div>
+      )}
 
       {/* SQL Deployment Helper Guide */}
       {showSqlGuide && !rpcSupported && (
@@ -513,7 +723,7 @@ export const SystemInformation: React.FC = () => {
             <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
             <div>
               <h4 className="font-heading font-black text-xs uppercase tracking-wider text-slate-900 dark:text-slate-100">
-                LINK EXACT STORAGE & DISK TELEMETRY FROM SUPABASE
+                LINK EXACT STORAGE &amp; DISK TELEMETRY FROM SUPABASE
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                 By default, security rules prevent web clients from inspecting
@@ -661,7 +871,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
           </div>
         </div>
 
-        {/* Right Card: Dynamic Core Directory Telemetry (Members, Logbook, Sales, Products) */}
+        {/* Right Card: Dynamic Core Directory Telemetry */}
         <div className="lg:col-span-7 p-6 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl space-y-4 shadow-xs">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
             <div className="flex items-center gap-3">
@@ -761,7 +971,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
         </div>
 
-        {/* About Developer (Replaced Open Source Licenses) */}
+        {/* About Developer */}
         <div
           onClick={() => setActiveModal('developer')}
           className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-3xl flex items-center justify-between gap-4 cursor-pointer hover:border-amber-500 dark:hover:border-red-500 transition-all duration-300 group shadow-xs"
@@ -966,7 +1176,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
 
           <div className="space-y-1.5 border-l-2 border-emerald-500 pl-3.5">
             <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              3. Security Safeguards & Encryption
+              3. Security Safeguards &amp; Encryption
             </h4>
             <p>
               Database entries are secured through Row Level Security (RLS)
@@ -977,7 +1187,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
 
           <div className="space-y-1.5 border-l-2 border-emerald-500 pl-3.5">
             <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              4. Data Retention & Privacy Inquiries
+              4. Data Retention &amp; Privacy Inquiries
             </h4>
             <p>
               Records are retained only for active membership lifecycle, tax
@@ -996,7 +1206,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
         </div>
       </Modal>
 
-      {/* ─── MODALS: About Developer (Adrian R. Angeles) ─── */}
+      {/* ─── MODALS: About Developer ─── */}
       <Modal
         isOpen={activeModal === 'developer'}
         onClose={() => setActiveModal(null)}
@@ -1004,7 +1214,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
         className="max-w-xl text-left p-6 sm:p-8"
       >
         <div className="space-y-5 text-xs text-slate-600 dark:text-slate-300">
-          {/* Profile Header */}
           <div className="p-5 bg-slate-50 dark:bg-[#1f232d] border border-slate-200 dark:border-white/5 rounded-3xl space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#123c73] to-blue-700 dark:from-[#bf0202] dark:to-red-700 text-white font-heading font-black text-xl flex items-center justify-center shadow-md">
@@ -1015,7 +1224,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
                   Adrian R. Angeles
                 </h3>
                 <p className="text-xs font-bold text-blue-600 dark:text-red-400">
-                  Lead Software Developer & System Architect
+                  Lead Software Developer &amp; System Architect
                 </p>
                 <span className="inline-block text-[10px] font-mono font-semibold text-slate-400">
                   Wolf Palomar Management Core
@@ -1029,14 +1238,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
             </p>
           </div>
 
-          {/* Direct Developer Contacts Grid */}
           <div className="space-y-2.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              DIRECT DEVELOPER SUPPORT & INQUIRIES
+              DIRECT DEVELOPER SUPPORT &amp; INQUIRIES
             </span>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Phone Contact */}
               <a
                 href="tel:09762607481"
                 className="p-3 bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/25 rounded-2xl flex items-center gap-3 transition-colors group cursor-pointer text-blue-600 dark:text-blue-400"
@@ -1054,7 +1261,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
                 </div>
               </a>
 
-              {/* Email Contact */}
               <a
                 href="mailto:adrianangeles2213@gmail.com"
                 className="p-3 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 rounded-2xl flex items-center gap-3 transition-colors group cursor-pointer text-emerald-600 dark:text-emerald-400"
@@ -1072,7 +1278,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}
                 </div>
               </a>
 
-              {/* Facebook Profile Link with Inline SVG */}
               <a
                 href="https://facebook.com/WukwukTwo"
                 target="_blank"
