@@ -1041,42 +1041,43 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
               </div>
             </div>
           )}
-
-          <AnimatePresence>
-            {isSelectionActive && (
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 15 }}
-                className="pt-2 border-t border-(--border-color) flex gap-2 w-full"
-              >
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => setSelectedIds([])}
-                  className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors font-black disabled:opacity-50"
-                >
-                  Deselect All
-                </button>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() =>
-                    handleBulkRestore(
-                      deletedTransactions.filter((t) =>
-                        selectedIds.includes(t.id)
-                      )
-                    )
-                  }
-                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md font-black disabled:opacity-50"
-                >
-                  <RotateCcw className="w-4 h-4 shrink-0" />
-                  <span>Restore Selected ({selectedIds.length})</span>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
+
+        {/* Pinned Selection Action Bar - Stays firmly in spot without being affected by scroll */}
+        <AnimatePresence>
+          {isSelectionActive && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 15 }}
+              className="p-4 border-t border-(--border-color) bg-white/95 dark:bg-[#17191c]/95 backdrop-blur-md flex gap-2 w-full shrink-0 shadow-lg z-10"
+            >
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setSelectedIds([])}
+                className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors font-black disabled:opacity-50"
+              >
+                Deselect All
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() =>
+                  handleBulkRestore(
+                    deletedTransactions.filter((t) =>
+                      selectedIds.includes(t.id)
+                    )
+                  )
+                }
+                className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md font-black disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4 shrink-0" />
+                <span>Restore Selected ({selectedIds.length})</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>,
     document.body
