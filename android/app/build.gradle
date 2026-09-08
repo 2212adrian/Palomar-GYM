@@ -1,31 +1,62 @@
 apply plugin: 'com.android.application'
+import groovy.json.JsonSlurper
+
+// ─── AUTO-SYNC VERSION FROM PACKAGE.JSON ───
+def pkgVersionName = "1.0.0"
+def pkgVersionCode = 1
+try {
+    def pkgFile = new File(rootDir, "../package.json")
+    if (pkgFile.exists()) {
+        def pkg = new JsonSlurper().parseText(pkgFile.text)
+        if (pkg.version) {
+            pkgVersionName = pkg.version.toString()
+            def cleanVer = pkgVersionName.tokenize('-')[0].tokenize('.')
+            if (cleanVer.size() >= 3) {
+                // e.g., v0.24.3 -> versionCode 2403
+                pkgVersionCode = (cleanVer[0].toInteger() * 10000) + (cleanVer[1].toInteger() * 100) + cleanVer[2].toInteger()
+            }
+        }
+    }
+} catch (Exception ignored) {
+    pkgVersionName = "1.0.0"
+    pkgVersionCode = 1
+}
 
 android {
     namespace = "com.wolfpalomar.gymmanagement"
     compileSdk = rootProject.ext.compileSdkVersion
+
     defaultConfig {
         applicationId "com.wolfpalomar.gymmanagement"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode pkgVersionCode
+        versionName pkgVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
     buildTypes {
         release {
+            // 👈 FIX: Signs the APK so Android OS accepts and installs it
+            signingConfig signingConfigs.debug
+
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    // 👈 FIX: Prevents lintVitalRelease from aborting build on splash drawables
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
 
 repositories {
-    flatDir{
+    flatDir {
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
     }
 }

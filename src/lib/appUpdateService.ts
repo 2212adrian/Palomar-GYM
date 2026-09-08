@@ -1,6 +1,6 @@
 // src/lib/appUpdateService.ts
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { saveAs } from 'file-saver';
 import { supabase } from './supabase/client';
 
@@ -19,6 +19,34 @@ export interface AppReleaseInfo {
   tagName: string;
 }
 
+export interface DownloadProgress {
+  percent: number;
+  loadedBytes: number;
+  totalBytes: number;
+}
+
+export interface AppInstallerPluginInterface {
+  canRequestPackageInstalls(): Promise<{ value: boolean }>;
+  openInstallPermissionSettings(): Promise<void>;
+  downloadAndInstall(options: { url: string; fileName: string }): Promise<{
+    success: boolean;
+    permissionRequired?: boolean;
+    message?: string;
+  }>;
+  installApk(options: { fileName: string }): Promise<{
+    success: boolean;
+    permissionRequired?: boolean;
+    message?: string;
+  }>;
+  addListener(
+    eventName: 'downloadProgress',
+    listenerFunc: (progress: DownloadProgress) => void
+  ): Promise<PluginListenerHandle>;
+  removeAllListeners(): Promise<void>;
+}
+
+export const NativeAppInstaller = registerPlugin<AppInstallerPluginInterface>('AppInstaller');
+
 /**
  * Format raw bytes into human-readable sizes (e.g., 42.8 MB)
  */
@@ -33,7 +61,6 @@ export const formatBytes = (bytes: number, decimals = 1): string => {
 
 /**
  * Compare semantic versions. Returns true if candidate is strictly newer than current.
- * Handles 'v0.24.2', '0.24.2', etc.
  */
 export const isNewerVersion = (candidate: string, current: string): boolean => {
   if (!candidate || !current) return false;
@@ -68,7 +95,7 @@ export const fetchLatestRelease = async (
       .from('app_releases')
       .select('*')
       .eq('platform', targetPlatform)
-      .eq('environment', targetEnv) // 👈 isolates dev from prod
+      .eq('environment', targetEnv)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -106,7 +133,7 @@ export const fetchLatestRelease = async (
 };
 
 /**
- * Execute update download and package installation for Android Capacitor or Web
+ * Execute update download and package installation
  */
 export const executeAppUpdate = async (
   release: AppReleaseInfo,
@@ -119,80 +146,85 @@ export const executeAppUpdate = async (
   const isNative = Capacitor.isNativePlatform();
   const platform = Capacitor.getPlatform();
 
-  try {
-    if (isNative && platform === 'android') {
-      // ─── CAPACITOR ANDROID NATIVE DOWNLOAD ───
-      // Uses system browser/download manager to trigger APK installation
-      if (onProgress) onProgress(50, release.fileSizeBytes * 0.5, release.fileSizeBytes);
+  // ─── NATIVE ANDROID DIRECT INSTALL FLOW ───
+  if (isNative && platform === 'android') {
+    let progressListener: PluginListenerHandle | null = null;
 
-      const opened = window.open(release.downloadUrl, '_system');
-      if (!opened) {
-        window.location.href = release.downloadUrl;
-      }
-
-      if (onProgress) onProgress(100, release.fileSizeBytes, release.fileSizeBytes);
-
-      return {
-        success: true,
-        message: 'Download started in Android notifications. Tap it when done to install.',
-      };
-    } else {
-      // ─── DESKTOP / BROWSER / PWA DOWNLOAD ───
-      // Uses fetch + blob + saveAs to guarantee the proper filename (e.g. palomar-gym-v0.24.2.apk)
-      if (onProgress) onProgress(5, 0, release.fileSizeBytes);
-
-      const response = await fetch(release.downloadUrl);
-      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-
-      const contentLength = response.headers.get('content-length');
-      const total = contentLength ? parseInt(contentLength, 10) : release.fileSizeBytes;
-
-      if (response.body && total > 0) {
-        const reader = response.body.getReader();
-        let received = 0;
-        const chunks: Uint8Array[] = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) {
-            chunks.push(value);
-            received += value.length;
-          }
-          if (onProgress) {
-            const percent = Math.min(100, Math.round((received / total) * 100));
-            onProgress(percent, received, total);
-          }
-        }
-
-        // 👈 Cast chunks as `unknown as BlobPart[]` to satisfy TypeScript 5.5+ DOM types
-        const blob = new Blob(chunks as unknown as BlobPart[], { 
-          type: 'application/vnd.android.package-archive' 
-        });
-        saveAs(blob, release.fileName);
-      } else {
-        const blob = await response.blob();
-        saveAs(blob, release.fileName);
-        if (onProgress) onProgress(100, release.fileSizeBytes, release.fileSizeBytes);
-      }
-
-      return {
-        success: true,
-        message: `Saved as ${release.fileName}.`,
-      };
+    if (onProgress) {
+      progressListener = await NativeAppInstaller.addListener('downloadProgress', (data: DownloadProgress) => {
+        onProgress(data.percent, data.loadedBytes, data.totalBytes);
+      });
     }
-  } catch (err: any) {
-    console.error('Blob update error, falling back to direct redirect:', err);
-    triggerDirectDownload(release.downloadUrl, release.fileName);
-    return {
-      success: true,
-      message: 'Initiated direct download link.',
-    };
+
+    try {
+      const result = await NativeAppInstaller.downloadAndInstall({
+        url: release.downloadUrl,
+        fileName: release.fileName,
+      });
+
+      if (result.permissionRequired) {
+        return {
+          success: false,
+          message: "Please allow 'Install unknown apps' in the system settings, then tap Download again.",
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Installer launched. Please confirm the installation prompt.',
+      };
+    } finally {
+      if (progressListener) {
+        await progressListener.remove().catch(() => {});
+      }
+    }
   }
+
+  // ─── DESKTOP / BROWSER / PWA DOWNLOAD FLOW (UNCHANGED) ───
+  if (onProgress) onProgress(5, 0, release.fileSizeBytes);
+
+  const response = await fetch(release.downloadUrl);
+  if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+  const contentLength = response.headers.get('content-length');
+  const total = contentLength ? parseInt(contentLength, 10) : release.fileSizeBytes;
+
+  if (response.body && total > 0) {
+    const reader = response.body.getReader();
+    let received = 0;
+    const chunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        received += value.length;
+      }
+      if (onProgress) {
+        const percent = Math.min(100, Math.round((received / total) * 100));
+        onProgress(percent, received, total);
+      }
+    }
+
+    const blob = new Blob(chunks as unknown as BlobPart[], {
+      type: 'application/vnd.android.package-archive',
+    });
+    saveAs(blob, release.fileName);
+  } else {
+    const blob = await response.blob();
+    saveAs(blob, release.fileName);
+    if (onProgress) onProgress(100, release.fileSizeBytes, release.fileSizeBytes);
+  }
+
+  return {
+    success: true,
+    message: `Saved as ${release.fileName}.`,
+  };
 };
 
 /**
- * Trigger immediate direct file download or open external link
+ * Trigger immediate direct file download or open external link (fallback)
  */
 export const triggerDirectDownload = (url: string, fileName?: string): void => {
   try {

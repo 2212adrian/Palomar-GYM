@@ -21,6 +21,7 @@ import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
 import { logAudit } from '../../lib/supabase/audit';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 // Capacitor core import
 import { Capacitor } from '@capacitor/core';
@@ -156,6 +157,22 @@ export const Login: React.FC = () => {
     error: storeError,
     setError,
   } = useAuthStore() as any;
+
+  // ─── PWA & Native Capacitor Detection ───────────────────────────────────────
+  const { isInstalled: isPwaInstalled } = usePWAInstall();
+
+  const isStandalonePWA = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+      (window.navigator as any).standalone === true
+    );
+  }, []);
+
+  // When true, hides the "DOWNLOAD APPS & TERMINAL" button
+  const isAppOrPwaInstalled =
+    Capacitor.isNativePlatform() || isPwaInstalled || isStandalonePWA;
 
   const from = (location.state as any)?.from?.pathname || '/dashboard';
   const safeFrom = from === '/login' ? '/dashboard' : from;
@@ -1371,7 +1388,8 @@ export const Login: React.FC = () => {
           </div>
 
           {/* ─── INDICATOR BUTTON: SLIDE DOWN TO REVEAL DOWNLOAD PAGE ─── */}
-          {!isLoggingIn && (
+          {/* Hides automatically when running inside Capacitor or an installed PWA */}
+          {!isLoggingIn && !isAppOrPwaInstalled && (
             <div
               className={`absolute bottom-3 sm:bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none transition-all duration-700 ease-out ${
                 isReady
