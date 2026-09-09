@@ -1220,7 +1220,7 @@ export const Login: React.FC = () => {
           <div
             className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}
           >
-            {/* LEFT COLUMN / LOGIN */}
+            {/* LEFT COLUMN / LOGIN (Synchronized symmetric slide/scale with Recovery Mode) */}
             <div
               className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
                 isLoggingIn
@@ -1234,8 +1234,8 @@ export const Login: React.FC = () => {
                 transform: isLoggingIn
                   ? 'scale(0.95) translateY(8px)'
                   : isFlipped
-                    ? 'translateX(-101%)'
-                    : 'translateX(0)',
+                    ? 'translateX(-100%) scale(0.95)'
+                    : 'translateX(0) scale(1)',
               }}
             >
               <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7" />
@@ -1352,16 +1352,56 @@ export const Login: React.FC = () => {
 
               <div className="auth-divider-line auth-line-left pointer-events-none" />
               <div className="auth-divider-line auth-line-right pointer-events-none" />
+
+              {/* ─── SYSTEM COPYRIGHT FOOTERS (Dynamic position away from Download Button) ─── */}
+              {/* Left-aligned footer: Active during Recovery Mode (Flipped) */}
+              <div
+                className={`absolute bottom-3 sm:bottom-4 left-8 sm:left-12 z-10 pointer-events-auto select-none transition-all duration-700 ease-out ${
+                  isFlipped && !isLoggingIn
+                    ? 'opacity-100 translate-x-0'
+                    : 'opacity-0 -translate-x-4 pointer-events-none'
+                }`}
+              >
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/45 dark:bg-black/60 backdrop-blur-md border border-white/10 text-white/70 text-[10px] sm:text-[11px] font-mono shadow-lg hover:border-white/20 transition-all">
+                  <span className="font-bold text-white tracking-normal sm:tracking-wide">
+                    © {new Date().getFullYear()} Wolf Palomar Fitness GYM
+                  </span>
+                  <span className="text-white/30">|</span>
+                  <span className="text-white/60 tracking-normal sm:tracking-wide">
+                    All Rights Reserved.
+                  </span>
+                </div>
+              </div>
+
+              {/* Right-aligned footer: Active during Login Mode */}
+              <div
+                className={`absolute bottom-3 sm:bottom-4 right-8 sm:right-12 z-10 pointer-events-auto select-none transition-all duration-700 ease-out ${
+                  !isFlipped && !isLoggingIn
+                    ? 'opacity-100 translate-x-0'
+                    : 'opacity-0 translate-x-4 pointer-events-none'
+                }`}
+              >
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/45 dark:bg-black/60 backdrop-blur-md border border-white/10 text-white/70 text-[10px] sm:text-[11px] font-mono shadow-lg hover:border-white/20 transition-all">
+                  <span className="font-bold text-white tracking-normal sm:tracking-wide">
+                    © {new Date().getFullYear()} Wolf Palomar Fitness GYM
+                  </span>
+                  <span className="text-white/30">|</span>
+                  <span className="text-white/60 tracking-normal sm:tracking-wide">
+                    All Rights Reserved.
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* RECOVERY VIEW */}
+            {/* RECOVERY VIEW (Matches Login modal slide/scale symmetry) */}
             <div
-              className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ${
+              className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ease-out ${
                 isFlipped && !isLoggingIn
                   ? 'pointer-events-auto opacity-100 z-20'
-                  : 'pointer-events-none opacity-0 invisible z-0'
+                  : 'pointer-events-none opacity-0 z-0'
               }`}
               style={{
+                transformStyle: 'flat',
                 transform: isFlipped
                   ? 'translateX(0) scale(1)'
                   : 'translateX(100%) scale(0.95)',
@@ -1411,7 +1451,7 @@ export const Login: React.FC = () => {
                 <Download className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
 
                 <span className="text-[10.5px] font-heading font-black tracking-widest uppercase">
-                  DOWNLOAD APPS &amp; TERMINAL
+                  DOWNLOAD APPS
                 </span>
 
                 <ChevronDown className="w-4 h-4 text-blue-600 dark:text-red-500 transition-transform duration-300 group-hover:translate-y-0.5 animate-bounce" />
