@@ -1,0 +1,4 @@
+- please fix this change log should display on version logs
+- fix unable to login on capacitor app google login
+- fix broken installation on android after downloading it.
+- change the public link for pre-registration to its original link then the login link should have like "https://wolfpalomar.vercel.app/login"
