@@ -321,6 +321,11 @@ export const Login: React.FC = () => {
     loadBranding();
   }, [isPreview]);
 
+  // ─── SYNCHRONOUS MUTEX REFS (Stops duplicate OTP email dispatches) ───────────
+  const isSubmittingRef = useRef<boolean>(false);
+  const is2FADispatchingRef = useRef<boolean>(false);
+  const isResendingRef = useRef<boolean>(false);
+
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -334,17 +339,32 @@ export const Login: React.FC = () => {
     useState<boolean>(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
-  // Recovery Mode Step & Code States
-  const [recoveryStep, setRecoveryStep] = useState<'request' | 'verify'>('request');
-  const [recoveryCode, setRecoveryCode] = useState<string[]>(['', '', '', '', '', '']);
+  // Recovery Mode Step & Code States (8 DIGITS)
+  const [recoveryStep, setRecoveryStep] = useState<'request' | 'verify'>(
+    'request'
+  );
+  const [recoveryCode, setRecoveryCode] = useState<string[]>([
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]);
   const [recoveryNewPassword, setRecoveryNewPassword] = useState<string>('');
-  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState<string>('');
-  const [showRecoveryPassword, setShowRecoveryPassword] = useState<boolean>(false);
-  const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = useState<boolean>(false);
-  const [isVerifyingRecovery, setIsVerifyingRecovery] = useState<boolean>(false);
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] =
+    useState<string>('');
+  const [showRecoveryPassword, setShowRecoveryPassword] =
+    useState<boolean>(false);
+  const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] =
+    useState<boolean>(false);
+  const [isVerifyingRecovery, setIsVerifyingRecovery] =
+    useState<boolean>(false);
   const recoveryInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // ─── TWO-FACTOR EMAIL VERIFICATION (2FA) STATES ───
+  // ─── TWO-FACTOR EMAIL VERIFICATION (2FA) STATES (8 DIGITS) ───
   const [is2FAMode, setIs2FAMode] = useState<boolean>(false);
   const [twoFactorEmail, setTwoFactorEmail] = useState<string>('');
   const [twoFactorTargetName, setTwoFactorTargetName] = useState<string>('');
@@ -352,6 +372,8 @@ export const Login: React.FC = () => {
   const [twoFactorTargetRoute, setTwoFactorTargetRoute] =
     useState<string>('/dashboard');
   const [twoFactorCode, setTwoFactorCode] = useState<string[]>([
+    '',
+    '',
     '',
     '',
     '',
@@ -418,7 +440,6 @@ export const Login: React.FC = () => {
   const watchAgreement = watchLogin('agree');
   const watchRecoveryEmail = watchRecovery('email');
 
-  // Auto-save username or email character by character into local storage
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (watchIdentifier && watchIdentifier.trim()) {
@@ -477,7 +498,15 @@ export const Login: React.FC = () => {
         userProfile?.role === 'staff' ? '/sales' : safeFromPath;
       navigate(targetRoute, { replace: true });
     }
-  }, [initialized, user, navigate, isLoggingIn, location.state, isPreview, is2FAMode]);
+  }, [
+    initialized,
+    user,
+    navigate,
+    isLoggingIn,
+    location.state,
+    isPreview,
+    is2FAMode,
+  ]);
 
   // 2FA Cooldown Timer Effect
   useEffect(() => {
@@ -552,7 +581,7 @@ export const Login: React.FC = () => {
               )
             : 0;
           setTwoFactorResendCooldown(cdRemaining);
-          setTwoFactorCode(['', '', '', '', '', '']);
+          setTwoFactorCode(['', '', '', '', '', '', '', '']);
           setIs2FAMode(true);
         } else {
           sessionStorage.removeItem('palomar_2fa_pending');
@@ -749,8 +778,10 @@ export const Login: React.FC = () => {
     }
   };
 
+  // ─── LOGIN SUBMIT (Synchronously Guarded against Duplicate Requests) ─────────
   const onLoginSubmit = async (data: LoginFormValues) => {
-    if (isSubmitting || isPreview) return;
+    if (isSubmittingRef.current || isPreview) return;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setShakeEmail(false);
     setShakePassword(false);
@@ -821,75 +852,82 @@ export const Login: React.FC = () => {
         // Terminate temporary password session so unverified access cannot proceed
         await supabase.auth.signOut();
 
-        // Dispatch 6-digit OTP code to the user's verified email
-        let cooldownSeconds = 60;
-        let isRecentCode = false;
+        // Mutex lock to guarantee exactly one OTP request executes
+        if (!is2FADispatchingRef.current) {
+          is2FADispatchingRef.current = true;
+          let cooldownSeconds = 60;
+          let isRecentCode = false;
 
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email: finalEmail,
-          options: {
-            shouldCreateUser: false,
-          },
-        });
+          try {
+            const { error: otpError } = await supabase.auth.signInWithOtp({
+              email: finalEmail,
+              options: {
+                shouldCreateUser: false,
+              },
+            });
 
-        if (otpError) {
-          const errorMsg = otpError.message || '';
-          const rateLimitMatch = errorMsg.match(/after\s+(\d+)\s+seconds/i);
-          const isRateLimit =
-            Boolean(rateLimitMatch) ||
-            errorMsg.toLowerCase().includes('security purposes') ||
-            errorMsg.toLowerCase().includes('rate limit');
+            if (otpError) {
+              const errorMsg = otpError.message || '';
+              const rateLimitMatch = errorMsg.match(/after\s+(\d+)\s+seconds/i);
+              const isRateLimit =
+                Boolean(rateLimitMatch) ||
+                errorMsg.toLowerCase().includes('security purposes') ||
+                errorMsg.toLowerCase().includes('rate limit');
 
-          if (isRateLimit) {
-            isRecentCode = true;
-            cooldownSeconds = rateLimitMatch
-              ? parseInt(rateLimitMatch[1], 10)
-              : 30;
-          } else {
-            toast.error(
-              `Unable to dispatch verification code: ${otpError.message}`
+              if (isRateLimit) {
+                isRecentCode = true;
+                cooldownSeconds = rateLimitMatch
+                  ? parseInt(rateLimitMatch[1], 10)
+                  : 30;
+              } else {
+                toast.error(
+                  `Unable to dispatch verification code: ${otpError.message}`
+                );
+                return;
+              }
+            }
+
+            const calculatedRoute =
+              dbProfile?.role === 'staff' ? '/sales' : safeFrom;
+            const expiresAt = Date.now() + 10 * 60 * 1000;
+            const cooldownUntil = Date.now() + cooldownSeconds * 1000;
+
+            // Persist pending 2FA to sessionStorage across accidental page refreshes
+            sessionStorage.setItem(
+              'palomar_2fa_pending',
+              JSON.stringify({
+                email: finalEmail,
+                targetName,
+                userId: loggedInUser?.id || '',
+                targetRoute: calculatedRoute,
+                expiresAt,
+                cooldownUntil,
+              })
             );
-            return;
+
+            setTwoFactorEmail(finalEmail);
+            setTwoFactorTargetName(targetName);
+            setTwoFactorUserId(loggedInUser?.id || '');
+            setTwoFactorTargetRoute(calculatedRoute);
+            setIs2FAMode(true);
+            setTwoFactorCode(['', '', '', '', '', '', '', '']);
+            setTwoFactorAttempts(0);
+            setTwoFactorResendCooldown(cooldownSeconds);
+            setTwoFactorExpiresAt(expiresAt);
+            setTimeRemainingSeconds(600);
+
+            if (isRecentCode) {
+              toast.info(
+                `A verification code was recently sent to ${finalEmail}. Enter the code, or request a new code in ${cooldownSeconds}s.`
+              );
+            } else {
+              toast.info(
+                `Security check: A verification code has been sent to ${finalEmail}.`
+              );
+            }
+          } finally {
+            is2FADispatchingRef.current = false;
           }
-        }
-
-        const calculatedRoute =
-          dbProfile?.role === 'staff' ? '/sales' : safeFrom;
-        const expiresAt = Date.now() + 10 * 60 * 1000;
-        const cooldownUntil = Date.now() + cooldownSeconds * 1000;
-
-        // Persist pending 2FA to sessionStorage across accidental page refreshes
-        sessionStorage.setItem(
-          'palomar_2fa_pending',
-          JSON.stringify({
-            email: finalEmail,
-            targetName,
-            userId: loggedInUser?.id || '',
-            targetRoute: calculatedRoute,
-            expiresAt,
-            cooldownUntil,
-          })
-        );
-
-        setTwoFactorEmail(finalEmail);
-        setTwoFactorTargetName(targetName);
-        setTwoFactorUserId(loggedInUser?.id || '');
-        setTwoFactorTargetRoute(calculatedRoute);
-        setIs2FAMode(true);
-        setTwoFactorCode(['', '', '', '', '', '']);
-        setTwoFactorAttempts(0);
-        setTwoFactorResendCooldown(cooldownSeconds);
-        setTwoFactorExpiresAt(expiresAt);
-        setTimeRemainingSeconds(600);
-
-        if (isRecentCode) {
-          toast.info(
-            `A verification code was recently sent to ${finalEmail}. Enter the code, or request a new code in ${cooldownSeconds}s.`
-          );
-        } else {
-          toast.info(
-            `Security check: A verification code has been sent to ${finalEmail}.`
-          );
         }
         return;
       }
@@ -934,11 +972,12 @@ export const Login: React.FC = () => {
       setLoginValue('password', '');
       triggerShake(setShakePassword);
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
-  // ─── TWO-FACTOR EMAIL VERIFICATION HELPERS & ACTIONS ───
+  // ─── TWO-FACTOR EMAIL VERIFICATION HELPERS & ACTIONS (8 DIGITS) ───
   const maskEmail = (emailStr: string) => {
     if (!emailStr.includes('@')) return emailStr;
     const [local, domain] = emailStr.split('@');
@@ -966,11 +1005,11 @@ export const Login: React.FC = () => {
     next[index] = digit;
     setTwoFactorCode(next);
 
-    if (index < 5) {
+    if (index < 7) {
       twoFactorInputRefs.current[index + 1]?.focus();
     } else {
       const fullCode = next.join('');
-      if (fullCode.length === 6) {
+      if (fullCode.length === 8) {
         verify2FACode(fullCode);
       }
     }
@@ -989,36 +1028,34 @@ export const Login: React.FC = () => {
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       twoFactorInputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
+    } else if (e.key === 'ArrowRight' && index < 7) {
       twoFactorInputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleDigitPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    const pasted = e.clipboardData
-      .getData('text')
-      .replace(/\D/g, '');
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '');
     if (!pasted) return;
 
-    const cleanDigits = pasted.slice(0, 6);
-    const next = Array.from({ length: 6 }, (_, i) => cleanDigits[i] || '');
+    const cleanDigits = pasted.slice(0, 8);
+    const next = Array.from({ length: 8 }, (_, i) => cleanDigits[i] || '');
     setTwoFactorCode(next);
 
-    const focusIdx = Math.min(cleanDigits.length, 5);
+    const focusIdx = Math.min(cleanDigits.length, 7);
     setTimeout(() => {
       twoFactorInputRefs.current[focusIdx]?.focus();
     }, 20);
 
-    if (cleanDigits.length === 6) {
+    if (cleanDigits.length === 8) {
       verify2FACode(cleanDigits);
     }
   };
 
   const verify2FACode = async (codeToVerify?: string) => {
     const fullCode = codeToVerify || twoFactorCode.join('');
-    if (fullCode.length !== 6) {
-      toast.error('Please enter the complete 6-digit verification code.');
+    if (fullCode.length !== 8) {
+      toast.error('Please enter the complete 8-digit verification code.');
       return;
     }
 
@@ -1075,7 +1112,7 @@ export const Login: React.FC = () => {
             'Too many failed attempts. For security, please log in again.'
           );
           setIs2FAMode(false);
-          setTwoFactorCode(['', '', '', '', '', '']);
+          setTwoFactorCode(['', '', '', '', '', '', '', '']);
           return 0;
         }
         return next;
@@ -1085,7 +1122,7 @@ export const Login: React.FC = () => {
         err.message ||
           'Invalid or expired verification code. Please verify and try again.'
       );
-      setTwoFactorCode(['', '', '', '', '', '']);
+      setTwoFactorCode(['', '', '', '', '', '', '', '']);
       twoFactorInputRefs.current[0]?.focus();
     } finally {
       setIsVerifying2FA(false);
@@ -1093,7 +1130,9 @@ export const Login: React.FC = () => {
   };
 
   const handleResend2FACode = async () => {
-    if (twoFactorResendCooldown > 0 || isResending2FA) return;
+    if (twoFactorResendCooldown > 0 || isResending2FA || isResendingRef.current)
+      return;
+    isResendingRef.current = true;
     setIsResending2FA(true);
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -1107,7 +1146,6 @@ export const Login: React.FC = () => {
         if (match) {
           const waitSec = parseInt(match[1], 10);
           setTwoFactorResendCooldown(waitSec);
-          // Persist cooldown
           try {
             const saved = sessionStorage.getItem('palomar_2fa_pending');
             if (saved) {
@@ -1132,17 +1170,13 @@ export const Login: React.FC = () => {
       const expiresAt = Date.now() + 10 * 60 * 1000;
       const cooldownUntil = Date.now() + 60 * 1000;
 
-      // Update storage
       try {
         const saved = sessionStorage.getItem('palomar_2fa_pending');
         if (saved) {
           const parsed = JSON.parse(saved);
           parsed.expiresAt = expiresAt;
           parsed.cooldownUntil = cooldownUntil;
-          sessionStorage.setItem(
-            'palomar_2fa_pending',
-            JSON.stringify(parsed)
-          );
+          sessionStorage.setItem('palomar_2fa_pending', JSON.stringify(parsed));
         }
       } catch {
         // ignore
@@ -1152,11 +1186,12 @@ export const Login: React.FC = () => {
       setTwoFactorResendCooldown(60);
       setTwoFactorExpiresAt(expiresAt);
       setTimeRemainingSeconds(600);
-      setTwoFactorCode(['', '', '', '', '', '']);
+      setTwoFactorCode(['', '', '', '', '', '', '', '']);
       twoFactorInputRefs.current[0]?.focus();
     } catch (err: any) {
       toast.error(err.message || 'Failed to dispatch verification code.');
     } finally {
+      isResendingRef.current = false;
       setIsResending2FA(false);
     }
   };
@@ -1165,7 +1200,7 @@ export const Login: React.FC = () => {
     await supabase.auth.signOut();
     sessionStorage.removeItem('palomar_2fa_pending');
     setIs2FAMode(false);
-    setTwoFactorCode(['', '', '', '', '', '']);
+    setTwoFactorCode(['', '', '', '', '', '', '', '']);
     setTwoFactorEmail('');
     setTwoFactorTargetName('');
     setTwoFactorAttempts(0);
@@ -1185,7 +1220,7 @@ export const Login: React.FC = () => {
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
   const requestResetLink = async (email: string) => {
-    if (isPreview) return;
+    if (isPreview || isRecoverySubmitting) return;
     setRecoveryError(null);
     setIsRecoverySubmitting(true);
 
@@ -1197,7 +1232,7 @@ export const Login: React.FC = () => {
 
       setRecoveryEmail(email);
       setRecoveryStep('verify');
-      setRecoveryCode(['', '', '', '', '', '']);
+      setRecoveryCode(['', '', '', '', '', '', '', '']);
       setShowSuccessModal(true);
       toast.success(`Verification code dispatched to ${email}.`);
     } catch (err: any) {
@@ -1210,6 +1245,7 @@ export const Login: React.FC = () => {
     }
   };
 
+  // ─── RECOVERY CODE DIGIT HANDLERS (8 DIGITS) ────────────────────────────────
   const handleRecoveryDigitChange = (index: number, val: string) => {
     const cleaned = val.replace(/\D/g, '');
     if (!cleaned) {
@@ -1224,7 +1260,7 @@ export const Login: React.FC = () => {
     next[index] = digit;
     setRecoveryCode(next);
 
-    if (index < 5) {
+    if (index < 7) {
       recoveryInputRefs.current[index + 1]?.focus();
     }
   };
@@ -1242,7 +1278,7 @@ export const Login: React.FC = () => {
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       recoveryInputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
+    } else if (e.key === 'ArrowRight' && index < 7) {
       recoveryInputRefs.current[index + 1]?.focus();
     }
   };
@@ -1254,14 +1290,11 @@ export const Login: React.FC = () => {
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '');
     if (!pasted) return;
 
-    const cleanDigits = pasted.slice(0, 6);
-    const next = Array.from(
-      { length: 6 },
-      (_, i) => cleanDigits[i] || ''
-    );
+    const cleanDigits = pasted.slice(0, 8);
+    const next = Array.from({ length: 8 }, (_, i) => cleanDigits[i] || '');
     setRecoveryCode(next);
 
-    const focusIdx = Math.min(cleanDigits.length, 5);
+    const focusIdx = Math.min(cleanDigits.length, 7);
     setTimeout(() => {
       recoveryInputRefs.current[focusIdx]?.focus();
     }, 20);
@@ -1270,8 +1303,8 @@ export const Login: React.FC = () => {
   const handleVerifyRecoveryOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const fullCode = recoveryCode.join('');
-    if (fullCode.length !== 6) {
-      toast.error('Please enter the complete 6-digit recovery code.');
+    if (fullCode.length !== 8) {
+      toast.error('Please enter the complete 8-digit recovery code.');
       return;
     }
     if (!recoveryNewPassword || recoveryNewPassword.length < 6) {
@@ -1307,7 +1340,7 @@ export const Login: React.FC = () => {
       resetRecovery();
       setRecoveryNewPassword('');
       setRecoveryConfirmPassword('');
-      setRecoveryCode(['', '', '', '', '', '']);
+      setRecoveryCode(['', '', '', '', '', '', '', '']);
     } catch (err: any) {
       toast.error(
         err.message ||
@@ -1338,7 +1371,7 @@ export const Login: React.FC = () => {
     setRecoveryStep('request');
     setRecoveryNewPassword('');
     setRecoveryConfirmPassword('');
-    setRecoveryCode(['', '', '', '', '', '']);
+    setRecoveryCode(['', '', '', '', '', '', '', '']);
   };
 
   const renderLoginForm = () => (
@@ -1455,7 +1488,7 @@ export const Login: React.FC = () => {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
             <span className="flex items-center gap-2">
@@ -1550,7 +1583,8 @@ export const Login: React.FC = () => {
         {recoveryStep === 'request' ? (
           <div className="animate-slide-up">
             <p className="desc text-center text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed font-bold select-none">
-              Enter your authorized account email below to receive a secure recovery code and reset link.
+              Enter your authorized account email below to receive a secure
+              recovery code and reset link.
             </p>
 
             <form
@@ -1583,11 +1617,12 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isRecoverySubmitting}
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isRecoverySubmitting ? 'DISPATCHING RECOVERY CODE...' : 'SEND RECOVERY CODE'}
+                {isRecoverySubmitting
+                  ? 'DISPATCHING RECOVERY CODE...'
+                  : 'SEND RECOVERY CODE'}
               </button>
-
             </form>
           </div>
         ) : (
@@ -1600,7 +1635,10 @@ export const Login: React.FC = () => {
               to set up your new password:
             </p>
 
-            <form onSubmit={handleVerifyRecoveryOtp} className="space-y-3 font-body pointer-events-auto">
+            <form
+              onSubmit={handleVerifyRecoveryOtp}
+              className="space-y-3 font-body pointer-events-auto"
+            >
               {!recoveryEmail && (
                 <div className="relative z-30">
                   <Input
@@ -1614,15 +1652,15 @@ export const Login: React.FC = () => {
                 </div>
               )}
 
-              {/* Recovery Code Inputs (6 digits only) */}
+              {/* Recovery Code Inputs (8 digits) */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider text-center">
-                  Verification Code (6 digits)
+                  Verification Code (8 digits)
                 </label>
-                <div className="flex justify-center items-center gap-1.5 sm:gap-2 my-2">
+                <div className="flex justify-center items-center gap-1 sm:gap-1.5 my-2">
                   {recoveryCode.map((digit, idx) => (
                     <input
-                      key={`rec-6-${idx}`}
+                      key={`rec-8-${idx}`}
                       ref={(el) => {
                         recoveryInputRefs.current[idx] = el;
                       }}
@@ -1630,11 +1668,13 @@ export const Login: React.FC = () => {
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}
-                      onChange={(e) => handleRecoveryDigitChange(idx, e.target.value)}
+                      onChange={(e) =>
+                        handleRecoveryDigitChange(idx, e.target.value)
+                      }
                       onKeyDown={(e) => handleRecoveryDigitKeyDown(idx, e)}
                       onPaste={idx === 0 ? handleRecoveryDigitPaste : undefined}
                       disabled={isVerifyingRecovery}
-                      className="w-9 h-11 sm:w-10 sm:h-12 text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+                      className="w-8 h-10 sm:w-9.5 sm:h-12 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
                       autoFocus={idx === 0}
                     />
                   ))}
@@ -1694,7 +1734,7 @@ export const Login: React.FC = () => {
                 type="submit"
                 disabled={
                   isVerifyingRecovery ||
-                  recoveryCode.join('').length !== 6 ||
+                  recoveryCode.join('').length !== 8 ||
                   !recoveryNewPassword
                 }
                 className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
@@ -1726,7 +1766,7 @@ export const Login: React.FC = () => {
                     if (recoveryEmail) requestResetLink(recoveryEmail);
                   }}
                   disabled={isRecoverySubmitting}
-                  className="font-semibold text-blue-600 dark:text-red-400 hover:underline cursor-pointer"
+                  className="font-semibold text-blue-600 dark:text-red-400 hover:underline cursor-pointer disabled:opacity-50"
                 >
                   Resend Code
                 </button>
@@ -1743,7 +1783,8 @@ export const Login: React.FC = () => {
             <span>RECOVERY PROTOCOL</span>
           </div>
           <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-            Enter the verification code sent to your email and set your new password to restore access.
+            Enter the verification code sent to your email and set your new
+            password to restore access.
           </p>
         </div>
 
@@ -1789,7 +1830,7 @@ export const Login: React.FC = () => {
           Two-step email verification is enabled.
         </p>
         <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 mb-2 leading-snug">
-          A secure verification code has been dispatched to{' '}
+          An 8-digit verification code has been dispatched to{' '}
           <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
             {maskEmail(twoFactorEmail)}
           </span>
@@ -1804,15 +1845,15 @@ export const Login: React.FC = () => {
           </p>
         )}
 
-        {/* OTP Inputs (6 digits) */}
+        {/* OTP Inputs (8 digits) */}
         <div
-          className={`flex justify-center items-center gap-1.5 sm:gap-2 my-4 ${
+          className={`flex justify-center items-center gap-1 sm:gap-1.5 my-4 ${
             shake2FA ? 'animate-shake' : ''
           }`}
         >
           {twoFactorCode.map((digit, idx) => (
             <input
-              key={`2fa-6-${idx}`}
+              key={`2fa-8-${idx}`}
               ref={(el) => {
                 twoFactorInputRefs.current[idx] = el;
               }}
@@ -1824,7 +1865,7 @@ export const Login: React.FC = () => {
               onKeyDown={(e) => handleDigitKeyDown(idx, e)}
               onPaste={idx === 0 ? handleDigitPaste : undefined}
               disabled={isVerifying2FA}
-              className="w-10 h-12 sm:w-11 sm:h-14 text-xl text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+              className="w-8 h-10 sm:w-9.5 sm:h-12 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
               autoFocus={idx === 0}
             />
           ))}
@@ -1863,10 +1904,7 @@ export const Login: React.FC = () => {
         <button
           type="button"
           onClick={() => verify2FACode()}
-          disabled={
-            isVerifying2FA ||
-            twoFactorCode.join('').length !== 6
-          }
+          disabled={isVerifying2FA || twoFactorCode.join('').length !== 8}
           className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none"
         >
           {isVerifying2FA ? (
@@ -2040,7 +2078,7 @@ export const Login: React.FC = () => {
           <div
             className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}
           >
-            {/* LEFT COLUMN / LOGIN (Synchronized symmetric slide/scale with Recovery Mode) */}
+            {/* LEFT COLUMN / LOGIN */}
             <div
               className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
                 isLoggingIn
@@ -2068,7 +2106,9 @@ export const Login: React.FC = () => {
                     badgeText={`v${APP_VERSION}`}
                     showWave={true}
                   >
-                    {is2FAMode ? render2FAVerificationForm() : renderLoginForm()}
+                    {is2FAMode
+                      ? render2FAVerificationForm()
+                      : renderLoginForm()}
                   </Card>
                 </div>
               ) : (
@@ -2173,8 +2213,7 @@ export const Login: React.FC = () => {
               <div className="auth-divider-line auth-line-left pointer-events-none" />
               <div className="auth-divider-line auth-line-right pointer-events-none" />
 
-              {/* ─── SYSTEM COPYRIGHT FOOTERS (Dynamic position away from Download Button) ─── */}
-              {/* Left-aligned footer: Active during Recovery Mode (Flipped) */}
+              {/* System Copyright Footers */}
               <div
                 className={`absolute bottom-3 sm:bottom-4 left-8 sm:left-12 z-10 pointer-events-auto select-none transition-all duration-700 ease-out ${
                   isFlipped && !isLoggingIn
@@ -2193,7 +2232,6 @@ export const Login: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right-aligned footer: Active during Login Mode */}
               <div
                 className={`absolute bottom-3 sm:bottom-4 right-8 sm:right-12 z-10 pointer-events-auto select-none transition-all duration-700 ease-out ${
                   !isFlipped && !isLoggingIn
@@ -2213,7 +2251,7 @@ export const Login: React.FC = () => {
               </div>
             </div>
 
-            {/* RECOVERY VIEW (Matches Login modal slide/scale symmetry) */}
+            {/* RECOVERY VIEW */}
             <div
               className={`absolute top-0 left-0 lg:left-auto lg:right-0 h-full w-full lg:w-[42vw] flex flex-col items-center justify-center shrink-0 px-5 transition-all duration-700 ease-out ${
                 isFlipped && !isLoggingIn
@@ -2247,8 +2285,7 @@ export const Login: React.FC = () => {
             </div>
           </div>
 
-          {/* ─── INDICATOR BUTTON: SLIDE DOWN TO REVEAL DOWNLOAD PAGE ─── */}
-          {/* Hides automatically when running inside Capacitor or an installed PWA */}
+          {/* Indicator Button */}
           {!isLoggingIn && !isAppOrPwaInstalled && (
             <div
               className={`absolute bottom-3 sm:bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none transition-all duration-700 ease-out ${
@@ -2280,9 +2317,7 @@ export const Login: React.FC = () => {
           )}
         </div>
 
-        {/* ========================================================================= */}
-        {/* SECTION 2: DOWNLOAD VIEWPORT (MOBILE FIRST, RESPONSIVE, INNER SCROLL)    */}
-        {/* ========================================================================= */}
+        {/* SECTION 2: DOWNLOAD VIEWPORT */}
         <div className="relative w-full h-screen shrink-0 overflow-y-auto overflow-x-hidden scrollbar-none">
           <DownloadPage
             standalone={false}

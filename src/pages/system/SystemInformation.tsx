@@ -145,8 +145,7 @@ const tableDisplayMapping: Record<
   },
   app_releases: {
     label: 'App Release Packages',
-    purpose:
-      'Catbox CDN release builds, OTA deployment metadata, and version history',
+    purpose: 'app release builds, OTA deployment metadata, and version history',
     status: 'System',
   },
 };
@@ -433,7 +432,6 @@ export const SystemInformation: React.FC = () => {
       label: 'Latest Available',
       value: latestRelease ? `v${latestRelease.version}` : `v${APP_VERSION}`,
     },
-    { label: 'Distribution Mirror', value: 'Catbox CDN (Permanent)' },
     { label: 'Build Number', value: buildNumber },
     { label: 'Environment', value: detectedEnvironment },
   ];
@@ -601,10 +599,6 @@ export const SystemInformation: React.FC = () => {
               </span>
               <span className="px-2 py-0.5 rounded-full bg-blue-600 dark:bg-red-600 text-white font-heading font-black text-[9px] tracking-wider uppercase">
                 NEW UPDATE AVAILABLE • v{latestRelease.version}
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase flex items-center gap-1">
-                <Globe className="w-3 h-3" />
-                Catbox CDN Mirror
               </span>
               <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-semibold">
                 Current: v{APP_VERSION} → New: v{latestRelease.version}

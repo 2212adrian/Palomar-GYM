@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { AppRoutes } from './routes';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 // Component Imports
@@ -19,6 +19,7 @@ import { promptInitialPermissionsOnLogin } from './lib/permissions';
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
   const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
   // State to manage the exit confirmation modal
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
@@ -44,6 +45,43 @@ export const App: React.FC = () => {
       }
     }
   }, [user?.id]);
+
+  // ─── Real-Time Session Revocation Listener (Instant Remote Auto-Kick) ───
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Connect to WebSocket broadcast channel for global session control
+    const sessionSyncChannel = supabase
+      .channel('user-session-sync')
+      .on('broadcast', { event: 'FORCE_SIGNOUT_USER' }, async ({ payload }) => {
+        // If the terminated user is this logged-in account, kick immediately
+        if (payload?.userId === user.id) {
+          toast.error('Your session has been terminated by an administrator.', {
+            toastId: 'session-terminated',
+            autoClose: 5000,
+          });
+
+          try {
+            // Sign out from Supabase client and wipe storage
+            await supabase.auth.signOut();
+          } catch (err) {
+            console.warn('SignOut error during forced kick:', err);
+          }
+
+          if (logout) {
+            logout();
+          }
+
+          // Redirect immediately to login screen
+          window.location.href = '/login';
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sessionSyncChannel);
+    };
+  }, [user?.id, logout]);
 
   // Global Theme Initialization (Survives hard page refreshes on protected routes)
   useEffect(() => {
