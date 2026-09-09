@@ -5,7 +5,18 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-import { User as UserIcon, Camera, Trash2, Loader2, Mail } from 'lucide-react';
+import {
+  User as UserIcon,
+  Camera,
+  Trash2,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  ShieldAlert,
+  Lock,
+  Info,
+} from 'lucide-react';
+import { Modal } from '../../components/ui/Modal';
 
 // Exported to be reused across other user settings components
 export const AvatarImage: React.FC<{
@@ -162,7 +173,72 @@ export const PersonalAccount: React.FC = () => {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isToggling2FA, setIsToggling2FA] = useState(false);
+  const [show2FAInfoModal, setShow2FAInfoModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const is2FAEnabled =
+    profile?.email_verification_enabled ??
+    user?.user_metadata?.email_verification_enabled ??
+    false;
+  const isNonEmailAccount =
+    user?.email?.endsWith('@palomargym.noemail') ?? false;
+
+  const handleToggle2FA = async () => {
+    if (isNonEmailAccount) {
+      toast.warn(
+        'Email verification requires a standard external email address. This account uses a local username handle.'
+      );
+      return;
+    }
+
+    const nextState = !is2FAEnabled;
+    try {
+      setIsToggling2FA(true);
+
+      // 1. Persist to Supabase Auth user metadata
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { email_verification_enabled: nextState },
+      });
+      if (authError) throw authError;
+
+      // 2. Persist to public.profiles table
+      if (user?.id) {
+        const { error: dbError } = await supabase
+          .from('profiles')
+          .update({ email_verification_enabled: nextState })
+          .eq('id', user.id);
+        if (dbError) {
+          console.warn(
+            'Profiles database update note:',
+            dbError.message
+          );
+        }
+      }
+
+      // 3. Log Audit trail
+      await logAudit(
+        '2FA_SETTING_CHANGED',
+        `User ${nextState ? 'enabled' : 'disabled'} 6-digit email verification after login.`,
+        user?.id ?? undefined
+      );
+
+      // 4. Synchronize active state
+      await checkSession();
+
+      toast.success(
+        nextState
+          ? 'Email verification after login is now ENABLED.'
+          : 'Email verification after login has been DISABLED.'
+      );
+    } catch (err: any) {
+      toast.error(
+        err.message || 'Failed to update email verification configuration.'
+      );
+    } finally {
+      setIsToggling2FA(false);
+    }
+  };
 
   const getRawMetadataPath = (): string | null => {
     if (!user?.user_metadata?.avatar_url) return null;
@@ -542,38 +618,53 @@ export const PersonalAccount: React.FC = () => {
               className="space-y-4 pt-5 border-t border-(--border-color)"
             >
               <div className="grid gap-1.5">
-                <label
-                  htmlFor="username"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
-                >
-                  Display Username
-                </label>
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="username"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  >
+                    Display Username
+                  </label>
+                  {isSuperAdmin(user?.email) && (
+                    <span className="text-[10px] text-amber-500 font-medium">
+                      Locked
+                    </span>
+                  )}
+                </div>
                 <input
                   id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                  disabled={isSuperAdmin(user?.email)}
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   placeholder="Enter username"
                   required
                 />
-              </div>
-              <button
-                type="submit"
-                disabled={
-                  isUpdatingProfile || username.trim() === profile?.username
-                }
-                className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
-              >
-                {isUpdatingProfile ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
-                    Saving changes...
-                  </>
-                ) : (
-                  'Save Username'
+                {isSuperAdmin(user?.email) && (
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    Superadmin username is permanently locked and cannot be changed.
+                  </p>
                 )}
-              </button>
+              </div>
+              {!isSuperAdmin(user?.email) && (
+                <button
+                  type="submit"
+                  disabled={
+                    isUpdatingProfile || username.trim() === profile?.username
+                  }
+                  className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
+                >
+                  {isUpdatingProfile ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                      Saving changes...
+                    </>
+                  ) : (
+                    'Save Username'
+                  )}
+                </button>
+              )}
             </form>
           </div>
 
@@ -604,93 +695,217 @@ export const PersonalAccount: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Manual Security Credentials (7 Cols) */}
-        <div className="lg:col-span-7 bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
-          <div>
-            <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
-              Update Credentials
-            </h3>
-            <p className="text-xs text-slate-400 mt-1 font-semibold">
-              Manually configure your login security passwords.
-            </p>
-          </div>
-
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-            <div className="grid gap-4">
-              <div className="grid gap-1.5">
-                <label
-                  htmlFor="current-password"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
-                >
-                  Current Password
-                </label>
-                <input
-                  id="current-password"
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  placeholder="Enter your current password"
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <label
-                  htmlFor="new-password"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
-                >
-                  New Password
-                </label>
-                <input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  placeholder="Minimum 6 characters"
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <label
-                  htmlFor="confirm-password"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-450"
-                >
-                  Confirm New Password
-                </label>
-                <input
-                  id="confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                  placeholder="Re-type new password"
-                />
-              </div>
+        {/* RIGHT COLUMN: Manual Security Credentials & Email Verification (7 Cols) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Update Credentials Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Update Credentials
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-semibold">
+                Manually configure your login security passwords.
+              </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={
-                isUpdatingPassword ||
-                !currentPassword ||
-                !newPassword ||
-                !confirmPassword
-              }
-              className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
-            >
-              {isUpdatingPassword ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
-                  Updating credentials...
-                </>
-              ) : (
-                'Update Password'
-              )}
-            </button>
-          </form>
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div className="grid gap-4">
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="current-password"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                  >
+                    Current Password
+                  </label>
+                  <input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    placeholder="Enter your current password"
+                  />
+                </div>
+
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="new-password"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                  >
+                    New Password
+                  </label>
+                  <input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    placeholder="Minimum 6 characters"
+                  />
+                </div>
+
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="confirm-password"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                  >
+                    Confirm New Password
+                  </label>
+                  <input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                    placeholder="Re-type new password"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  isUpdatingPassword ||
+                  !currentPassword ||
+                  !newPassword ||
+                  !confirmPassword
+                }
+                className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
+              >
+                {isUpdatingPassword ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                    Updating credentials...
+                  </>
+                ) : (
+                  'Update Password'
+                )}
+              </button>
+            </form>
+          </div>
+
+          {/* Email Verification Switch Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                  Email Verification
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShow2FAInfoModal(true)}
+                  className="text-slate-400 hover:text-(--color-primary) transition-colors cursor-pointer"
+                  title="How verification protects your account"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={is2FAEnabled}
+                onClick={handleToggle2FA}
+                disabled={isToggling2FA || isNonEmailAccount}
+                title={
+                  isNonEmailAccount
+                    ? 'Requires external email address'
+                    : is2FAEnabled
+                    ? 'Click to disable'
+                    : 'Click to enable'
+                }
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+                  is2FAEnabled
+                    ? 'bg-emerald-500'
+                    : 'bg-slate-300 dark:bg-neutral-700'
+                }`}
+              >
+                {isToggling2FA ? (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="w-3 h-3 text-white animate-spin" />
+                  </span>
+                ) : (
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      is2FAEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                )}
+              </button>
+            </div>
+
+            {/* Explanation ONLY shown when enabled */}
+            {is2FAEnabled && (
+              <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5 animate-fade-in">
+                <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-semibold text-(--color-text)">
+                    Two-step email verification is active.
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    A secure verification code will be sent to{' '}
+                    <span className="font-mono font-bold text-(--color-text)">
+                      {user?.email}
+                    </span>{' '}
+                    whenever you sign in.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isNonEmailAccount && (
+              <div className="mt-3 flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-600 dark:text-amber-400 font-medium leading-normal">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>
+                  This account has no external email address attached. Add an email to enable 2-step verification.
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 2FA Info Modal */}
+      <Modal
+        isOpen={show2FAInfoModal}
+        onClose={() => setShow2FAInfoModal(false)}
+        title="Email Verification Security"
+      >
+        <div className="text-left space-y-4 font-body text-xs text-slate-600 dark:text-slate-300">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5">
+            <Lock className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+            <span>
+              Two-step verification adds an extra layer of defense against unauthorized logins by requiring access to your email inbox.
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-(--color-text)">
+              How it works
+            </h4>
+            <ul className="space-y-2 text-slate-500 dark:text-slate-400 list-disc list-inside">
+              <li>
+                When you sign in with your password, the system dispatches a verification code to your registered email address.
+              </li>
+              <li>Codes are single-use and expire in 10 minutes.</li>
+              <li>
+                5 consecutive incorrect attempts will trigger an automatic security lockout.
+              </li>
+            </ul>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShow2FAInfoModal(false)}
+              className="w-full py-2.5 bg-(--bg-input) text-(--color-text) rounded-xl font-heading text-xs uppercase tracking-wider hover:opacity-90 transition-all cursor-pointer text-center"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

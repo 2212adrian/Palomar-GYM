@@ -10,12 +10,16 @@ import {
   Eye,
   EyeOff,
   ShieldAlert,
+  ShieldCheck,
   CheckCircle2,
   Sun,
   Moon,
   User,
   ChevronDown,
   Download,
+  Clock,
+  ArrowLeft,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -330,6 +334,41 @@ export const Login: React.FC = () => {
     useState<boolean>(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  // Recovery Mode Step & Code States
+  const [recoveryStep, setRecoveryStep] = useState<'request' | 'verify'>('request');
+  const [recoveryCode, setRecoveryCode] = useState<string[]>(['', '', '', '', '', '']);
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState<string>('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState<string>('');
+  const [showRecoveryPassword, setShowRecoveryPassword] = useState<boolean>(false);
+  const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = useState<boolean>(false);
+  const [isVerifyingRecovery, setIsVerifyingRecovery] = useState<boolean>(false);
+  const recoveryInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // ─── TWO-FACTOR EMAIL VERIFICATION (2FA) STATES ───
+  const [is2FAMode, setIs2FAMode] = useState<boolean>(false);
+  const [twoFactorEmail, setTwoFactorEmail] = useState<string>('');
+  const [twoFactorTargetName, setTwoFactorTargetName] = useState<string>('');
+  const [twoFactorUserId, setTwoFactorUserId] = useState<string>('');
+  const [twoFactorTargetRoute, setTwoFactorTargetRoute] =
+    useState<string>('/dashboard');
+  const [twoFactorCode, setTwoFactorCode] = useState<string[]>([
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]);
+  const [twoFactorAttempts, setTwoFactorAttempts] = useState<number>(0);
+  const [isVerifying2FA, setIsVerifying2FA] = useState<boolean>(false);
+  const [isResending2FA, setIsResending2FA] = useState<boolean>(false);
+  const [twoFactorResendCooldown, setTwoFactorResendCooldown] =
+    useState<number>(0);
+  const [twoFactorExpiresAt, setTwoFactorExpiresAt] = useState<number>(0);
+  const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(600);
+  const [shake2FA, setShake2FA] = useState<boolean>(false);
+  const twoFactorInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [agreementDocument, setAgreementDocument] =
@@ -430,7 +469,7 @@ export const Login: React.FC = () => {
   useEffect(() => {
     if (isPreview) return;
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
-    if (initialized && user && !isLoggingIn && !isOutroActive) {
+    if (initialized && user && !isLoggingIn && !isOutroActive && !is2FAMode) {
       const userProfile = (useAuthStore.getState() as any).profile;
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
@@ -438,7 +477,34 @@ export const Login: React.FC = () => {
         userProfile?.role === 'staff' ? '/sales' : safeFromPath;
       navigate(targetRoute, { replace: true });
     }
-  }, [initialized, user, navigate, isLoggingIn, location.state, isPreview]);
+  }, [initialized, user, navigate, isLoggingIn, location.state, isPreview, is2FAMode]);
+
+  // 2FA Cooldown Timer Effect
+  useEffect(() => {
+    if (!is2FAMode || twoFactorResendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setTwoFactorResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [is2FAMode, twoFactorResendCooldown]);
+
+  // 2FA Code Expiration Countdown (10 min)
+  useEffect(() => {
+    if (!is2FAMode || !twoFactorExpiresAt) return;
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.floor((twoFactorExpiresAt - Date.now()) / 1000)
+      );
+      setTimeRemainingSeconds(remaining);
+      if (remaining === 0) {
+        toast.warn('Verification code expired. Please request a new code.');
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [is2FAMode, twoFactorExpiresAt]);
 
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
@@ -455,6 +521,45 @@ export const Login: React.FC = () => {
       }
       toast.error(msg, { toastId: 'unauthorized-access-toast' });
       window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  // Restore active 2FA mode across accidental refresh or page reload
+  useEffect(() => {
+    try {
+      const saved2FA = sessionStorage.getItem('palomar_2fa_pending');
+      if (saved2FA) {
+        const parsed = JSON.parse(saved2FA);
+        if (
+          parsed?.email &&
+          parsed?.expiresAt &&
+          parsed.expiresAt > Date.now()
+        ) {
+          setTwoFactorEmail(parsed.email);
+          setTwoFactorTargetName(parsed.targetName || '');
+          setTwoFactorUserId(parsed.userId || '');
+          setTwoFactorTargetRoute(parsed.targetRoute || '/');
+          setTwoFactorExpiresAt(parsed.expiresAt);
+          const remainingSec = Math.max(
+            0,
+            Math.floor((parsed.expiresAt - Date.now()) / 1000)
+          );
+          setTimeRemainingSeconds(remainingSec);
+          const cdRemaining = parsed.cooldownUntil
+            ? Math.max(
+                0,
+                Math.floor((parsed.cooldownUntil - Date.now()) / 1000)
+              )
+            : 0;
+          setTwoFactorResendCooldown(cdRemaining);
+          setTwoFactorCode(['', '', '', '', '', '']);
+          setIs2FAMode(true);
+        } else {
+          sessionStorage.removeItem('palomar_2fa_pending');
+        }
+      }
+    } catch {
+      sessionStorage.removeItem('palomar_2fa_pending');
     }
   }, []);
 
@@ -665,22 +770,10 @@ export const Login: React.FC = () => {
 
       if (error) throw error;
 
-      setIsLoggingIn(true);
-      setLoginStarted(false);
-      setLoginResting(false);
-
-      setTimeout(() => {
-        setLoginStarted(true);
-      }, 20);
-
-      setTimeout(() => {
-        setLoginResting(true);
-      }, 1100);
-
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
         .from('profiles')
-        .select('status, username')
+        .select('status, username, email_verification_enabled, role')
         .eq('id', loggedInUser?.id)
         .maybeSingle();
 
@@ -711,6 +804,107 @@ export const Login: React.FC = () => {
         );
         return;
       }
+
+      // Check if 2-step verification after login is enabled
+      const is2FAEnabled =
+        (dbProfile?.email_verification_enabled === true ||
+          loggedInUser?.user_metadata?.email_verification_enabled === true) &&
+        !finalEmail.endsWith('@palomargym.noemail');
+
+      if (is2FAEnabled) {
+        sessionStorage.removeItem('outroActive');
+        sessionStorage.removeItem('playDashboardIntro');
+        setIsLoggingIn(false);
+        setLoginStarted(false);
+        setLoginResting(false);
+
+        // Terminate temporary password session so unverified access cannot proceed
+        await supabase.auth.signOut();
+
+        // Dispatch 6-digit OTP code to the user's verified email
+        let cooldownSeconds = 60;
+        let isRecentCode = false;
+
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          email: finalEmail,
+          options: {
+            shouldCreateUser: false,
+          },
+        });
+
+        if (otpError) {
+          const errorMsg = otpError.message || '';
+          const rateLimitMatch = errorMsg.match(/after\s+(\d+)\s+seconds/i);
+          const isRateLimit =
+            Boolean(rateLimitMatch) ||
+            errorMsg.toLowerCase().includes('security purposes') ||
+            errorMsg.toLowerCase().includes('rate limit');
+
+          if (isRateLimit) {
+            isRecentCode = true;
+            cooldownSeconds = rateLimitMatch
+              ? parseInt(rateLimitMatch[1], 10)
+              : 30;
+          } else {
+            toast.error(
+              `Unable to dispatch verification code: ${otpError.message}`
+            );
+            return;
+          }
+        }
+
+        const calculatedRoute =
+          dbProfile?.role === 'staff' ? '/sales' : safeFrom;
+        const expiresAt = Date.now() + 10 * 60 * 1000;
+        const cooldownUntil = Date.now() + cooldownSeconds * 1000;
+
+        // Persist pending 2FA to sessionStorage across accidental page refreshes
+        sessionStorage.setItem(
+          'palomar_2fa_pending',
+          JSON.stringify({
+            email: finalEmail,
+            targetName,
+            userId: loggedInUser?.id || '',
+            targetRoute: calculatedRoute,
+            expiresAt,
+            cooldownUntil,
+          })
+        );
+
+        setTwoFactorEmail(finalEmail);
+        setTwoFactorTargetName(targetName);
+        setTwoFactorUserId(loggedInUser?.id || '');
+        setTwoFactorTargetRoute(calculatedRoute);
+        setIs2FAMode(true);
+        setTwoFactorCode(['', '', '', '', '', '']);
+        setTwoFactorAttempts(0);
+        setTwoFactorResendCooldown(cooldownSeconds);
+        setTwoFactorExpiresAt(expiresAt);
+        setTimeRemainingSeconds(600);
+
+        if (isRecentCode) {
+          toast.info(
+            `A verification code was recently sent to ${finalEmail}. Enter the code, or request a new code in ${cooldownSeconds}s.`
+          );
+        } else {
+          toast.info(
+            `Security check: A verification code has been sent to ${finalEmail}.`
+          );
+        }
+        return;
+      }
+
+      setIsLoggingIn(true);
+      setLoginStarted(false);
+      setLoginResting(false);
+
+      setTimeout(() => {
+        setLoginStarted(true);
+      }, 20);
+
+      setTimeout(() => {
+        setLoginResting(true);
+      }, 1100);
 
       await logAudit(
         'USER_LOGIN',
@@ -744,6 +938,241 @@ export const Login: React.FC = () => {
     }
   };
 
+  // ─── TWO-FACTOR EMAIL VERIFICATION HELPERS & ACTIONS ───
+  const maskEmail = (emailStr: string) => {
+    if (!emailStr.includes('@')) return emailStr;
+    const [local, domain] = emailStr.split('@');
+    if (local.length <= 2) return `${local[0]}*@${domain}`;
+    return `${local[0]}${'*'.repeat(Math.min(local.length - 2, 5))}${local[local.length - 1]}@${domain}`;
+  };
+
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleDigitChange = (index: number, val: string) => {
+    const cleaned = val.replace(/\D/g, '');
+    if (!cleaned) {
+      const next = [...twoFactorCode];
+      next[index] = '';
+      setTwoFactorCode(next);
+      return;
+    }
+
+    const digit = cleaned.slice(-1);
+    const next = [...twoFactorCode];
+    next[index] = digit;
+    setTwoFactorCode(next);
+
+    if (index < 5) {
+      twoFactorInputRefs.current[index + 1]?.focus();
+    } else {
+      const fullCode = next.join('');
+      if (fullCode.length === 6) {
+        verify2FACode(fullCode);
+      }
+    }
+  };
+
+  const handleDigitKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key === 'Backspace') {
+      if (!twoFactorCode[index] && index > 0) {
+        const next = [...twoFactorCode];
+        next[index - 1] = '';
+        setTwoFactorCode(next);
+        twoFactorInputRefs.current[index - 1]?.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      twoFactorInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      twoFactorInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleDigitPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData
+      .getData('text')
+      .replace(/\D/g, '');
+    if (!pasted) return;
+
+    const cleanDigits = pasted.slice(0, 6);
+    const next = Array.from({ length: 6 }, (_, i) => cleanDigits[i] || '');
+    setTwoFactorCode(next);
+
+    const focusIdx = Math.min(cleanDigits.length, 5);
+    setTimeout(() => {
+      twoFactorInputRefs.current[focusIdx]?.focus();
+    }, 20);
+
+    if (cleanDigits.length === 6) {
+      verify2FACode(cleanDigits);
+    }
+  };
+
+  const verify2FACode = async (codeToVerify?: string) => {
+    const fullCode = codeToVerify || twoFactorCode.join('');
+    if (fullCode.length !== 6) {
+      toast.error('Please enter the complete 6-digit verification code.');
+      return;
+    }
+
+    setIsVerifying2FA(true);
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email: twoFactorEmail,
+        token: fullCode,
+        type: 'email',
+      });
+
+      if (verifyError) throw verifyError;
+
+      await logAudit(
+        '2FA_LOGIN_SUCCESS',
+        `User "${twoFactorTargetName}" completed email verification.`,
+        twoFactorUserId || undefined
+      );
+
+      toast.success(
+        `Verification complete. Welcome back, ${twoFactorTargetName}!`,
+        { toastId: 'login-success-toast' }
+      );
+
+      sessionStorage.removeItem('palomar_2fa_pending');
+      sessionStorage.setItem('outroActive', 'true');
+      sessionStorage.setItem('playDashboardIntro', 'true');
+
+      setIsLoggingIn(true);
+      setLoginStarted(false);
+      setLoginResting(false);
+
+      setTimeout(() => {
+        setLoginStarted(true);
+      }, 20);
+
+      setTimeout(() => {
+        setLoginResting(true);
+      }, 1100);
+
+      await checkSession();
+
+      setTimeout(() => {
+        sessionStorage.removeItem('outroActive');
+        navigate(twoFactorTargetRoute, { replace: true });
+      }, 1500);
+    } catch (err: any) {
+      triggerShake(setShake2FA);
+      setTwoFactorAttempts((prev) => {
+        const next = prev + 1;
+        if (next >= 5) {
+          sessionStorage.removeItem('palomar_2fa_pending');
+          toast.error(
+            'Too many failed attempts. For security, please log in again.'
+          );
+          setIs2FAMode(false);
+          setTwoFactorCode(['', '', '', '', '', '']);
+          return 0;
+        }
+        return next;
+      });
+
+      toast.error(
+        err.message ||
+          'Invalid or expired verification code. Please verify and try again.'
+      );
+      setTwoFactorCode(['', '', '', '', '', '']);
+      twoFactorInputRefs.current[0]?.focus();
+    } finally {
+      setIsVerifying2FA(false);
+    }
+  };
+
+  const handleResend2FACode = async () => {
+    if (twoFactorResendCooldown > 0 || isResending2FA) return;
+    setIsResending2FA(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: twoFactorEmail,
+        options: { shouldCreateUser: false },
+      });
+
+      if (error) {
+        const errorMsg = error.message || '';
+        const match = errorMsg.match(/after\s+(\d+)\s+seconds/i);
+        if (match) {
+          const waitSec = parseInt(match[1], 10);
+          setTwoFactorResendCooldown(waitSec);
+          // Persist cooldown
+          try {
+            const saved = sessionStorage.getItem('palomar_2fa_pending');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              parsed.cooldownUntil = Date.now() + waitSec * 1000;
+              sessionStorage.setItem(
+                'palomar_2fa_pending',
+                JSON.stringify(parsed)
+              );
+            }
+          } catch {
+            // ignore
+          }
+          toast.warn(
+            `Please wait ${waitSec}s before requesting another verification code.`
+          );
+          return;
+        }
+        throw error;
+      }
+
+      const expiresAt = Date.now() + 10 * 60 * 1000;
+      const cooldownUntil = Date.now() + 60 * 1000;
+
+      // Update storage
+      try {
+        const saved = sessionStorage.getItem('palomar_2fa_pending');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          parsed.expiresAt = expiresAt;
+          parsed.cooldownUntil = cooldownUntil;
+          sessionStorage.setItem(
+            'palomar_2fa_pending',
+            JSON.stringify(parsed)
+          );
+        }
+      } catch {
+        // ignore
+      }
+
+      toast.success('A new verification code has been dispatched.');
+      setTwoFactorResendCooldown(60);
+      setTwoFactorExpiresAt(expiresAt);
+      setTimeRemainingSeconds(600);
+      setTwoFactorCode(['', '', '', '', '', '']);
+      twoFactorInputRefs.current[0]?.focus();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to dispatch verification code.');
+    } finally {
+      setIsResending2FA(false);
+    }
+  };
+
+  const handleCancel2FA = async () => {
+    await supabase.auth.signOut();
+    sessionStorage.removeItem('palomar_2fa_pending');
+    setIs2FAMode(false);
+    setTwoFactorCode(['', '', '', '', '', '']);
+    setTwoFactorEmail('');
+    setTwoFactorTargetName('');
+    setTwoFactorAttempts(0);
+    sessionStorage.removeItem('outroActive');
+    sessionStorage.removeItem('playDashboardIntro');
+  };
+
   const onInvalidLoginSubmit = () => {
     if (loginErrors.usernameOrEmail) triggerShake(setShakeEmail);
     if (loginErrors.password) triggerShake(setShakePassword);
@@ -767,7 +1196,10 @@ export const Login: React.FC = () => {
       if (error) throw error;
 
       setRecoveryEmail(email);
+      setRecoveryStep('verify');
+      setRecoveryCode(['', '', '', '', '', '']);
       setShowSuccessModal(true);
+      toast.success(`Verification code dispatched to ${email}.`);
     } catch (err: any) {
       setRecoveryError(
         err.message || 'Failed to dispatch recovery instructions.'
@@ -775,6 +1207,114 @@ export const Login: React.FC = () => {
       triggerShake(setShakeRecovery);
     } finally {
       setIsRecoverySubmitting(false);
+    }
+  };
+
+  const handleRecoveryDigitChange = (index: number, val: string) => {
+    const cleaned = val.replace(/\D/g, '');
+    if (!cleaned) {
+      const next = [...recoveryCode];
+      next[index] = '';
+      setRecoveryCode(next);
+      return;
+    }
+
+    const digit = cleaned.slice(-1);
+    const next = [...recoveryCode];
+    next[index] = digit;
+    setRecoveryCode(next);
+
+    if (index < 5) {
+      recoveryInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleRecoveryDigitKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key === 'Backspace') {
+      if (!recoveryCode[index] && index > 0) {
+        const next = [...recoveryCode];
+        next[index - 1] = '';
+        setRecoveryCode(next);
+        recoveryInputRefs.current[index - 1]?.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      recoveryInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      recoveryInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleRecoveryDigitPaste = (
+    e: React.ClipboardEvent<HTMLInputElement>
+  ) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '');
+    if (!pasted) return;
+
+    const cleanDigits = pasted.slice(0, 6);
+    const next = Array.from(
+      { length: 6 },
+      (_, i) => cleanDigits[i] || ''
+    );
+    setRecoveryCode(next);
+
+    const focusIdx = Math.min(cleanDigits.length, 5);
+    setTimeout(() => {
+      recoveryInputRefs.current[focusIdx]?.focus();
+    }, 20);
+  };
+
+  const handleVerifyRecoveryOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fullCode = recoveryCode.join('');
+    if (fullCode.length !== 6) {
+      toast.error('Please enter the complete 6-digit recovery code.');
+      return;
+    }
+    if (!recoveryNewPassword || recoveryNewPassword.length < 6) {
+      toast.error('New password must be at least 6 characters.');
+      return;
+    }
+    if (recoveryNewPassword !== recoveryConfirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setIsVerifyingRecovery(true);
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email: recoveryEmail,
+        token: fullCode,
+        type: 'recovery',
+      });
+      if (verifyError) throw verifyError;
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: recoveryNewPassword,
+      });
+      if (updateError) throw updateError;
+
+      await supabase.auth.signOut();
+      toast.success(
+        'Password updated successfully! Please log in with your new password.',
+        { toastId: 'recovery-success-toast' }
+      );
+      setRecoveryStep('request');
+      setIsFlipped(false);
+      resetRecovery();
+      setRecoveryNewPassword('');
+      setRecoveryConfirmPassword('');
+      setRecoveryCode(['', '', '', '', '', '']);
+    } catch (err: any) {
+      toast.error(
+        err.message ||
+          'Failed to verify recovery code or update password. Please check the code and try again.'
+      );
+    } finally {
+      setIsVerifyingRecovery(false);
     }
   };
 
@@ -795,6 +1335,10 @@ export const Login: React.FC = () => {
   const handleBackToLoginClick = () => {
     setIsFlipped(false);
     resetRecovery();
+    setRecoveryStep('request');
+    setRecoveryNewPassword('');
+    setRecoveryConfirmPassword('');
+    setRecoveryCode(['', '', '', '', '', '']);
   };
 
   const renderLoginForm = () => (
@@ -1003,48 +1547,193 @@ export const Login: React.FC = () => {
           <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
         </div>
 
-        <div className="animate-slide-up">
-          <p className="desc text-center text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed font-bold select-none">
-            Enter your authorized account email below to receive a secure
-            password reset link.
-          </p>
+        {recoveryStep === 'request' ? (
+          <div className="animate-slide-up">
+            <p className="desc text-center text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed font-bold select-none">
+              Enter your authorized account email below to receive a secure recovery code and reset link.
+            </p>
 
-          <form
-            onSubmit={handlePreRecoverySubmit}
-            className="space-y-4 font-body pointer-events-auto"
-          >
-            <div className="relative z-30">
-              <Input
-                {...registerRecovery('email')}
-                type="email"
-                label="Email Address"
-                icon={
-                  <Mail className="w-4 h-4 text-slate-400 dark:text-slate-400" />
-                }
-                error={!!recoveryErrors.email}
-                shake={shakeRecovery}
-                touched={touchedRecovery.email}
-                isPopulated={!!watchRecoveryEmail}
-                disabled={isRecoverySubmitting}
-                className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
-              />
-            </div>
-
-            {recoveryError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-[10px] text-red-500 font-mono text-center select-none">
-                {recoveryError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isRecoverySubmitting}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+            <form
+              onSubmit={handlePreRecoverySubmit}
+              className="space-y-4 font-body pointer-events-auto"
             >
-              {isRecoverySubmitting ? 'DISPATCHING LINK...' : 'SEND RESET LINK'}
-            </button>
-          </form>
-        </div>
+              <div className="relative z-30">
+                <Input
+                  {...registerRecovery('email')}
+                  type="email"
+                  label="Email Address"
+                  icon={
+                    <Mail className="w-4 h-4 text-slate-400 dark:text-slate-400" />
+                  }
+                  error={!!recoveryErrors.email}
+                  shake={shakeRecovery}
+                  touched={touchedRecovery.email}
+                  isPopulated={!!watchRecoveryEmail}
+                  disabled={isRecoverySubmitting}
+                  className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+                />
+              </div>
+
+              {recoveryError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-[10px] text-red-500 font-mono text-center select-none">
+                  {recoveryError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isRecoverySubmitting}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto"
+              >
+                {isRecoverySubmitting ? 'DISPATCHING RECOVERY CODE...' : 'SEND RECOVERY CODE'}
+              </button>
+
+            </form>
+          </div>
+        ) : (
+          <div className="animate-slide-up text-left">
+            <p className="text-center text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed font-bold select-none">
+              Enter the verification code sent to{' '}
+              <span className="font-mono text-slate-900 dark:text-white font-bold">
+                {recoveryEmail || 'your email'}
+              </span>{' '}
+              to set up your new password:
+            </p>
+
+            <form onSubmit={handleVerifyRecoveryOtp} className="space-y-3 font-body pointer-events-auto">
+              {!recoveryEmail && (
+                <div className="relative z-30">
+                  <Input
+                    type="email"
+                    label="Email Address"
+                    value={recoveryEmail}
+                    onChange={(e) => setRecoveryEmail(e.target.value)}
+                    icon={<Mail className="w-4 h-4 text-slate-400" />}
+                    required
+                  />
+                </div>
+              )}
+
+              {/* Recovery Code Inputs (6 digits only) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider text-center">
+                  Verification Code (6 digits)
+                </label>
+                <div className="flex justify-center items-center gap-1.5 sm:gap-2 my-2">
+                  {recoveryCode.map((digit, idx) => (
+                    <input
+                      key={`rec-6-${idx}`}
+                      ref={(el) => {
+                        recoveryInputRefs.current[idx] = el;
+                      }}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleRecoveryDigitChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleRecoveryDigitKeyDown(idx, e)}
+                      onPaste={idx === 0 ? handleRecoveryDigitPaste : undefined}
+                      disabled={isVerifyingRecovery}
+                      className="w-9 h-11 sm:w-10 sm:h-12 text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+                      autoFocus={idx === 0}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* New Password & Confirm Password */}
+              <div className="space-y-2">
+                <Input
+                  type={showRecoveryPassword ? 'text' : 'password'}
+                  label="New Password"
+                  value={recoveryNewPassword}
+                  onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  placeholder="At least 6 characters"
+                  required
+                  rightElement={
+                    <button
+                      type="button"
+                      onClick={() => setShowRecoveryPassword((p) => !p)}
+                      className="field-visibility-toggle cursor-pointer"
+                    >
+                      {showRecoveryPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  }
+                />
+
+                <Input
+                  type={showRecoveryConfirmPassword ? 'text' : 'password'}
+                  label="Confirm New Password"
+                  value={recoveryConfirmPassword}
+                  onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                  icon={<Lock className="w-4 h-4 text-slate-400" />}
+                  placeholder="Repeat new password"
+                  required
+                  rightElement={
+                    <button
+                      type="button"
+                      onClick={() => setShowRecoveryConfirmPassword((p) => !p)}
+                      className="field-visibility-toggle cursor-pointer"
+                    >
+                      {showRecoveryConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  }
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  isVerifyingRecovery ||
+                  recoveryCode.join('').length !== 6 ||
+                  !recoveryNewPassword
+                }
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
+              >
+                {isVerifyingRecovery ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>UPDATING ACCESS...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>VERIFY CODE & UPDATE PASSWORD</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center justify-between text-xs pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRecoveryStep('request')}
+                  className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer font-medium"
+                >
+                  ← Change Email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (recoveryEmail) requestResetLink(recoveryEmail);
+                  }}
+                  disabled={isRecoverySubmitting}
+                  className="font-semibold text-blue-600 dark:text-red-400 hover:underline cursor-pointer"
+                >
+                  Resend Code
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4 font-body mt-4">
@@ -1054,8 +1743,7 @@ export const Login: React.FC = () => {
             <span>RECOVERY PROTOCOL</span>
           </div>
           <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-            Please check your inbox and click the reset link to establish new
-            login credentials.
+            Enter the verification code sent to your email and set your new password to restore access.
           </p>
         </div>
 
@@ -1077,13 +1765,145 @@ export const Login: React.FC = () => {
     </div>
   );
 
+  const render2FAVerificationForm = () => (
+    <div className="w-full font-body select-text">
+      <div className="flex justify-center pt-2 mb-3 relative z-20">
+        <img
+          src={activeLogo}
+          alt="Wolf Palomar Logo"
+          className="h-16 sm:h-20 object-contain drop-shadow-lg transition-all duration-300 transform hover:scale-105"
+        />
+      </div>
+
+      <div className="text-center relative z-20">
+        <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-1 select-none">
+          SECURITY CODE
+        </h1>
+
+        <div className="flex items-center justify-center gap-1.5 mb-3 select-none">
+          <div className="w-10 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-600 rounded-full transition-colors duration-500" />
+          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
+        </div>
+
+        <p className="text-center text-xs text-slate-600 dark:text-slate-300 mb-1.5 leading-relaxed font-bold select-none">
+          Two-step email verification is enabled.
+        </p>
+        <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 mb-2 leading-snug">
+          A secure verification code has been dispatched to{' '}
+          <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
+            {maskEmail(twoFactorEmail)}
+          </span>
+          .
+        </p>
+
+        {twoFactorAttempts > 0 && (
+          <p className="text-[11px] text-red-500 font-semibold mb-2">
+            Incorrect code. {5 - twoFactorAttempts}{' '}
+            {5 - twoFactorAttempts === 1 ? 'attempt' : 'attempts'} remaining
+            before lockout.
+          </p>
+        )}
+
+        {/* OTP Inputs (6 digits) */}
+        <div
+          className={`flex justify-center items-center gap-1.5 sm:gap-2 my-4 ${
+            shake2FA ? 'animate-shake' : ''
+          }`}
+        >
+          {twoFactorCode.map((digit, idx) => (
+            <input
+              key={`2fa-6-${idx}`}
+              ref={(el) => {
+                twoFactorInputRefs.current[idx] = el;
+              }}
+              type="text"
+              inputMode="numeric"
+              maxLength={1}
+              value={digit}
+              onChange={(e) => handleDigitChange(idx, e.target.value)}
+              onKeyDown={(e) => handleDigitKeyDown(idx, e)}
+              onPaste={idx === 0 ? handleDigitPaste : undefined}
+              disabled={isVerifying2FA}
+              className="w-10 h-12 sm:w-11 sm:h-14 text-xl text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+              autoFocus={idx === 0}
+            />
+          ))}
+        </div>
+
+        {/* Expiry & Resend Actions */}
+        <div className="flex items-center justify-between text-xs px-2 mb-5 font-medium text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              Expires in{' '}
+              <strong className="font-mono text-slate-700 dark:text-slate-300">
+                {formatTime(timeRemainingSeconds)}
+              </strong>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleResend2FACode}
+            disabled={twoFactorResendCooldown > 0 || isResending2FA}
+            className="flex items-center gap-1 font-semibold text-blue-600 dark:text-red-400 hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
+          >
+            <RefreshCw
+              className={`w-3 h-3 ${isResending2FA ? 'animate-spin' : ''}`}
+            />
+            <span>
+              {twoFactorResendCooldown > 0
+                ? `Resend (${twoFactorResendCooldown}s)`
+                : 'Resend Code'}
+            </span>
+          </button>
+        </div>
+
+        {/* Verification Submit Button */}
+        <button
+          type="button"
+          onClick={() => verify2FACode()}
+          disabled={
+            isVerifying2FA ||
+            twoFactorCode.join('').length !== 6
+          }
+          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none"
+        >
+          {isVerifying2FA ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span>VERIFYING CODE...</span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="w-4 h-4" />
+              <span>VERIFY & COMPLETE LOGIN</span>
+            </>
+          )}
+        </button>
+
+        {/* Back to password login */}
+        <div className="mt-4 pt-4 border-t border-slate-200/80 dark:border-white/10">
+          <button
+            type="button"
+            onClick={handleCancel2FA}
+            className="flex items-center justify-center gap-1.5 w-full text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Cancel and return to password sign-in</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const isOutroActive =
     typeof window !== 'undefined' &&
     sessionStorage.getItem('outroActive') === 'true';
 
   if (
     !isPreview &&
-    (!initialized || (user && !isLoggingIn && !isOutroActive))
+    (!initialized || (user && !isLoggingIn && !isOutroActive && !is2FAMode))
   ) {
     return (
       <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
@@ -1248,12 +2068,12 @@ export const Login: React.FC = () => {
                     badgeText={`v${APP_VERSION}`}
                     showWave={true}
                   >
-                    {renderLoginForm()}
+                    {is2FAMode ? render2FAVerificationForm() : renderLoginForm()}
                   </Card>
                 </div>
               ) : (
                 <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
-                  {renderLoginForm()}
+                  {is2FAMode ? render2FAVerificationForm() : renderLoginForm()}
                 </div>
               )}
             </div>

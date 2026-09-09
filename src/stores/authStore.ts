@@ -11,6 +11,7 @@ export interface UserProfile {
   role: 'admin' | 'staff';
   status: 'active' | 'pending' | 'inactive';
   avatar_url?: string; // Will hold the secure, local blob URL
+  email_verification_enabled?: boolean;
 }
 
 interface AuthState {
@@ -222,6 +223,7 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
                         role: payload.new.role,
                         status: payload.new.status,
                         avatar_url: resolvedBlobUrl,
+                        email_verification_enabled: payload.new.email_verification_enabled ?? state.profile.email_verification_enabled,
                       }
                     : null,
                 }));
@@ -253,6 +255,10 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
             role: userRole as 'admin' | 'staff',
             status: userStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,
+            email_verification_enabled:
+              dbProfile?.email_verification_enabled ??
+              session.user.user_metadata?.email_verification_enabled ??
+              false,
           },
           loading: false,
           initialized: true,

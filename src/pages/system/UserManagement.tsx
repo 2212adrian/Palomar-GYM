@@ -11,7 +11,15 @@ import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { AvatarImage, compressImage } from './PersonalAccount';
 import { isSuperAdmin } from '../../constants/auth';
-import { Loader2, Trash2, ShieldAlert, UserX } from 'lucide-react';
+import {
+  Loader2,
+  Trash2,
+  ShieldAlert,
+  MoreVertical,
+  Edit3,
+  LogOut,
+  KeyRound,
+} from 'lucide-react';
 
 interface DraftChange {
   role?: 'admin' | 'staff';
@@ -28,6 +36,23 @@ export const UserManagement: React.FC = () => {
   // Initializing to true prevents layout flashing before query fires
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
+  const [isSigningOutSessions, setIsSigningOutSessions] = useState<
+    string | null
+  >(null);
+  const [isSendingReset, setIsSendingReset] = useState<string | null>(null);
+
+  // 3-dots action menu state
+  const [activeActionMenuUserId, setActiveActionMenuUserId] = useState<
+    string | null
+  >(null);
+
+  // Change Username Modal states
+  const [isChangeUsernameModalOpen, setIsChangeUsernameModalOpen] =
+    useState(false);
+  const [changeUsernameTargetUser, setChangeUsernameTargetUser] =
+    useState<any | null>(null);
+  const [newTargetUsername, setNewTargetUsername] = useState('');
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
 
   // Local draft changes state (Silhouette state holder)
   const [drafts, setDrafts] = useState<Record<string, DraftChange>>({});
@@ -49,6 +74,23 @@ export const UserManagement: React.FC = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deleteTargetUser, setDeleteTargetUser] = useState<any | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+
+  // Close 3-dots action menu when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (!activeActionMenuUserId) return;
+      const target = e.target as HTMLElement;
+      if (!target.closest('.user-action-menu-container')) {
+        setActiveActionMenuUserId(null);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [activeActionMenuUserId]);
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -368,6 +410,138 @@ export const UserManagement: React.FC = () => {
     }
   };
 
+  // ─── 3-DOTS ACTION MENU HANDLERS ───
+  const handleSignOutUserSessions = async (targetUser: any) => {
+    setActiveActionMenuUserId(null);
+    try {
+      setIsSigningOutSessions(targetUser.id);
+      // Attempt to invoke admin RPC
+      const { error: rpcError } = await supabase.rpc('admin_sign_out_user', {
+        target_user_id: targetUser.id,
+      });
+
+      if (rpcError) {
+        console.warn('RPC admin_sign_out_user note:', rpcError.message);
+      }
+
+      await logAudit(
+        'ADMIN_REVOKED_SESSIONS',
+        `Admin revoked active login sessions for user "${targetUser.username}".`,
+        user?.id ?? undefined
+      );
+
+      toast.success(
+        `All active sessions for "${targetUser.username}" have been signed out.`
+      );
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to sign out user sessions.');
+    } finally {
+      setIsSigningOutSessions(null);
+    }
+  };
+
+  const handleSendResetPassword = async (targetUser: any) => {
+    setActiveActionMenuUserId(null);
+    const email = targetUser.email;
+    if (!email || email.endsWith('@palomargym.noemail')) {
+      toast.info(
+        `"${targetUser.username}" is a local-only username account without an external mailbox. You can change their credentials directly.`
+      );
+      return;
+    }
+
+    try {
+      setIsSendingReset(targetUser.id);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/forgot-password`,
+      });
+
+      if (error) throw error;
+
+      await logAudit(
+        'ADMIN_PASSWORD_RESET_SENT',
+        `Admin sent password reset link to "${email}" for user "${targetUser.username}".`,
+        user?.id ?? undefined
+      );
+
+      toast.success(`Password reset link successfully sent to ${email}!`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send password reset email.');
+    } finally {
+      setIsSendingReset(null);
+    }
+  };
+
+  const handleOpenChangeUsername = (targetUser: any) => {
+    setActiveActionMenuUserId(null);
+    setChangeUsernameTargetUser(targetUser);
+    setNewTargetUsername(targetUser.username || '');
+    setIsChangeUsernameModalOpen(true);
+  };
+
+  const handleSaveUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changeUsernameTargetUser) return;
+
+    if (isSuperAdmin(changeUsernameTargetUser.email)) {
+      toast.error('Superadmin username is permanently locked and cannot be modified.');
+      setIsChangeUsernameModalOpen(false);
+      return;
+    }
+
+    const trimmed = newTargetUsername.trim();
+    if (trimmed.length < 3) {
+      toast.error('Username must be at least 3 characters long.');
+      return;
+    }
+
+    if (trimmed.toLowerCase() === changeUsernameTargetUser.username?.toLowerCase()) {
+      setIsChangeUsernameModalOpen(false);
+      return;
+    }
+
+    try {
+      setIsSavingUsername(true);
+
+      // Attempt RPC first
+      const { error: rpcError } = await supabase.rpc('admin_update_username', {
+        target_user_id: changeUsernameTargetUser.id,
+        new_username: trimmed,
+      });
+
+      if (rpcError) {
+        // Fallback directly to updating profiles
+        const { error: fallbackError } = await supabase
+          .from('profiles')
+          .update({ username: trimmed })
+          .eq('id', changeUsernameTargetUser.id);
+
+        if (fallbackError) throw fallbackError;
+      }
+
+      await logAudit(
+        'ADMIN_UPDATE_USERNAME',
+        `Admin updated username for account (${changeUsernameTargetUser.id}) from "${changeUsernameTargetUser.username}" to "${trimmed}".`,
+        user?.id ?? undefined
+      );
+
+      toast.success(`Username updated to "${trimmed}"!`);
+      setIsChangeUsernameModalOpen(false);
+      setChangeUsernameTargetUser(null);
+      setNewTargetUsername('');
+      fetchUsers();
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (msg.includes('unique') || msg.includes('duplicate')) {
+        toast.error('This username is already taken. Please choose another.');
+      } else {
+        toast.error(err.message || 'Failed to update username.');
+      }
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
   const handleToggleUserStatus = (
     targetId: string,
     currentStatus: 'active' | 'inactive' | 'pending',
@@ -653,41 +827,116 @@ export const UserManagement: React.FC = () => {
       cellClassName: 'text-right',
       render: (u) => {
         const isSelfUser = u.id === user?.id;
-
+        // User management: do not show actions if this account is logged into that
         if (isSelfUser) {
-          return (
-            <span className="text-xs text-slate-500 italic font-semibold">
-              Locked
-            </span>
-          );
+          return null;
         }
 
-        if (u.role === 'admin' && u.status === 'active' && !isSuperAdmin) {
-          return (
-            <span
-              className="text-xs text-slate-500 italic font-semibold"
-              title="Active administrators can only be deleted by the Superadmin"
-            >
-              Protected
-            </span>
-          );
-        }
+        const isTargetSuperAdmin = isSuperAdmin(u.email);
+        const isProtectedAdmin =
+          u.role === 'admin' && u.status === 'active' && !isSuperAdmin;
+        const isMenuOpen = activeActionMenuUserId === u.id;
 
         return (
-          <button
-            type="button"
-            onClick={() => handleDeleteUserClick(u)}
-            disabled={isDeletingUser === u.id}
-            title={`Delete user account ${u.username}`}
-            aria-label={`Delete user account ${u.username}`}
-            className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
-          >
-            {isDeletingUser === u.id ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <UserX className="w-4 h-4" />
+          <div className="relative inline-block user-action-menu-container text-right">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveActionMenuUserId(isMenuOpen ? null : u.id);
+              }}
+              title="Actions"
+              aria-label={`Actions for ${u.username}`}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center ${
+                isMenuOpen
+                  ? 'opacity-100 bg-slate-500/15 text-(--color-primary)'
+                  : 'text-slate-400 hover:text-(--color-text) hover:bg-slate-500/10 opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'
+              }`}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {isMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1.5 w-52 bg-(--bg-card) border border-(--border-color) rounded-xl shadow-xl py-1.5 z-40 text-left font-body animate-fade-in divide-y divide-(--border-color)/50"
+              >
+                <div className="py-1">
+                  {/* Change Username - NOT editable for Superadmin */}
+                  {!isTargetSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenChangeUsername(u)}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-(--color-text) hover:bg-slate-500/10 transition-colors cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Change Username</span>
+                    </button>
+                  )}
+
+                  {/* Sign Out All Sessions */}
+                  <button
+                    type="button"
+                    onClick={() => handleSignOutUserSessions(u)}
+                    disabled={isSigningOutSessions === u.id}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-(--color-text) hover:bg-slate-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSigningOutSessions === u.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                    ) : (
+                      <LogOut className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    <span>Sign Out All Sessions</span>
+                  </button>
+
+                  {/* Send Reset Password */}
+                  <button
+                    type="button"
+                    onClick={() => handleSendResetPassword(u)}
+                    disabled={isSendingReset === u.id}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-(--color-text) hover:bg-slate-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingReset === u.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                    ) : (
+                      <KeyRound className="w-3.5 h-3.5 text-emerald-500" />
+                    )}
+                    <span>Send Reset Password</span>
+                  </button>
+                </div>
+
+                {/* Delete Account */}
+                <div className="py-1">
+                  {isTargetSuperAdmin ? (
+                    <div className="px-3 py-1.5 text-[11px] text-slate-400 italic">
+                      Superadmin account protected
+                    </div>
+                  ) : isProtectedAdmin ? (
+                    <div className="px-3 py-1.5 text-[11px] text-slate-400 italic">
+                      Admin protected by Superadmin
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveActionMenuUserId(null);
+                        handleDeleteUserClick(u);
+                      }}
+                      disabled={isDeletingUser === u.id}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeletingUser === u.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                      )}
+                      <span>Delete Account</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
-          </button>
+          </div>
         );
       },
     },
@@ -1011,6 +1260,77 @@ export const UserManagement: React.FC = () => {
                 </>
               ) : (
                 'Register'
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Change Username Modal */}
+      <Modal
+        isOpen={isChangeUsernameModalOpen}
+        onClose={() => {
+          setIsChangeUsernameModalOpen(false);
+          setChangeUsernameTargetUser(null);
+          setNewTargetUsername('');
+        }}
+        title="Change Username"
+      >
+        <form
+          onSubmit={handleSaveUsername}
+          className="text-left w-full space-y-4 font-body"
+        >
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-400 flex items-start gap-2">
+            <Edit3 className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+            <span>
+              Updating username for{' '}
+              <strong className="text-(--color-text)">
+                {changeUsernameTargetUser?.username}
+              </strong>
+              . This handle is used for sign-in and system audit logs.
+            </span>
+          </div>
+
+          <div className="field-wrap">
+            <input
+              type="text"
+              id="newTargetUsername"
+              placeholder=" "
+              required
+              value={newTargetUsername}
+              onChange={(e) => setNewTargetUsername(e.target.value)}
+              className="field-input text-xs"
+              autoFocus
+            />
+            <label htmlFor="newTargetUsername" className="field-label text-xs">
+              New Username
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsChangeUsernameModalOpen(false);
+                setChangeUsernameTargetUser(null);
+                setNewTargetUsername('');
+              }}
+              className="flex-1 px-4 py-2.5 bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer text-center"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingUsername || !newTargetUsername.trim()}
+              className="flex-1 px-4 py-2.5 bg-(--color-primary) text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isSavingUsername ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
               )}
             </button>
           </div>
