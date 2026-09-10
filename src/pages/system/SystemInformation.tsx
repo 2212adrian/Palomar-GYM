@@ -24,7 +24,6 @@ import {
   CheckCircle2,
   Copy,
   Check,
-  Globe,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -1080,17 +1079,6 @@ export const SystemInformation: React.FC = () => {
               </div>
               <span className="text-xs font-mono text-slate-600 dark:text-slate-400 font-bold">
                 {formatBytes(latestRelease.fileSizeBytes)}
-              </span>
-            </div>
-
-            {/* Direct CDN Host Indicator */}
-            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-black/20 border border-slate-200/70 dark:border-white/5 text-[11px]">
-              <span className="text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-emerald-500" />
-                Distribution Mirror:
-              </span>
-              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                Catbox High-Speed CDN
               </span>
             </div>
 
