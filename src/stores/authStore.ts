@@ -1,6 +1,8 @@
 //src/stores/authStore.ts
 
 import { create } from 'zustand';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { isSuperAdmin } from '../constants/auth'; // Centralized helper
@@ -291,13 +293,30 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
   signInWithGoogle: async () => {
     try {
       set({ loading: true, error: null });
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
+      const isNative = Capacitor.isNativePlatform();
+      const redirectTo = isNative
+        ? 'com.wolfpalomar.gymmanagement://login'
+        : `${window.location.origin}/dashboard`;
+
+      if (isNative) {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error) throw error;
+        if (data?.url) {
+          await Browser.open({ url: data.url, windowName: '_system' });
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo },
+        });
+        if (error) throw error;
+      }
     } catch (err: any) {
       set({ loading: false, error: err.message });
     }

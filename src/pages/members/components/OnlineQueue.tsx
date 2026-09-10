@@ -25,6 +25,8 @@ import {
   Archive,
   RotateCcw,
   ShieldAlert,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -227,8 +229,23 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     };
   }, []);
 
+  const ORIGINAL_REGISTRATION_URL = 'https://wolfpalomar.vercel.app/register';
+
+  const [copiedLink, setCopiedLink] = useState(false);
+
   const handleOpenRegistrationPortal = () => {
-    window.open('/register', '_blank');
+    window.open(ORIGINAL_REGISTRATION_URL, '_blank');
+  };
+
+  const handleCopyRegistrationLink = async () => {
+    try {
+      await navigator.clipboard.writeText(ORIGINAL_REGISTRATION_URL);
+      setCopiedLink(true);
+      toast.success(`Copied: ${ORIGINAL_REGISTRATION_URL}`);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      toast.error('Failed to copy link');
+    }
   };
 
   const handlePrintPoster = async () => {
@@ -241,7 +258,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     localStorage.setItem('palomar_active_poster_token', newToken);
     setActivePosterToken(newToken);
 
-    const portalUrl = `${window.location.origin}/register-online?token=${newToken}`;
+    const portalUrl = `https://wolfpalomar.vercel.app/register-online?token=${newToken}`;
     const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(portalUrl)}`;
 
     printWindow.document.write(`
@@ -433,6 +450,9 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
             <div class="footer-tag">WOLF PALOMAR FITNESS • EST. 2026</div>
             <div class="token-indicator">Security Sign Verification Token: ${newToken}</div>
+            <div style="margin-top: 14px; font-size: 11px; font-family: monospace; color: #123c73; font-weight: bold; letter-spacing: 0.5px;">
+              Portal Link: ${ORIGINAL_REGISTRATION_URL}
+            </div>
           </div>
         </body>
       </html>
@@ -681,6 +701,19 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           </button>
 
           <button
+            onClick={handleCopyRegistrationLink}
+            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
+            title="Copy Public Pre-Registration URL"
+          >
+            {copiedLink ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            {copiedLink ? 'Copied' : 'Copy Link'}
+          </button>
+
+          <button
             onClick={handlePrintPoster}
             className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
             title="Print Physical QR registration Poster with Dynamic Token Expiration"
@@ -764,6 +797,19 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               title="Open Online Form"
             >
               <ExternalLink className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyRegistrationLink}
+              className="w-9 h-9 rounded-xl bg-slate-500/10 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20 border border-slate-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+              title="Copy Registration Link"
+            >
+              {copiedLink ? (
+                <Check className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </button>
 
             <button

@@ -157,11 +157,26 @@ public class AppInstallerPlugin extends Plugin {
         }
 
         // 2. Launch system package installer on top of app
-        Uri apkUri = FileProvider.getUriForFile(
-            getContext(),
-            getContext().getPackageName() + ".appinstaller.fileprovider",
-            apkFile
-        );
+        Uri apkUri = null;
+        String packageName = getContext().getPackageName();
+        try {
+            apkUri = FileProvider.getUriForFile(
+                getContext(),
+                packageName + ".fileprovider",
+                apkFile
+            );
+        } catch (Exception e1) {
+            try {
+                apkUri = FileProvider.getUriForFile(
+                    getContext(),
+                    packageName + ".appinstaller.fileprovider",
+                    apkFile
+                );
+            } catch (Exception e2) {
+                call.reject("FileProvider authority resolution failed: " + e2.getMessage(), e2);
+                return;
+            }
+        }
 
         Intent installIntent = new Intent(Intent.ACTION_VIEW);
         installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");

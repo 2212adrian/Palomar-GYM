@@ -224,6 +224,26 @@ export const executeAppUpdate = async (
 };
 
 /**
+ * Reloads the PWA / Web application to apply pending updates.
+ * Updates service workers and clears caches where applicable.
+ */
+export const reloadPwaApp = async (): Promise<void> => {
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.update().catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('[PWA] Service worker update check error:', err);
+  } finally {
+    // Reload page from server
+    window.location.reload();
+  }
+};
+
+/**
  * Trigger immediate direct file download or open external link (fallback)
  */
 export const triggerDirectDownload = (url: string, fileName?: string): void => {

@@ -29,6 +29,7 @@ import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 // Capacitor core import
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 // Reusable UI Components from src/components/ui/
 import { Input } from '../../components/ui/Input';
@@ -767,11 +768,25 @@ export const Login: React.FC = () => {
         ? 'com.wolfpalomar.gymmanagement://login'
         : `${window.location.origin}/dashboard`;
 
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo },
-      });
-      if (error) throw error;
+      if (isNative) {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error) throw error;
+        if (data?.url) {
+          await Browser.open({ url: data.url, windowName: '_system' });
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo },
+        });
+        if (error) throw error;
+      }
     } catch (err: any) {
       toast.error(err.message || 'OAuth handshake parameters invalid.');
       setIsGoogleSubmitting(false);

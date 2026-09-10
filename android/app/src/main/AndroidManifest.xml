@@ -55,7 +55,7 @@
         <!-- Secure FileProvider for APK Installation & Camera -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
+            android:authorities="${applicationId}.fileprovider;${applicationId}.appinstaller.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

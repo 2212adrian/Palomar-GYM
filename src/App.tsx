@@ -12,9 +12,12 @@ import { Button } from './components/ui/Button';
 // Capacitor and Supabase Imports
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { supabase } from './lib/supabase/client';
 
 import { promptInitialPermissionsOnLogin } from './lib/permissions';
+import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
+import pkg from '../package.json';
 
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
@@ -106,6 +109,93 @@ export const App: React.FC = () => {
     checkSession();
   }, [checkSession]);
 
+  // ─── PWA Out-of-Date Detection & Refresh Handling ───
+  useEffect(() => {
+    // Only applies to PWA / Web browser mode
+    if (Capacitor.isNativePlatform()) return;
+
+    let isSubscribed = true;
+
+    // 1. Listen for new service worker controlling the page
+    if ('serviceWorker' in navigator) {
+      const handleControllerChange = () => {
+        toast.info(
+          ({ closeToast }) => (
+            <div className="flex flex-col gap-1.5 text-xs">
+              <span className="font-bold">App update applied</span>
+              <span className="text-[11px] text-slate-300">
+                A new version has loaded in the background. Refresh to activate.
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  closeToast();
+                  await reloadPwaApp();
+                }}
+                className="mt-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider self-start cursor-pointer shadow-xs"
+              >
+                Refresh Page
+              </button>
+            </div>
+          ),
+          {
+            toastId: 'pwa-controller-changed',
+            autoClose: false,
+            closeOnClick: false,
+          }
+        );
+      };
+
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    }
+
+    // 2. Periodic release check against Supabase app_releases
+    const checkPwaVersion = async () => {
+      if (!isSubscribed) return;
+      try {
+        const remote = await fetchLatestRelease(pkg.version, 'web');
+        if (remote?.isNewer) {
+          toast.info(
+            ({ closeToast }) => (
+              <div className="flex flex-col gap-1.5 text-xs">
+                <span className="font-bold">New update available (v{remote.version})</span>
+                <span className="text-[11px] text-slate-300">
+                  Your web app is running v{pkg.version}. A newer build (v{remote.version}) is ready.
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    closeToast();
+                    await reloadPwaApp();
+                  }}
+                  className="mt-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider self-start cursor-pointer shadow-xs"
+                >
+                  Refresh Page
+                </button>
+              </div>
+            ),
+            {
+              toastId: 'pwa-version-outdated',
+              autoClose: false,
+              closeOnClick: false,
+            }
+          );
+        }
+      } catch (err) {
+        console.debug('[PWA] Version check deferred:', err);
+      }
+    };
+
+    const initialTimer = setTimeout(checkPwaVersion, 4000);
+    const intervalTimer = setInterval(checkPwaVersion, 20 * 60 * 1000);
+
+    return () => {
+      isSubscribed = false;
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
+    };
+  }, []);
+
   // ─── Native Back Button Listener with Modal Dialog ───
   useEffect(() => {
     // Only register the back button listener on native platforms (Android/iOS)
@@ -154,14 +244,38 @@ export const App: React.FC = () => {
     const setupDeepLinkListener = async () => {
       activeListener = await CapApp.addListener('appUrlOpen', async (data) => {
         try {
+          // Close the system browser tab used for OAuth
+          try {
+            await Browser.close();
+          } catch {
+            // Already closed or not applicable
+          }
+
           const url = new URL(data.url);
 
-          // Parse the hash parameters from the redirect URL (contains tokens)
-          const hash = url.hash.substring(1);
-          const params = new URLSearchParams(hash);
+          // 1. Support PKCE authorization code exchange (Supabase v2 standard)
+          const code = url.searchParams.get('code');
+          if (code) {
+            const { data: sessionData, error } =
+              await supabase.auth.exchangeCodeForSession(code);
+            if (!error && sessionData?.session) {
+              window.location.href = '/dashboard';
+              return;
+            }
+          }
 
-          const access_token = params.get('access_token');
-          const refresh_token = params.get('refresh_token');
+          // 2. Support implicit hash tokens (#access_token=...&refresh_token=...)
+          const rawHash = url.hash.startsWith('#')
+            ? url.hash.substring(1)
+            : url.hash;
+          const hashParams = new URLSearchParams(rawHash);
+
+          const access_token =
+            hashParams.get('access_token') ||
+            url.searchParams.get('access_token');
+          const refresh_token =
+            hashParams.get('refresh_token') ||
+            url.searchParams.get('refresh_token');
 
           if (access_token && refresh_token) {
             // Initialize session tokens in Supabase

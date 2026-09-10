@@ -19,11 +19,11 @@ import {
   Phone,
   Mail,
   ExternalLink,
-  AlertTriangle,
   Download,
   CheckCircle2,
   Copy,
   Check,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -31,6 +31,9 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
+import {
+  AgreementDocumentViewer,
+} from '../../components/ui/AgreementDocumentViewer';
 
 import { Capacitor } from '@capacitor/core';
 import pkg from '../../../package.json';
@@ -38,9 +41,16 @@ import pkg from '../../../package.json';
 import {
   fetchLatestRelease,
   executeAppUpdate,
+  reloadPwaApp,
   formatBytes,
   type AppReleaseInfo,
 } from '../../lib/appUpdateService';
+
+import {
+  getLatestChangelog,
+  getChangelogForVersion,
+  formatChangelogForReleaseNotes,
+} from '../../lib/changelog';
 
 interface StorageMetric {
   title: string;
@@ -177,6 +187,15 @@ export const SystemInformation: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
+
+  // Changelog expand state - displays only ONE version (latest release)
+  const [isChangelogOpen, setIsChangelogOpen] = useState<boolean>(false);
+  const latestChangelog = useMemo(() => getLatestChangelog(), []);
+
+  const handlePwaRefresh = async () => {
+    toast.info('Refreshing application to apply the latest build...');
+    await reloadPwaApp();
+  };
 
   const APP_VERSION = pkg.version;
 
@@ -605,21 +624,32 @@ export const SystemInformation: React.FC = () => {
             </div>
 
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-              A newer version of the gym terminal is ready to install from
-              Catbox CDN ({formatBytes(latestRelease.fileSizeBytes)}). No rate
-              limits, direct download.
+              {isNative
+                ? `A newer version of the gym terminal is ready to install from Catbox CDN (${formatBytes(latestRelease.fileSizeBytes)}). No rate limits, direct download.`
+                : `A newer version of the web app is ready (v${latestRelease.version}). Refresh the page to apply the latest build immediately.`}
             </p>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleOpenUpdateModal}
-              className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              <span>INSTALL UPDATE</span>
-            </button>
+            {isNative ? (
+              <button
+                type="button"
+                onClick={handleOpenUpdateModal}
+                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>INSTALL UPDATE</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePwaRefresh}
+                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>REFRESH APP</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -669,6 +699,76 @@ export const SystemInformation: React.FC = () => {
             />
             <span>CHECK FOR UPDATES</span>
           </button>
+        </div>
+      )}
+
+      {/* Subtle, non-obvious expandable update log button (Only display one version only) */}
+      <div className="flex items-center justify-between px-1">
+        <button
+          type="button"
+          onClick={() => setIsChangelogOpen(!isChangelogOpen)}
+          className="text-[11px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer py-1 select-none"
+          title="Toggle version release notes"
+        >
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${
+              isChangelogOpen ? 'rotate-180 text-blue-600 dark:text-red-500' : ''
+            }`}
+          />
+          <span>
+            {isChangelogOpen ? 'Hide' : 'View'} release logs (v{latestChangelog.version})
+          </span>
+        </button>
+
+        {isChangelogOpen && (
+          <span className="text-[10px] font-mono text-slate-400">
+            Displaying latest version only
+          </span>
+        )}
+      </div>
+
+      {/* Expandable Single-Version Changelog View (Only display one version only) */}
+      {isChangelogOpen && (
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-3 animate-fade-in text-left">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-blue-600/10 dark:bg-red-600/10 text-blue-600 dark:text-red-400 font-mono font-bold text-xs">
+                v{latestChangelog.version}
+              </span>
+              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+                Released: {latestChangelog.date}
+              </span>
+            </div>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400">
+              Single Version View
+            </span>
+          </div>
+
+          {latestChangelog.summary && (
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              {latestChangelog.summary}
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {latestChangelog.sections.map((section, sIdx) => (
+              <div key={sIdx} className="space-y-1.5">
+                <span className="text-[10px] font-heading font-black uppercase tracking-wider text-slate-400">
+                  {section.type}
+                </span>
+                <ul className="space-y-1 pl-3 border-l-2 border-slate-200 dark:border-white/10">
+                  {section.items.map((item, iIdx) => (
+                    <li
+                      key={iIdx}
+                      className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-normal"
+                    >
+                      • {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -873,107 +973,12 @@ export const SystemInformation: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── MODALS: Terms of Service ─── */}
-      <Modal
-        isOpen={activeModal === 'terms'}
+      {/* ─── UNIFIED LEGAL & POLICY DOCUMENT VIEWER (AGREEMENT DOCUMENT VIEWER) ─── */}
+      <AgreementDocumentViewer
+        isOpen={activeModal === 'terms' || activeModal === 'privacy'}
         onClose={() => setActiveModal(null)}
-        title="Terms of Service"
-        className="max-w-2xl text-left p-6 sm:p-8 z-[9999]"
-      >
-        <div className="space-y-4 text-xs font-semibold text-slate-600 dark:text-slate-300 overflow-y-auto max-h-[65vh] pr-2 leading-relaxed">
-          <div className="flex gap-3 p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
-            <Scale className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
-            <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-              These rules govern facility safety, equipment use, subscriptions,
-              and conduct for Wolf Palomar Fitness Gym members and guests.
-            </p>
-          </div>
-
-          <div className="flex gap-2.5 rounded-2xl border border-amber-300/70 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 p-3.5 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-            <p>
-              <strong>Important Notice:</strong> Membership fees and
-              subscriptions are non-refundable after purchase in accordance with
-              Philippine law.
-            </p>
-          </div>
-
-          <div className="space-y-1.5 border-l-2 border-blue-500 pl-3.5">
-            <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              1. Gym Etiquette &amp; Safety
-            </h4>
-            <p>
-              Re-rack weights and clean equipment after use. Follow coach
-              instructions and report any equipment defects immediately.
-            </p>
-          </div>
-
-          <div className="space-y-1.5 border-l-2 border-blue-500 pl-3.5">
-            <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              2. Facility Conduct
-            </h4>
-            <p>
-              Harassment, violent conduct, and unauthorized commercial
-              recordings are strictly prohibited under RA 11313 (Safe Spaces
-              Act).
-            </p>
-          </div>
-        </div>
-        <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-white/10">
-          <Button
-            onClick={() => setActiveModal(null)}
-            className="bg-[#123c73] dark:bg-red-600 text-white cursor-pointer px-4 font-heading text-xs tracking-wider"
-          >
-            Close
-          </Button>
-        </div>
-      </Modal>
-
-      {/* ─── MODALS: Privacy Policy ─── */}
-      <Modal
-        isOpen={activeModal === 'privacy'}
-        onClose={() => setActiveModal(null)}
-        title="Privacy Policy"
-        className="max-w-2xl text-left p-6 sm:p-8 z-[9999]"
-      >
-        <div className="space-y-4 text-xs font-semibold text-slate-600 dark:text-slate-300 overflow-y-auto max-h-[65vh] pr-2 leading-relaxed">
-          <div className="flex gap-3 p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40">
-            <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-              Personal data collected during member enrollment is protected
-              under the Republic Act 10173 (Data Privacy Act of 2012).
-            </p>
-          </div>
-
-          <div className="space-y-1.5 border-l-2 border-emerald-500 pl-3.5">
-            <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              1. Information Collected
-            </h4>
-            <p>
-              Member names, contact numbers, emergency contacts, check-in
-              timestamps, and payment reference numbers.
-            </p>
-          </div>
-
-          <div className="space-y-1.5 border-l-2 border-emerald-500 pl-3.5">
-            <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-              2. Security &amp; Access Control
-            </h4>
-            <p>
-              Access is strictly restricted to authenticated gym front-desk
-              personnel and administrators via encrypted Row Level Security.
-            </p>
-          </div>
-        </div>
-        <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-white/10">
-          <Button
-            onClick={() => setActiveModal(null)}
-            className="bg-[#123c73] dark:bg-red-600 text-white cursor-pointer px-4 font-heading text-xs tracking-wider"
-          >
-            Close
-          </Button>
-        </div>
-      </Modal>
+        initialDocument={activeModal === 'terms' ? 'terms' : 'privacy'}
+      />
 
       {/* ─── MODALS: Developer Info ─── */}
       <Modal
@@ -1089,7 +1094,9 @@ export const SystemInformation: React.FC = () => {
               </span>
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-black/30 border border-slate-200/80 dark:border-white/10 text-xs text-slate-700 dark:text-slate-300 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap font-medium">
                 {latestRelease.releaseNotes ||
-                  '• Stability enhancements & Catbox CDN migration\n• Offline check-in and local database optimizations\n• Faster camera QR reader response'}
+                  formatChangelogForReleaseNotes(
+                    getChangelogForVersion(latestRelease.version)
+                  )}
               </div>
             </div>
 

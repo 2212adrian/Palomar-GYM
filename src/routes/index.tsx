@@ -155,15 +155,16 @@ const HeaderLayout: React.FC = () => {
 };
 
 const router = createBrowserRouter([
-  // Public Routes (Outside of the secure console layout shell)
+  // Public Default Route: Anonymous Pre-Registration (Login page hidden from public)
+  { path: '/', element: <OnlineRegistrationPage /> },
+  { path: '/register', element: <OnlineRegistrationPage /> },
+  { path: '/register-online', element: <OnlineRegistrationPage /> },
+
+  // Staff / Admin Authentication Routes (Accessed directly by internal staff only)
   { path: '/login', element: <Login /> },
   { path: '/download', element: <DownloadPage standalone={true} /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/confirm-signup', element: <ConfirmSignUp /> },
-
-  // Public Anonymous Pre-Registration Routes
-  { path: '/register', element: <OnlineRegistrationPage /> },
-  { path: '/register-online', element: <OnlineRegistrationPage /> },
 
   // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {
@@ -236,8 +237,8 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Fallback Route
-  { path: '*', element: <Navigate to="/login" replace /> },
+  // Fallback Route: Redirect to Register by default (Hiding Login page from public users)
+  { path: '*', element: <Navigate to="/register" replace /> },
 ]);
 
 export const AppRoutes: React.FC = () => <RouterProvider router={router} />;

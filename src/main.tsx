@@ -7,13 +7,15 @@ import App from './App.tsx';
 // Register Service Worker in BOTH dev and production
 import { registerSW } from 'virtual:pwa-register';
 
-registerSW({
+const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('App update available');
+    console.log('[PWA] Out of date version detected - refreshing page to load latest version...');
+    // Trigger service worker activation and page refresh
+    updateSW(true);
   },
   onOfflineReady() {
-    console.log('App ready for offline');
+    console.log('[PWA] Application cached and ready for offline use.');
   },
 });
 
