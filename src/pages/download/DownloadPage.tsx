@@ -31,7 +31,6 @@ import pkg from '../../../package.json';
 
 import {
   fetchLatestRelease,
-  executeAppUpdate,
   formatBytes,
   type AppReleaseInfo,
 } from '../../lib/appUpdateService';
@@ -60,7 +59,7 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
     null
   );
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
-  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [downloadProgress] = useState<number>(0);
   const [showWindowsHelp, setShowWindowsHelp] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [showNotes, setShowNotes] = useState<boolean>(false);
