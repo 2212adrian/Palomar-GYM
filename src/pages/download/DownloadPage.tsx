@@ -109,9 +109,9 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
     }
   };
 
-  // Android APK Direct Download
-  const handleDownloadAndroid = async () => {
-    if (!androidRelease) {
+  // Android APK Direct Download (Bypasses CORS)
+  const handleDownloadAndroid = () => {
+    if (!androidRelease?.downloadUrl) {
       toast.info('Connecting to download mirror, please wait...');
       loadReleaseData();
       return;
@@ -119,21 +119,24 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
 
     try {
       setIsDownloading(true);
-      setDownloadProgress(20);
-      await executeAppUpdate(androidRelease, (pct) => {
-        setDownloadProgress(pct);
-      });
+
+      // Trigger native browser download directly (no CORS block)
+      const link = document.createElement('a');
+      link.href = androidRelease.downloadUrl;
+      link.setAttribute('download', `Wolf_Palomar_v${effectiveVersion}.apk`);
+      link.setAttribute('rel', 'noopener noreferrer');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
       toast.success(
-        'Download started! Check your phone notifications to install the app.'
+        'Download started! Check your phone notifications or downloads folder to install.'
       );
     } catch (err: any) {
-      toast.error(
-        'Download failed: ' +
-          (err?.message || 'Please check your internet connection')
-      );
+      // Fallback if popup or anchor is blocked
+      window.location.href = androidRelease.downloadUrl;
     } finally {
-      setIsDownloading(false);
-      setDownloadProgress(0);
+      setTimeout(() => setIsDownloading(false), 1500);
     }
   };
 
