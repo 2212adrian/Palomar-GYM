@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.app_releases (
   download_url TEXT NOT NULL DEFAULT 'https://paste-your-download-link-here.com',
   file_size_bytes BIGINT NOT NULL DEFAULT 0,
   release_notes TEXT DEFAULT '',
-  storage_host TEXT DEFAULT 'Catbox CDN',
+  storage_host TEXT DEFAULT 'FuckingFast CDN',
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL

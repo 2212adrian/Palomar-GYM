@@ -122,7 +122,7 @@ export const fetchLatestRelease = async (
       platform: data.platform || targetPlatform,
       environment: data.environment || targetEnv,
       isNewer: isNewerVersion(cleanVersion, currentAppVersion),
-      storageHost: data.storage_host || 'Catbox CDN',
+      storageHost: data.storage_host || 'Host Service CDN',
     };
 
     return releaseInfo;

@@ -31,9 +31,7 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
-import {
-  AgreementDocumentViewer,
-} from '../../components/ui/AgreementDocumentViewer';
+import { AgreementDocumentViewer } from '../../components/ui/AgreementDocumentViewer';
 
 import { Capacitor } from '@capacitor/core';
 import pkg from '../../../package.json';
@@ -221,7 +219,7 @@ export const SystemInformation: React.FC = () => {
     return 'Production';
   }, [isNative, currentNativePlatform]);
 
-  // Check for updates via Catbox CDN / Supabase
+  // Check for updates via Host Service CDN / Supabase
   const checkForAppUpdate = useCallback(
     async (isManualTrigger = false) => {
       try {
@@ -240,7 +238,7 @@ export const SystemInformation: React.FC = () => {
           if (isManualTrigger) {
             if (remoteInfo.isNewer) {
               toast.info(
-                `New update v${remoteInfo.version} is available via Catbox CDN!`
+                `New update v${remoteInfo.version} is available via download link!`
               );
             } else {
               toast.success('Your app is already up to date.');
@@ -275,7 +273,7 @@ export const SystemInformation: React.FC = () => {
     try {
       setIsDownloading(true);
       setDownloadProgress(20);
-      setDownloadStatusText('Connecting to Catbox CDN...');
+      setDownloadStatusText('Connecting to Host Service CDN...');
 
       await executeAppUpdate(latestRelease, (percent) => {
         setDownloadProgress(percent);
@@ -291,7 +289,7 @@ export const SystemInformation: React.FC = () => {
       toast.success(
         isNative
           ? 'Download complete! Check your notification bar to tap and install.'
-          : 'Update package downloaded successfully from Catbox CDN.'
+          : 'Update package downloaded successfully from Host Service CDN.'
       );
     } catch (err: any) {
       toast.error(
@@ -306,7 +304,7 @@ export const SystemInformation: React.FC = () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopiedUrl(true);
-      toast.success('Direct Catbox APK URL copied to clipboard!');
+      toast.success('Direct Host Service CDN APK URL copied to clipboard!');
       setTimeout(() => setCopiedUrl(false), 2500);
     } catch {
       toast.error('Failed to copy download link.');
@@ -606,7 +604,7 @@ export const SystemInformation: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── SYSTEM UPDATE BANNER (POWERED BY CATBOX CDN) ─── */}
+      {/* ─── SYSTEM UPDATE BANNER ─── */}
       {hasUpdate && latestRelease ? (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent dark:from-red-600/15 dark:via-rose-600/10 dark:to-transparent border border-blue-500/30 dark:border-red-600/30 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -625,7 +623,7 @@ export const SystemInformation: React.FC = () => {
 
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
               {isNative
-                ? `A newer version of the gym terminal is ready to install from Catbox CDN (${formatBytes(latestRelease.fileSizeBytes)}). No rate limits, direct download.`
+                ? `A newer version of the gym terminal is ready to install from Host Service CDN (${formatBytes(latestRelease.fileSizeBytes)}). No rate limits, direct download.`
                 : `A newer version of the web app is ready (v${latestRelease.version}). Refresh the page to apply the latest build immediately.`}
             </p>
           </div>
@@ -679,7 +677,7 @@ export const SystemInformation: React.FC = () => {
                   v{APP_VERSION} STABLE
                 </span>
                 <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                  • Verified via Catbox CDN
+                  • Verified via Host Service CDN
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -712,11 +710,14 @@ export const SystemInformation: React.FC = () => {
         >
           <ChevronDown
             className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              isChangelogOpen ? 'rotate-180 text-blue-600 dark:text-red-500' : ''
+              isChangelogOpen
+                ? 'rotate-180 text-blue-600 dark:text-red-500'
+                : ''
             }`}
           />
           <span>
-            {isChangelogOpen ? 'Hide' : 'View'} release logs (v{latestChangelog.version})
+            {isChangelogOpen ? 'Hide' : 'View'} release logs (v
+            {latestChangelog.version})
           </span>
         </button>
 
@@ -1058,7 +1059,7 @@ export const SystemInformation: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ─── APP UPDATE CONFIRMATION MODAL (CATBOX POWERED) ─── */}
+      {/* ─── APP UPDATE CONFIRMATION MODAL (HOST SERVICE CDN POWERED) ─── */}
       <Modal
         isOpen={isUpdateModalOpen && !!latestRelease}
         onClose={() => {

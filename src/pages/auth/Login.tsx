@@ -235,7 +235,7 @@ export const Login: React.FC = () => {
 
   const activeGymDescription =
     gymConfig?.gymDescription ||
-    'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.';
+    'Welcome to Wolf Palomar Gym, where strength meets endurance. Our state-of-the-art facilities and expert trainers are here to help you achieve your fitness goals. Join us and experience a community that values health, wellness, and personal growth.';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
