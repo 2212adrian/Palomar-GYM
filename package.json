@@ -13,7 +13,9 @@
     "release:dev": "node scripts/release-runner.mjs --mode=development",
     "release:prod": "node scripts/release-runner.mjs --mode=production",
     "release:dev:manual": "node scripts/release-runner.mjs --mode=development --no-upload",
-    "release:prod:manual": "node scripts/release-runner.mjs --mode=production --no-upload"
+    "release:prod:manual": "node scripts/release-runner.mjs --mode=production --no-upload",
+    "upload:prod": "node scripts/publish-update.mjs --mode=production",
+    "upload:dev": "node scripts/publish-update.mjs --mode=development"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -60,7 +62,6 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
-    "node-catbox": "^6.0.0",
     "prettier": "3.9.6",
     "supabase": "^2.109.1",
     "typescript": "~6.0.2",
