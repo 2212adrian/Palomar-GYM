@@ -63,11 +63,26 @@ export default defineConfig(({ mode }) => {
         workbox: {
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          globPatterns: ['**/*.{js,css,ico,png,svg,webp,webmanifest,woff,woff2}'],
+          navigateFallback: null,
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'pages-cache',
+                networkTimeoutSeconds: 3,
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
         },
         devOptions: {
-          enabled: true,           // Enables PWA in 'npm run dev'
-          type: 'module',          // Serves virtual in-memory sw, avoids ENOENT
-          suppressWarnings: true,
+          enabled: false, // Disables PWA in 'npm run dev' to eliminate localhost caching and ensure instant HMR
         },
       }),
     ],
