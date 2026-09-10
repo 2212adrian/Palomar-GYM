@@ -225,12 +225,12 @@ export const SystemInformation: React.FC = () => {
                 `New update v${remoteInfo.version} is available via Catbox CDN!`
               );
             } else {
-              toast.success('App is up to date with Catbox CDN!');
+              toast.success('Your app is already up to date.');
             }
           }
         } else {
           setHasUpdate(false);
-          if (isManualTrigger) toast.success('App is up to date.');
+          if (isManualTrigger) toast.success('Your app is already up to date.');
         }
       } catch (err: any) {
         if (isManualTrigger) toast.error('Could not check for updates.');
