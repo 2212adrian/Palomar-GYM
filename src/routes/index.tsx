@@ -7,6 +7,7 @@ import {
   Outlet,
   useLocation,
 } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { Login } from '../pages/auth/Login';
 import { Dashboard } from '../pages/dashboard/Dashboard';
 import { RevenueGoalsPage } from '../pages/dashboard/RevenueGoalsPage';
@@ -30,6 +31,54 @@ import { LogbookPage } from '../pages/logbook/LogbookPage';
 
 // Import Smart Terminal Scanner Page
 import { ScannerPage } from '../pages/scanner/ScannerPage';
+
+/**
+ * Detects if the current environment is an installed Capacitor application
+ * or an installed Progressive Web App (PWA) running in standalone mode.
+ */
+export const isAppOrPWA = (): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  // 1. Capacitor Native Platform check
+  const isCapacitor =
+    Capacitor.isNativePlatform() ||
+    Boolean(
+      (
+        window as unknown as {
+          Capacitor?: { isNativePlatform?: () => boolean };
+        }
+      )?.Capacitor?.isNativePlatform?.()
+    );
+
+  // 2. PWA Standalone Mode check (Desktop / Android Chrome & iOS Safari standalone)
+  const isPWA =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone ===
+      true ||
+    document.referrer.includes('android-app://');
+
+  return isCapacitor || isPWA;
+};
+
+/**
+ * Dynamic entry resolver for the root `/` path.
+ * - Installed App / PWA: Directs internal staff to the Login screen.
+ * - Standard Browser: Renders the Public Anonymous Pre-Registration page.
+ */
+const RootEntry: React.FC = () => {
+  if (isAppOrPWA()) {
+    return <Navigate to="/login" replace />;
+  }
+  return <OnlineRegistrationPage />;
+};
+
+/**
+ * Dynamic fallback resolver for wildcard `*` route.
+ */
+const FallbackEntry: React.FC = () => {
+  const target = isAppOrPWA() ? '/login' : '/register';
+  return <Navigate to={target} replace />;
+};
 
 // Shared context for dynamic header buttons
 export const HeaderActionsContext = createContext<{
@@ -155,12 +204,14 @@ const HeaderLayout: React.FC = () => {
 };
 
 const router = createBrowserRouter([
-  // Public Default Route: Anonymous Pre-Registration (Login page hidden from public)
-  { path: '/', element: <OnlineRegistrationPage /> },
+  // Public Default Route: Dynamically routes based on App/PWA vs Web Browser
+  { path: '/', element: <RootEntry /> },
+
+  // Explicit Registration Routes (Always accessible directly if needed)
   { path: '/register', element: <OnlineRegistrationPage /> },
   { path: '/register-online', element: <OnlineRegistrationPage /> },
 
-  // Staff / Admin Authentication Routes (Accessed directly by internal staff only)
+  // Staff / Admin Authentication Routes
   { path: '/login', element: <Login /> },
   { path: '/download', element: <DownloadPage standalone={true} /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
@@ -237,8 +288,8 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Fallback Route: Redirect to Register by default (Hiding Login page from public users)
-  { path: '*', element: <Navigate to="/register" replace /> },
+  // Fallback Route: Dynamic redirect based on environment
+  { path: '*', element: <FallbackEntry /> },
 ]);
 
 export const AppRoutes: React.FC = () => <RouterProvider router={router} />;
