@@ -253,14 +253,16 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             .start(
               cameraConfig,
               {
-                fps: 20,
-                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                  const width = Math.floor(viewfinderWidth * 0.9);
-                  const height = Math.floor(viewfinderHeight * 0.65);
-                  return {
-                    width: Math.max(width, 240),
-                    height: Math.max(height, 120),
-                  };
+                fps: 25,
+                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
+                  width: Math.min(Math.floor(viewfinderWidth * 0.88), 380),
+                  height: Math.min(Math.floor(viewfinderHeight * 0.45), 160),
+                }),
+                videoConstraints: {
+                  ...cameraConfig,
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                  facingMode: 'environment',
                 },
               },
               (decodedText) => {
@@ -567,6 +569,47 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
               {/* LIVE CAMERA VIEWFINDER OVERLAY */}
               {showLiveScanner && (
                 <div className="mt-2 p-3 bg-zinc-950 border-2 border-blue-500/40 rounded-2xl relative text-center animate-fade-in z-30 shadow-2xl space-y-2">
+                  {/* CSS Reset for html5-qrcode video & shaded region */}
+                  <style>{`
+      #sales-qr-reader {
+        width: 100% !important;
+        height: 100% !important;
+        border: none !important;
+        background: transparent !important;
+        position: relative !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+      }
+      #sales-qr-reader__scan_region {
+        width: 100% !important;
+        height: 100% !important;
+        position: absolute !important;
+        inset: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: hidden !important;
+        background: transparent !important;
+      }
+      #sales-qr-reader video {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        position: absolute !important;
+        inset: 0 !important;
+        border-radius: 1rem !important;
+      }
+      #qr-shaded-region,
+      #sales-qr-reader__scan_region svg,
+      #sales-qr-reader__scan_region img,
+      #sales-qr-reader__dashboard,
+      #sales-qr-reader__dashboard_section,
+      #sales-qr-reader__header_message {
+        display: none !important;
+      }
+    `}</style>
+
                   <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -584,18 +627,18 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     </button>
                   </div>
 
-                  <div className="relative w-full aspect-square max-w-55 mx-auto rounded-2xl overflow-hidden bg-black border-2 border-dashed border-blue-500/50 flex items-center justify-center shadow-inner">
-                    <div
-                      id="sales-qr-reader"
-                      className="w-full h-full object-cover"
-                    />
+                  {/* WIDE RECTANGULAR VIEWFINDER (Replaces aspect-square max-w-55) */}
+                  <div className="relative w-full h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-950 border-2 border-blue-500/50 flex items-center justify-center shadow-inner">
+                    <div id="sales-qr-reader" className="w-full h-full" />
 
+                    {/* Barcode Reticle Overlay */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                      <div className="w-full h-full border-2 border-blue-500 rounded-xl relative animate-pulse">
-                        <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-4 border-l-4 border-blue-400" />
-                        <div className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-4 border-r-4 border-blue-400" />
-                        <div className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-4 border-l-4 border-blue-400" />
-                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-4 border-r-4 border-blue-400" />
+                      <div className="w-[88%] h-[48%] border border-blue-400/40 rounded-xl relative">
+                        <div className="absolute -top-1 -left-1 w-4 h-4 border-t-3 border-l-3 border-blue-400 rounded-tl" />
+                        <div className="absolute -top-1 -right-1 w-4 h-4 border-t-3 border-r-3 border-blue-400 rounded-tr" />
+                        <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-3 border-l-3 border-blue-400 rounded-bl" />
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-3 border-r-3 border-blue-400 rounded-br" />
+                        <div className="w-full h-px bg-amber-400/40 absolute top-1/2 -translate-y-1/2" />
                       </div>
                     </div>
                   </div>
@@ -689,46 +732,61 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
             {/* SHOPPING CART LIST */}
             <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 uppercase">
-                <ShoppingCart className="w-4 h-4" />
-                <span>Selected items ({cart.length})</span>
+              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between uppercase tracking-wider">
+                <div className="flex items-center gap-1.5">
+                  <ShoppingCart className="w-4 h-4 text-blue-500" />
+                  <span>Selected items ({cart.length})</span>
+                </div>
+                {cart.length > 0 && (
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {cart.reduce((sum, item) => sum + item.quantity, 0)} total
+                    unit(s)
+                  </span>
+                )}
               </div>
 
               {cart.length > 0 ? (
-                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {cart.map((item, idx) => (
                     <motion.div
                       key={item.product.id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-(--border-color) flex items-center justify-between gap-3 text-xs"
+                      className="p-3 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-(--border-color) flex items-center justify-between gap-3 text-xs shadow-xs"
                     >
                       <div className="min-w-0 flex-1">
                         <h4 className="font-bold text-(--color-text) truncate uppercase">
                           {getProductName(item.product)}
                         </h4>
-                        <span className="text-[10px] text-(--color-primary) font-heading font-bold mt-0.5 block">
-                          ₱{getProductPrice(item.product).toFixed(2)}
-                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-mono font-bold">
+                            ₱{getProductPrice(item.product).toFixed(2)}
+                          </span>
+                          {getProductBarcode(item.product) !== 'N/A' && (
+                            <span className="text-[9px] font-mono text-slate-400 truncate">
+                              • {getProductBarcode(item.product)}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, -1)}
-                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading text-sm font-bold hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                         >
                           -
                         </button>
-                        <span className="font-heading w-4 text-center text-xs font-bold">
+                        <span className="font-mono w-6 text-center text-xs font-black text-(--color-text)">
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, 1)}
-                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading text-sm font-bold hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                         >
                           +
                         </button>
@@ -737,8 +795,26 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="p-4 border border-dashed border-(--border-color) rounded-xl text-center text-xs text-slate-400">
-                  Cart is empty. Search or scan a barcode to add products.
+                /* ENHANCED EMPTY STATE WITH CENTERED CIRCLE ICON & DESCRIPTION */
+                <div className="py-7 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-slate-50/50 dark:bg-zinc-900/40 text-center flex flex-col items-center justify-center space-y-2.5 animate-fade-in select-none">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-xs">
+                    <ShoppingCart className="w-6 h-6 stroke-[2.2]" />
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                      Shopping Cart is Empty
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium max-w-xs leading-relaxed">
+                      Search for a product name or scan an item barcode above to
+                      begin recording this sale.
+                    </p>
+                  </div>
+
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/70 dark:bg-zinc-800 text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <QrCode className="w-3 h-3 text-blue-500" />
+                    Barcode / QR Ready
+                  </span>
                 </div>
               )}
             </div>

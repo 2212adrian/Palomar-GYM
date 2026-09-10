@@ -30,10 +30,10 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
         <div>
           <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white font-heading flex items-center gap-1.5">
             <Zap className="w-4 h-4 text-amber-500" />
-            Quick Desk Actions
+            Quick Actions
           </h2>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-            One-touch operational shortcuts for front desk counters.
+            Access the most common operations with a single click.
           </p>
         </div>
       </div>
@@ -51,8 +51,8 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
               <QrCode className="w-5 h-5 text-white" />
             </div>
             <span className="text-[10px] bg-emerald-500 text-white font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-              Fast
+              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+              Live Camera
             </span>
           </div>
 
@@ -85,7 +85,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
               <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-1 group-hover:text-[#123c73] dark:group-hover:text-blue-400 transition-all shrink-0" />
             </div>
             <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-              Drinks & Merchandise
+              Products, Supplements, Food
             </p>
           </div>
         </button>
@@ -104,11 +104,11 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
 
           <div className="mt-3 min-w-0">
             <div className="text-xs sm:text-sm font-black uppercase font-heading leading-tight flex items-center justify-between">
-              <span className="truncate">Add Member</span>
+              <span className="truncate">Member List</span>
               <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-1 group-hover:text-emerald-600 transition-all shrink-0" />
             </div>
             <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-              Register New Client
+              Add or Manage Members
             </p>
           </div>
         </button>
@@ -127,11 +127,11 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
 
           <div className="mt-3 min-w-0">
             <div className="text-xs sm:text-sm font-black uppercase font-heading leading-tight flex items-center justify-between">
-              <span className="truncate">New Pass / Plan</span>
+              <span className="truncate">Subscription Plan</span>
               <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-1 group-hover:text-purple-600 transition-all shrink-0" />
             </div>
             <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-              Walk-in or Monthly Pass
+              Add or Manage Subscriptions
             </p>
           </div>
         </button>

@@ -651,12 +651,12 @@ export const Products: React.FC<ProductsProps> = ({
     const isHidden = product.status === 'Inactive';
 
     if (isSelected) {
-      return 'group !bg-blue-500/10 hover:!bg-blue-500/15 border-l-2 border-blue-500 transition-colors duration-150';
+      return 'group !bg-[#123c73]/10 dark:!bg-[#bf0202]/15 border-l-2 border-[#123c73] dark:border-[#bf0202] transition-colors duration-150';
     }
     if (isHidden) {
-      return 'group bg-slate-200/50 dark:bg-neutral-900/40 hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 opacity-60 text-slate-455 dark:text-slate-500 transition-colors duration-150';
+      return 'group bg-slate-100/50 dark:bg-[#161920]/40 hover:!bg-slate-200/50 dark:hover:!bg-[#1e232d]/50 opacity-60 text-slate-400 dark:text-slate-500 transition-colors duration-150';
     }
-    return 'group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150';
+    return 'group hover:!bg-slate-100/70 dark:hover:!bg-[#1e232d]/60 transition-colors duration-150';
   };
 
   const handleRowClick = (product: Product) => {
@@ -782,26 +782,32 @@ export const Products: React.FC<ProductsProps> = ({
       key: 'selling_price',
       header: 'Price',
       sortable: true,
+      headerClassName: 'text-right justify-end pr-6',
+      cellClassName: 'text-right pr-6',
       render: (item) => (
-        <span className="font-mono font-bold text-xs opacity-90">
-          ₱
-          {Number(item.selling_price).toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </span>
+        <div className="inline-flex items-center justify-between w-24 font-mono font-bold text-[13px] opacity-95">
+          <span className="text-slate-400 font-medium select-none">₱</span>
+          <span>
+            {Number(item.selling_price).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        </div>
       ),
     },
     {
       key: 'stock_quantity',
       header: 'Inventory Stock',
       sortable: true,
+      headerClassName: 'text-center justify-center',
+      cellClassName: 'text-center',
       sortValue: (item) =>
         item.has_stock_limit ? item.stock_quantity : 999999,
       render: (item) => {
         if (!item.has_stock_limit) {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[10px] text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-wider uppercase">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[11px] text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
               UNLIMITED
             </span>
@@ -813,7 +819,7 @@ export const Products: React.FC<ProductsProps> = ({
           item.stock_quantity <= item.low_stock_alert;
         if (isOut) {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-[10px] text-red-500 border border-red-500/20 rounded-full font-bold tracking-wider uppercase">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-[11px] text-red-500 border border-red-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
               NO STOCK
             </span>
@@ -821,14 +827,14 @@ export const Products: React.FC<ProductsProps> = ({
         }
         if (isLow) {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-[10px] text-amber-500 border border-amber-500/20 rounded-full font-bold tracking-wider uppercase">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-[11px] text-amber-500 border border-amber-500/20 rounded-full font-bold tracking-wider uppercase">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
               LOW ({item.stock_quantity})
             </span>
           );
         }
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[10px] text-emerald-500 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[11px] text-emerald-500 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             {item.stock_quantity} UNITS
           </span>
@@ -837,7 +843,7 @@ export const Products: React.FC<ProductsProps> = ({
     },
     {
       key: 'status',
-      header: 'Show in Cashier',
+      header: 'Status',
       sortable: true,
       render: (item) => {
         if (item.status === 'Active') {
@@ -880,9 +886,9 @@ export const Products: React.FC<ProductsProps> = ({
             {/* Edit Button */}
             <button
               onClick={() => handleEditClick(item)}
-              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 hover:scale-105 shrink-0
-                bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white hover:border-blue-600
-                dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 dark:hover:bg-blue-600 dark:hover:text-white dark:hover:border-blue-600"
+              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 shrink-0
+    bg-slate-100 text-slate-700 border-slate-200 hover:bg-[#123c73] hover:text-white hover:border-[#123c73]
+    dark:bg-[#1e232d] dark:text-slate-200 dark:border-white/10 dark:hover:bg-[#bf0202] dark:hover:text-white dark:hover:border-[#bf0202]"
               title="Edit Product"
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -891,9 +897,9 @@ export const Products: React.FC<ProductsProps> = ({
             {/* Delete Button */}
             <button
               onClick={() => setDeleteConfirmId(item.id)}
-              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 hover:scale-105 shrink-0
-                bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-600 hover:text-white hover:border-rose-600
-                dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20 dark:hover:bg-rose-600 dark:hover:text-white dark:hover:border-rose-600"
+              className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 shrink-0
+    bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-600 hover:text-white hover:border-rose-600
+    dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20 dark:hover:bg-rose-600 dark:hover:text-white dark:hover:border-rose-600"
               title="Delete Product"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -931,20 +937,17 @@ export const Products: React.FC<ProductsProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search items by name, barcode, or manufacturer barcode..."
-            className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 transition-all font-medium"
+            className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-input) text-xs text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#123c73] dark:focus:border-[#bf0202] transition-all font-medium"
           />
-
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-655 dark:hover:text-slate-200 cursor-pointer p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors"
-              title="Clear search query"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-(--color-text) cursor-pointer p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#161920] transition-colors"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -958,7 +961,7 @@ export const Products: React.FC<ProductsProps> = ({
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-lg text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer"
+            className="px-3 py-1.5 bg-(--bg-input) border border-(--border-color) rounded-lg text-xs text-(--color-text) font-semibold outline-none focus:border-[#123c73] dark:focus:border-[#bf0202] transition-all cursor-pointer"
           >
             <option value="all">ALL ITEMS</option>
             <option value="active">VISIBLE</option>

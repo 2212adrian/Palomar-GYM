@@ -68,7 +68,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   const [selectedReg, setSelectedReg] = useState<OnlineRegistration | null>(
     null
   );
-  const [activePosterToken, setActivePosterToken] = useState<string>('');
   const [showModalSignatures, setShowModalSignatures] =
     useState<boolean>(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
@@ -112,9 +111,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   useEffect(() => {
     fetchQueue();
-    const token =
-      localStorage.getItem('palomar_active_poster_token') || 'None Generated';
-    setActivePosterToken(token);
     const interval = setInterval(fetchQueue, 30000);
     return () => clearInterval(interval);
   }, [fetchQueue]);
@@ -253,12 +249,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     if (!printWindow) return;
 
     const settings = await settingsService.load();
-    const tokenTimestamp = Date.now();
-    const newToken = `POSTER-${tokenTimestamp}-${new Date().getFullYear()}`;
-    localStorage.setItem('palomar_active_poster_token', newToken);
-    setActivePosterToken(newToken);
-
-    const portalUrl = `https://wolfpalomar.vercel.app/register-online?token=${newToken}`;
+    const portalUrl = ORIGINAL_REGISTRATION_URL;
     const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(portalUrl)}`;
 
     printWindow.document.write(`
@@ -402,12 +393,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               letter-spacing: 2px;
               font-weight: 700;
             }
-            .token-indicator {
-              font-size: 8px;
-              font-family: monospace;
-              color: #cbd5e1;
-              margin-top: 5px;
-            }
           </style>
         </head>
         <body onload="window.print(); window.close();">
@@ -449,7 +434,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             </div>
 
             <div class="footer-tag">WOLF PALOMAR FITNESS • EST. 2026</div>
-            <div class="token-indicator">Security Sign Verification Token: ${newToken}</div>
             <div style="margin-top: 14px; font-size: 11px; font-family: monospace; color: #123c73; font-weight: bold; letter-spacing: 0.5px;">
               Portal Link: ${ORIGINAL_REGISTRATION_URL}
             </div>
@@ -671,13 +655,10 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           <h3 className="font-heading text-xs tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase font-bold">
             Online Pre-Registrations Queue
           </h3>
-          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-0.5 block">
-            Active Lobby Poster Signature:{' '}
-            <span className="font-bold text-slate-700 dark:text-slate-300">
-              {activePosterToken}
-            </span>
-          </span>
         </div>
+
+        {/* Desktop Buttons */}
+        <div className="hidden sm:flex items-center gap-2"></div>
 
         {/* Desktop Buttons */}
         <div className="hidden sm:flex items-center gap-2">
@@ -742,7 +723,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             Queue is Clear
           </h4>
           <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
-            No pending self-service tickets require validation at this time.
+            No pending pre-registration tickets in the queue. New submissions
+            will appear here automatically as they are received.
           </p>
         </div>
       ) : (

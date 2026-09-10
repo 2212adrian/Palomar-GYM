@@ -23,7 +23,6 @@ import {
   Ticket,
   Users,
   Eye,
-  ShieldCheck,
   SwitchCamera,
   UserPlus,
   ArrowRight,
@@ -178,14 +177,23 @@ const extractCleanMemberId = (rawCode: string): string => {
   return cleaned;
 };
 
-const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
-  const cleanBase = baseName
+/**
+ * Generates sequential numbers: (1), (2), (3)... for walk-in duplicate names
+ */
+const generateUniqueWalkInName = (
+  baseName: string,
+  existingLogs: any[]
+): string => {
+  const cleanBase = (baseName || '')
     .replace(/\s*\(\d+\)$/, '')
     .trim()
     .toUpperCase();
 
+  if (!cleanBase) return 'WALK-IN GUEST';
+
   const matchingWalkIns = existingLogs.filter((log: any) => {
-    if (log.customer_type !== 'Walk-In') return false;
+    const isWalkIn = (log.customer_type || '').toLowerCase() === 'walk-in';
+    if (!isWalkIn) return false;
     const name = (log.customer_name || '').toUpperCase().trim();
     const logCleanBase = name.replace(/\s*\(\d+\)$/, '').trim();
     return logCleanBase === cleanBase;
@@ -195,7 +203,34 @@ const generateUniqueWalkInName = (baseName: string, existingLogs: any[]) => {
     return cleanBase;
   }
 
-  const nextNumber = matchingWalkIns.length + 1;
+  // Find all used suffix numbers
+  const existingNumbers = new Set<number>();
+  let hasBaseWithoutNumber = false;
+
+  for (const log of matchingWalkIns) {
+    const name = (log.customer_name || '').toUpperCase().trim();
+    const match = name.match(/\((\d+)\)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num)) {
+        existingNumbers.add(num);
+      }
+    } else {
+      hasBaseWithoutNumber = true;
+    }
+  }
+
+  // If the plain base name hasn't been used yet, use it
+  if (!hasBaseWithoutNumber) {
+    return cleanBase;
+  }
+
+  // Find lowest available sequential number starting at 1 -> (1), (2), (3)...
+  let nextNumber = 1;
+  while (existingNumbers.has(nextNumber)) {
+    nextNumber++;
+  }
+
   return `${cleanBase} (${nextNumber})`;
 };
 
@@ -437,28 +472,23 @@ export const LogbookRecordAttendance: React.FC<
     }
   }, []);
 
+  // Duplicate lock ONLY applies to registered members (non-members are never blocked)
   const duplicateLog = useMemo(() => {
-    if (!selectedClient) return null;
-    return todayLogs.find((log: any) => {
-      if (selectedClient.isWalkIn) {
-        const cleanSelected = selectedClient.name
-          .replace(/\s*\(\d+\)$/, '')
-          .trim()
-          .toLowerCase();
-        const cleanLogName = (log.customer_name || '')
-          .replace(/\s*\(\d+\)$/, '')
-          .trim()
-          .toLowerCase();
-        return (
-          cleanLogName === cleanSelected && log.customer_type === 'Walk-In'
-        );
-      } else {
-        return log.member_id === selectedClient.memberId;
-      }
-    });
+    if (!selectedClient || selectedClient.isWalkIn) return null;
+    return todayLogs.find(
+      (log: any) => log.member_id === selectedClient.memberId
+    );
   }, [selectedClient, todayLogs]);
 
-  const isLockedByDuplicate = Boolean(duplicateLog && !adminOverride);
+  const isLockedByDuplicate = Boolean(
+    duplicateLog && !adminOverride && !selectedClient?.isWalkIn
+  );
+
+  // Live numbered name preview for non-member walk-in input
+  const walkInPreviewName = useMemo(() => {
+    if (!memberSearch.trim()) return '';
+    return generateUniqueWalkInName(memberSearch.trim(), todayLogs);
+  }, [memberSearch, todayLogs]);
 
   const handleSelectMember = useCallback((member: MemberProfile) => {
     const client: SelectedClient = {
@@ -734,7 +764,20 @@ export const LogbookRecordAttendance: React.FC<
           html5QrCode
             .start(
               cameraConfig,
-              { fps: 20, qrbox: { width: 220, height: 220 } },
+              {
+                fps: 25,
+                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                  const edgeSize = Math.floor(minEdge * 0.72);
+                  return { width: edgeSize, height: edgeSize };
+                },
+                videoConstraints: {
+                  ...cameraConfig,
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                  facingMode: 'environment',
+                },
+              },
               (decodedText) => {
                 handleBarcodeOrQrScanned(decodedText);
               },
@@ -803,12 +846,14 @@ export const LogbookRecordAttendance: React.FC<
 
   const handleContinueAsWalkIn = () => {
     const query = memberSearch.trim();
-    if (query.length < 3) {
-      toast.warning('Guest name must be at least 3 characters.');
+    if (!query) {
+      toast.warning('Please enter a guest name.');
       return;
     }
+
+    const uniqueName = generateUniqueWalkInName(query, todayLogs);
     const client: SelectedClient = {
-      name: query.toUpperCase(),
+      name: uniqueName,
       isWalkIn: true,
     };
     setSelectedClient(client);
@@ -828,11 +873,7 @@ export const LogbookRecordAttendance: React.FC<
           handleSelectMember(suggestions[0]);
         }
       } else {
-        if (memberSearch.trim().length >= 3) {
-          handleContinueAsWalkIn();
-        } else {
-          toast.warning('Guest name must be at least 3 characters.');
-        }
+        handleContinueAsWalkIn();
       }
     }
   };
@@ -915,7 +956,7 @@ export const LogbookRecordAttendance: React.FC<
   const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
 
-    if (duplicateLog && !adminOverride) {
+    if (duplicateLog && !adminOverride && !selectedClient.isWalkIn) {
       toast.error('Duplicate attendance requires override confirmation.');
       return;
     }
@@ -1020,7 +1061,8 @@ export const LogbookRecordAttendance: React.FC<
 
   const isFormValid = useMemo(() => {
     if (!selectedClient || !selectedEntry) return false;
-    if (duplicateLog && !adminOverride) return false;
+    if (duplicateLog && !adminOverride && !selectedClient.isWalkIn)
+      return false;
 
     if (selectedEntry === 'member_entry' && selectedClient.status) {
       if (
@@ -1080,7 +1122,7 @@ export const LogbookRecordAttendance: React.FC<
       title={isSuccess ? 'CHECK-IN CONFIRMED' : 'Reception Check-In'}
       className={`w-full mx-auto my-auto ${
         isSuccess ? 'max-w-md p-6 sm:p-8' : 'max-w-lg p-4 sm:p-5'
-      } overflow-visible transition-all duration-300 relative text-left`}
+      } bg-(--bg-card) text-(--color-text) border border-(--border-color) overflow-visible transition-all duration-300 relative text-left`}
     >
       <button
         type="button"
@@ -1089,7 +1131,7 @@ export const LogbookRecordAttendance: React.FC<
           stopAllCameraTracks();
           onClose();
         }}
-        className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
+        className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-(--color-text)/50 hover:text-(--color-text) hover:bg-(--bg-input) transition-colors cursor-pointer z-50"
         aria-label="Close Dialog"
       >
         <X className="w-5 h-5" />
@@ -1104,438 +1146,481 @@ export const LogbookRecordAttendance: React.FC<
             exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.2 } }}
             className="max-h-[80vh] overflow-y-auto pr-1 pb-12 space-y-3 font-sans"
           >
-          {/* FILTER MODE TOGGLE SWITCH */}
-          {!selectedClient && (
-            <div className="flex bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterMode('non-member');
-                  setMemberSearch('');
-                  setSuggestions([]);
-                }}
-                className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  filterMode === 'non-member'
-                    ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md'
-                    : 'text-slate-500 hover:text-(--color-text)'
-                }`}
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Non-Members</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterMode('member');
-                  setMemberSearch('');
-                  setSuggestions([]);
-                }}
-                className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  filterMode === 'member'
-                    ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md'
-                    : 'text-slate-500 hover:text-(--color-text)'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Members Only</span>
-              </button>
-            </div>
-          )}
-
-          {/* SEARCH INPUT & CAMERA TRIGGER */}
-          {!selectedClient && (
-            <div className="space-y-1.5">
-              <label className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
-                {filterMode === 'non-member'
-                  ? 'ENTER WALK-IN GUEST NAME'
-                  : 'SEARCH MEMBER OR SCAN BADGE'}
-              </label>
-
-              <div className="relative group">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400" />
-                <input
-                  type="text"
-                  value={memberSearch}
-                  onChange={(e) => handleMemberSearchChange(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  disabled={showLiveScanner}
-                  placeholder={
-                    showLiveScanner
-                      ? 'CAMERA SCANNER ACTIVE...'
-                      : filterMode === 'non-member'
-                        ? 'TYPE GUEST NAME (MIN 3 CHARS)...'
-                        : 'TYPE NAME, PHONE, CARD CODE OR ID...'
-                  }
-                  className={`w-full pl-10 pr-20 py-2.5 sm:py-3 bg-(--bg-page) border-2 border-(--border-color) rounded-xl text-xs sm:text-sm font-bold uppercase transition-all ${
-                    showLiveScanner
-                      ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-900 text-slate-400'
-                      : 'text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-600 dark:focus:border-blue-500'
-                  }`}
-                  autoFocus
-                />
-
-                {memberSearch && !showLiveScanner && (
-                  <button
-                    type="button"
-                    onClick={() => setMemberSearch('')}
-                    className="absolute right-11 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer"
-                    title="Clear search"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-
+            {/* FILTER MODE TOGGLE SWITCH */}
+            {!selectedClient && (
+              <div className="flex bg-(--bg-input) p-1 rounded-xl border border-(--border-color)">
                 <button
                   type="button"
-                  onClick={handleStartScan}
-                  className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                    showLiveScanner
-                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse'
-                      : 'text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  onClick={() => {
+                    setFilterMode('non-member');
+                    setMemberSearch('');
+                    setSuggestions([]);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    filterMode === 'non-member'
+                      ? 'bg-(--color-primary) text-white shadow-md'
+                      : 'text-(--color-text)/60 hover:text-(--color-text)'
                   }`}
-                  title="Scan QR / Barcode using Camera"
                 >
-                  <QrCode className="w-4.5 h-4.5" />
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Non-Members</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterMode('member');
+                    setMemberSearch('');
+                    setSuggestions([]);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    filterMode === 'member'
+                      ? 'bg-(--color-primary) text-white shadow-md'
+                      : 'text-(--color-text)/60 hover:text-(--color-text)'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Members Only</span>
                 </button>
               </div>
+            )}
 
-              {/* LIVE CAMERA VIEWFINDER */}
-              {showLiveScanner && (
-                <div className="mt-2 p-3 bg-zinc-950 border-2 border-blue-500/40 rounded-2xl relative text-center animate-fade-in z-30 shadow-2xl space-y-2">
-                  <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      LIVE CAMERA ACTIVE
-                    </span>
+            {/* SEARCH INPUT & CAMERA TRIGGER */}
+            {!selectedClient && (
+              <div className="space-y-1.5">
+                <label className="text-[11px] sm:text-xs font-bold text-(--color-text) block uppercase tracking-wider">
+                  {filterMode === 'non-member'
+                    ? 'ENTER WALK-IN GUEST NAME'
+                    : 'SEARCH MEMBER OR SCAN BADGE'}
+                </label>
+
+                <div className="relative group">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-(--color-text)/40 group-focus-within:text-(--color-primary)" />
+                  <input
+                    type="text"
+                    value={memberSearch}
+                    onChange={(e) => handleMemberSearchChange(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    disabled={showLiveScanner}
+                    placeholder={
+                      showLiveScanner
+                        ? 'CAMERA SCANNER ACTIVE...'
+                        : filterMode === 'non-member'
+                          ? 'TYPE GUEST NAME...'
+                          : 'TYPE NAME, PHONE, CARD CODE OR ID...'
+                    }
+                    className={`w-full pl-10 pr-20 py-2.5 sm:py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs sm:text-sm font-bold uppercase transition-all ${
+                      showLiveScanner
+                        ? 'opacity-50 cursor-not-allowed text-(--color-text)/40'
+                        : 'text-(--color-text) placeholder:text-(--color-text)/30 focus:border-(--color-primary) focus:ring-2 focus:ring-[var(--color-primary)]/20'
+                    }`}
+                    autoFocus
+                  />
+
+                  {memberSearch && !showLiveScanner && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setShowLiveScanner(false);
-                        stopAllCameraTracks();
-                      }}
-                      className="text-xs text-slate-400 hover:text-white p-1 rounded cursor-pointer"
+                      onClick={() => setMemberSearch('')}
+                      className="absolute right-11 top-1/2 -translate-y-1/2 p-1 hover:bg-(--bg-card) rounded-full text-(--color-text)/40 hover:text-(--color-text) transition-colors cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
-                  </div>
+                  )}
 
-                  <div className="relative w-full aspect-square max-w-55 mx-auto rounded-2xl overflow-hidden bg-black border-2 border-dashed border-blue-500/50 flex items-center justify-center shadow-inner">
-                    <div
-                      id="live-qr-reader"
-                      className="w-full h-full object-cover"
-                    />
+                  <button
+                    type="button"
+                    onClick={handleStartScan}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                      showLiveScanner
+                        ? 'bg-(--color-primary) text-white shadow-lg ring-2 ring-[var(--color-primary)]/50 animate-pulse'
+                        : 'text-(--color-text)/60 hover:text-(--color-primary) hover:bg-(--bg-card)'
+                    }`}
+                  >
+                    <QrCode className="w-4.5 h-4.5" />
+                  </button>
+                </div>
 
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                      <div className="w-full h-full border-2 border-blue-500 rounded-xl relative animate-pulse">
-                        <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-4 border-l-4 border-blue-400" />
-                        <div className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-4 border-r-4 border-blue-400" />
-                        <div className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-4 border-l-4 border-blue-400" />
-                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-4 border-r-4 border-blue-400" />
-                      </div>
-                    </div>
-                  </div>
+                {/* LIVE CAMERA VIEWFINDER */}
+                {showLiveScanner && (
+                  <div className="mt-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl relative text-center animate-fade-in z-30 shadow-2xl space-y-2">
+                    {/* CSS Reset for html5-qrcode video & shaded region */}
+                    <style>{`
+      #live-qr-reader {
+        width: 100% !important;
+        height: 100% !important;
+        border: none !important;
+        background: transparent !important;
+        position: relative !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+      }
+      #live-qr-reader__scan_region {
+        width: 100% !important;
+        height: 100% !important;
+        position: absolute !important;
+        inset: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: hidden !important;
+        background: transparent !important;
+      }
+      #live-qr-reader video {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        position: absolute !important;
+        inset: 0 !important;
+        border-radius: 1rem !important;
+      }
+      #qr-shaded-region,
+      #live-qr-reader__scan_region svg,
+      #live-qr-reader__scan_region img,
+      #live-qr-reader__dashboard,
+      #live-qr-reader__dashboard_section,
+      #live-qr-reader__header_message {
+        display: none !important;
+      }
+    `}</style>
 
-                  {/* CAMERA SWITCHER CONTROLS */}
-                  {cameras.length > 1 && (
-                    <div className="flex items-center justify-center pt-2">
+                    <div className="flex items-center justify-between border-b border-(--border-color) pb-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        LIVE CAMERA ACTIVE
+                      </span>
                       <button
                         type="button"
-                        onClick={handleCycleCamera}
-                        className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+                        onClick={() => {
+                          setShowLiveScanner(false);
+                          stopAllCameraTracks();
+                        }}
+                        className="text-xs text-(--color-text)/60 hover:text-(--color-text) p-1 rounded cursor-pointer"
                       >
-                        <SwitchCamera className="w-4 h-4" />
-                        <span>Switch Camera</span>
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* DEFAULT EMPTY STATE BANNER */}
-              {!memberSearch.trim() && !showLiveScanner && (
-                <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/60 border border-(--border-color) rounded-2xl text-center space-y-1.5 animate-fade-in">
-                  <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
-                    {filterMode === 'non-member' ? (
-                      <User className="w-4.5 h-4.5" />
-                    ) : (
-                      <Users className="w-4.5 h-4.5" />
-                    )}
-                  </div>
-
-                  <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white uppercase tracking-wider">
-                    {filterMode === 'non-member'
-                      ? 'PROCESS NON-MEMBER WALK-IN'
-                      : 'SEARCH MEMBER RECORD'}
-                  </h4>
-
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
-                    {filterMode === 'non-member'
-                      ? 'Type the guest name above (min 3 chars) and select pass option.'
-                      : 'Type a member name, phone number, or ID above.'}
-                  </p>
-                </div>
-              )}
-
-              {/* MEMBERS ONLY TAB SEARCH RESULTS */}
-              {filterMode === 'member' && memberSearch.trim().length > 0 && (
-                <div className="mt-3 space-y-3 animate-fade-in">
-                  {suggestions.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white block uppercase tracking-wider px-0.5">
-                        REGISTERED MEMBERS FOUND ({suggestions.length})
-                      </span>
-
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {suggestions.map((m) => {
-                          const isSuspended = m.status === 'Suspended';
-                          const isExpired = m.status === 'Expired';
-                          const isLocked = isSuspended;
-                          const isNonActive = m.status !== 'Active';
-
-                          return (
-                            <div
-                              key={m.id}
-                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all ${
-                                isLocked
-                                  ? 'bg-slate-50/50 dark:bg-zinc-900/40 border-(--border-color) opacity-60'
-                                  : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-zinc-700 shadow-xs'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPhotoModal({
-                                      name: m.name,
-                                      memberId: m.memberId,
-                                      url: m.avatarUrl || null,
-                                    })
-                                  }
-                                  className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-zinc-800 border border-(--border-color) overflow-hidden flex items-center justify-center font-black text-slate-900 dark:text-white text-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all group relative"
-                                  title="Click to verify member photo"
-                                >
-                                  {m.avatarUrl ? (
-                                    <img
-                                      src={m.avatarUrl}
-                                      alt={m.name}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  ) : (
-                                    <span>{m.name[0]?.toUpperCase()}</span>
-                                  )}
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <Eye className="w-3.5 h-3.5 text-white" />
-                                  </div>
-                                </button>
-
-                                <div className="min-w-0 flex-1 text-left">
-                                  <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate uppercase leading-snug">
-                                    {m.name}
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                                    {m.membership} •{' '}
-                                    <span className="font-mono text-[10px]">
-                                      {m.memberId}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                {isNonActive && (
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                                      isSuspended
-                                        ? 'bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30'
-                                        : isExpired
-                                          ? 'bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30'
-                                          : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                                    }`}
-                                  >
-                                    {m.status}
-                                  </span>
-                                )}
-
-                                <button
-                                  type="button"
-                                  disabled={isLocked}
-                                  onClick={() => handleSelectMember(m)}
-                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:cursor-not-allowed"
-                                >
-                                  Select
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                    <div className="relative w-full h-56 sm:h-64 rounded-2xl overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center shadow-inner">
+                      <div id="live-qr-reader" className="w-full h-full" />
+                      <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                        <div className="w-44 h-44 border border-(--color-primary)/40 rounded-2xl relative">
+                          <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-(--color-primary) rounded-tl-lg" />
+                          <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-(--color-primary) rounded-tr-lg" />
+                          <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-(--color-primary) rounded-bl-lg" />
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-(--color-primary) rounded-br-lg" />
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl text-center space-y-3 shadow-xs">
-                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        NO REGISTERED MEMBERS MATCH "
-                        <strong>{memberSearch.toUpperCase()}</strong>"
-                      </div>
 
-                      <div className="pt-1">
+                    {cameras.length > 1 && (
+                      <div className="flex items-center justify-center pt-2">
                         <button
                           type="button"
-                          onClick={handleRedirectToSubscription}
-                          className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                          onClick={handleCycleCamera}
+                          className="px-4 py-1.5 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-primary-light) border border-(--border-color) rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md transition-all"
                         >
-                          <span>ENROLL NEW MEMBER IN SUBSCRIPTION PLANS</span>
-                          <ArrowRight className="w-4 h-4" />
+                          <SwitchCamera className="w-4 h-4" />
+                          <span>Switch Camera</span>
                         </button>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* NON-MEMBERS TAB WALK-IN PROCESSOR CARD */}
-              {filterMode === 'non-member' &&
-                memberSearch.trim().length > 0 && (
-                  <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center text-center space-y-3 shadow-sm animate-fade-in">
-                    <div className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-200 font-black text-sm uppercase tracking-wide">
-                      <User className="w-4 h-4 text-blue-500" />
-                      <span>
-                        NAME:{' '}
-                        <span className="text-blue-600 dark:text-blue-400 font-mono underline underline-offset-4">
-                          {memberSearch.toUpperCase()}
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="w-full space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        SELECT WALK-IN PASS TYPE
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setWalkInPassType('walkin_regular')}
-                          className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                            walkInPassType === 'walkin_regular'
-                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
-                              : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                                walkInPassType === 'walkin_regular'
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
-                              }`}
-                            >
-                              <Ticket className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="min-w-0 text-left">
-                              <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">
-                                Regular
-                              </div>
-                              <div className="text-[9px] text-slate-500 truncate">
-                                Standard
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                            ₱{walkinRegularFee.toFixed(2)}
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setWalkInPassType('walkin_student')}
-                          className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                            walkInPassType === 'walkin_student'
-                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
-                              : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                                walkInPassType === 'walkin_student'
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
-                              }`}
-                            >
-                              <GraduationCap className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="min-w-0 text-left">
-                              <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">
-                                Student
-                              </div>
-                              <div className="text-[9px] text-amber-500 font-bold truncate">
-                                ID Req.
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                            ₱{walkinStudentFee.toFixed(2)}
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-
-                    {memberSearch.trim().length < 3 && (
-                      <div className="text-[11px] font-bold text-amber-500 uppercase tracking-wide">
-                        ⚠️ Guest name must be at least 3 characters
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      disabled={memberSearch.trim().length < 3}
-                      onClick={handleContinueAsWalkIn}
-                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 disabled:opacity-40 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <span>PROCESS WALK-IN</span>
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-
-                    {memberSearch.trim().length >= 3 && (
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-                        Press{' '}
-                        <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-zinc-800 rounded font-mono text-[9px]">
-                          Enter
-                        </kbd>{' '}
-                        or click button to proceed
-                      </p>
                     )}
                   </div>
                 )}
-            </div>
-          )}
 
-          {/* DUPLICATE CHECK-IN ALERT */}
-          {duplicateLog && (
-            <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
-              <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
-                <AlertTriangle className="w-4.5 h-4.5 text-amber-500 shrink-0" />
-                <span>Customer already checked in today.</span>
+                {/* DEFAULT EMPTY STATE BANNER */}
+                {!memberSearch.trim() && !showLiveScanner && (
+                  <div className="py-7 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-slate-50/50 dark:bg-zinc-900/40 text-center flex flex-col items-center justify-center space-y-2.5 animate-fade-in select-none">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-xs">
+                      {filterMode === 'non-member' ? (
+                        <User className="w-6 h-6 stroke-[2.2]" />
+                      ) : (
+                        <Users className="w-6 h-6 stroke-[2.2]" />
+                      )}
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                        {filterMode === 'non-member'
+                          ? 'Process Non-Member Walk-In'
+                          : 'Search Member Record'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium max-w-xs leading-relaxed">
+                        {filterMode === 'non-member'
+                          ? 'Type the guest name above to choose a regular or student daily pass.'
+                          : 'Type a member name, phone number, card code, or scan a badge to verify.'}
+                      </p>
+                    </div>
+
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/70 dark:bg-zinc-800 text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                      <QrCode className="w-3 h-3 text-blue-500" />
+                      Barcode / QR Ready
+                    </span>
+                  </div>
+                )}
+
+                {/* MEMBERS ONLY TAB SEARCH RESULTS */}
+                {filterMode === 'member' && memberSearch.trim().length > 0 && (
+                  <div className="mt-3 space-y-3 animate-fade-in">
+                    {suggestions.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white block uppercase tracking-wider px-0.5">
+                          REGISTERED MEMBERS FOUND ({suggestions.length})
+                        </span>
+
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {suggestions.map((m) => {
+                            const isSuspended = m.status === 'Suspended';
+                            const isExpired = m.status === 'Expired';
+                            const isLocked = isSuspended;
+                            const isNonActive = m.status !== 'Active';
+
+                            return (
+                              <div
+                                key={m.id}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all ${
+                                  isLocked
+                                    ? 'bg-slate-50/50 dark:bg-zinc-900/40 border-(--border-color) opacity-60'
+                                    : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-zinc-700 shadow-xs'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPhotoModal({
+                                        name: m.name,
+                                        memberId: m.memberId,
+                                        url: m.avatarUrl || null,
+                                      })
+                                    }
+                                    className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-zinc-800 border border-(--border-color) overflow-hidden flex items-center justify-center font-black text-slate-900 dark:text-white text-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all group relative"
+                                    title="Click to verify member photo"
+                                  >
+                                    {m.avatarUrl ? (
+                                      <img
+                                        src={m.avatarUrl}
+                                        alt={m.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <span>{m.name[0]?.toUpperCase()}</span>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                      <Eye className="w-3.5 h-3.5 text-white" />
+                                    </div>
+                                  </button>
+
+                                  <div className="min-w-0 flex-1 text-left">
+                                    <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate uppercase leading-snug">
+                                      {m.name}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                                      {m.membership} •{' '}
+                                      <span className="font-mono text-[10px]">
+                                        {m.memberId}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isNonActive && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                        isSuspended
+                                          ? 'bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30'
+                                          : isExpired
+                                            ? 'bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30'
+                                            : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                      }`}
+                                    >
+                                      {m.status}
+                                    </span>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    disabled={isLocked}
+                                    onClick={() => handleSelectMember(m)}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:cursor-not-allowed"
+                                  >
+                                    Select
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-7 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-slate-50/50 dark:bg-zinc-900/40 text-center flex flex-col items-center justify-center space-y-3 animate-fade-in select-none">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-xs">
+                          <UserPlus className="w-6 h-6 stroke-[2.2]" />
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                            No Registered Members Found
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium max-w-xs leading-relaxed">
+                            No registered members match &ldquo;
+                            <strong className="text-slate-800 dark:text-slate-200">
+                              {memberSearch.toUpperCase()}
+                            </strong>
+                            &rdquo;. You can enroll them into a plan below.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleRedirectToSubscription}
+                          className="w-full max-w-xs py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                        >
+                          <span>ENROLL IN SUBSCRIPTION PLANS</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* NON-MEMBERS TAB WALK-IN PROCESSOR CARD */}
+                {filterMode === 'non-member' &&
+                  memberSearch.trim().length > 0 && (
+                    <div className="mt-3 p-4 bg-slate-50 dark:bg-zinc-900/80 border-2 border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center text-center space-y-3 shadow-sm animate-fade-in">
+                      <div className="flex items-center justify-center gap-2 text-slate-800 dark:text-slate-200 font-black text-sm uppercase tracking-wide">
+                        <User className="w-4 h-4 text-blue-500" />
+                        <span>
+                          NAME:{' '}
+                          <span className="text-blue-600 dark:text-blue-400 font-mono underline underline-offset-4">
+                            {walkInPreviewName}
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="w-full space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          SELECT WALK-IN PASS TYPE
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setWalkInPassType('walkin_regular')}
+                            className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                              walkInPassType === 'walkin_regular'
+                                ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                                : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                  walkInPassType === 'walkin_regular'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                <Ticket className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 text-left">
+                                <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">
+                                  Regular
+                                </div>
+                                <div className="text-[9px] text-slate-500 truncate">
+                                  Standard
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                              ₱{walkinRegularFee.toFixed(2)}
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setWalkInPassType('walkin_student')}
+                            className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                              walkInPassType === 'walkin_student'
+                                ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                                : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                  walkInPassType === 'walkin_student'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                <GraduationCap className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 text-left">
+                                <div className="text-[11px] font-bold text-slate-900 dark:text-white uppercase truncate">
+                                  Student
+                                </div>
+                                <div className="text-[9px] text-amber-500 font-bold truncate">
+                                  ID Req.
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                              ₱{walkinStudentFee.toFixed(2)}
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={!memberSearch.trim()}
+                        onClick={handleContinueAsWalkIn}
+                        className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 disabled:opacity-40 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <span>PROCESS WALK-IN</span>
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+
+                      {memberSearch.trim() && (
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+                          Press{' '}
+                          <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-zinc-800 rounded font-mono text-[9px]">
+                            Enter
+                          </kbd>{' '}
+                          or click button to proceed
+                        </p>
+                      )}
+                    </div>
+                  )}
               </div>
+            )}
 
-              <label className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-xl cursor-pointer transition-all shadow-xs">
-                <input
-                  type="checkbox"
-                  checked={adminOverride}
-                  onChange={(e) => setAdminOverride(e.target.checked)}
-                  className="w-4 h-4 rounded border-amber-500 text-blue-600 focus:ring-amber-500 accent-blue-600"
-                />
-                <span className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-                  PROCEED ANYWAY (OVERRIDE)
-                </span>
-              </label>
-            </div>
-          )}
+            {/* DUPLICATE CHECK-IN ALERT (Only for Registered Members) */}
+            {duplicateLog && !selectedClient?.isWalkIn && (
+              <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
+                <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
+                  <AlertTriangle className="w-4.5 h-4.5 text-amber-500 shrink-0" />
+                  <span>Member already checked in today.</span>
+                </div>
 
-          {/* VERIFIED CUSTOMER CARD */}
-          {selectedClient && (
-            <div className="p-3 bg-slate-100/90 dark:bg-zinc-900/90 border-2 border-(--border-color) rounded-xl flex items-center justify-between gap-3 animate-fade-in">
-              <div className="flex items-center gap-3 min-w-0">
-                {!selectedClient.isWalkIn ? (
+                <label className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-xl cursor-pointer transition-all shadow-xs">
+                  <input
+                    type="checkbox"
+                    checked={adminOverride}
+                    onChange={(e) => setAdminOverride(e.target.checked)}
+                    className="w-4 h-4 rounded border-amber-500 text-blue-600 focus:ring-amber-500 accent-blue-600"
+                  />
+                  <span className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                    PROCEED ANYWAY (OVERRIDE)
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* VERIFIED CUSTOMER CARD */}
+            {selectedClient && (
+              <div className="p-3 bg-(--bg-input) border border-(--border-color) rounded-xl flex items-center justify-between gap-3 animate-fade-in">
+                <div className="flex items-center gap-3 min-w-0">
                   <button
                     type="button"
                     onClick={() =>
@@ -1545,8 +1630,7 @@ export const LogbookRecordAttendance: React.FC<
                         url: selectedClient.avatarUrl || null,
                       })
                     }
-                    className="w-11 h-11 rounded-xl bg-blue-600 text-white overflow-hidden flex items-center justify-center font-black text-base shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all group relative shadow-md"
-                    title="Click to verify member photo identity"
+                    className="w-11 h-11 rounded-xl bg-(--color-primary) text-white overflow-hidden flex items-center justify-center font-black text-base shrink-0 cursor-pointer hover:ring-2 hover:ring-(--color-primary)/50 transition-all shadow-md"
                   >
                     {selectedClient.avatarUrl ? (
                       <img
@@ -1557,376 +1641,366 @@ export const LogbookRecordAttendance: React.FC<
                     ) : (
                       <span>{selectedClient.name[0]?.toUpperCase()}</span>
                     )}
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Eye className="w-4 h-4 text-white" />
-                    </div>
                   </button>
-                ) : (
-                  <div className="w-11 h-11 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black text-base shrink-0 shadow-md">
-                    {selectedClient.name[0]?.toUpperCase()}
-                  </div>
-                )}
 
-                <div className="min-w-0 text-left space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate uppercase">
-                      {selectedClient.name}
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
-                        selectedClient.isWalkIn
-                          ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
-                      }`}
-                    >
+                  <div className="min-w-0 text-left space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-black text-xs sm:text-sm text-(--color-text) truncate uppercase">
+                        {selectedClient.name}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-500 border border-amber-500/30">
+                        {selectedClient.isWalkIn
+                          ? 'WALK-IN GUEST'
+                          : 'REGISTERED MEMBER'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-(--color-text)/60 truncate">
                       {selectedClient.isWalkIn
-                        ? 'WALK-IN GUEST'
-                        : 'REGISTERED MEMBER'}
-                    </span>
+                        ? 'Non-Member Visitor'
+                        : `${selectedClient.membership} • ID: ${selectedClient.memberId}`}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {selectedClient.isWalkIn
-                      ? 'Non-Member Visitor'
-                      : `${selectedClient.membership} • ID: ${selectedClient.memberId}`}
-                  </p>
                 </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="px-2.5 py-1.5 rounded-lg bg-(--bg-card) hover:bg-(--bg-input) text-xs font-bold uppercase tracking-wider text-(--color-text) border border-(--border-color) transition-colors shrink-0 cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+            )}
+
+            {/* PASS SELECTION, BILLING & CHECKOUT */}
+            {selectedClient && (
+              <div
+                className={`space-y-3 transition-all duration-300 ${
+                  isLockedByDuplicate
+                    ? 'opacity-25 pointer-events-none grayscale select-none'
+                    : 'opacity-100'
+                }`}
               >
-                Change
-              </button>
-            </div>
-          )}
+                {/* CHOOSE TODAY'S ENTRY PASS */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
+                    SELECT ENTRY PASS
+                  </label>
 
-          {/* PASS SELECTION, BILLING & CHECKOUT */}
-          {selectedClient && (
-            <div
-              className={`space-y-3 transition-all duration-300 ${
-                isLockedByDuplicate
-                  ? 'opacity-25 pointer-events-none grayscale select-none'
-                  : 'opacity-100'
-              }`}
-            >
-              {/* CHOOSE TODAY'S ENTRY PASS */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
-                  SELECT ENTRY PASS
-                </label>
+                  {!selectedClient.isWalkIn &&
+                    (selectedClient.status === 'Expired' ||
+                      selectedClient.membership === 'No Active Plan') && (
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase text-center mb-1">
+                        ⚠️ MEMBERSHIP PLAN EXPIRED — DAILY ENTRY REQUIRED
+                      </div>
+                    )}
 
-                {!selectedClient.isWalkIn &&
-                  (selectedClient.status === 'Expired' ||
-                    selectedClient.membership === 'No Active Plan') && (
-                    <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase text-center mb-1">
-                      ⚠️ MEMBERSHIP PLAN EXPIRED — DAILY ENTRY REQUIRED
-                    </div>
-                  )}
-
-                {selectedClient.isWalkIn ||
-                selectedClient.status === 'Expired' ||
-                selectedClient.membership === 'No Active Plan' ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEntry('walkin_regular')}
-                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                        selectedEntry === 'walkin_regular'
-                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
-                          : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            selectedEntry === 'walkin_regular'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
-                          <Ticket className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate">
-                            Regular Pass
+                  {selectedClient.isWalkIn ||
+                  selectedClient.status === 'Expired' ||
+                  selectedClient.membership === 'No Active Plan' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEntry('walkin_regular')}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          selectedEntry === 'walkin_regular'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                            : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              selectedEntry === 'walkin_regular'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <Ticket className="w-4 h-4" />
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate">
-                            Daily pass
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate">
+                              Regular Pass
+                            </div>
+                            <div className="text-[10px] text-slate-500 truncate">
+                              Daily pass
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                        ₱{walkinRegularFee.toFixed(2)}
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEntry('walkin_student')}
-                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                        selectedEntry === 'walkin_student'
-                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
-                          : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            selectedEntry === 'walkin_student'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
-                          }`}
-                        >
-                          <GraduationCap className="w-4 h-4" />
+                        <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                          ₱{walkinRegularFee.toFixed(2)}
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate">
-                            Student Pass
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEntry('walkin_student')}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          selectedEntry === 'walkin_student'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50'
+                            : 'border-(--border-color) bg-(--bg-card) hover:border-slate-400 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              selectedEntry === 'walkin_student'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <GraduationCap className="w-4 h-4" />
                           </div>
-                          <div className="text-[10px] text-amber-500 font-bold truncate">
-                            ID required
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate">
+                              Student Pass
+                            </div>
+                            <div className="text-[10px] text-amber-500 font-bold truncate">
+                              ID required
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                        ₱{walkinStudentFee.toFixed(2)}
-                      </div>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedEntry('member_entry')}
-                    className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
-                        <UserCheck className="w-4.5 h-4.5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white uppercase">
-                          Member Plan Entry
+                        <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
+                          ₱{walkinStudentFee.toFixed(2)}
                         </div>
-                        <div className="text-[10px] text-slate-500 truncate">
-                          {selectedClient.membership}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
-                      {selectedClient.membership?.toLowerCase().includes('year')
-                        ? `₱${yearlyMemberFee.toFixed(2)}`
-                        : '₱0.00'}
-                    </div>
-                  </button>
-                )}
-              </div>
-
-              {/* BILLING & PAYMENT SUMMARY */}
-              {selectedEntry && (
-                <div className="p-3.5 bg-slate-50 dark:bg-zinc-900/50 border border-(--border-color) rounded-2xl space-y-3 shadow-xs text-xs">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 block">
-                    BILLING & SETTLEMENT
-                  </span>
-
-                  {derivedBilling.totalDue === 0 ? (
-                    <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-xl flex items-center gap-2 font-bold">
-                      <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <p className="text-xs leading-tight">
-                        NO PAYMENT REQUIRED. MONTHLY SUBSCRIPTION COVERS TODAY'S
-                        ENTRY.
-                      </p>
+                      </button>
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
-                      <div className="grid grid-cols-2 bg-(--bg-page) p-1 rounded-xl border border-(--border-color)">
-                        {(['Cash', 'GCash'] as const).map((method) => {
-                          const isActive = paymentMethod === method;
-                          return (
-                            <button
-                              key={method}
-                              type="button"
-                              onClick={() => setPaymentMethod(method)}
-                              className={`py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-all ${
-                                isActive
-                                  ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-sm'
-                                  : 'text-slate-500 hover:text-(--color-text)'
-                              }`}
-                            >
-                              {method === 'Cash' ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <Coins className="w-3.5 h-3.5" /> Cash
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <CreditCard className="w-3.5 h-3.5" /> GCash
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {paymentMethod === 'Cash' ? (
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">
-                            Amount Received
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm">
-                              ₱
-                            </span>
-                            <input
-                              type="number"
-                              value={amountReceived}
-                              onChange={(e) =>
-                                setAmountReceived(e.target.value)
-                              }
-                              placeholder="0.00"
-                              className="w-full pl-8 pr-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-slate-900 dark:text-white font-mono font-bold text-sm"
-                            />
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntry('member_entry')}
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                          <UserCheck className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-slate-900 dark:text-white uppercase">
+                            Member Plan Entry
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {selectedClient.membership}
                           </div>
                         </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">
-                            GCash Reference Number
-                          </label>
-                          <input
-                            type="text"
-                            value={referenceNumber}
-                            onChange={(e) => setReferenceNumber(e.target.value)}
-                            placeholder="Enter reference code..."
-                            className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-slate-900 dark:text-white font-mono font-bold text-xs uppercase"
-                          />
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                      <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
+                        {selectedClient.membership
+                          ?.toLowerCase()
+                          .includes('year')
+                          ? `₱${yearlyMemberFee.toFixed(2)}`
+                          : '₱0.00'}
+                      </div>
+                    </button>
                   )}
+                </div>
 
-                  {/* RECEIPT BREAKDOWN */}
-                  <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color) space-y-1 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                    <div className="flex justify-between">
-                      <span>Pass Type:</span>
-                      <span className="font-bold text-slate-900 dark:text-white truncate max-w-45 uppercase">
-                        {derivedBilling.title}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Entry Fee:</span>
-                      <span className="font-bold text-slate-900 dark:text-white">
-                        ₱{derivedBilling.subtotal.toFixed(2)}
-                      </span>
-                    </div>
-                    {paymentMethod === 'GCash' &&
-                      derivedBilling.convenienceFee > 0 && (
-                        <div className="flex justify-between">
-                          <span>GCash Fee:</span>
-                          <span className="text-rose-500 font-bold">
-                            +₱{derivedBilling.convenienceFee.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                    {amountReceived &&
-                      paymentMethod === 'Cash' &&
-                      derivedBilling.totalDue > 0 && (
-                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
-                          <span>Calculated Change:</span>
-                          <span>
-                            ₱{derivedBilling.calculatedChange.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                  </div>
-
-                  {/* TOTAL COST BANNER */}
-                  <div className="p-3 bg-slate-900 dark:bg-black border-2 border-blue-600 dark:border-blue-500 rounded-2xl space-y-0.5 text-center shadow-xl">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 block">
-                      TOTAL AMOUNT TO PAY
+                {/* BILLING & PAYMENT SUMMARY */}
+                {selectedEntry && (
+                  <div className="p-3.5 bg-(--bg-input) border border-(--border-color) rounded-2xl space-y-3 shadow-xs text-xs">
+                    <span className="text-xs font-bold uppercase tracking-wider text-(--color-text) block">
+                      BILLING & SETTLEMENT
                     </span>
-                    <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-400">
-                      ₱{derivedBilling.totalDue.toFixed(2)}
+
+                    {derivedBilling.totalDue === 0 ? (
+                      <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl flex items-center gap-2 font-bold">
+                        <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <p className="text-xs leading-tight uppercase">
+                          NO PAYMENT REQUIRED. ACTIVE SUBSCRIPTION COVERS
+                          TODAY'S ENTRY.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {/* PAYMENT METHOD SWITCHER */}
+                        <div className="grid grid-cols-2 bg-(--bg-card) p-1 rounded-xl border border-(--border-color)">
+                          {(['Cash', 'GCash'] as const).map((method) => {
+                            const isActive = paymentMethod === method;
+                            return (
+                              <button
+                                key={method}
+                                type="button"
+                                onClick={() => setPaymentMethod(method)}
+                                className={`py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                  isActive
+                                    ? 'bg-(--color-primary) text-white shadow-sm'
+                                    : 'text-(--color-text)/60 hover:text-(--color-text)'
+                                }`}
+                              >
+                                {method === 'Cash' ? (
+                                  <>
+                                    <Coins className="w-3.5 h-3.5" /> Cash
+                                  </>
+                                ) : (
+                                  <>
+                                    <CreditCard className="w-3.5 h-3.5" /> GCash
+                                  </>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* INPUTS: CASH AMOUNT OR GCASH REFERENCE NUMBER */}
+                        {paymentMethod === 'Cash' ? (
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-(--color-text)/80 uppercase">
+                              Amount Received
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text)/40 font-bold font-mono text-sm">
+                                ₱
+                              </span>
+                              <input
+                                type="number"
+                                value={amountReceived}
+                                onChange={(e) =>
+                                  setAmountReceived(e.target.value)
+                                }
+                                placeholder="0.00"
+                                className="w-full pl-8 pr-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-sm focus:border-(--color-primary)"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-(--color-text)/80 uppercase">
+                              GCash Reference Number
+                            </label>
+                            <input
+                              type="text"
+                              value={referenceNumber}
+                              onChange={(e) =>
+                                setReferenceNumber(e.target.value)
+                              }
+                              placeholder="ENTER 6+ DIGIT REFERENCE CODE..."
+                              className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) placeholder:text-(--color-text)/30 font-mono font-bold text-xs uppercase focus:border-(--color-primary)"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* RECEIPT BREAKDOWN */}
+                    <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) space-y-1 text-xs text-(--color-text)/80 font-medium">
+                      <div className="flex justify-between">
+                        <span>Pass Type:</span>
+                        <span className="font-bold text-(--color-text) truncate max-w-45 uppercase">
+                          {derivedBilling.title}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Entry Fee:</span>
+                        <span className="font-bold text-(--color-text)">
+                          ₱{derivedBilling.subtotal.toFixed(2)}
+                        </span>
+                      </div>
+                      {paymentMethod === 'GCash' &&
+                        derivedBilling.convenienceFee > 0 && (
+                          <div className="flex justify-between">
+                            <span>GCash Fee:</span>
+                            <span className="text-rose-500 font-bold">
+                              +₱{derivedBilling.convenienceFee.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      {amountReceived &&
+                        paymentMethod === 'Cash' &&
+                        derivedBilling.totalDue > 0 && (
+                          <div className="flex justify-between text-emerald-500 font-bold">
+                            <span>Calculated Change:</span>
+                            <span>
+                              ₱{derivedBilling.calculatedChange.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                    </div>
+
+                    {/* TOTAL COST BANNER */}
+                    <div className="p-3 bg-(--bg-card) border-2 border-(--color-primary) rounded-2xl space-y-0.5 text-center shadow-lg">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/60 block">
+                        TOTAL AMOUNT TO PAY
+                      </span>
+                      <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-500">
+                        ₱{derivedBilling.totalDue.toFixed(2)}
+                      </div>
+                    </div>
+
+                    {/* SUBMIT BUTTON */}
+                    <div className="pt-1">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={handleCompleteCheckIn}
+                        disabled={
+                          !isFormValid || isSubmitting || isLockedByDuplicate
+                        }
+                        className="w-full py-3.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+                      >
+                        {isSubmitting
+                          ? 'RECORDING CHECK-IN...'
+                          : 'COMPLETE CHECK-IN'}
+                      </Button>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* CHECK-IN ACTION BUTTON */}
-              {selectedEntry && (
-                <div className="pt-1">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={handleCompleteCheckIn}
-                    disabled={
-                      !isFormValid || isSubmitting || isLockedByDuplicate
-                    }
-                    className="w-full py-3.5 text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 cursor-pointer"
-                  >
-                    {isSubmitting
-                      ? 'RECORDING CHECK-IN...'
-                      : 'COMPLETE CHECK-IN'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </motion.div>
-      ) : (
-        <motion.div
-          key="attendance-success"
-          initial={{ opacity: 0, scale: 0.85, y: 16 }}
-          animate={{
-            opacity: 1,
-            scale: 1,
-            y: 0,
-            transition: {
-              type: 'spring',
-              damping: 24,
-              stiffness: 280,
-              duration: 0.4,
-            },
-          }}
-          exit={{
-            opacity: 0,
-            scale: 0.9,
-            y: -16,
-            transition: { duration: 0.25, ease: 'easeInOut' },
-          }}
-          className="py-12 flex flex-col items-center justify-center space-y-4"
-        >
-          <motion.div
-            initial={{ scale: 0, rotate: -30 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{
-              type: 'spring',
-              damping: 18,
-              stiffness: 300,
-              delay: 0.08,
-            }}
-            className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/25 ring-4 ring-emerald-500/20"
-          >
-            <Check className="w-8 h-8 stroke-[3]" />
+                )}
+              </div>
+            )}
           </motion.div>
-          <motion.h2
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.3 }}
-            className="font-black text-xl text-(--color-text) uppercase tracking-wider font-heading text-center"
+        ) : (
+          <motion.div
+            key="attendance-success"
+            initial={{ opacity: 0, scale: 0.85, y: 16 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: 0,
+              transition: {
+                type: 'spring',
+                damping: 24,
+                stiffness: 280,
+                duration: 0.4,
+              },
+            }}
+            exit={{
+              opacity: 0,
+              scale: 0.9,
+              y: -16,
+              transition: { duration: 0.25, ease: 'easeInOut' },
+            }}
+            className="py-12 flex flex-col items-center justify-center space-y-4"
           >
-            CHECK-IN AUTHORIZED
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.22, duration: 0.3 }}
-            className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-xs text-center uppercase tracking-wide"
-          >
-            Attendance record filed in the gym logbook.
-          </motion.p>
-        </motion.div>
-      )}
+            <motion.div
+              initial={{ scale: 0, rotate: -30 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{
+                type: 'spring',
+                damping: 18,
+                stiffness: 300,
+                delay: 0.08,
+              }}
+              className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/25 ring-4 ring-emerald-500/20"
+            >
+              <Check className="w-8 h-8 stroke-[3]" />
+            </motion.div>
+            <motion.h2
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.3 }}
+              className="font-black text-xl text-(--color-text) uppercase tracking-wider font-heading text-center"
+            >
+              CHECK-IN AUTHORIZED
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.22, duration: 0.3 }}
+              className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-xs text-center uppercase tracking-wide"
+            >
+              Attendance record filed in the gym logbook.
+            </motion.p>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* MEMBER PHOTO VERIFICATION LIGHTBOX MODAL */}
@@ -1935,18 +2009,18 @@ export const LogbookRecordAttendance: React.FC<
           isOpen={!!photoModal}
           onClose={() => setPhotoModal(null)}
           title="MEMBER PHOTO VERIFICATION"
-          className="w-full max-w-xs mx-auto p-5 text-center relative animate-fade-in z-120"
+          className="w-full max-w-xs mx-auto p-5 text-center relative bg-(--bg-card) border border-(--border-color) text-(--color-text) z-120"
         >
           <button
             type="button"
             onClick={() => setPhotoModal(null)}
-            className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-white bg-zinc-800 cursor-pointer"
+            className="absolute top-3 right-3 p-1 rounded-lg text-(--color-text)/60 hover:text-(--color-text) bg-(--bg-input) cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
 
           <div className="space-y-3 pt-2">
-            <div className="w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-zinc-900 border-2 border-blue-500/40 shadow-2xl flex items-center justify-center relative">
+            <div className="w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-(--bg-input) border-2 border-(--color-primary)/40 shadow-xl flex items-center justify-center relative">
               {photoModal.url ? (
                 <img
                   src={photoModal.url}
@@ -1954,29 +2028,19 @@ export const LogbookRecordAttendance: React.FC<
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="text-center space-y-1">
-                  <User className="w-16 h-16 text-slate-500 mx-auto" />
-                  <span className="text-[10px] text-slate-500 font-bold uppercase block">
-                    No Image Uploaded
-                  </span>
-                </div>
+                <User className="w-16 h-16 text-(--color-text)/30" />
               )}
             </div>
 
             <div className="space-y-0.5">
-              <h3 className="font-black text-sm text-slate-900 dark:text-white uppercase">
+              <h3 className="font-black text-sm text-(--color-text) uppercase">
                 {photoModal.name}
               </h3>
               {photoModal.memberId && (
-                <p className="text-xs font-mono font-bold text-blue-500">
+                <p className="text-xs font-mono font-bold text-(--color-primary-light)">
                   {photoModal.memberId}
                 </p>
               )}
-            </div>
-
-            <div className="pt-2 border-t border-(--border-color) flex items-center justify-center gap-1.5 text-xs text-emerald-500 font-bold uppercase">
-              <ShieldCheck className="w-4 h-4 shrink-0" />
-              <span>Identity Match Verification</span>
             </div>
           </div>
         </Modal>

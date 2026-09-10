@@ -282,7 +282,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     outOfStock: 0,
   });
 
-  // Members Directory Telemetry
+  // Members Telemetry
   const [membersKpiData, setMembersKpiData] = useState<MembersKpiData>({
     total: 0,
     activeSubscriptions: 0,

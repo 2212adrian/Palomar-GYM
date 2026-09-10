@@ -914,7 +914,7 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
         if (isSelfUser) {
           return (
-            <span className="text-[10px] text-slate-500 font-mono pr-2">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono pr-2">
               Active Session
             </span>
           );
@@ -934,7 +934,7 @@ export const UserManagement: React.FC = () => {
                 onClick={() => handleOpenEditProfile(u)}
                 title={`Edit profile picture & username for ${u.username}`}
                 aria-label={`Edit profile for ${u.username}`}
-                className="w-8 h-8 rounded-lg border border-slate-800 bg-slate-900/60 hover:bg-blue-500/10 hover:border-blue-500/30 text-slate-400 hover:text-blue-400 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
+                className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-blue-500/10 hover:border-blue-500/30 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
               >
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
@@ -953,12 +953,12 @@ export const UserManagement: React.FC = () => {
               aria-label={`Send password reset to ${u.username}`}
               className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all shadow-xs active:scale-95 ${
                 isLocalAccount
-                  ? 'border-slate-800/40 bg-transparent text-slate-600 opacity-40 cursor-not-allowed'
-                  : 'border-slate-800 bg-slate-900/60 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-slate-400 hover:text-emerald-400 cursor-pointer disabled:opacity-50'
+                  ? 'border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-transparent text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer disabled:opacity-50'
               }`}
             >
               {isSendingReset === u.id ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500 dark:text-emerald-400" />
               ) : (
                 <KeyRound className="w-3.5 h-3.5" />
               )}
@@ -971,10 +971,10 @@ export const UserManagement: React.FC = () => {
               disabled={isSigningOutSessions === u.id}
               title={`Force sign out all active sessions for ${u.username}`}
               aria-label={`Force sign out sessions for ${u.username}`}
-              className="w-8 h-8 rounded-lg border border-slate-800 bg-slate-900/60 hover:bg-amber-500/10 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-amber-500/10 hover:border-amber-500/30 text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
             >
               {isSigningOutSessions === u.id ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 dark:text-amber-400" />
               ) : (
                 <LogOut className="w-3.5 h-3.5" />
               )}
@@ -984,14 +984,14 @@ export const UserManagement: React.FC = () => {
             {isTargetSuperAdmin ? (
               <div
                 title="Superadmin account protected"
-                className="w-8 h-8 rounded-lg border border-slate-800/40 bg-transparent text-slate-600 opacity-40 flex items-center justify-center cursor-not-allowed"
+                className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-transparent text-slate-400 dark:text-slate-600 opacity-40 flex items-center justify-center cursor-not-allowed"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
               </div>
             ) : isProtectedAdmin ? (
               <div
                 title="Admin accounts can only be deleted by the Superadmin"
-                className="w-8 h-8 rounded-lg border border-slate-800/40 bg-transparent text-slate-600 opacity-40 flex items-center justify-center cursor-not-allowed"
+                className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-transparent text-slate-400 dark:text-slate-600 opacity-40 flex items-center justify-center cursor-not-allowed"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </div>
@@ -1002,7 +1002,7 @@ export const UserManagement: React.FC = () => {
                 disabled={isDeletingUser === u.id}
                 title={`Delete user account ${u.username}`}
                 aria-label={`Delete user account ${u.username}`}
-                className="w-8 h-8 rounded-lg border border-slate-800 bg-slate-900/60 hover:bg-rose-500/10 hover:border-rose-500/30 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+                className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-rose-500/10 hover:border-rose-500/30 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-500 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
               >
                 {isDeletingUser === u.id ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />

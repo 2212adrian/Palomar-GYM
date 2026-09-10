@@ -30,7 +30,6 @@ import {
   Moon,
   FileSignature,
   Eraser,
-  Info,
   Users,
   ChevronLeft,
   ChevronRight,
@@ -39,7 +38,8 @@ import {
   PlusCircle,
   Ticket,
   AlertCircle,
-  Trash2,
+  AlertTriangle,
+  Scale,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -532,6 +532,9 @@ export const OnlineRegistrationPage: React.FC = () => {
     );
   });
 
+  // Step 4 Mandatory 3-Second Review Timer
+  const [step4Countdown, setStep4Countdown] = useState<number>(3);
+
   const [activeRegistrations, setActiveRegistrations] = useState<
     StoredRegistration[]
   >([]);
@@ -557,6 +560,26 @@ export const OnlineRegistrationPage: React.FC = () => {
   useEffect(() => {
     settingsService.load().then(setSettings).catch(console.warn);
   }, []);
+
+  // 3-Second Timer Trigger on Entering Step 4
+  useEffect(() => {
+    if (currentStep === 4) {
+      setStep4Countdown(3);
+      const timer = setInterval(() => {
+        setStep4Countdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    } else {
+      setStep4Countdown(3);
+    }
+  }, [currentStep]);
 
   // Sync Theme on Mount
   useEffect(() => {
@@ -607,20 +630,16 @@ export const OnlineRegistrationPage: React.FC = () => {
     mode: 'onTouched',
   });
 
-  // Character-by-character Draft Auto-Save: ONLY triggers on actual keystrokes
+  // Character-by-character Draft Auto-Save
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout>;
 
     const subscription = watch((formValues, { type }) => {
-      // 1. Strictly ignore if this was not an actual user typing event
       if (!type || isRestoringDraft.current || isSubmitting) return;
 
       const currentJson = JSON.stringify(formValues);
-
-      // 2. Ignore if values haven't actually changed
       if (currentJson === lastDraftJsonRef.current) return;
 
-      // 3. If form matches initial empty state, clear draft and stay idle
       if (currentJson === JSON.stringify(INITIAL_FORM_VALUES)) {
         localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
         lastDraftJsonRef.current = currentJson;
@@ -693,38 +712,6 @@ export const OnlineRegistrationPage: React.FC = () => {
   }, [reset, getValues]);
 
   const watchedValues = watch();
-
-  const handleClearDraft = () => {
-    localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
-    reset({
-      last_name: '',
-      first_name: '',
-      middle_initial: '',
-      suffix: '',
-      phone: '',
-      email: '',
-      gender: 'Male',
-      birthday: '',
-      address: '',
-      same_as_parent: true,
-      emergency_contact_name: '',
-      emergency_contact_relationship: '',
-      emergency_contact_phone: '',
-      preferred_plan: 'Monthly Membership',
-      agreement: false,
-      parent_name: '',
-      parent_relationship: 'Father',
-      parent_relationship_other: '',
-      parent_phone: '',
-      parent_email: '',
-      applicant_signature: null,
-      parent_signature: null,
-    });
-    setCurrentStep(1);
-    setDraftState('idle');
-    toast.info('Registration draft cleared.');
-  };
-
   const selectedPlan = watchedValues.preferred_plan;
   const isAgreed = watchedValues.agreement;
   const watchedBirthday = watchedValues.birthday;
@@ -756,13 +743,18 @@ export const OnlineRegistrationPage: React.FC = () => {
     [activeRegistrations]
   );
 
-  const todayFormatted = useMemo(() => {
-    return new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  }, []);
+  // Mathematically Accurate Live Calculations
+  const regularWalkInPrice = 100;
+  const yearlyCheckinFee = settings.yearly_member_checkin_fee ?? 70;
+  const yearlyDiscountPercent = useMemo(() => {
+    if (regularWalkInPrice <= 0) return 0;
+    const diff = regularWalkInPrice - yearlyCheckinFee;
+    return Math.max(0, Math.round((diff / regularWalkInPrice) * 100));
+  }, [yearlyCheckinFee]);
+
+  const yearlySavingsPerVisit = useMemo(() => {
+    return Math.max(0, regularWalkInPrice - yearlyCheckinFee);
+  }, [yearlyCheckinFee]);
 
   const getFieldBorderClass = (
     fieldName: keyof RegistrationFormData,
@@ -1059,6 +1051,11 @@ export const OnlineRegistrationPage: React.FC = () => {
       return;
     }
 
+    if (step4Countdown > 0) {
+      toast.info(`Please take ${step4Countdown}s to review gym rules.`);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const randStr = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -1104,8 +1101,6 @@ export const OnlineRegistrationPage: React.FC = () => {
       };
 
       await registrationService.submit(newReg);
-
-      // Immediately purge sensitive draft upon account submission
       localStorage.removeItem(ONLINE_REGISTRATION_DRAFT_KEY);
 
       const expiresAt = getNextManilaMidnightMs();
@@ -1265,6 +1260,7 @@ export const OnlineRegistrationPage: React.FC = () => {
   const isSubmitDisabled =
     isSubmitting ||
     !isAgreed ||
+    step4Countdown > 0 ||
     isRestrictedUnder12 ||
     isTicketLimitReached ||
     (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
@@ -1277,12 +1273,12 @@ export const OnlineRegistrationPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen w-full bg-(--bg-page) text-(--color-text) py-8 px-4 sm:px-6 flex flex-col items-center justify-center transition-colors duration-300">
-      {/* Top Utility Bar */}
-      <div className="w-full max-w-2xl flex justify-between items-center mb-6 px-2 select-none">
+    <div className="min-h-screen w-full bg-(--bg-page) text-(--color-text) py-6 sm:py-10 px-3 sm:px-6 lg:px-8 flex flex-col items-center justify-start sm:justify-center transition-colors duration-300">
+      {/* Top Utility Bar (Fluid Max-w-4xl) */}
+      <div className="w-full max-w-4xl flex justify-between items-center mb-4 sm:mb-6 px-1 sm:px-2 select-none">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse" />
-          <span className="text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">
+          <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse shrink-0" />
+          <span className="text-[10px] sm:text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">
             Self-Service Portal
           </span>
 
@@ -1305,39 +1301,13 @@ export const OnlineRegistrationPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {viewMode === 'form' && draftState !== 'idle' && (
-            <button
-              type="button"
-              onClick={handleClearDraft}
-              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-red-400 text-slate-500 hover:text-red-500 transition-all cursor-pointer shadow-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
-              title="Clear Saved Draft"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear Draft</span>
-            </button>
-          )}
-
-          {/* Refresh / Sync Button */}
-          <button
-            type="button"
-            onClick={() => syncActiveTickets(true)}
-            disabled={isSyncing}
-            className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer shadow-xs flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
-            title="Refresh and sync ticket status with server"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-emerald-500' : ''}`}
-            />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-
           {activeRegistrations.length > 0 && (
             <div className="flex items-center bg-(--bg-card) border border-(--border-color) p-1 rounded-xl">
               <button
                 type="button"
                 onClick={handleStartNewRegistration}
                 disabled={isTicketLimitReached}
-                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
+                className={`px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
                   viewMode === 'form'
                     ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -1349,7 +1319,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 }
               >
                 <PlusCircle className="w-3.5 h-3.5" />
-                <span>New Form</span>
+                <span className="hidden sm:inline">New Form</span>
               </button>
 
               <button
@@ -1362,7 +1332,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     setViewMode('list');
                   }
                 }}
-                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
+                className={`px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
                   viewMode !== 'form'
                     ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -1370,8 +1340,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               >
                 <Ticket className="w-3.5 h-3.5 text-emerald-400" />
                 <span>
-                  Active Tickets ({activeRegistrations.length}/
-                  {MAX_ACTIVE_TICKETS})
+                  Tickets ({activeRegistrations.length}/{MAX_ACTIVE_TICKETS})
                 </span>
               </button>
             </div>
@@ -1380,7 +1349,7 @@ export const OnlineRegistrationPage: React.FC = () => {
           <button
             type="button"
             onClick={toggleTheme}
-            className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs"
+            className="p-2 sm:p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) hover:border-slate-400 text-slate-400 hover:text-slate-200 transition-all cursor-pointer shadow-xs shrink-0"
             title="Toggle Dark/Light Mode"
           >
             {isDarkMode ? (
@@ -1393,7 +1362,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       </div>
 
       {/* Top Hero Header */}
-      <div className="text-center max-w-lg mb-6 space-y-2 select-none animate-fade-in">
+      <div className="text-center max-w-lg mb-5 sm:mb-6 space-y-2 select-none animate-fade-in px-2">
         <img
           src={
             isDarkMode
@@ -1401,15 +1370,15 @@ export const OnlineRegistrationPage: React.FC = () => {
               : gymLogoLight || gymLogoFallback
           }
           alt="Wolf Palomar Fitness Gym"
-          className="h-14 sm:h-16 mx-auto object-contain drop-shadow-md"
+          className="h-12 sm:h-16 mx-auto object-contain drop-shadow-md"
           onError={(e) => {
             (e.currentTarget as HTMLElement).style.display = 'none';
           }}
         />
-        <h1 className="font-heading text-lg sm:text-2xl tracking-wider text-slate-900 dark:text-white uppercase font-black leading-tight">
+        <h1 className="font-heading text-base sm:text-xl md:text-2xl tracking-wider text-slate-900 dark:text-white uppercase font-black leading-tight">
           Join Wolf Palomar Fitness Gym
         </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto font-medium">
+        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto font-medium">
           {viewMode === 'form'
             ? 'Complete your membership pre-registration setup.'
             : 'Manage your recent membership registration tickets.'}
@@ -1417,7 +1386,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       </div>
 
       {/* Main Container Card */}
-      <div className="w-full max-w-2xl bg-(--bg-card) border border-(--border-color) rounded-3xl p-5 sm:p-8 shadow-2xl transition-all duration-300">
+      <div className="w-full max-w-4xl bg-(--bg-card) border border-(--border-color) rounded-3xl p-4 sm:p-7 lg:p-9 shadow-2xl transition-all duration-300">
         {/* ================= VIEW 1: ACTIVE TICKETS LIST ================= */}
         {viewMode === 'list' && activeRegistrations.length > 0 && (
           <div className="space-y-5 animate-fade-in text-left select-none">
@@ -1536,11 +1505,11 @@ export const OnlineRegistrationPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="p-5 bg-white rounded-2xl max-w-xs mx-auto border border-slate-200 shadow-inner space-y-3">
+            <div className="p-4 sm:p-5 bg-white rounded-2xl max-w-xs mx-auto border border-slate-200 shadow-inner space-y-3">
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`}
                 alt="Registration QR Code"
-                className="w-52 h-52 sm:w-60 sm:h-60 mx-auto block object-contain"
+                className="w-48 h-48 sm:w-56 sm:h-56 mx-auto block object-contain"
               />
               <div className="border-t border-slate-100 pt-2">
                 <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase tracking-widest">
@@ -1565,7 +1534,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 type="button"
                 onClick={() => syncActiveTickets(true)}
                 disabled={isSyncing}
-                className="py-3 px-3 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 dark:border-zinc-700"
+                className="py-2.5 sm:py-3 px-3 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-300 dark:border-zinc-700"
                 title="Sync with server"
               >
                 <RefreshCw
@@ -1577,7 +1546,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleDownloadQR(selectedTicket)}
-                className="py-3 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
+                className="py-2.5 sm:py-3 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </button>
@@ -1585,7 +1554,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleCopyCode(selectedTicket.registrationId)}
-                className="py-3 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/10"
+                className="py-2.5 sm:py-3 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/10"
               >
                 {copiedId === selectedTicket.registrationId ? (
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -1603,7 +1572,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 type="button"
                 onClick={handleStartNewRegistration}
                 disabled={isTicketLimitReached}
-                className={`py-3 px-3 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all border-none ${
+                className={`py-2.5 sm:py-3 px-3 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all border-none ${
                   !isTicketLimitReached
                     ? 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 cursor-pointer'
                     : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-60'
@@ -1631,18 +1600,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                     /{MAX_ACTIVE_TICKETS})
                   </span>
                   <p className="text-[11px] font-medium leading-relaxed">
-                    You currently have 3 active pre-registration tickets. To
-                    maintain network security and prevent system abuse, new
+                    You currently have 3 active pre-registration tickets. New
                     registration submissions are locked until your current
                     tickets expire at midnight (12:00 AM Manila Time) or are
-                    processed at the gym front desk.
+                    processed at the front desk.
                   </p>
                 </div>
               </div>
             )}
 
             {/* Visual Stepper Progress Bar */}
-            <div className="select-none">
+            <div className="select-none px-2">
               <div className="flex items-center justify-between relative mb-2">
                 <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-zinc-800 -translate-y-1/2 z-0" />
                 <div
@@ -1662,7 +1630,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       className="relative z-10 flex flex-col items-center"
                     >
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-heading text-xs transition-all ${
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-heading text-xs transition-all ${
                           isCompleted
                             ? 'bg-emerald-500 text-white shadow-md'
                             : isActive
@@ -1671,13 +1639,13 @@ export const OnlineRegistrationPage: React.FC = () => {
                         }`}
                       >
                         {isCompleted ? (
-                          <Check className="w-4 h-4 stroke-3" />
+                          <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-3" />
                         ) : (
                           step.id
                         )}
                       </div>
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${
+                        className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mt-1 ${
                           isActive
                             ? 'text-[#123c73] dark:text-[#bf0202]'
                             : 'text-slate-400'
@@ -1701,7 +1669,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                   </h2>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {/* Last Name */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
@@ -1716,7 +1684,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('last_name')}
                         placeholder="e.g. Dela Cruz"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('last_name')}`}
+                        className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('last_name')}`}
                       />
                     </div>
                     {errors.last_name && (
@@ -1740,7 +1708,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('first_name')}
                         placeholder="e.g. Juan"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('first_name')}`}
+                        className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('first_name')}`}
                       />
                     </div>
                     {errors.first_name && (
@@ -1767,7 +1735,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         maxLength={2}
                         {...register('middle_initial')}
                         placeholder="e.g. M."
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('middle_initial')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('middle_initial')}`}
                       />
                     </div>
 
@@ -1785,7 +1753,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('suffix')}
                         placeholder="e.g. Jr."
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('suffix')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('suffix')}`}
                       />
                     </div>
                   </div>
@@ -1809,7 +1777,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           },
                         })}
                         placeholder="09171234567"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('phone')}`}
+                        className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('phone')}`}
                       />
                     </div>
                     {errors.phone && (
@@ -1836,7 +1804,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="email"
                         {...register('email')}
                         placeholder="juan@example.com"
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('email')}`}
+                        className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('email')}`}
                       />
                     </div>
                     {errors.email && (
@@ -1856,7 +1824,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     </div>
                     <select
                       {...register('gender')}
-                      className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('gender')}`}
+                      className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('gender')}`}
                     >
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -1907,7 +1875,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         min={minDateStr}
                         max={todayStr}
                         {...register('birthday')}
-                        className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('birthday', isMinor)}`}
+                        className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('birthday', isMinor)}`}
                       />
                     </div>
                     {errors.birthday && (
@@ -1927,10 +1895,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </span>
                         <p className="text-[11px] font-medium leading-relaxed">
                           Regular online membership is strictly not permitted
-                          for children under 12 years old. Gym access for ages
-                          0–11 is allowed only in supervised youth programs with
-                          management approval and continuous parent/legal
-                          guardian presence on site.
+                          for children under 12 years old.
                         </p>
                       </div>
                     </div>
@@ -1988,7 +1953,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 </div>
 
                 {isMinor ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div className="space-y-1 sm:col-span-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
@@ -2001,7 +1966,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('parent_name')}
                         placeholder="e.g. Roberto Dela Cruz"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_name')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_name')}`}
                       />
                       {errors.parent_name && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2020,12 +1985,12 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <select
                         {...register('parent_relationship')}
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('parent_relationship')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors cursor-pointer ${getFieldBorderClass('parent_relationship')}`}
                       >
                         <option value="Father">Father</option>
                         <option value="Mother">Mother</option>
                         <option value="Legal Guardian">Legal Guardian</option>
-                        <option value="Other">Other (specify)</option>
+                        <option value="Other (specify)">Other (specify)</option>
                       </select>
                       {errors.parent_relationship && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2034,7 +1999,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       )}
                     </div>
 
-                    {watchedParentRelationship === 'Other' && (
+                    {watchedParentRelationship === 'Other (specify)' && (
                       <div className="space-y-1">
                         <div className="flex justify-between items-center">
                           <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
@@ -2047,7 +2012,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           type="text"
                           {...register('parent_relationship_other')}
                           placeholder="e.g. Aunt / Uncle / Grandparent"
-                          className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_relationship_other')}`}
+                          className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_relationship_other')}`}
                         />
                         {errors.parent_relationship_other && (
                           <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2073,7 +2038,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           },
                         })}
                         placeholder="09170000000"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_phone')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_phone')}`}
                       />
                       {errors.parent_phone && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2096,11 +2061,11 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="email"
                         {...register('parent_email')}
                         placeholder="parent@example.com"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_email')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_email')}`}
                       />
                     </div>
 
-                    <div className="sm:col-span-2 p-3.5 bg-(--bg-input) rounded-2xl border-2 border-slate-300 dark:border-zinc-700 flex items-center justify-between">
+                    <div className="sm:col-span-2 p-3 sm:p-3.5 bg-(--bg-input) rounded-2xl border-2 border-slate-300 dark:border-zinc-700 flex items-center justify-between">
                       <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300">
                         <input
                           type="checkbox"
@@ -2112,13 +2077,13 @@ export const OnlineRegistrationPage: React.FC = () => {
                           Contact
                         </span>
                       </label>
-                      <Users className="w-4 h-4 text-slate-400" />
+                      <Users className="w-4 h-4 text-slate-400 shrink-0" />
                     </div>
                   </div>
                 ) : null}
 
                 {(!isMinor || !watchedSameAsParent) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-1">
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
@@ -2137,7 +2102,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('emergency_contact_name')}
                         placeholder="e.g. Maria Dela Cruz"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_name')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_name')}`}
                       />
                       {errors.emergency_contact_name && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2164,7 +2129,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('emergency_contact_relationship')}
                         placeholder="e.g. Spouse / Parent / Sibling"
-                        className={`w-full px-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_relationship')}`}
+                        className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_relationship')}`}
                       />
                       {errors.emergency_contact_relationship && (
                         <p className="text-[10px] text-red-500 font-medium mt-1">
@@ -2200,7 +2165,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                             },
                           })}
                           placeholder="09189876543"
-                          className={`w-full pl-10 pr-4 py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_phone')}`}
+                          className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_phone')}`}
                         />
                       </div>
                       {errors.emergency_contact_phone && (
@@ -2214,121 +2179,285 @@ export const OnlineRegistrationPage: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 3: MEMBERSHIP PLAN */}
+            {/* STEP 3: MEMBERSHIP PLAN (FLUID RESPONSIVE CARDS) */}
             {currentStep === 3 && (
-              <div className="space-y-4 select-none animate-fade-in">
-                <div className="flex items-center gap-2 border-b border-(--border-color) pb-2">
+              <div className="space-y-5 sm:space-y-6 select-none animate-fade-in">
+                <div className="flex items-center gap-2 border-b border-(--border-color) pb-3">
                   <CreditCard className="w-4 h-4 text-(--color-primary-light)" />
                   <h2 className="font-heading text-xs tracking-widest text-slate-900 dark:text-white uppercase font-bold">
                     Step 3: Select Membership Plan
                   </h2>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {/* MONTHLY MEMBERSHIP CARD */}
                   <div
                     onClick={() =>
                       setValue('preferred_plan', 'Monthly Membership', {
                         shouldValidate: true,
                       })
                     }
-                    className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
+                    className={`relative p-5 sm:p-6 lg:p-7 rounded-3xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden shadow-sm ${
                       selectedPlan === 'Monthly Membership'
-                        ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
-                        : 'bg-(--bg-input) border-slate-300 dark:border-zinc-700 hover:border-amber-400'
+                        ? 'bg-emerald-500/[0.05] dark:bg-emerald-950/20 border-emerald-500 ring-2 ring-emerald-500/20 shadow-emerald-500/10'
+                        : 'bg-white dark:bg-zinc-900/60 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
                     }`}
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
-                          Monthly Membership
+                    <div className="space-y-4 sm:space-y-5">
+                      {/* Card Header & Radio */}
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          Unlimited Passes
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono font-medium block mt-0.5">
-                          30 Consecutive Days
-                        </span>
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            selectedPlan === 'Monthly Membership'
+                              ? 'bg-emerald-500 border-emerald-500 text-white'
+                              : 'border-slate-300 dark:border-zinc-600'
+                          }`}
+                        >
+                          {selectedPlan === 'Monthly Membership' && (
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          )}
+                        </div>
                       </div>
-                      {selectedPlan === 'Monthly Membership' && (
-                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 stroke-3" />
-                        </span>
-                      )}
-                    </div>
 
-                    <div>
-                      <div className="text-2xl font-heading font-black text-[#123c73] dark:text-[#bf0202]">
-                        ₱{settings.monthly_plan_price.toLocaleString()}
+                      {/* Title & Price Header */}
+                      <div>
+                        <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                          Monthly Membership
+                        </h3>
+                        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="text-2xl sm:text-3xl lg:text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
+                            ₱{settings.monthly_plan_price.toLocaleString()}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            / 30 Days
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-1">
-                        Unlimited gym entry for 30 days with ₱0 check-in fee.
-                        Ideal for active lifters.
-                      </p>
+
+                      {/* Comparison Box */}
+                      <div className="rounded-2xl p-3.5 sm:p-4 bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/80 dark:border-zinc-800 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">
+                            Regular Non-Member Walk-In:
+                          </span>
+                          <span className="font-mono text-slate-400 line-through shrink-0">
+                            ₱{regularWalkInPrice} / visit
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-200 dark:border-zinc-700/60 text-xs font-bold">
+                          <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />{' '}
+                            Your Check-In Fee:
+                          </span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400 text-sm font-black shrink-0">
+                            ₱0 FREE
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Benefits */}
+                      <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        <li className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span>
+                            Unlimited gym visits for 30 consecutive days
+                          </span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span>Zero daily check-in door fees</span>
+                        </li>
+                      </ul>
                     </div>
                   </div>
 
+                  {/* YEARLY MEMBERSHIP CARD */}
                   <div
                     onClick={() =>
                       setValue('preferred_plan', 'Yearly Membership', {
                         shouldValidate: true,
                       })
                     }
-                    className={`relative p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
+                    className={`relative p-5 sm:p-6 lg:p-7 rounded-3xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden shadow-sm ${
                       selectedPlan === 'Yearly Membership'
-                        ? 'bg-emerald-500/10 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
-                        : 'bg-(--bg-input) border-slate-300 dark:border-zinc-700 hover:border-amber-400'
+                        ? 'bg-blue-500/[0.05] dark:bg-blue-950/20 border-blue-600 ring-2 ring-blue-500/20 shadow-blue-500/10'
+                        : 'bg-white dark:bg-zinc-900/60 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
                     }`}
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
-                          Yearly Membership
+                    <div className="space-y-4 sm:space-y-5">
+                      {/* Card Header & Radio */}
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          365-Day Access Key
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono font-medium block mt-0.5">
-                          365 Days Access Key
-                        </span>
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            selectedPlan === 'Yearly Membership'
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'border-slate-300 dark:border-zinc-600'
+                          }`}
+                        >
+                          {selectedPlan === 'Yearly Membership' && (
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          )}
+                        </div>
                       </div>
-                      {selectedPlan === 'Yearly Membership' && (
-                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 stroke-3" />
-                        </span>
-                      )}
-                    </div>
 
-                    <div>
-                      <div className="text-2xl font-heading font-black text-[#123c73] dark:text-[#bf0202]">
-                        ₱{settings.yearly_plan_price.toLocaleString()}
+                      {/* Title & Price Header */}
+                      <div>
+                        <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                          Yearly Membership
+                        </h3>
+                        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="text-2xl sm:text-3xl lg:text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
+                            ₱{settings.yearly_plan_price.toLocaleString()}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            / 1 Year
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-1">
-                        Access valid for 365 days. Reduced entry check-in fee (₱
-                        {settings.yearly_member_checkin_fee.toLocaleString()}
-                        /visit).
-                      </p>
+
+                      {/* Comparison Box */}
+                      <div className="rounded-2xl p-3.5 sm:p-4 bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/80 dark:border-zinc-800 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">
+                            Regular Non-Member Walk-In:
+                          </span>
+                          <span className="font-mono text-slate-400 line-through shrink-0">
+                            ₱{regularWalkInPrice} / visit
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-200 dark:border-zinc-700/60 text-xs font-bold">
+                          <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />{' '}
+                            Your Check-In Fee:
+                          </span>
+                          <div className="flex items-center gap-1.5 font-mono shrink-0">
+                            <span className="text-blue-600 dark:text-blue-400 text-sm font-black">
+                              ₱{yearlyCheckinFee.toLocaleString()} / visit
+                            </span>
+                            {yearlyDiscountPercent > 0 && (
+                              <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                {yearlyDiscountPercent}% OFF
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Benefits & Dynamic Description */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                          Pay once for 365-day access and enjoy a{' '}
+                          <strong className="text-slate-900 dark:text-white font-bold">
+                            {yearlyDiscountPercent}% discount
+                          </strong>{' '}
+                          (Save ₱{yearlySavingsPerVisit.toLocaleString()} per
+                          visit) on every walk-in gym session.
+                        </p>
+                        <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium pt-1">
+                          <li className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                            <span>Full 365-day access key card privileges</span>
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                            <span>
+                              Save ₱{yearlySavingsPerVisit.toLocaleString()}{' '}
+                              every single day you train
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* STEP 4: WAIVER & SUBMISSION */}
+            {/* STEP 4: RULES AS A MEMBER, WAIVER & SUBMISSION */}
             {currentStep === 4 && (
               <div className="space-y-4 select-none animate-fade-in">
                 <div className="flex items-center gap-2 border-b border-(--border-color) pb-2">
                   <ShieldCheck className="w-4 h-4 text-(--color-primary-light)" />
                   <h2 className="font-heading text-xs tracking-widest text-slate-900 dark:text-white uppercase font-bold">
-                    Step 4: Waiver & Final Certification
+                    Step 4: Rules & Final Acknowledgment
                   </h2>
                 </div>
 
-                <div className="p-5 rounded-3xl bg-(--bg-input) border border-(--border-color) space-y-4 text-left">
-                  {isMinor && (
-                    <>
-                      <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-400/40 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
-                        <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                        <span>
-                          <strong>Required minor consent:</strong> both the
-                          applicant and parent or legal guardian must provide a
-                          signature before the registration can be submitted.
-                        </span>
+                <div className="p-4 sm:p-5 rounded-3xl bg-(--bg-input) border border-(--border-color) space-y-3.5 text-left">
+                  {/* Top Bar with Document Trigger */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                      <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      <span>Member Code & Policies</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAgreementDocument('terms')}
+                      className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                    >
+                      Read Full Terms
+                    </button>
+                  </div>
+
+                  {/* 📜 COMPACT INTERNAL SCROLLABLE CONTAINER */}
+                  <div className="max-h-56 sm:max-h-60 overflow-y-auto pr-2 space-y-2.5 rounded-2xl bg-(--bg-card) p-3 border border-slate-200/80 dark:border-zinc-800 text-xs shadow-inner">
+                    {/* Non-refundable Rule Banner */}
+                    <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-400/30 text-amber-900 dark:text-amber-200 text-[11px] leading-relaxed">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <strong className="font-bold text-amber-800 dark:text-amber-300">
+                          Strict Non-Refundable Policy:{' '}
+                        </strong>
+                        Once paid at the front desk, all membership passes and
+                        card fees are final and non-refundable, except as
+                        provided by Philippine Consumer Law (RA 7394) [cite: 7,
+                        8].
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    </div>
+
+                    {/* Compact Rules List */}
+                    <div className="space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
+                        <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
+                          🏋️ Equipment Care & Racking
+                        </strong>
+                        Always return dumbbells, plates, and attachments to
+                        their racks. Dropping weights carelessly or mishandling
+                        equipment is strictly prohibited.
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
+                        <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
+                          🤝 Respect & Safe Spaces (RA 11313)
+                        </strong>
+                        Treat all members and staff with respect. Harassment,
+                        intimidation, foul language, or filming others without
+                        consent leads to immediate revocation [cite: 1, 2].
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
+                        <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
+                          🛡️ Safety, Staff Guidance & Health
+                        </strong>
+                        Follow floor instructions and posted notices. Stop
+                        immediately and inform staff if you feel sharp pain,
+                        shortness of breath, or dizziness.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Minor Consent Signatures (If applicant is minor) */}
+                  {isMinor && (
+                    <div className="pt-2 border-t border-(--border-color) space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <SignaturePad
                           label="Applicant Signature *"
                           value={watchedApplicantSignature || null}
@@ -2351,30 +2480,12 @@ export const OnlineRegistrationPage: React.FC = () => {
                           error={errors.parent_signature?.message}
                         />
                       </div>
-
-                      <div className="flex justify-between items-center text-xs font-semibold pt-1 border-t border-(--border-color)">
-                        <span className="text-slate-400 uppercase text-[10px]">
-                          Consent Date
-                        </span>
-                        <span className="font-mono text-slate-800 dark:text-slate-200">
-                          {todayFormatted}
-                        </span>
-                      </div>
-
-                      <div className="p-3.5 rounded-xl bg-(--bg-card) border border-(--border-color) text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                        "I am the parent or legal guardian of the applicant
-                        named above. I have read and understood the Terms &
-                        Conditions and Privacy Policy, including the rules for
-                        safe equipment use, prohibited conduct, membership
-                        payments, and minors. I voluntarily give permission for
-                        the applicant to participate and accept responsibility
-                        for the applicant's compliance with these rules."
-                      </div>
-                    </>
+                    </div>
                   )}
 
+                  {/* NARROWED & SIMPLIFIED AGREEMENT CHECKBOX */}
                   <div
-                    className={`p-4 rounded-2xl border-2 transition-all ${
+                    className={`p-3 sm:p-3.5 rounded-2xl border-2 transition-all ${
                       errors.agreement
                         ? 'bg-red-500/5 border-red-500'
                         : isAgreed
@@ -2382,47 +2493,48 @@ export const OnlineRegistrationPage: React.FC = () => {
                           : 'bg-amber-500/5 border-amber-400'
                     }`}
                   >
-                    <label className="flex items-start gap-3 cursor-pointer">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
                       <input
                         type="checkbox"
                         {...register('agreement')}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer"
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer shrink-0"
                       />
-                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-snug">
+                      <span className="text-[11px] sm:text-xs font-medium text-slate-800 dark:text-slate-200 leading-snug">
                         {isMinor ? (
                           <>
-                            I certify that I am the lawful parent/guardian, the
-                            information is accurate, and I agree to the{' '}
+                            As lawful guardian, I verify all details are
+                            accurate, accept the non-refundable policy, and
+                            consent to the{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
-                              Terms &amp; Conditions
+                              Terms
                             </button>{' '}
-                            and{' '}
+                            &amp;{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
                               Privacy Policy
-                            </button>{' '}
-                            for the applicant.{' '}
-                            <span className="text-red-500">*</span>
+                            </button>
+                            . <span className="text-red-500">*</span>
                           </>
                         ) : (
                           <>
-                            I certify that all information is accurate and I
-                            agree to the{' '}
+                            I verify all details are accurate, acknowledge fees
+                            are non-refundable, and agree to obey gym rules
+                            under the{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
-                              Terms &amp; Conditions
+                              Terms
                             </button>{' '}
-                            and{' '}
+                            &amp;{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
@@ -2436,23 +2548,11 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </span>
                     </label>
                     {errors.agreement && (
-                      <p className="text-[10px] text-red-500 font-medium mt-2">
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
                         {errors.agreement.message}
                       </p>
                     )}
                   </div>
-
-                  {isMinor && (
-                    <div className="flex items-start gap-2 text-[10px] text-slate-400 leading-relaxed italic">
-                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
-                      <span>
-                        Electronic signatures provided here carry the same legal
-                        standing as physical handwritten signatures under
-                        Philippine Law (Republic Act No. 8792 - Electronic
-                        Commerce Act).
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -2469,7 +2569,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handlePrevStep}
-                  className="py-3 px-5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 font-heading text-[10px] tracking-wider uppercase font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border-none"
+                  className="py-2.5 sm:py-3 px-4 sm:px-5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 font-heading text-[10px] tracking-wider uppercase font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border-none"
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </button>
@@ -2482,7 +2582,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                   type="button"
                   onClick={handleNextStep}
                   disabled={isRestrictedUnder12 || isTicketLimitReached}
-                  className={`py-3 px-6 rounded-xl font-heading text-[10px] tracking-wider uppercase font-black transition-all flex items-center gap-1.5 border-none shadow-md ${
+                  className={`py-2.5 sm:py-3 px-5 sm:px-6 rounded-xl font-heading text-[10px] tracking-wider uppercase font-black transition-all flex items-center gap-1.5 border-none shadow-md ${
                     !isRestrictedUnder12 && !isTicketLimitReached
                       ? 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer shadow-blue-500/10 dark:shadow-red-500/10'
                       : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed'
@@ -2496,12 +2596,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                   disabled={isSubmitDisabled}
                   className={`py-3 px-6 rounded-xl font-heading text-[10px] tracking-wider uppercase font-black transition-all shadow-lg min-h-12 flex items-center justify-center gap-2 border-none ${
                     !isSubmitDisabled
-                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer shadow-emerald-500/20'
-                      : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed'
+                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer shadow-emerald-500/20 active:scale-95'
+                      : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed opacity-80'
                   }`}
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : step4Countdown > 0 ? (
+                    <>
+                      <Clock className="w-4 h-4 animate-pulse text-amber-500 dark:text-amber-400" />
+                      <span>Review Rules ({step4Countdown}s)</span>
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
@@ -2515,7 +2620,7 @@ export const OnlineRegistrationPage: React.FC = () => {
         )}
       </div>
 
-      <footer className="mt-8 text-center text-[10px] text-slate-400 font-mono select-none uppercase tracking-widest">
+      <footer className="mt-6 sm:mt-8 text-center text-[10px] text-slate-400 font-mono select-none uppercase tracking-widest">
         Wolf Palomar Fitness Management • Public Self-Service Portal
       </footer>
     </div>

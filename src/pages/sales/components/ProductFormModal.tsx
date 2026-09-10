@@ -8,15 +8,20 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
-  Settings,
   Loader2,
   CheckCircle2,
   AlertTriangle,
   Plus,
-  Trash,
+  Trash2,
   SwitchCamera,
   FolderPlus,
   Aperture,
+  Package,
+  Layers,
+  Sparkles,
+  Eye,
+  EyeOff,
+  Coins,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -74,25 +79,20 @@ const formatQuantity = (qty: string): string => {
   const match = qty.trim().match(clRegex);
   if (match) {
     const num = parseFloat(match[1]);
-    if (!isNaN(num)) {
-      return `${num * 10} ml`;
-    }
+    if (!isNaN(num)) return `${num * 10} ml`;
   }
   return qty;
 };
 
-// Helper for clean, user-friendly image labels
 const getFriendlyImageLabel = (url: string) => {
   if (!url) return '';
-  if (url.startsWith('data:image/')) {
-    return 'Camera Snapshot';
-  }
+  if (url.startsWith('data:image/')) return 'Camera Snapshot';
   try {
     const parsed = new URL(url);
     const filename = parsed.pathname.split('/').pop() || '';
     return filename ? `${parsed.hostname}/.../${filename}` : parsed.hostname;
   } catch {
-    return url.length > 30 ? `${url.substring(0, 30)}...` : url;
+    return url.length > 25 ? `${url.substring(0, 25)}...` : url;
   }
 };
 
@@ -133,7 +133,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [apiLoading, setApiLoading] = useState(false);
   const lastFetchedBarcode = useRef<string>('');
 
-  // Combined Input text state (ignores base64 data URLs)
   const [combinedInput, setCombinedInput] = useState<string>(
     formManufacturerBarcode ||
       (formImageUrl && !formImageUrl.startsWith('data:image/')
@@ -141,7 +140,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         : '')
   );
 
-  // Scanner States
   const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
     []
@@ -149,11 +147,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
-  // Multi-Add Mode
   const [isMultiAddMode, setIsMultiAddMode] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
 
-  // Confirmation overlay
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     type: 'disable_multi_add' | 'close_modal';
@@ -226,15 +222,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         sessionLookupCache[trimmed] = mappedData;
         applyOFFData(mappedData, trimmed);
         toast.success(
-          `Success! Details for "${mappedData.product_name}" were automatically imported.`
+          `Details for "${mappedData.product_name}" auto-imported!`
         );
       } else {
         sessionLookupCache[trimmed] = { notFound: true };
         setFormManufacturerBarcode(trimmed);
         setFormManufacturerSource('manual');
-        toast.info(
-          'Barcode info not found online. Product details can be typed manually.'
-        );
       }
     } catch {
       setFormManufacturerBarcode(trimmed);
@@ -244,7 +237,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  // Auto-detect whether input is Image Web URL or Barcode
   const handleCombinedInputChange = (val: string) => {
     const trimmed = val.trim();
     setCombinedInput(val);
@@ -267,25 +259,25 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  // Load available devices when scanner starts
   useEffect(() => {
     if (showLiveScanner) {
       Html5Qrcode.getCameras()
         .then((devices) => {
           if (devices && devices.length > 0) {
             setCameras(devices);
-            if (!selectedCameraId) {
-              setSelectedCameraId(devices[0].id);
-            }
+            const backCam = devices.find(
+              (d) =>
+                d.label.toLowerCase().includes('back') ||
+                d.label.toLowerCase().includes('rear') ||
+                d.label.toLowerCase().includes('environment')
+            );
+            setSelectedCameraId(backCam ? backCam.id : devices[0].id);
           }
         })
-        .catch((err) => {
-          console.warn('Could not list cameras:', err);
-        });
+        .catch((err) => console.warn('Camera enumeration error:', err));
     }
   }, [showLiveScanner]);
 
-  // Camera start with automatic fallback on failure
   const startCameraWithFallback = async (camIdx = 0, cameraList = cameras) => {
     if (!cameraList || cameraList.length === 0 || isStartingRef.current) return;
     isStartingRef.current = true;
@@ -305,12 +297,24 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
       await qrReader.start(
         targetCam.id,
-        { fps: 10, qrbox: { width: 220, height: 160 } },
+        {
+          fps: 25,
+          qrbox: (w, h) => ({
+            width: Math.min(Math.floor(w * 0.88), 360),
+            height: Math.min(Math.floor(h * 0.5), 160),
+          }),
+          videoConstraints: {
+            deviceId: { exact: targetCam.id },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'environment',
+          },
+        },
         (decodedText) => {
           setFormManufacturerBarcode(decodedText);
           setCombinedInput(decodedText);
           fetchProductFromOFF(decodedText);
-          toast.success(`Scanned Code: ${decodedText}`);
+          toast.success(`Scanned: ${decodedText}`);
           setShowLiveScanner(false);
         },
         () => {}
@@ -318,14 +322,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     } catch (err) {
       console.warn(`Camera feed failure on camera ${targetCam.id}:`, err);
       if (camIdx === 0 && cameraList.length > 1) {
-        toast.info(
-          'Primary camera unavailable. Switching to secondary camera...'
-        );
         isStartingRef.current = false;
-        setTimeout(() => startCameraWithFallback(1, cameraList), 300);
-        return;
+        setTimeout(() => startCameraWithFallback(1, cameraList), 250);
       } else {
-        toast.error('Unable to open camera feed on available cameras.');
+        toast.error('Unable to access camera feed.');
         setShowLiveScanner(false);
       }
     } finally {
@@ -359,14 +359,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     };
   }, [showLiveScanner, cameras.length]);
 
-  // Capture photo snapshot directly from live camera feed
   const handleCapturePhotoFromCamera = () => {
     try {
       const videoEl = document.querySelector(
         '#product-form-qr-reader video'
       ) as HTMLVideoElement;
       if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
-        toast.error('Unable to capture frame from active camera stream.');
+        toast.error('Camera feed is still initializing.');
         return;
       }
 
@@ -380,11 +379,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
       setFormImageUrl(dataUrl);
-      toast.success('Product photo captured from camera stream!');
+      toast.success('Photo snapshot captured!');
       setShowLiveScanner(false);
     } catch (err) {
-      console.error('Error capturing photo from camera:', err);
-      toast.error('Failed to capture photo from camera.');
+      console.error('Snapshot capture error:', err);
+      toast.error('Failed to capture photo frame.');
     }
   };
 
@@ -393,7 +392,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setConfirmDialog({
         isOpen: true,
         type: 'close_modal',
-        message: `Closing this window will discard ${stagedItems.length} staged item(s) in your queue.`,
+        message: `Closing will discard ${stagedItems.length} product(s) in your staging queue.`,
         onConfirm: () => {
           setStagedItems([]);
           setConfirmDialog(null);
@@ -438,7 +437,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     };
 
     setStagedItems((prev) => [...prev, newItem]);
-    toast.success(`"${newItem.product_name}" added to queue.`);
+    toast.success(`"${newItem.product_name}" queued!`);
 
     setFormName('');
     setFormPrice('');
@@ -483,7 +482,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       }
 
       if (itemsToSave.length === 0) {
-        toast.error('Creation queue is empty.');
+        toast.error('Queue is empty. Fill the fields or add to queue.');
         return;
       }
 
@@ -494,20 +493,20 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 dark:bg-black/75 backdrop-blur-sm animate-fade-in text-xs text-(--color-text) font-sans">
-      <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl w-full max-w-md shadow-2xl overflow-hidden relative animate-scale-up">
-        {/* INLINE CONFIRMATION OVERLAY */}
+    <div className="fixed inset-0 z-500 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none">
+      <div className="bg-(--bg-card) border border-(--border-color) text-(--color-text) rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden relative animate-scale-up flex flex-col max-h-[92vh]">
+        {/* CONFIRMATION OVERLAY */}
         {confirmDialog && confirmDialog.isOpen && (
-          <div className="absolute inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl">
-              <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-5 h-5 animate-bounce" />
+          <div className="absolute inset-0 z-100 bg-black/75 backdrop-blur-sm flex items-center justify-center p-5 animate-fade-in">
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
               </div>
-              <div className="space-y-1">
-                <h4 className="font-extrabold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                  Discard Queue?
+              <div>
+                <h4 className="font-extrabold text-sm text-(--color-text) uppercase tracking-wider">
+                  Discard Items?
                 </h4>
-                <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                <p className="text-(--color-text)/60 text-xs mt-1 leading-relaxed">
                   {confirmDialog.message}
                 </p>
               </div>
@@ -515,70 +514,87 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDialog(null)}
-                  className="py-2.5 border border-(--border-color) bg-(--bg-page) text-slate-600 dark:text-slate-300 hover:text-(--color-text) rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                  className="py-2.5 border border-(--border-color) bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors"
                 >
-                  Cancel
+                  Keep
                 </button>
                 <button
                   type="button"
                   onClick={confirmDialog.onConfirm}
-                  className="py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shadow-lg shadow-red-600/20 transition-all"
+                  className="py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md transition-all"
                 >
-                  Yes, Discard
+                  Discard
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAL HEADER */}
-        <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="font-extrabold text-xs tracking-widest uppercase text-(--color-text) font-mono">
-              {isEditing ? 'EDIT PRODUCT' : 'ADD NEW PRODUCT'}
-            </h3>
-            {!isEditing && (
-              <button
-                type="button"
-                onClick={() => setIsMultiAddMode(!isMultiAddMode)}
-                className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
-                  isMultiAddMode
-                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-(--border-color) hover:text-(--color-text)'
-                }`}
-              >
-                {isMultiAddMode ? 'Multi-Add Active' : '+ Add Multiple'}
-              </button>
-            )}
+        {/* TOP HEADER */}
+        <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between bg-(--bg-card) shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 border border-[#123c73]/20 dark:border-[#bf0202]/30 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center shadow-xs shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-sm uppercase tracking-wide text-(--color-text)">
+                  {isEditing ? 'Edit Product' : 'Add New Product'}
+                </h3>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsMultiAddMode(!isMultiAddMode)}
+                    className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                      isMultiAddMode
+                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
+                        : 'bg-(--bg-input) text-(--color-text)/70 border-(--border-color) hover:text-(--color-text)'
+                    }`}
+                  >
+                    {isMultiAddMode ? '⚡ Multi-Add Active' : '+ Batch Mode'}
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-(--color-text)/60">
+                Configure item name, price, photo, and barcode
+              </p>
+            </div>
           </div>
+
           <button
             type="button"
             onClick={handleAttemptClose}
-            className="text-slate-400 hover:text-(--color-text) cursor-pointer p-1 rounded-lg transition-colors"
-            title="Close modal"
+            className="w-8 h-8 rounded-xl bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text)/60 hover:text-(--color-text) border border-(--border-color) flex items-center justify-center transition-colors cursor-pointer"
+            title="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* FORM CONTENT */}
+        {/* SCROLLABLE FORM BODY */}
         <form
           onSubmit={handleFormSubmission}
-          className="p-5 space-y-4 text-xs overflow-y-auto max-h-[82vh] no-scrollbar text-left"
+          className="p-5 space-y-4 overflow-y-auto max-h-[calc(92vh-140px)] text-left"
         >
-          {/* STAGED ITEMS QUEUE (Multi-Add Mode) */}
+          {/* MULTI-ADD STAGED QUEUE BANNER */}
           {isMultiAddMode && stagedItems.length > 0 && (
-            <div className="p-3 bg-(--bg-page) border border-blue-500/30 rounded-xl space-y-2">
-              <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block">
-                Staged Creation Queue ({stagedItems.length} items ready)
-              </span>
+            <div className="p-3 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black text-[#123c73] dark:text-[#bf0202] uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Staged Queue ({stagedItems.length} Products)
+                </span>
+                <span className="text-[10px] text-(--color-text)/50 font-medium">
+                  Will save simultaneously
+                </span>
+              </div>
               <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
                 {stagedItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex justify-between items-center text-[11px] bg-(--bg-card) px-3 py-1.5 border border-(--border-color) rounded-lg shadow-xs"
+                    className="flex justify-between items-center text-xs bg-(--bg-card) px-3 py-1.5 border border-(--border-color) rounded-xl shadow-xs"
                   >
-                    <span className="font-bold truncate max-w-[220px]">
+                    <span className="font-bold text-(--color-text) truncate max-w-55 uppercase text-[11px]">
                       {item.product_name} • ₱{item.selling_price.toFixed(2)}
                     </span>
                     <button
@@ -588,9 +604,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                           prev.filter((_, i) => i !== idx)
                         )
                       }
-                      className="text-red-500 hover:text-red-600 font-bold uppercase text-[9px] cursor-pointer"
+                      className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
                     >
-                      <Trash className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
@@ -598,207 +614,191 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             </div>
           )}
 
-          {/* PRODUCT NAME */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor="modal-product-name"
-              className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block"
-            >
-              PRODUCT NAME *
-            </label>
-            <div className="bg-(--bg-page) border border-(--border-color) focus-within:border-blue-500 rounded-xl px-3 py-2.5 flex items-center gap-2.5 transition-colors">
-              <Tag className="w-4 h-4 text-slate-400 shrink-0" />
+          {/* SECTION 1: ESSENTIAL INFO (NAME & PRICE) */}
+          <div className="p-4 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-3.5">
+            <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/60 block">
+              Item Details
+            </span>
+
+            {/* Product Name */}
+            <div className="space-y-1">
+              <label
+                htmlFor="modal-product-name"
+                className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5"
+              >
+                <Tag className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                <span>Product Name</span>
+                <span className="text-rose-500">*</span>
+              </label>
               <input
                 id="modal-product-name"
                 type="text"
                 required={!isMultiAddMode || stagedItems.length === 0}
                 maxLength={100}
-                placeholder="e.g. Water Bottle, Protein Shake"
+                placeholder="E.G. BOTTLED WATER, WHEY PROTEIN, ENERGY DRINK"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                className="bg-transparent outline-none w-full text-(--color-text) placeholder-slate-400 dark:placeholder-slate-500 text-xs font-semibold"
+                className="w-full px-4 py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-bold text-(--color-text) placeholder:text-(--color-text)/30 outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20 transition-all uppercase"
               />
+              {isDuplicateName && (
+                <div className="flex items-center gap-1.5 pt-1 text-[10px] font-bold text-amber-500">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Product with this name already exists in inventory
+                  </span>
+                </div>
+              )}
             </div>
-            {isDuplicateName && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg text-[10px] font-bold uppercase">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Notice: Product name already exists in inventory</span>
+
+            {/* Selling Price */}
+            <div className="space-y-1">
+              <label
+                htmlFor="modal-product-price"
+                className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5"
+              >
+                <Coins className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Selling Price (PHP)</span>
+                <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-sm pointer-events-none">
+                  ₱
+                </span>
+                <input
+                  id="modal-product-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required={!isMultiAddMode || stagedItems.length === 0}
+                  placeholder="0.00"
+                  value={formPrice}
+                  onChange={(e) => setFormPrice(e.target.value)}
+                  className="w-full pl-8 pr-4 py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-sm font-mono font-bold text-emerald-500 placeholder:text-(--color-text)/30 outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20 transition-all"
+                />
               </div>
-            )}
-          </div>
-
-          {/* SELLING PRICE */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor="modal-product-price"
-              className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block"
-            >
-              SELLING PRICE (₱) *
-            </label>
-            <div className="bg-(--bg-page) border border-(--border-color) focus-within:border-blue-500 rounded-xl px-3 py-2.5 flex items-center gap-2.5 transition-colors">
-              <span className="font-mono font-bold text-slate-400 text-xs shrink-0">
-                ₱
-              </span>
-              <input
-                id="modal-product-price"
-                type="number"
-                step="0.01"
-                min="0"
-                required={!isMultiAddMode || stagedItems.length === 0}
-                placeholder="0.00"
-                value={formPrice}
-                onChange={(e) => setFormPrice(e.target.value)}
-                className="bg-transparent outline-none w-full text-(--color-text) placeholder-slate-400 dark:placeholder-slate-500 text-xs font-mono font-bold"
-              />
             </div>
           </div>
 
-          {/* UNIFIED PRODUCT PHOTO & BARCODE SECTION */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono block">
-              PRODUCT PHOTO / BARCODE
-            </label>
+          {/* SECTION 2: PHOTO & BARCODE RECOGNITION */}
+          <div className="p-4 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/70 flex items-center gap-1.5">
+                <Barcode className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                Product Image & Barcode
+              </span>
+              <span className="text-[10px] text-(--color-text)/50 font-medium">
+                Optional
+              </span>
+            </div>
 
-            {/* IF PHOTO IS ATTACHED: HIDE INPUT BOX AND SHOW PHOTO TAKEN CARD ONLY */}
+            {/* IF PHOTO IS ATTACHED: PREVIEW CARD */}
             {formImageUrl ? (
-              <div className="space-y-1.5">
-                <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={formImageUrl}
-                      alt="Product Preview"
-                      className="w-12 h-12 rounded-lg object-cover border border-(--border-color) shrink-0 bg-white shadow-xs"
-                    />
-                    <div className="min-w-0 text-left">
-                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 truncate">
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                        Photo Taken
-                      </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate block font-mono mt-0.5">
-                        {getFriendlyImageLabel(formImageUrl)}
-                      </span>
-                    </div>
+              <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src={formImageUrl}
+                    alt="Product Preview"
+                    className="w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 bg-(--bg-input)"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-emerald-500 flex items-center gap-1 truncate">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      Image Attached
+                    </span>
+                    <span className="text-[10px] text-(--color-text)/50 truncate block font-mono mt-0.5">
+                      {getFriendlyImageLabel(formImageUrl)}
+                    </span>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormImageUrl('');
-                      setCombinedInput(formManufacturerBarcode || '');
-                    }}
-                    className="px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 dark:text-red-400 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-                    title="Remove photo to take or upload another"
-                  >
-                    <Trash className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
                 </div>
 
-                {/* SHOW BARCODE BADGE IF PRESENT WITH PHOTO */}
-                {formManufacturerBarcode && (
-                  <div className="flex items-center justify-between p-2 bg-(--bg-page) border border-(--border-color) rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        MFG Barcode:
-                      </span>
-                      <span className="font-mono font-bold text-xs text-(--color-text)">
-                        {formManufacturerBarcode}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                        {formManufacturerSource}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormManufacturerBarcode('');
-                        setFormManufacturerSource('manual');
-                      }}
-                      className="text-red-500 hover:text-red-600 font-bold text-[9px] uppercase tracking-wider cursor-pointer"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormImageUrl('');
+                    setCombinedInput(formManufacturerBarcode || '');
+                  }}
+                  className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove</span>
+                </button>
               </div>
             ) : (
-              /* IF NO PHOTO ATTACHED: SHOW INPUT BOX WITH PLUS, TEXT FIELD & CAMERA SCANNER */
-              <div className="space-y-1.5">
-                <div className="bg-(--bg-page) border border-(--border-color) focus-within:border-blue-500 rounded-xl px-2 py-1.5 flex items-center justify-between gap-2 transition-colors">
-                  {/* Left Plus/Browse Button */}
+              /* QUICK UPLOAD / SCAN ACTION BAR */
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-white rounded-lg transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
-                    title="Browse image file from device"
+                    className="py-3 px-4 bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-[#1e232d] border border-(--border-color) text-(--color-text) rounded-xl text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
                   >
                     {uploading ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      <Loader2 className="w-4 h-4 animate-spin text-[#123c73] dark:text-[#bf0202]" />
                     ) : (
-                      <FolderPlus className="w-4 h-4" />
+                      <FolderPlus className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
                     )}
+                    <span>Upload Image</span>
                   </button>
 
-                  {/* Center Text Input for Image URL / Barcode */}
-                  <div className="flex-1 min-w-0 flex items-center gap-2 px-1">
-                    {apiLoading ? (
-                      <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
-                    ) : (
-                      <Barcode className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    )}
-                    <input
-                      type="text"
-                      placeholder="Paste Barcode or Image Web URL..."
-                      value={combinedInput}
-                      onChange={(e) =>
-                        handleCombinedInputChange(e.target.value)
-                      }
-                      className="bg-transparent outline-none w-full text-(--color-text) placeholder-slate-400 dark:placeholder-slate-500 text-xs font-mono font-medium truncate"
-                    />
-                  </div>
-
-                  {/* Right Camera Icon Button */}
                   <button
                     type="button"
                     onClick={() => setShowLiveScanner(!showLiveScanner)}
-                    className={`p-2 rounded-lg transition-all cursor-pointer shrink-0 ${
+                    className={`py-3 px-4 border rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95 ${
                       showLiveScanner
-                        ? 'bg-blue-600 text-white shadow-md animate-pulse'
-                        : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent ring-2 ring-white/30 animate-pulse'
+                        : 'bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-[#1e232d] border-(--border-color) text-(--color-text)'
                     }`}
-                    title="Scan barcode or snap photo with camera"
                   >
-                    <Camera className="w-4 h-4" />
+                    <Camera className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
+                    <span>Scan / Snap</span>
                   </button>
                 </div>
 
-                {/* SHOW BARCODE BADGE IF PRESENT WITHOUT PHOTO */}
-                {formManufacturerBarcode && (
-                  <div className="flex items-center justify-between p-2 bg-(--bg-page) border border-(--border-color) rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        MFG Barcode:
-                      </span>
-                      <span className="font-mono font-bold text-xs text-(--color-text)">
-                        {formManufacturerBarcode}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                        {formManufacturerSource}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormManufacturerBarcode('');
-                        setFormManufacturerSource('manual');
-                      }}
-                      className="text-red-500 hover:text-red-600 font-bold text-[9px] uppercase tracking-wider cursor-pointer"
-                    >
-                      Remove
-                    </button>
+                {/* TEXT INPUT FOR BARCODE OR WEB IMAGE URL */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Or paste Barcode number / Image URL..."
+                    value={combinedInput}
+                    onChange={(e) => handleCombinedInputChange(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-mono font-medium text-(--color-text) placeholder:text-(--color-text)/30 outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20 transition-all"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-(--color-text)/40">
+                    {apiLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#123c73] dark:text-[#bf0202]" />
+                    ) : (
+                      <Barcode className="w-3.5 h-3.5" />
+                    )}
                   </div>
-                )}
+                </div>
+              </div>
+            )}
+
+            {/* MFG BARCODE BADGE (IF RECORDED) */}
+            {formManufacturerBarcode && (
+              <div className="flex items-center justify-between p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-(--color-text)/50 uppercase">
+                    Barcode:
+                  </span>
+                  <span className="font-mono font-bold text-xs text-[#123c73] dark:text-[#bf0202]">
+                    {formManufacturerBarcode}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202]">
+                    {formManufacturerSource}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormManufacturerBarcode('');
+                    setFormManufacturerSource('manual');
+                  }}
+                  className="text-rose-500 hover:text-rose-600 text-[10px] font-bold uppercase cursor-pointer"
+                >
+                  Clear
+                </button>
               </div>
             )}
 
@@ -812,39 +812,83 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               className="hidden"
             />
 
-            {/* LIVE CAMERA VIEWFINDER WITH SNAP PHOTO BUTTON */}
+            {/* LIVE CAMERA VIEWFINDER WITH SNAP PHOTO */}
             {showLiveScanner && (
-              <div className="mt-2 p-3 bg-zinc-950 border-2 border-blue-500/40 rounded-2xl relative text-center space-y-2 animate-fade-in text-white">
-                <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+              <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl relative text-center space-y-2 animate-fade-in text-(--color-text) shadow-xl">
+                <style>{`
+                  #product-form-qr-reader {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border: none !important;
+                    background: transparent !important;
+                    position: relative !important;
+                    overflow: hidden !important;
+                  }
+                  #product-form-qr-reader__scan_region {
+                    width: 100% !important;
+                    height: 100% !important;
+                    position: absolute !important;
+                    inset: 0 !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    overflow: hidden !important;
+                    background: transparent !important;
+                  }
+                  #product-form-qr-reader video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    object-fit: cover !important;
+                    position: absolute !important;
+                    inset: 0 !important;
+                    border-radius: 1rem !important;
+                  }
+                  #qr-shaded-region,
+                  #product-form-qr-reader__scan_region svg,
+                  #product-form-qr-reader__scan_region img,
+                  #product-form-qr-reader__dashboard,
+                  #product-form-qr-reader__dashboard_section,
+                  #product-form-qr-reader__header_message {
+                    display: none !important;
+                  }
+                `}</style>
+
+                <div className="flex items-center justify-between border-b border-(--border-color) pb-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    CAMERA FEED ACTIVE
+                    Camera Ready
                   </span>
                   <button
                     type="button"
                     onClick={() => setShowLiveScanner(false)}
-                    className="text-xs text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                    className="text-xs text-(--color-text)/60 hover:text-(--color-text) p-0.5 rounded cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <div className="relative w-full aspect-video max-w-xs mx-auto rounded-xl overflow-hidden bg-black border border-blue-500/40 flex items-center justify-center shadow-inner">
-                  <div
-                    id="product-form-qr-reader"
-                    className="w-full h-full object-cover"
-                  />
+                {/* RECTANGULAR VIEWPORT (NON-SQUARE) */}
+                <div className="relative w-full h-48 sm:h-56 rounded-xl overflow-hidden bg-black border border-(--border-color) flex items-center justify-center">
+                  <div id="product-form-qr-reader" className="w-full h-full" />
+
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                    <div className="w-[85%] h-[50%] border border-white/40 rounded-xl relative">
+                      <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-3 border-l-3 border-white rounded-tl" />
+                      <div className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-3 border-r-3 border-white rounded-tr" />
+                      <div className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-3 border-l-3 border-white rounded-bl" />
+                      <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-3 border-r-3 border-white rounded-br" />
+                    </div>
+                  </div>
                 </div>
 
-                {/* CAMERA CONTROLS: SNAP PHOTO & SWITCH CAMERA */}
+                {/* CAMERA CONTROLS */}
                 <div className="flex items-center justify-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={handleCapturePhotoFromCamera}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold uppercase flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-                    title="Capture photo frame directly from camera"
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
                   >
-                    <Aperture className="w-3.5 h-3.5" />
+                    <Aperture className="w-4 h-4" />
                     <span>Snap Photo</span>
                   </button>
 
@@ -855,163 +899,192 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                         const idx = cameras.findIndex(
                           (c) => c.id === selectedCameraId
                         );
-                        const nextIdx = (idx + 1) % cameras.length;
-                        startCameraWithFallback(nextIdx, cameras);
+                        startCameraWithFallback(
+                          (idx + 1) % cameras.length,
+                          cameras
+                        );
                       }}
-                      className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer border border-zinc-700"
+                      className="px-3 py-1.5 bg-(--bg-card) hover:bg-(--bg-input) text-(--color-text) border border-(--border-color) rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer"
                     >
-                      <SwitchCamera className="w-3.5 h-3.5" />
-                      <span>Switch Camera</span>
+                      <SwitchCamera className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                      <span>Switch</span>
                     </button>
                   )}
                 </div>
               </div>
             )}
-
-            {!formImageUrl && (
-              <span className="text-[9px] text-slate-500 dark:text-slate-400 block font-medium pt-1">
-                Paste Barcode / Image URL, or tap{' '}
-                <kbd className="px-1 py-0.2 bg-slate-200 dark:bg-slate-800 rounded text-blue-600 dark:text-blue-400 font-bold">
-                  +
-                </kbd>{' '}
-                to upload image file, or camera to scan/snap.
-              </span>
-            )}
           </div>
 
-          {/* MORE OPTIONS (COLLAPSIBLE PROGRESSIVE DISCLOSURE) */}
-          <div className="border border-(--border-color) rounded-xl overflow-hidden transition-all">
+          {/* SECTION 3: INVENTORY CONTROL & VISIBILITY */}
+          <div className="border border-(--border-color) rounded-2xl overflow-hidden">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full p-3 bg-(--bg-page) hover:opacity-90 flex items-center justify-between text-left cursor-pointer transition-colors border-none"
+              className="w-full p-3.5 bg-(--bg-input)/50 hover:bg-(--bg-input) flex items-center justify-between cursor-pointer transition-colors text-(--color-text)"
             >
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">
-                <Settings className="w-3.5 h-3.5 text-slate-400" />
-                <span>MORE OPTIONS</span>
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                <Layers className="w-4 h-4 text-amber-500" />
+                <span>Inventory & Visibility Settings</span>
               </div>
               {showAdvanced ? (
-                <ChevronUp className="w-4 h-4 text-slate-400" />
+                <ChevronUp className="w-4 h-4 text-(--color-text)/40" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <ChevronDown className="w-4 h-4 text-(--color-text)/40" />
               )}
             </button>
 
             {showAdvanced && (
-              <div className="p-4 bg-(--bg-card) border-t border-(--border-color) space-y-4 animate-slide-up text-left">
-                {/* Inventory Control */}
-                <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl space-y-3">
+              <div className="p-4 bg-(--bg-card) border-t border-(--border-color) space-y-4 animate-fade-in text-left">
+                {/* Stock Tracking Toggle */}
+                <div className="p-3 bg-(--bg-input)/50 rounded-xl space-y-3 border border-(--border-color)">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                        Track stock
+                      <h4 className="text-xs font-bold text-(--color-text) uppercase">
+                        Track Stock Quantity
                       </h4>
-                      <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Turn this on if you want to keep track of how many are
-                        left.
+                      <p className="text-[11px] text-(--color-text)/60 mt-0.5">
+                        Enable to keep count of inventory on hand
                       </p>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={formHasStockLimit}
-                      onChange={(e) => setFormHasStockLimit(e.target.checked)}
-                      className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
-                    />
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={formHasStockLimit}
+                        onChange={(e) => setFormHasStockLimit(e.target.checked)}
+                        className="sr-only"
+                      />
+                      <div
+                        className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+                          formHasStockLimit
+                            ? 'bg-amber-500'
+                            : 'bg-(--bg-card) border border-(--border-color)'
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out ${
+                            formHasStockLimit
+                              ? 'translate-x-5'
+                              : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </label>
                   </div>
 
                   {formHasStockLimit && (
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t border-(--border-color) animate-fade-in">
                       <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                          Current stock
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-(--color-text)/70">
+                          Current In-Stock
                         </label>
                         <input
                           type="number"
                           min="0"
                           value={formStockQuantity}
                           onChange={(e) => setFormStockQuantity(e.target.value)}
-                          className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-lg text-(--color-text) text-xs font-mono font-bold outline-none"
+                          className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-lg text-(--color-text) text-xs font-mono font-bold outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20"
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                          Low-stock alert
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-(--color-text)/70">
+                          Low Stock Alert
                         </label>
                         <input
                           type="number"
                           min="0"
-                          placeholder="Warn at 5 items left"
+                          placeholder="e.g. 5"
                           value={formLowStockAlert}
                           onChange={(e) => setFormLowStockAlert(e.target.value)}
-                          className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-lg text-(--color-text) text-xs font-mono font-bold outline-none"
+                          className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-lg text-(--color-text) text-xs font-mono font-bold outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20"
                         />
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Customer Visibility Toggle */}
-                <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between">
+                {/* Available for Sale Toggle */}
+                <div className="p-3 bg-(--bg-input)/50 rounded-xl flex items-center justify-between border border-(--border-color)">
                   <div>
-                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                      Available for sale
+                    <h4 className="text-xs font-bold text-(--color-text) uppercase flex items-center gap-1.5">
+                      {formStatus === 'Active' ? (
+                        <Eye className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <EyeOff className="w-3.5 h-3.5 text-(--color-text)/40" />
+                      )}
+                      <span>Active for Sale</span>
                     </h4>
-                    <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Allow staff and customers to select this product during
-                      sale.
+                    <p className="text-[11px] text-(--color-text)/60 mt-0.5">
+                      Allow counter staff to add this to sales transactions
                     </p>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={formStatus === 'Active'}
-                    onChange={(e) =>
-                      setFormStatus(e.target.checked ? 'Active' : 'Inactive')
-                    }
-                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
-                  />
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={formStatus === 'Active'}
+                      onChange={(e) =>
+                        setFormStatus(e.target.checked ? 'Active' : 'Inactive')
+                      }
+                      className="sr-only"
+                    />
+                    <div
+                      className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+                        formStatus === 'Active'
+                          ? 'bg-emerald-500'
+                          : 'bg-(--bg-card) border border-(--border-color)'
+                      }`}
+                    >
+                      <div
+                        className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out ${
+                          formStatus === 'Active'
+                            ? 'translate-x-5'
+                            : 'translate-x-0'
+                        }`}
+                      />
+                    </div>
+                  </label>
                 </div>
               </div>
             )}
           </div>
 
-          {/* FOOTER ACTIONS */}
-          <div className="flex items-center justify-between gap-2 border-t border-(--border-color) pt-4">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleAttemptClose}
-                className="px-4 py-2.5 border border-(--border-color) bg-(--bg-page) text-slate-600 dark:text-slate-300 hover:text-(--color-text) rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
+          {/* STICKY FOOTER ACTIONS */}
+          <div className="flex items-center justify-between gap-2 border-t border-(--border-color) bg-(--bg-card) pt-4 shrink-0 rounded-b-3xl">
+            <button
+              type="button"
+              onClick={handleAttemptClose}
+              className="px-5 py-2.5 border border-(--border-color) bg-(--bg-input) hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
 
+            <div className="flex items-center gap-2">
               {isMultiAddMode && (
                 <button
                   type="button"
                   onClick={handleAddCurrentToQueue}
-                  className="px-3.5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1 font-bold"
+                  className="px-4 py-2.5 bg-[#123c73]/10 dark:bg-[#bf0202]/15 hover:bg-[#123c73]/20 text-[#123c73] dark:text-red-400 border border-[#123c73]/30 dark:border-[#bf0202]/30 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 active:scale-95"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-4 h-4" />
                   <span>Add to Queue</span>
                 </button>
               )}
-            </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition-all shadow-lg shadow-black/10 flex items-center gap-1.5"
-            >
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>
-                {isEditing
-                  ? 'Save Changes'
-                  : isMultiAddMode
-                    ? `Add ${stagedItems.length + (formName.trim() ? 1 : 0)} Products`
-                    : 'Add Product'}
-              </span>
-            </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] disabled:opacity-50 text-white font-heading font-black rounded-xl text-xs uppercase tracking-wider cursor-pointer transition-all shadow-lg shadow-[#123c73]/20 dark:shadow-[#bf0202]/20 flex items-center gap-2 active:scale-95 border border-white/10"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {isEditing
+                    ? 'Save Changes'
+                    : isMultiAddMode
+                      ? `Save All (${stagedItems.length + (formName.trim() ? 1 : 0)})`
+                      : 'Add Product'}
+                </span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

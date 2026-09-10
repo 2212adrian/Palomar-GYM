@@ -791,7 +791,9 @@ export const LogbookPage: React.FC = () => {
   const deactivateCardsForLogRecord = async (log: LogRecord) => {
     const isCard =
       log.customerType === 'Card' ||
-      String(log.categoryOrPlan || '').toLowerCase().includes('card');
+      String(log.categoryOrPlan || '')
+        .toLowerCase()
+        .includes('card');
     if (!isCard) return;
 
     const targetMemberIds: string[] = [];
@@ -836,7 +838,9 @@ export const LogbookPage: React.FC = () => {
       }
     }
 
-    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(Boolean);
+    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(
+      Boolean
+    );
     if (uniqueMemberIds.length > 0) {
       const { data: memberRows } = await supabase
         .from('members')
@@ -878,7 +882,9 @@ export const LogbookPage: React.FC = () => {
   const reactivateCardsForLogRecord = async (log: LogRecord) => {
     const isCard =
       log.customerType === 'Card' ||
-      String(log.categoryOrPlan || '').toLowerCase().includes('card');
+      String(log.categoryOrPlan || '')
+        .toLowerCase()
+        .includes('card');
     if (!isCard) return;
 
     const targetMemberIds: string[] = [];
@@ -924,7 +930,9 @@ export const LogbookPage: React.FC = () => {
       }
     }
 
-    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(Boolean);
+    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(
+      Boolean
+    );
     if (uniqueMemberIds.length > 0) {
       const { data: memberRows } = await supabase
         .from('members')
@@ -1599,7 +1607,7 @@ export const LogbookPage: React.FC = () => {
                     {totalItems > 0 && (
                       <div
                         ref={loadMoreRef}
-                        className="py-2 text-center text-xs text-slate-500 font-medium"
+                        className="text-center text-xs text-slate-500 font-medium"
                       >
                         {visibleCount < totalItems ? (
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-[#161920]/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
@@ -1623,7 +1631,7 @@ export const LogbookPage: React.FC = () => {
                             </button>
                           </div>
                         ) : (
-                          <div className="py-2 text-[11px] text-slate-400 font-medium">
+                          <div className="text-[11px] text-slate-400 font-medium">
                             ✓ All {totalItems} attendance records loaded for
                             this day.
                           </div>

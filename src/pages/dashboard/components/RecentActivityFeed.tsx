@@ -74,10 +74,10 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
           <div>
             <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider font-heading flex items-center gap-1.5">
               <Activity className="w-4 h-4 text-[#123c73] dark:text-blue-400" />
-              Live Activity Stream
+              Recent Transactions
             </h3>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-              Real-time chronological events across front desk operations.
+              Latest Combined Sales & Logbook activity feed.
             </p>
           </div>
           {onRefresh && (
@@ -101,7 +101,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
-            {activities.slice(0, 7).map((act) => (
+            {activities.slice(0, 12).map((act) => (
               <div
                 key={act.id}
                 className="flex items-start justify-between gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800/80 last:border-0 last:pb-0"
@@ -142,12 +142,6 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
             ))}
           </div>
         )}
-      </div>
-
-      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 text-center">
-        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-          Auto-synchronized with Supabase Realtime
-        </span>
       </div>
     </div>
   );

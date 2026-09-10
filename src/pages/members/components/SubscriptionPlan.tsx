@@ -20,7 +20,7 @@ import {
   FileSignature,
   ChevronLeft,
   Eraser,
-  UserCheck,
+  Tag,
   ShieldAlert,
   Search,
   Download,
@@ -51,10 +51,7 @@ import {
   OfficialReceipt,
   type OfficialReceiptRef,
 } from '../../../components/ui/OfficialReceipt';
-import {
-  AgreementDocumentViewer,
-  type AgreementDocument,
-} from '../../../components/ui/AgreementDocumentViewer';
+import { type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
 import type {
   OnlineRegistration,
   PaymentMethod,
@@ -107,6 +104,7 @@ interface SignaturePadProps {
   readOnly?: boolean;
 }
 
+// Canvas Signature Pad Component
 export const SignaturePad: React.FC<SignaturePadProps> = ({
   label,
   value,
@@ -221,16 +219,16 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     return (
       <div className="space-y-1 select-none text-left">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-            <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+          <label className="text-[10px] font-bold text-(--color-text)/80 uppercase tracking-wider flex items-center gap-1.5">
+            <FileSignature className="w-3.5 h-3.5 text-(--color-primary)" />
             <span>{label}</span>
           </label>
-          <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+          <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
             <Lock className="w-2.5 h-2.5" /> Pre-Registered (Locked)
           </span>
         </div>
 
-        <div className="relative rounded-xl overflow-hidden border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 h-20 flex items-center justify-center">
+        <div className="relative rounded-xl overflow-hidden border border-(--border-color) bg-(--bg-card) p-2 h-20 flex items-center justify-center">
           {value ? (
             showImage ? (
               <img
@@ -242,14 +240,14 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
               <button
                 type="button"
                 onClick={() => setShowImage(true)}
-                className="px-3 py-1.5 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-zinc-700 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="px-3 py-1.5 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
               >
-                <Eye className="w-3.5 h-3.5 text-blue-500" />
+                <Eye className="w-3.5 h-3.5 text-(--color-primary)" />
                 <span>Show Signature</span>
               </button>
             )
           ) : (
-            <span className="text-[10px] text-slate-400 font-mono italic">
+            <span className="text-[10px] text-(--color-text)/40 font-mono italic">
               No signature on file
             </span>
           )}
@@ -261,12 +259,12 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   return (
     <div className="space-y-1 select-none text-left">
       <div className="flex justify-between items-center">
-        <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-          <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+        <label className="text-[10px] font-bold text-(--color-text)/80 uppercase tracking-wider flex items-center gap-1.5">
+          <FileSignature className="w-3.5 h-3.5 text-(--color-primary)" />
           <span>{label}</span>
         </label>
         {hasDrawn && (
-          <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+          <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
             <Check className="w-3 h-3 stroke-3" /> Signed
           </span>
         )}
@@ -275,10 +273,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       <div
         className={`relative rounded-xl overflow-hidden border bg-white transition-colors ${
           error
-            ? 'border-red-500 bg-red-500/5'
+            ? 'border-rose-500 bg-rose-500/5'
             : hasDrawn
               ? 'border-emerald-500'
-              : 'border-slate-300 dark:border-zinc-700'
+              : 'border-(--border-color)'
         }`}
       >
         <canvas
@@ -290,7 +288,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
-          className="w-full h-24 block cursor-crosshair touch-none bg-white"
+          style={{
+            cursor: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M12 2v20M2 12h20' stroke='%230f172a' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='2.5' fill='%232563eb'/%3E%3C/svg%3E") 12 12, crosshair`,
+          }}
+          className="w-full h-24 block touch-none bg-white"
         />
         <span className="absolute bottom-1.5 left-2.5 text-[8px] font-mono font-semibold text-slate-400 pointer-events-none uppercase tracking-widest">
           Draw signature inside box
@@ -298,7 +299,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       </div>
 
       {error ? (
-        <p className="text-[9px] text-red-500 font-bold leading-none">
+        <p className="text-[9px] text-rose-500 font-bold leading-none">
           {error}
         </p>
       ) : (
@@ -306,7 +307,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           <button
             type="button"
             onClick={clearCanvas}
-            className="px-2 py-0.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg text-[8px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border-none"
+            className="px-2 py-0.5 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) rounded-lg text-[8px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border border-(--border-color)"
           >
             <Eraser className="w-3 h-3" /> Clear
           </button>
@@ -440,9 +441,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [parentSig, setParentSig] = useState<string | null>(null);
   const [consentDate, setConsentDate] = useState<string | null>(null);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
-  const [subscriptionAgreement, setSubscriptionAgreement] = useState(false);
-  const [agreementDocument, setAgreementDocument] =
-    useState<AgreementDocument | null>(null);
+  const [, setSubscriptionAgreement] = useState(false);
+  const [, setAgreementDocument] = useState<AgreementDocument | null>(null);
 
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
@@ -485,6 +485,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [gcashReference, setGcashReference] = useState('');
+  const [cashTendered, setCashTendered] = useState('');
   const [addIdCard, setAddIdCard] = useState(false);
   const [importedQueueReg, setImportedQueueReg] =
     useState<OnlineRegistration | null>(null);
@@ -926,7 +927,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     [birthday, calculatedAge]
   );
 
-  // Auto-sync parent fields to emergency contact for minors when sameAsParent is enabled
   useEffect(() => {
     if (isMinor && sameAsParent) {
       if (parentName) setEmergencyName(parentName);
@@ -1002,7 +1002,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     [allSubscriptions]
   );
 
-  // STEP 1: APPLICANT VALIDATION STATUS SUMMARY
   const applicantStatusSummary = useMemo(() => {
     const notices: { type: 'success' | 'info' | 'warning'; text: string }[] =
       [];
@@ -1124,7 +1123,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     getMemberSubscriptionMeta,
   ]);
 
-  // STEP 2: MEMBERSHIP VALIDATION STATUS SUMMARY
   const membershipStatusSummary = useMemo(() => {
     if (selectedPlan === 'No Subscription') {
       return {
@@ -1170,7 +1168,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       if (meta.isOver30Days && meta.activeSub) {
         const expDate = new Date(meta.activeSub.end_date).toLocaleDateString(
           'en-US',
-          { month: 'short', day: 'numeric', year: 'numeric' }
+          {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }
         );
         return {
           level: 'red' as const,
@@ -1183,7 +1185,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       if (meta.isWithin30Days && meta.activeSub) {
         const expDate = new Date(meta.activeSub.end_date).toLocaleDateString(
           'en-US',
-          { month: 'short', day: 'numeric', year: 'numeric' }
+          {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }
         );
         const isSamePlan = selectedPlan === meta.activeSub.plan_name;
         const actionText = isSamePlan ? 'extend' : 'queue';
@@ -1286,16 +1292,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         if (scannerRef.current.isScanning) {
           scannerRef.current
             .stop()
-            .then(() => {
-              scannerRef.current?.clear();
-            })
+            .then(() => scannerRef.current?.clear())
             .catch(() => {});
         } else {
           scannerRef.current.clear();
         }
-      } catch (e) {
-        // Cleanup ignore
-      }
+      } catch (e) {}
     }
 
     const qrRegion = document.getElementById(qrRegionId);
@@ -1410,7 +1412,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           html5QrCode
             .start(
               cameraConfig,
-              { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
+              { fps: 25, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
               (decodedText) => handleValidateId(decodedText.trim()),
               () => {}
             )
@@ -1553,16 +1555,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleExecuteCheckout = async () => {
     if (isSubmitting) return;
 
-    // Validation: Checkbox required for paid subscriptions
-    if (selectedPlan !== 'No Subscription' && !subscriptionAgreement) {
-      setErrors((prev) => ({
-        ...prev,
-        subscriptionAgreement:
-          'You must acknowledge the Terms & Conditions and Privacy Policy.',
-      }));
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
@@ -1668,10 +1660,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         );
       } else {
         targetMember = await memberService.create(
-          {
-            ...memberFields,
-            status: 'Active',
-          },
+          { ...memberFields, status: 'Active' },
           'Admin Staff'
         );
       }
@@ -1783,12 +1772,28 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const appliedCardFee = addIdCard ? cardFee : 0;
   const totalPrice = planBasePrice + appliedGcashFee + appliedCardFee;
 
+  // Cash calculations
+  const numericCashTendered = parseFloat(cashTendered) || 0;
+  const cashChange = Math.max(0, numericCashTendered - totalPrice);
+
+  // Automatically default Cash Received to Total Price so checkout is enabled immediately
+  useEffect(() => {
+    if (step === 2 && paymentMethod === 'Cash' && totalPrice > 0) {
+      setCashTendered((prev) =>
+        !prev || Number(prev) < totalPrice ? String(totalPrice) : prev
+      );
+    }
+  }, [step, paymentMethod, totalPrice]);
+
   const isPlanLocked =
     intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
   const isConfirmDisabled =
     (paymentMethod === 'GCash' &&
       selectedPlan !== 'No Subscription' &&
       !isGcashValid) ||
+    (paymentMethod === 'Cash' &&
+      totalPrice > 0 &&
+      (!cashTendered || numericCashTendered < totalPrice)) ||
     isRestrictedUnder12 ||
     membershipStatusSummary.isBlocked;
 
@@ -1801,56 +1806,104 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none">
       <form
         onSubmit={handleFormSubmit}
-        className={`relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[92vh] flex flex-col transition-all duration-300 ${
-          step === 3 ? 'max-w-md' : 'max-w-2xl'
+        className={`relative bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-3xl w-full shadow-2xl overflow-hidden text-xs max-h-[92vh] flex flex-col transition-all duration-300 ${
+          step === 3
+            ? 'max-w-md'
+            : step === 1 && intakeMode === 'Import'
+              ? 'max-w-lg'
+              : 'max-w-2xl'
         }`}
       >
-        {/* Progress Bar Header */}
-        <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-800 relative select-none shrink-0">
+        {/* CSS RESET FOR QR CAMERA STREAM */}
+        <style>{`
+          #fast-intake-qr-reader {
+            width: 100% !important;
+            height: 100% !important;
+            border: none !important;
+            background: transparent !important;
+            position: relative !important;
+            overflow: hidden !important;
+          }
+          #fast-intake-qr-reader__scan_region {
+            width: 100% !important;
+            height: 100% !important;
+            position: absolute !important;
+            inset: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            overflow: hidden !important;
+            background: transparent !important;
+          }
+          #fast-intake-qr-reader video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            position: absolute !important;
+            inset: 0 !important;
+            border-radius: 1rem !important;
+          }
+          #qr-shaded-region,
+          #fast-intake-qr-reader__scan_region svg,
+          #fast-intake-qr-reader__scan_region img,
+          #fast-intake-qr-reader__dashboard,
+          #fast-intake-qr-reader__dashboard_section,
+          #fast-intake-qr-reader__header_message {
+            display: none !important;
+          }
+        `}</style>
+
+        {/* TOP ACCENT PROGRESS BAR */}
+        <div className="w-full h-1 bg-(--bg-input) relative select-none shrink-0">
           <div
-            className="absolute top-0 left-0 h-full bg-[#123c73] dark:bg-[#bf0202] transition-all duration-300"
+            className="absolute top-0 left-0 h-full bg-(--color-primary) transition-all duration-300 shadow-sm shadow-[var(--color-primary)]/50"
             style={{ width: `${(step / 3) * 100}%` }}
           />
         </div>
 
-        {/* Fixed Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-white/10 flex justify-between items-center select-none shrink-0 bg-slate-50 dark:bg-[#161920]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none block">
-                Frontdesk Intake Console
-              </span>
-              {step === 1 &&
-                intakeMode === 'Manual' &&
-                draftState !== 'idle' && (
-                  <span className="hidden sm:inline-flex items-center gap-1 text-[8px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-zinc-700">
-                    {draftState === 'saving' ? (
-                      <>
-                        <RefreshCw className="w-2.5 h-2.5 text-amber-500 animate-spin" />{' '}
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-2.5 h-2.5 text-emerald-500" /> Draft
-                        saved (24h)
-                      </>
-                    )}
-                  </span>
-                )}
+        {/* TOP HEADER */}
+        <div className="px-5 py-4 border-b border-(--border-color) flex items-center justify-between bg-(--bg-card) shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-(--color-primary)/10 border border-(--color-primary)/20 text-(--color-primary) flex items-center justify-center shadow-xs shrink-0">
+              <Users className="w-5 h-5" />
             </div>
-            <h3 className="font-heading text-xs sm:text-sm text-slate-900 dark:text-white mt-1 uppercase tracking-wider">
-              Step {step} of 3:{' '}
-              {step === 1
-                ? intakeMode === 'Import'
-                  ? 'Scan Lobby Pre-Registration'
-                  : 'Enroll a Member & Details'
-                : step === 2
-                  ? 'Checkout Invoice & Membership Plan'
-                  : 'Enrollment Complete'}
-            </h3>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-sm uppercase tracking-wide text-(--color-text)">
+                  Step {step} of 3:{' '}
+                  {step === 1
+                    ? intakeMode === 'Import'
+                      ? 'Scan Pre-Registration'
+                      : 'Enroll Member & Details'
+                    : step === 2
+                      ? 'Choose Plan & Checkout'
+                      : 'Enrollment Complete'}
+                </h3>
+                {step === 1 &&
+                  intakeMode === 'Manual' &&
+                  draftState !== 'idle' && (
+                    <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-(--bg-input) text-(--color-text)/70 border border-(--border-color)">
+                      {draftState === 'saving' ? (
+                        <>
+                          <RefreshCw className="w-2.5 h-2.5 text-amber-500 animate-spin" />{' '}
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-2.5 h-2.5 text-emerald-500" />{' '}
+                          Draft saved
+                        </>
+                      )}
+                    </span>
+                  )}
+              </div>
+              <p className="text-[11px] text-(--color-text)/60">
+                Frontdesk Member Registration & Subscription Console
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1858,93 +1911,103 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <button
                 type="button"
                 onClick={handleClearDraft}
-                className="p-1.5 rounded-xl bg-slate-200 dark:bg-zinc-800 hover:bg-red-500/20 hover:text-red-500 text-slate-500 transition-colors cursor-pointer border border-slate-300 dark:border-zinc-700 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1"
-                title="Clear Draft"
+                className="px-2.5 py-1.5 rounded-xl bg-(--bg-input) hover:bg-rose-500/10 text-(--color-text)/60 hover:text-rose-500 border border-(--border-color) text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                title="Clear saved draft"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Clear</span>
               </button>
             )}
+
             <button
               type="button"
               onClick={handleModalClose}
-              className="p-1.5 rounded-xl bg-slate-200 dark:bg-neutral-800 hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer border border-slate-300 dark:border-neutral-700"
+              className="w-8 h-8 rounded-xl bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text)/60 hover:text-(--color-text) border border-(--border-color) flex items-center justify-center transition-colors cursor-pointer"
+              title="Close modal"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Scrollable Body Content */}
-        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
-          {/* STEP 1: SCAN / IMPORT PRE-REGISTRATION */}
+        {/* SCROLLABLE BODY */}
+        <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(92vh-140px)] text-left">
+          {/* STEP 1: IMPORT QR VIEW */}
           {step === 1 && intakeMode === 'Import' && (
             <div className="space-y-4 animate-fade-in text-left">
-              <div className="flex border border-slate-300 dark:border-white/10 rounded-xl overflow-hidden p-1 bg-slate-200 dark:bg-zinc-950">
+              <div className="flex p-1 bg-(--bg-input) border border-(--border-color) rounded-2xl max-w-xs mx-auto shadow-inner">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsScanning(true);
-                  }}
-                  className={`flex-1 py-2 text-center rounded-lg font-bold text-[10px] uppercase tracking-wide transition-colors ${isScanning ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                  onClick={() => setIsScanning(true)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    isScanning
+                      ? 'bg-(--color-primary) text-white shadow-md'
+                      : 'text-(--color-text)/60 hover:text-(--color-text)'
+                  }`}
                 >
-                  📷 Scan QR Code
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Camera Scan</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsScanning(false);
-                  }}
-                  className={`flex-1 py-2 text-center rounded-lg font-bold text-[10px] uppercase tracking-wide transition-colors ${!isScanning ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                  onClick={() => setIsScanning(false)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                    !isScanning
+                      ? 'bg-(--color-primary) text-white shadow-md'
+                      : 'text-(--color-text)/60 hover:text-(--color-text)'
+                  }`}
                 >
-                  ⌨️ Type Registration ID
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Type Code</span>
                 </button>
               </div>
 
               {!isScanning ? (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300">
-                      Registration ID *
-                    </label>
-                    <input
-                      type="text"
-                      value={manualIdInput}
-                      onChange={(e) => setManualIdInput(e.target.value)}
-                      placeholder="e.g. REG-000001"
-                      className="w-full p-2.5 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white rounded-xl outline-none text-xs font-mono uppercase tracking-widest placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:border-blue-500"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && manualIdInput.trim()) {
-                          handleValidateId(manualIdInput);
-                        }
-                      }}
-                    />
+                <div className="max-w-sm mx-auto py-4 space-y-3">
+                  <div className="p-5 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl shadow-xs space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-(--color-text)/80 tracking-wider block">
+                        Registration Ticket ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={manualIdInput}
+                        onChange={(e) => setManualIdInput(e.target.value)}
+                        placeholder="e.g. REG-000001"
+                        className="w-full px-3.5 py-2.5 border border-(--border-color) bg-(--bg-card) text-(--color-text) rounded-xl text-xs font-mono uppercase tracking-widest placeholder:text-(--color-text)/30 outline-none focus:border-(--color-primary)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && manualIdInput.trim()) {
+                            handleValidateId(manualIdInput);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleValidateId(manualIdInput)}
+                      disabled={!manualIdInput.trim()}
+                      className="w-full py-3 bg-(--color-primary) hover:bg-(--color-primary-hover) disabled:opacity-40 text-white font-bold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-md transition-all flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Verify & Retrieve Ticket</span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleValidateId(manualIdInput)}
-                    disabled={!manualIdInput.trim()}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider font-heading cursor-pointer border-none shadow-md transition-colors"
-                  >
-                    Verify & Retrieve Profile
-                  </button>
                 </div>
               ) : (
-                <div className="space-y-3 flex flex-col items-center">
-                  <div className="relative w-full aspect-square max-w-65 rounded-2xl overflow-hidden bg-black border border-white/10 flex items-center justify-center">
+                <div className="flex flex-col items-center justify-center py-2 space-y-3">
+                  <div className="relative w-full max-w-sm h-64 rounded-2xl overflow-hidden bg-(--bg-page) border-2 border-(--color-primary)/50 shadow-2xl flex items-center justify-center">
                     <div id={qrRegionId} className="w-full h-full" />
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className="w-36 h-36 border-2 border-dashed border-blue-500 rounded-xl opacity-80 animate-pulse relative">
-                        <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-blue-400 rounded-tl" />
-                        <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-blue-400 rounded-tr" />
-                        <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-blue-400 rounded-bl" />
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-blue-400 rounded-br" />
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
+                      <div className="w-48 h-48 border border-(--color-primary)/40 rounded-2xl relative">
+                        <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-(--color-primary) rounded-tl-lg" />
+                        <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-(--color-primary) rounded-tr-lg" />
+                        <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-(--color-primary) rounded-bl-lg" />
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-(--color-primary) rounded-br-lg" />
                       </div>
                     </div>
-                  </div>
 
-                  {cameras.length > 1 && (
-                    <div className="flex items-center justify-center pt-2">
+                    {cameras.length > 1 && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1955,84 +2018,95 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           forceStopCamera();
                           setSelectedCameraId(cameras[nextIndex].id);
                         }}
-                        className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-blue-400 border border-zinc-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md active:scale-95 transition-all"
+                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-(--bg-card)/80 hover:bg-(--bg-card) backdrop-blur-md text-(--color-text) border border-(--border-color) rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
                       >
-                        <SwitchCamera className="w-4 h-4" />
-                        <span>Switch Camera</span>
+                        <SwitchCamera className="w-3.5 h-3.5 text-(--color-primary)" />
+                        <span>Flip</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  <p className="text-[10px] text-slate-600 dark:text-slate-400 text-center font-semibold animate-pulse leading-none">
-                    Position the lobby QR badge within camera frame
-                  </p>
+                  <span className="text-[11px] text-(--color-text)/50 font-medium">
+                    Point camera at client's mobile screen or QR badge
+                  </span>
                 </div>
               )}
             </div>
           )}
 
-          {/* STEP 1: ENROLL A MEMBER (MANUAL INTAKE) */}
+          {/* STEP 1: MANUAL INTAKE */}
           {step === 1 && intakeMode === 'Manual' && (
-            <div className="space-y-4 text-left font-semibold animate-fade-in">
+            <div className="space-y-4 animate-fade-in">
+              {/* ACTION TILES: EXISTING VS NEW */}
               {!prefillMember && !prefillData && (
-                <div className="space-y-2 select-none">
-                  <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
-                    Enroll a Member • Select Action
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
+                    Select Intake Mode
                   </span>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* EXISTING MEMBER - BLUE THEMED */}
                     <div
                       onClick={handleChooseExistingMember}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
                         enrollmentType === 'existing'
-                          ? 'bg-blue-500/10 border-blue-600 dark:border-blue-500 ring-2 ring-blue-500/20'
-                          : 'bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-500/50'
+                          ? 'bg-blue-500/10 border-blue-500 ring-4 ring-blue-500/10'
+                          : 'bg-(--bg-input)/50 border-(--border-color) hover:border-blue-500/40'
                       }`}
                     >
                       <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
                           enrollmentType === 'existing'
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 group-hover:text-blue-500'
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                            : 'bg-(--bg-card) text-(--color-text)/60 border border-(--border-color)'
                         }`}
                       >
-                        <Users className="w-5 h-5" />
+                        <Users className="w-5 h-5 stroke-[2.2]" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
-                          Select Existing Member
-                        </span>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block mt-0.5">
-                          Search and attach an existing profile to subscribe or
-                          renew
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs uppercase font-black text-(--color-text)">
+                            Select Existing Member
+                          </span>
+                          {enrollmentType === 'existing' && (
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                          )}
+                        </div>
+                        <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
+                          Search profile to renew contract or add plan
                         </span>
                       </div>
                     </div>
 
+                    {/* CREATE NEW MEMBER - EMERALD THEMED */}
                     <div
                       onClick={handleChooseCreateNewMember}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 shadow-sm group ${
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
                         enrollmentType === 'new'
-                          ? 'bg-emerald-500/10 border-emerald-600 dark:border-emerald-500 ring-2 ring-emerald-500/20'
-                          : 'bg-white dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 hover:border-emerald-400 dark:hover:border-emerald-500/50'
+                          ? 'bg-emerald-500/10 border-emerald-500 ring-4 ring-emerald-500/10'
+                          : 'bg-(--bg-input)/50 border-(--border-color) hover:border-emerald-500/40'
                       }`}
                     >
                       <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
                           enrollmentType === 'new'
-                            ? 'bg-emerald-600 text-white shadow-md'
-                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 group-hover:text-emerald-500'
+                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/30'
+                            : 'bg-(--bg-card) text-(--color-text)/60 border border-(--border-color)'
                         }`}
                       >
-                        <UserPlus className="w-5 h-5" />
+                        <UserPlus className="w-5 h-5 stroke-[2.2]" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="font-heading text-xs uppercase tracking-wider font-bold block text-slate-900 dark:text-white">
-                          Create New Member
-                        </span>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block mt-0.5">
-                          Register a fresh client profile and setup agreement
-                          waiver
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs uppercase font-black text-(--color-text)">
+                            Create New Member
+                          </span>
+                          {enrollmentType === 'new' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                        </div>
+                        <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
+                          Register a fresh profile & agreement waiver
                         </span>
                       </div>
                     </div>
@@ -2040,36 +2114,41 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               )}
 
+              {/* SEARCH BOX FOR EXISTING MEMBER */}
               {enrollmentType === 'existing' &&
                 !selectedExistingMember &&
                 !prefillData && (
-                  <div className="space-y-2 select-none relative animate-fade-in">
-                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                      SEARCH EXISTING MEMBER PROFILE TO SUBSCRIBE
-                    </label>
+                  <div className="space-y-3 animate-fade-in">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-(--color-text)/60 uppercase tracking-wider block">
+                        Search Existing Profile
+                      </label>
 
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={memberSearchQuery}
-                        onChange={(e) => setMemberSearchQuery(e.target.value)}
-                        placeholder="Type Name, Phone, or Member ID to lookup existing profile..."
-                        className="w-full pl-10 pr-10 py-3 border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white rounded-xl text-xs outline-none focus:border-blue-500 font-medium shadow-xs"
-                      />
-                      {memberSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setMemberSearchQuery('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-(--color-text)/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={memberSearchQuery}
+                          onChange={(e) => setMemberSearchQuery(e.target.value)}
+                          placeholder="Search by Name, Phone, or Member ID..."
+                          className="w-full pl-10 pr-10 py-3 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-2xl text-xs outline-none focus:border-white focus:ring-2 focus:ring-white/20 font-bold shadow-xs uppercase transition-all"
+                          autoFocus
+                        />
+
+                        {memberSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-(--color-text)/40 hover:text-(--color-text) cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {memberSearchQuery.trim().length > 0 && (
-                      <div className="p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-h-56 overflow-y-auto space-y-1 z-30 relative">
+                    {memberSearchQuery.trim().length > 0 ? (
+                      <div className="p-2 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl max-h-60 overflow-y-auto space-y-1">
                         {matchingSearchMembers.length > 0 ? (
                           matchingSearchMembers.map((m: Member) => {
                             const meta = getMemberSubscriptionMeta(m);
@@ -2080,154 +2159,148 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 onClick={() => {
                                   if (meta.isSuspended) {
                                     toast.error(
-                                      `Member "${m.full_name}" is currently Suspended/Inactive.`
+                                      `Member "${m.full_name}" is currently Suspended.`
                                     );
                                     return;
                                   }
                                   if (meta.hasTwoSubs) {
                                     toast.error(
-                                      `Member "${m.full_name}" already has two active/queued subscriptions.`
+                                      `Member "${m.full_name}" already has two active subscriptions.`
                                     );
                                     return;
-                                  }
-                                  if (meta.isOver30Days) {
-                                    toast.warning(
-                                      `Member "${m.full_name}" active plan has ${meta.remainingDays} days left. Renewals only allowed within 30 days.`
-                                    );
                                   }
                                   handleSelectExistingMember(m);
                                   setMemberSearchQuery('');
                                 }}
-                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                className={`p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
                                   meta.isSuspended
-                                    ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 opacity-70'
-                                    : meta.isBlockedFromRenewing
-                                      ? 'bg-slate-50 dark:bg-zinc-950 border-amber-300/40 hover:border-amber-400'
-                                      : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 hover:border-blue-500/50'
+                                    ? 'bg-rose-500/10 border-rose-500/30 opacity-70'
+                                    : 'bg-(--bg-input)/50 border-(--border-color) hover:border-blue-500/50'
                                 }`}
                               >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div
-                                    className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border ${
-                                      meta.isSuspended
-                                        ? 'bg-rose-500/10 text-rose-600 border-rose-500/30'
-                                        : 'bg-blue-600/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                                    }`}
-                                  >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black text-xs shrink-0">
                                     {m.full_name[0]?.toUpperCase()}
                                   </div>
                                   <div className="min-w-0 text-left">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate block uppercase">
-                                        {m.full_name}
-                                      </span>
-                                      {meta.isSuspended && (
-                                        <span className="text-[8px] font-mono font-bold bg-rose-500/20 text-rose-600 px-1.5 py-0.2 rounded">
-                                          SUSPENDED
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
+                                    <span className="font-black text-xs text-(--color-text) truncate block uppercase">
+                                      {m.full_name}
+                                    </span>
+                                    <span className="text-[10px] text-(--color-text)/60 font-mono block mt-0.5">
                                       {m.member_id} • {m.phone || 'No Phone'}
                                       {meta.activeSub &&
-                                        ` • Active: ${meta.activeSub.plan_name} (${meta.remainingDays}d left)`}
-                                      {meta.queuedSub &&
-                                        ` • Queued Renewal: ${meta.queuedSub.plan_name}`}
+                                        ` • Active: ${meta.activeSub.plan_name}`}
                                     </span>
                                   </div>
                                 </div>
 
-                                <div className="shrink-0">
-                                  <span
-                                    className={`text-[9px] font-mono font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider border ${
-                                      meta.isSuspended
-                                        ? 'bg-rose-500/10 text-rose-600 border-rose-500/20'
-                                        : meta.hasTwoSubs
-                                          ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                                          : meta.isWithin30Days &&
-                                              meta.activeSub
-                                            ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                                            : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-                                    }`}
-                                  >
-                                    {meta.isSuspended
-                                      ? 'Suspended'
+                                <span
+                                  className={`text-[9px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider ${
+                                    meta.isSuspended
+                                      ? 'bg-rose-500/20 text-rose-500 border border-rose-500/30'
                                       : meta.isWithin30Days && meta.activeSub
-                                        ? 'Renew Extension'
-                                        : 'Select Profile'}
-                                  </span>
-                                </div>
+                                        ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
+                                        : 'bg-blue-500/15 text-blue-500 border border-blue-500/30'
+                                  }`}
+                                >
+                                  {meta.isSuspended ? 'Suspended' : 'Select'}
+                                </span>
                               </div>
                             );
                           })
                         ) : (
-                          <div className="p-3 text-center text-xs text-slate-500 font-mono">
-                            No existing profiles match "{memberSearchQuery}"
+                          <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-xl text-center space-y-1.5">
+                            <p className="text-xs font-bold text-(--color-text) uppercase">
+                              No Profiles Found
+                            </p>
+                            <p className="text-[11px] text-(--color-text)/50">
+                              No member matches &ldquo;{memberSearchQuery}
+                              &rdquo;.
+                            </p>
                           </div>
                         )}
+                      </div>
+                    ) : (
+                      /* EMPTY SEARCH BADGE */
+                      <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-(--bg-input)/30 text-center flex flex-col items-center justify-center space-y-2.5 select-none">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center shadow-xs">
+                          <Users className="w-6 h-6 stroke-[2.2]" />
+                        </div>
+                        <div className="space-y-0.5">
+                          <h4 className="font-bold text-xs sm:text-sm text-(--color-text) uppercase tracking-wider">
+                            Search Member Records
+                          </h4>
+                          <p className="text-[11px] text-(--color-text)/60 font-medium max-w-xs leading-relaxed">
+                            Type a member name, phone number, or Member ID above
+                            to retrieve their profile.
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
+              {/* ATTACHED EXISTING MEMBER BADGE */}
               {selectedExistingMember && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl text-blue-900 dark:text-blue-300 text-[10px] font-bold flex items-center justify-between gap-2 shadow-xs animate-fade-in">
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <div>
-                      <span className="font-heading text-xs text-slate-900 dark:text-white uppercase block">
-                        Enrolling Existing Member:{' '}
+                <div className="p-3.5 bg-(--color-primary)/10 border-2 border-(--color-primary)/40 rounded-2xl text-(--color-text) flex items-center justify-between gap-3 shadow-xs animate-fade-in">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-(--color-primary) text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                      {selectedExistingMember.full_name[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-black text-xs text-(--color-text) uppercase block truncate">
                         {selectedExistingMember.full_name}
                       </span>
-                      <span className="text-[9px] font-mono text-slate-600 dark:text-slate-300">
+                      <span className="text-[10px] font-mono text-(--color-text)/60 block">
                         ID: {selectedExistingMember.member_id} • Phone:{' '}
                         {selectedExistingMember.phone || 'N/A'}
                       </span>
                     </div>
                   </div>
+
                   {!prefillMember && (
                     <button
                       type="button"
                       onClick={handleClearSelectedExistingMember}
-                      className="px-2.5 py-1 bg-blue-100 dark:bg-blue-500/20 hover:bg-blue-200 dark:hover:bg-blue-500/30 text-blue-800 dark:text-blue-300 rounded-lg text-[9px] uppercase font-bold tracking-wider cursor-pointer border border-blue-300 dark:border-blue-400/30"
+                      className="px-3 py-1.5 bg-(--bg-card) text-(--color-text) border border-(--border-color) hover:bg-(--bg-input) rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shrink-0 shadow-xs"
                     >
-                      Clear / Change Profile
+                      Change
                     </button>
                   )}
                 </div>
               )}
 
+              {/* FORM FIELDS SECTIONS */}
               {shouldShowDetailsForm && (
                 <div className="space-y-4 animate-fade-in pt-1">
-                  {/* Status Banner */}
+                  {/* STATUS NOTIFICATION CARD */}
                   <div
                     className={`p-3.5 rounded-2xl border transition-all flex flex-col gap-2 ${
                       applicantStatusSummary.level === 'red'
-                        ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300'
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-500'
                         : applicantStatusSummary.level === 'amber'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-300'
+                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                           : applicantStatusSummary.level === 'blue'
-                            ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-300 dark:border-blue-500/30 text-blue-900 dark:text-blue-300'
-                            : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
+                            ? 'bg-(--color-primary)/10 border-(--color-primary)/30 text-(--color-primary-light)'
+                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-2.5">
                         {applicantStatusSummary.level === 'red' ? (
-                          <Ban className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                          <Ban className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                         ) : applicantStatusSummary.level === 'amber' ? (
-                          <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                         ) : applicantStatusSummary.level === 'blue' ? (
-                          <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                          <Info className="w-4 h-4 text-(--color-primary-light) shrink-0 mt-0.5" />
                         ) : (
-                          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                          <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                         )}
-
                         <div className="space-y-0.5">
-                          <h4 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white">
+                          <h4 className="text-xs uppercase font-black text-(--color-text)">
                             {applicantStatusSummary.title}
                           </h4>
-                          <p className="text-[10px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <p className="text-[11px] leading-relaxed opacity-90">
                             {applicantStatusSummary.description}
                           </p>
                         </div>
@@ -2241,7 +2314,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               applicantStatusSummary.actionMember!
                             )
                           }
-                          className="px-3 py-1.5 rounded-xl text-[9px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
+                          className="px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
                         >
                           Attach Member
                         </button>
@@ -2249,13 +2322,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     </div>
 
                     {applicantStatusSummary.notices.length > 1 && (
-                      <div className="pt-2 border-t border-slate-200 dark:border-white/10 select-none">
+                      <div className="pt-2 border-t border-(--border-color) select-none">
                         <button
                           type="button"
                           onClick={() =>
                             setShowStatusDetails(!showStatusDetails)
                           }
-                          className="text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer text-slate-700 dark:text-slate-300"
+                          className="text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 opacity-80 hover:opacity-100 cursor-pointer text-(--color-text)"
                         >
                           <span>
                             {showStatusDetails
@@ -2274,7 +2347,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             {applicantStatusSummary.notices.map((n, idx) => (
                               <div
                                 key={idx}
-                                className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300"
+                                className="flex items-center gap-1.5 text-(--color-text)/80"
                               >
                                 <span>
                                   {n.type === 'warning'
@@ -2292,313 +2365,283 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     )}
                   </div>
 
-                  {/* Input Fields Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                    <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 select-none">
-                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                        Personal Details
-                      </span>
-                    </div>
+                  {/* SECTION 1: PERSONAL INFORMATION */}
+                  <div className="p-4 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-3.5">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/60 block">
+                      Personal Details
+                    </span>
 
-                    {/* Last Name */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Last Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={lastName}
-                        disabled={isNameLocked}
-                        onChange={(e) => {
-                          setLastName(e.target.value);
-                          if (errors.lastName)
-                            setErrors((prev) => ({ ...prev, lastName: '' }));
-                        }}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          isMissing(lastName) || errors.lastName
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
-                            : isNameLocked
-                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`}
-                        placeholder="e.g. Angeles"
-                      />
-                      {errors.lastName && (
-                        <span className="text-[9px] text-red-500 font-bold block">
-                          {errors.lastName}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* First Name */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        First Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={firstName}
-                        disabled={isNameLocked}
-                        onChange={(e) => {
-                          setFirstName(e.target.value);
-                          if (errors.firstName)
-                            setErrors((prev) => ({ ...prev, firstName: '' }));
-                        }}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          isMissing(firstName) || errors.firstName
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
-                            : isNameLocked
-                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`}
-                        placeholder="e.g. Adrian"
-                      />
-                      {errors.firstName && (
-                        <span className="text-[9px] text-red-500 font-bold block">
-                          {errors.firstName}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Middle Initial & Suffix */}
-                    <div className="grid grid-cols-2 gap-2 col-span-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Last Name */}
                       <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                          M.I.
+                        <label className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-(--color-primary)" />
+                          <span>Last Name</span>
+                          <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
-                          value={middleInitials}
+                          value={lastName}
                           disabled={isNameLocked}
-                          onChange={(e) => setMiddleInitials(e.target.value)}
-                          maxLength={2}
-                          className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                            isNameLocked
-                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                          onChange={(e) => {
+                            setLastName(e.target.value);
+                            if (errors.lastName)
+                              setErrors((prev) => ({ ...prev, lastName: '' }));
+                          }}
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold uppercase transition-all outline-none ${
+                            isMissing(lastName) || errors.lastName
+                              ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                              : isNameLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                           }`}
-                          placeholder="R."
+                          placeholder="e.g. Angeles"
                         />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                          Suffix
-                        </label>
-                        <input
-                          type="text"
-                          value={suffix}
-                          disabled={isNameLocked}
-                          onChange={(e) => setSuffix(e.target.value)}
-                          className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                            isNameLocked
-                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                          }`}
-                          placeholder="e.g. Jr."
-                        />
-                      </div>
-                    </div>
-
-                    {/* Phone */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                        <span>
-                          Contact Phone <span className="text-red-500">*</span>
-                        </span>
-                        {isMissing(phone) && (
-                          <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">
-                            ⚠️ Missing Phone
+                        {errors.lastName && (
+                          <span className="text-[9px] text-rose-500 font-bold block">
+                            {errors.lastName}
                           </span>
                         )}
-                      </label>
-                      <input
-                        type="text"
-                        value={phone}
-                        disabled={isPhoneLocked}
-                        maxLength={11}
-                        onChange={(e) => {
-                          setPhone(e.target.value.replace(/\D/g, ''));
-                          if (errors.phone)
-                            setErrors((prev) => ({ ...prev, phone: '' }));
-                        }}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          isMissing(phone) || errors.phone
-                            ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400 placeholder:text-red-400/60'
-                            : isPhoneLocked
-                              ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                              : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`}
-                        placeholder="0917XXXXXXX"
-                      />
+                      </div>
 
-                      {phoneMatchMember && !selectedExistingMember && (
-                        <div className="flex items-center justify-between text-[9px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
-                          <span className="flex items-center gap-1">
-                            <ShieldAlert className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                            <span>
-                              Already used by {phoneMatchMember.full_name} (
-                              {phoneMatchMember.member_id})
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleSelectExistingMember(phoneMatchMember)
-                            }
-                            className="text-amber-700 dark:text-amber-300 underline font-bold hover:text-amber-600 cursor-pointer ml-2"
-                          >
-                            Attach
-                          </button>
-                        </div>
-                      )}
-
-                      {errors.phone && (
-                        <span className="text-[9px] text-red-500 font-bold block">
-                          {errors.phone}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Gender */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Gender *
-                      </label>
-                      <select
-                        value={gender}
-                        disabled={isNameLocked}
-                        onChange={(e) => setGender(e.target.value)}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none ${
-                          isNameLocked
-                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer'
-                        }`}
-                      >
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Non-Binary">Non-Binary</option>
-                      </select>
-                    </div>
-
-                    {/* Birthday */}
-                    <div className="grid grid-cols-2 gap-2 col-span-1">
+                      {/* First Name */}
                       <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                          <span>Birthday *</span>
-                          {isMissing(birthday) && (
-                            <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse">
-                              ⚠️ Missing Birthday
+                        <label className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-(--color-primary)" />
+                          <span>First Name</span>
+                          <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={firstName}
+                          disabled={isNameLocked}
+                          onChange={(e) => {
+                            setFirstName(e.target.value);
+                            if (errors.firstName)
+                              setErrors((prev) => ({ ...prev, firstName: '' }));
+                          }}
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold uppercase transition-all outline-none ${
+                            isMissing(firstName) || errors.firstName
+                              ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                              : isNameLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
+                          }`}
+                          placeholder="e.g. Adrian"
+                        />
+                        {errors.firstName && (
+                          <span className="text-[9px] text-rose-500 font-bold block">
+                            {errors.firstName}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* M.I. & Suffix */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-(--color-text)/80 uppercase block">
+                            M.I.
+                          </label>
+                          <input
+                            type="text"
+                            value={middleInitials}
+                            disabled={isNameLocked}
+                            maxLength={2}
+                            onChange={(e) => setMiddleInitials(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) uppercase outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
+                            placeholder="R."
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-(--color-text)/80 uppercase block">
+                            Suffix
+                          </label>
+                          <input
+                            type="text"
+                            value={suffix}
+                            disabled={isNameLocked}
+                            onChange={(e) => setSuffix(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) uppercase outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
+                            placeholder="Jr."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Contact Phone */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-(--color-text)/80 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-(--color-primary)" />
+                            <span>Contact Phone</span>
+                            <span className="text-rose-500">*</span>
+                          </span>
+                          {isMissing(phone) && (
+                            <span className="text-[8px] text-rose-500 font-bold animate-pulse uppercase">
+                              ⚠️ Required
                             </span>
                           )}
                         </label>
                         <input
-                          type="date"
-                          value={birthday}
-                          disabled={isBirthdayLocked}
+                          type="text"
+                          value={phone}
+                          disabled={isPhoneLocked}
+                          maxLength={11}
                           onChange={(e) => {
-                            setBirthday(e.target.value);
-                            if (errors.birthday)
-                              setErrors((prev) => ({ ...prev, birthday: '' }));
+                            setPhone(e.target.value.replace(/\D/g, ''));
+                            if (errors.phone)
+                              setErrors((prev) => ({ ...prev, phone: '' }));
                           }}
-                          className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                            isMissing(birthday) || errors.birthday
-                              ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
-                              : isBirthdayLocked
-                                ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                                : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold transition-all outline-none ${
+                            isMissing(phone) || errors.phone
+                              ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                              : isPhoneLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                           }`}
+                          placeholder="0917XXXXXXX"
                         />
+
+                        {phoneMatchMember && !selectedExistingMember && (
+                          <div className="flex items-center justify-between text-[9px] text-amber-500 mt-1 font-medium">
+                            <span className="truncate">
+                              Used by {phoneMatchMember.full_name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleSelectExistingMember(phoneMatchMember)
+                              }
+                              className="underline font-bold ml-1 cursor-pointer"
+                            >
+                              Attach
+                            </button>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Gender */}
                       <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                          Age Status
+                        <label className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-(--color-primary)" />
+                          <span>Gender *</span>
+                        </label>
+                        <select
+                          value={gender}
+                          disabled={isNameLocked}
+                          onChange={(e) => setGender(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none cursor-pointer focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
+                        >
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Non-Binary">Non-Binary</option>
+                        </select>
+                      </div>
+
+                      {/* Birthday & Age Status */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Birthday *
+                          </label>
+                          <input
+                            type="date"
+                            value={birthday}
+                            disabled={isBirthdayLocked}
+                            onChange={(e) => {
+                              setBirthday(e.target.value);
+                              if (errors.birthday)
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  birthday: '',
+                                }));
+                            }}
+                            className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all outline-none ${
+                              errors.birthday
+                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                                : isBirthdayLocked
+                                  ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                  : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
+                            }`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Age Status
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              birthday
+                                ? `${calculatedAge} yrs (${isRestrictedUnder12 ? 'Restricted' : isMinor ? 'Minor' : 'Adult'})`
+                                : '--'
+                            }
+                            disabled
+                            className={`w-full px-3 py-2 border rounded-xl text-xs font-mono font-bold outline-none cursor-not-allowed ${
+                              isRestrictedUnder12
+                                ? 'bg-rose-500/10 border-rose-500/30 text-rose-500'
+                                : isMinor
+                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                                  : 'bg-(--bg-input) border-(--border-color) text-(--color-text)/70'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Home Address */}
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-xs font-bold text-(--color-text)/80 block">
+                          Home Address{' '}
+                          <span className="text-(--color-text)/40 font-normal">
+                            (optional)
+                          </span>
                         </label>
                         <input
                           type="text"
-                          value={
-                            birthday
-                              ? `${calculatedAge} yrs (${isRestrictedUnder12 ? 'Restricted' : isMinor ? 'Minor' : 'Adult'})`
-                              : '--'
-                          }
-                          disabled
-                          className={`w-full p-2.5 border rounded-xl text-xs font-mono font-bold outline-none cursor-not-allowed ${
-                            isRestrictedUnder12
-                              ? 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-600 dark:text-red-500'
-                              : isMinor
-                                ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-500'
-                                : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-slate-300'
-                          }`}
+                          value={address}
+                          disabled={isAddressLocked}
+                          onChange={(e) => setAddress(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
+                          placeholder="Barangay, City, Province (optional)"
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Address */}
-                    <div className="md:col-span-2 space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                        Home Address{' '}
-                        <span className="text-slate-400 font-normal">
-                          (optional)
-                        </span>
-                      </label>
-                      <input
-                        type="text"
-                        value={address}
-                        disabled={isAddressLocked}
-                        onChange={(e) => setAddress(e.target.value)}
-                        className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
-                          isAddressLocked
-                            ? 'border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900/60 text-slate-700 dark:text-zinc-400 cursor-not-allowed select-none'
-                            : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
-                        }`}
-                        placeholder="Barangay, City, Province (optional)"
-                      />
-                    </div>
+                  {/* SECTION 2: ADULT EMERGENCY CONTACT OR MINOR PARENT SECTION */}
+                  {!isMinor ? (
+                    <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-2xl space-y-3">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-purple-400 block">
+                        Emergency Contact (Optional for 18+)
+                      </span>
 
-                    {/* ─── 1. ADULT SECTION (18+) ─── */}
-                    {!isMinor && (
-                      <>
-                        <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                            Emergency Contact{' '}
-                            <span className="text-slate-400 font-normal">
-                              (optional for 18+)
-                            </span>
-                          </span>
-                        </div>
-
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="md:col-span-2 space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                            Emergency Contact Name{' '}
-                            <span className="text-slate-400 font-normal">
-                              (optional)
-                            </span>
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Emergency Contact Name
                           </label>
                           <input
                             type="text"
                             value={emergencyName}
                             disabled={isEmergencyNameLocked}
                             onChange={(e) => setEmergencyName(e.target.value)}
-                            className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-purple-500"
                             placeholder="Contact person's full name"
                           />
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                            Relationship{' '}
-                            <span className="text-slate-400 font-normal">
-                              (optional)
-                            </span>
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Relationship
                           </label>
                           <select
                             value={relationship}
                             disabled={isRelationshipLocked}
                             onChange={(e) => setRelationship(e.target.value)}
-                            className="w-full p-2.5 rounded-xl text-xs outline-none font-medium border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none cursor-pointer"
                           >
-                            <option value="">
-                              Select Relationship (optional)
-                            </option>
+                            <option value="">Select Relationship</option>
                             <option value="Mother">Mother</option>
                             <option value="Father">Father</option>
                             <option value="Spouse / Partner">
@@ -2612,11 +2655,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                            Emergency Phone{' '}
-                            <span className="text-slate-400 font-normal">
-                              (optional)
-                            </span>
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Emergency Phone
                           </label>
                           <input
                             type="text"
@@ -2628,27 +2668,27 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 e.target.value.replace(/\D/g, '')
                               )
                             }
-                            className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-mono font-bold text-(--color-text) outline-none focus:border-purple-500"
                             placeholder="0918XXXXXXX"
                           />
                         </div>
-                      </>
-                    )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* MINOR GUARDIAN DETAILS & DUAL SIGNATURE PADS */
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3.5">
+                      <div className="flex items-center gap-2 text-amber-500">
+                        <ShieldAlert className="w-4 h-4 shrink-0" />
+                        <span className="text-[10px] font-black uppercase tracking-widest block">
+                          Parent / Legal Guardian & Consent (Minor 12–17)
+                        </span>
+                      </div>
 
-                    {/* ─── 2. MINOR SECTION (12–17 YRS) ─── */}
-                    {isMinor && (
-                      <>
-                        <div className="md:col-span-2 border-b border-slate-200 dark:border-white/10 pb-1 mt-2 select-none">
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                            Parent / Legal Guardian Details{' '}
-                            <span className="text-red-500">*</span>
-                          </span>
-                        </div>
-
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="md:col-span-2 space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
                             Parent / Legal Guardian Name{' '}
-                            <span className="text-red-500">*</span>
+                            <span className="text-rose-500">*</span>
                           </label>
                           <input
                             type="text"
@@ -2663,24 +2703,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentName: '',
                                 }));
                             }}
-                            className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold outline-none transition-all ${
                               errors.parentName
-                                ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
-                                : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                             }`}
                             placeholder="Parent or legal guardian's full name"
                           />
-                          {errors.parentName && (
-                            <span className="text-[9px] text-red-500 font-bold block">
-                              {errors.parentName}
-                            </span>
-                          )}
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
                             Relationship to Minor{' '}
-                            <span className="text-red-500">*</span>
+                            <span className="text-rose-500">*</span>
                           </label>
                           <select
                             value={parentRelationship}
@@ -2693,7 +2728,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentRelationship: '',
                                 }));
                             }}
-                            className="w-full p-2.5 rounded-xl text-xs outline-none font-medium border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white cursor-pointer"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) cursor-pointer"
                           >
                             <option value="Father">Father</option>
                             <option value="Mother">Mother</option>
@@ -2702,17 +2737,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             </option>
                             <option value="Other">Other</option>
                           </select>
-                          {errors.parentRelationship && (
-                            <span className="text-[9px] text-red-500 font-bold block">
-                              {errors.parentRelationship}
-                            </span>
-                          )}
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
                             Parent Phone Number{' '}
-                            <span className="text-red-500">*</span>
+                            <span className="text-rose-500">*</span>
                           </label>
                           <input
                             type="text"
@@ -2728,22 +2758,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentPhone: '',
                                 }));
                             }}
-                            className={`w-full p-2.5 rounded-xl text-xs outline-none transition-colors ${
+                            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold outline-none transition-all ${
                               errors.parentPhone
-                                ? 'border-2 border-red-500/80 bg-red-500/10 text-red-600 dark:text-red-400'
-                                : 'border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white'
+                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                             }`}
                             placeholder="0918XXXXXXX"
                           />
-                          {errors.parentPhone && (
-                            <span className="text-[9px] text-red-500 font-bold block">
-                              {errors.parentPhone}
-                            </span>
-                          )}
                         </div>
 
-                        <div className="md:col-span-2 p-2.5 bg-slate-100 dark:bg-zinc-800/60 rounded-xl border border-slate-200 dark:border-zinc-700 flex items-center justify-between">
-                          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
+                        <div className="md:col-span-2 p-2.5 bg-(--bg-card) rounded-xl border border-(--border-color) flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-(--color-text) select-none">
                             <input
                               type="checkbox"
                               checked={sameAsParent}
@@ -2755,433 +2780,265 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   setEmergencyPhone(parentPhone);
                                 }
                               }}
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 accent-blue-600 cursor-pointer"
+                              className="w-4 h-4 rounded border-(--border-color) text-(--color-primary) accent-[var(--color-primary)] cursor-pointer"
                             />
                             <span>
-                              Use Parent / Legal Guardian as Primary Emergency
-                              Contact
+                              Use Parent / Guardian as Primary Emergency Contact
                             </span>
                           </label>
                         </div>
 
-                        {!sameAsParent && (
+                        {/* DIGITAL SIGNATURE PADS */}
+                        <div className="md:col-span-2 pt-2 border-t border-amber-500/20 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <SignaturePad
+                            label="Applicant Signature *"
+                            value={applicantSig}
+                            onChange={(sig) => {
+                              setApplicantSig(sig);
+                              if (errors.applicantSig)
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  applicantSig: '',
+                                }));
+                            }}
+                            error={errors.applicantSig}
+                          />
+                          <SignaturePad
+                            label="Parent / Guardian Signature *"
+                            value={parentSig}
+                            onChange={(sig) => {
+                              setParentSig(sig);
+                              if (errors.parentSig)
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  parentSig: '',
+                                }));
+                            }}
+                            error={errors.parentSig}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WAIVER AGREEMENT CHECKBOX */}
+                  <div className="p-3 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={waiverAgreed}
+                        onChange={(e) => {
+                          setWaiverAgreed(e.target.checked);
+                          if (errors.waiverAgreed)
+                            setErrors((prev) => ({
+                              ...prev,
+                              waiverAgreed: '',
+                            }));
+                        }}
+                        className="mt-0.5 w-4 h-4 rounded border-(--border-color) text-(--color-primary) accent-[var(--color-primary)] cursor-pointer shrink-0"
+                      />
+                      <span className="text-[11px] text-(--color-text)/80 leading-snug font-medium">
+                        {isMinor ? (
                           <>
-                            <div className="md:col-span-2 space-y-1">
-                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                                Alternate Emergency Contact Name{' '}
-                                <span className="text-red-500">*</span>
-                              </label>
-                              <input
-                                type="text"
-                                value={emergencyName}
-                                onChange={(e) =>
-                                  setEmergencyName(e.target.value)
-                                }
-                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
-                                placeholder="Alternate contact name"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                                Relationship{' '}
-                                <span className="text-red-500">*</span>
-                              </label>
-                              <input
-                                type="text"
-                                value={relationship}
-                                onChange={(e) =>
-                                  setRelationship(e.target.value)
-                                }
-                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
-                                placeholder="e.g. Aunt, Grandparent"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block">
-                                Emergency Phone{' '}
-                                <span className="text-red-500">*</span>
-                              </label>
-                              <input
-                                type="text"
-                                maxLength={11}
-                                value={emergencyPhone}
-                                onChange={(e) =>
-                                  setEmergencyPhone(
-                                    e.target.value.replace(/\D/g, '')
-                                  )
-                                }
-                                className="w-full p-2.5 rounded-xl text-xs outline-none border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white"
-                                placeholder="0918XXXXXXX"
-                              />
-                            </div>
+                            I certify that I am the lawful parent/guardian and
+                            voluntarily grant permission for this minor to
+                            enroll, accepting full responsibility under the{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAgreementDocument('terms');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              Terms &amp; Conditions
+                            </button>{' '}
+                            and{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAgreementDocument('privacy');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              Privacy Policy
+                            </button>
+                            . *
+                          </>
+                        ) : (
+                          <>
+                            I certify that all information provided is accurate
+                            and that the member agrees to abide by the{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAgreementDocument('terms');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              Terms &amp; Conditions
+                            </button>{' '}
+                            and{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAgreementDocument('privacy');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              Privacy Policy
+                            </button>
+                            . *
                           </>
                         )}
-
-                        {/* Minor Signatures */}
-                        <div className="md:col-span-2 pt-3 border-t border-slate-200 dark:border-white/10 space-y-3">
-                          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200">
-                            <FileSignature className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider">
-                                Required Minor Consent
-                              </p>
-                              <p className="text-[10px] leading-relaxed mt-0.5">
-                                Both applicant and parent/guardian must sign
-                                before registration can proceed.
-                              </p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <SignaturePad
-                              label="Applicant Signature *"
-                              value={applicantSig}
-                              onChange={(sig) => {
-                                setApplicantSig(sig);
-                                if (errors.applicantSig)
-                                  setErrors((prev) => ({
-                                    ...prev,
-                                    applicantSig: '',
-                                  }));
-                              }}
-                              error={errors.applicantSig}
-                            />
-                            <SignaturePad
-                              label="Parent / Guardian Signature *"
-                              value={parentSig}
-                              onChange={(sig) => {
-                                setParentSig(sig);
-                                if (errors.parentSig)
-                                  setErrors((prev) => ({
-                                    ...prev,
-                                    parentSig: '',
-                                  }));
-                              }}
-                              error={errors.parentSig}
-                            />
-                          </div>
-                        </div>
-                      </>
+                      </span>
+                    </label>
+                    {errors.waiverAgreed && (
+                      <span className="text-[9px] text-rose-500 font-bold block mt-1">
+                        {errors.waiverAgreed}
+                      </span>
                     )}
-
-                    {/* Waiver & Guardian Responsibility Checkbox */}
-                    <div className="md:col-span-2 pt-2 border-t border-slate-200 dark:border-white/10">
-                      <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={waiverAgreed}
-                          onChange={(e) => {
-                            setWaiverAgreed(e.target.checked);
-                            if (errors.waiverAgreed)
-                              setErrors((prev) => ({
-                                ...prev,
-                                waiverAgreed: '',
-                              }));
-                          }}
-                          className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0"
-                        />
-                        <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
-                          {isMinor ? (
-                            <>
-                              I certify that I am the lawful parent/legal
-                              guardian, all information is true and correct, and
-                              I voluntarily grant permission for this minor to
-                              enroll and use the facility, accepting full
-                              responsibility for their safety, compliance, and
-                              conduct under the{' '}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setAgreementDocument('terms');
-                                }}
-                                className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer"
-                              >
-                                Terms &amp; Conditions
-                              </button>{' '}
-                              and{' '}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setAgreementDocument('privacy');
-                                }}
-                                className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer"
-                              >
-                                Privacy Policy
-                              </button>
-                              . *
-                            </>
-                          ) : (
-                            <>
-                              I certify that all information provided is
-                              accurate and that the member agrees to abide by
-                              the{' '}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setAgreementDocument('terms');
-                                }}
-                                className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer"
-                              >
-                                Terms &amp; Conditions
-                              </button>{' '}
-                              and{' '}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setAgreementDocument('privacy');
-                                }}
-                                className="text-blue-700 dark:text-red-400 underline font-bold cursor-pointer"
-                              >
-                                Privacy Policy
-                              </button>
-                              . *
-                            </>
-                          )}
-                        </span>
-                      </label>
-                      {errors.waiverAgreed && (
-                        <span className="text-[9px] text-red-500 font-bold block mt-1">
-                          {errors.waiverAgreed}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          <AgreementDocumentViewer
-            isOpen={agreementDocument !== null}
-            onClose={() => setAgreementDocument(null)}
-            initialDocument={agreementDocument || 'terms'}
-          />
-
-          {/* STEP 2: CHECKOUT INVOICE & MEMBERSHIP PLAN SELECTION */}
+          {/* STEP 2: CHECKOUT INVOICE & PLAN SELECTION */}
           {step === 2 && (
-            <div className="p-4 sm:p-5 bg-slate-100/90 dark:bg-zinc-900/80 rounded-2xl border border-slate-200 dark:border-zinc-800 text-left space-y-5 animate-fade-in">
-              <div className="border-b border-slate-200 dark:border-zinc-800 pb-3 space-y-3">
-                <div className="flex justify-between items-center select-none font-bold">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-heading text-xs tracking-wider uppercase text-slate-900 dark:text-white">
-                      Checkout Invoice & Profile Audit
-                    </h4>
-                    {isMinor ? (
-                      <span className="text-[9px] font-mono bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
-                        MINOR ({calculatedAge} YRS)
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
-                        ADULT ({calculatedAge} YRS)
-                      </span>
-                    )}
-                  </div>
+            <div className="p-4 sm:p-5 bg-(--bg-input)/50 rounded-2xl border border-(--border-color) text-left space-y-4 animate-fade-in">
+              {/* Member Summary Header */}
+              <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-(--color-text)/50">
+                    Client Profile
+                  </span>
+                  <h4 className="font-black text-sm uppercase text-(--color-text) mt-0.5">
+                    {getCombinedFullName()}
+                  </h4>
                 </div>
-
-                <div className="flex justify-between items-start pt-1">
-                  <div>
-                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
-                      Client Name
-                    </span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white block mt-0.5">
-                      {getCombinedFullName()}
-                    </span>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">
-                      Client Contact
-                    </span>
-                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white block mt-0.5">
-                      {phone || 'N/A'}
-                    </span>
-                  </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-mono bg-(--color-primary)/15 text-(--color-primary-light) border border-(--color-primary)/30 px-2.5 py-1 rounded-full font-bold">
+                    {isMinor
+                      ? `MINOR (${calculatedAge} YRS)`
+                      : `ADULT (${calculatedAge} YRS)`}
+                  </span>
+                  <span className="text-xs font-mono font-bold block mt-1 text-(--color-text)/60">
+                    {phone || 'No Phone'}
+                  </span>
                 </div>
               </div>
 
-              {/* Membership Plan Options */}
+              {/* Plan Cards */}
               <div className="space-y-1.5">
-                <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">
+                <span className="text-[10px] font-black uppercase tracking-wider text-(--color-text)/50 block">
                   Select Membership Option
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('Monthly Membership');
-                    }}
-                    className={`p-3.5 rounded-xl border transition-all ${
-                      isPlanLocked
-                        ? 'cursor-not-allowed opacity-80'
-                        : 'cursor-pointer'
-                    } ${
+                    onClick={() =>
+                      !isPlanLocked && setSelectedPlan('Monthly Membership')
+                    }
+                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
                       selectedPlan === 'Monthly Membership'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-md shadow-emerald-500/5'
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
+                        : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-emerald-500/40'
                     }`}
                   >
-                    <span className="block text-xs uppercase font-heading">
+                    <span className="text-xs uppercase font-black block">
                       Monthly Plan
                     </span>
-                    <span className="font-mono text-sm font-black block mt-1">
+                    <span className="text-base font-mono font-black block mt-1">
                       ₱{settings.monthly_plan_price.toLocaleString()}
                     </span>
                   </div>
 
                   <div
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('Yearly Membership');
-                    }}
-                    className={`p-3.5 rounded-xl border transition-all ${
-                      isPlanLocked
-                        ? 'cursor-not-allowed opacity-80'
-                        : 'cursor-pointer'
-                    } ${
+                    onClick={() =>
+                      !isPlanLocked && setSelectedPlan('Yearly Membership')
+                    }
+                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
                       selectedPlan === 'Yearly Membership'
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 font-bold shadow-md shadow-blue-500/5'
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                        ? 'border-(--color-primary) bg-(--color-primary)/10 text-(--color-primary-light) shadow-sm ring-2 ring-[var(--color-primary)]/20'
+                        : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-(--color-primary)/40'
                     }`}
                   >
-                    <span className="block text-xs uppercase font-heading">
+                    <span className="text-xs uppercase font-black block">
                       Yearly Plan
                     </span>
-                    <span className="font-mono text-sm font-black block mt-1">
+                    <span className="text-base font-mono font-black block mt-1">
                       ₱{settings.yearly_plan_price.toLocaleString()}
                     </span>
                   </div>
 
                   <div
-                    onClick={() => {
-                      if (!isPlanLocked) setSelectedPlan('No Subscription');
-                    }}
-                    className={`p-3.5 rounded-xl border transition-all ${
-                      isPlanLocked
-                        ? 'cursor-not-allowed opacity-80'
-                        : 'cursor-pointer'
-                    } ${
+                    onClick={() =>
+                      !isPlanLocked && setSelectedPlan('No Subscription')
+                    }
+                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
                       selectedPlan === 'No Subscription'
-                        ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 font-bold shadow-md shadow-amber-500/5'
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                        ? 'border-amber-500 bg-amber-500/10 text-amber-500 shadow-sm ring-2 ring-amber-500/20'
+                        : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-amber-500/40'
                     }`}
                   >
-                    <span className="block text-xs uppercase font-heading">
-                      No Subscription
+                    <span className="text-xs uppercase font-black block">
+                      Profile Only
                     </span>
-                    <span className="font-mono text-sm font-black block mt-1">
-                      ₱0 (Profile Only)
+                    <span className="text-base font-mono font-black block mt-1">
+                      ₱0
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* PAYMENT METHOD GATEWAY */}
+              {/* Payment Method Gateway */}
               {selectedPlan !== 'No Subscription' && (
-                <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800">
-                  <span className="text-slate-500 dark:text-slate-400 uppercase text-[9px] font-bold tracking-wider block">
-                    Select Payment Gateway
+                <div className="space-y-1.5 pt-2 border-t border-(--border-color)">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-(--color-text)/50 block">
+                    Payment Gateway
                   </span>
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Cash Option */}
-                    <div
+                    <button
+                      type="button"
                       onClick={() => setPaymentMethod('Cash')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+                      className={`py-2.5 rounded-xl font-bold uppercase text-xs flex items-center justify-center gap-2 cursor-pointer border transition-all ${
                         paymentMethod === 'Cash'
-                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs'
-                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                          ? 'bg-(--color-primary) text-white border-(--color-primary) shadow-sm'
+                          : 'bg-(--bg-card) border-(--border-color) text-(--color-text)/70 hover:text-(--color-text)'
                       }`}
                     >
-                      <span className="text-sm">💰</span>
-                      <span className="text-xs font-bold uppercase">Cash</span>
-                    </div>
-
-                    {/* GCash Option */}
-                    <div
+                      <span>💵 Cash</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setPaymentMethod('GCash')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all text-center flex items-center justify-center gap-2 ${
+                      className={`py-2.5 rounded-xl font-bold uppercase text-xs flex items-center justify-center gap-2 cursor-pointer border transition-all ${
                         paymentMethod === 'GCash'
-                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 font-bold shadow-xs'
-                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 text-slate-700 dark:text-slate-400 hover:border-slate-300'
+                          ? 'bg-(--color-primary) text-white border-(--color-primary) shadow-sm'
+                          : 'bg-(--bg-card) border-(--border-color) text-(--color-text)/70 hover:text-(--color-text)'
                       }`}
                     >
-                      <span className="text-sm">📱</span>
-                      <span className="text-xs font-bold uppercase">GCash</span>
-                    </div>
+                      <span>📱 GCash</span>
+                    </button>
                   </div>
                 </div>
               )}
 
-              {/* Subscription Terms & Privacy Agreement Checkbox */}
-              {selectedPlan !== 'No Subscription' && (
-                <div className="pt-3 border-t border-slate-200 dark:border-zinc-800">
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={subscriptionAgreement}
-                      onChange={(e) => {
-                        setSubscriptionAgreement(e.target.checked);
-                        if (errors.subscriptionAgreement) {
-                          setErrors((prev) => ({
-                            ...prev,
-                            subscriptionAgreement: '',
-                          }));
-                        }
-                      }}
-                      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer shrink-0"
-                    />
-                    <span className="text-[10px] text-slate-700 dark:text-slate-300 font-medium leading-tight">
-                      I verify that payment has been received and the member
-                      agrees to strictly obey and follow all gym rules, facility
-                      regulations, and policies stated in the{' '}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setAgreementDocument('terms');
-                        }}
-                        className="text-blue-700 dark:text-blue-400 underline font-bold cursor-pointer"
-                      >
-                        Terms &amp; Conditions
-                      </button>{' '}
-                      and{' '}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setAgreementDocument('privacy');
-                        }}
-                        className="text-blue-700 dark:text-blue-400 underline font-bold cursor-pointer"
-                      >
-                        Privacy Policy
-                      </button>
-                      . *
-                    </span>
-                  </label>
-                  {errors.subscriptionAgreement && (
-                    <span className="text-[9px] text-red-500 font-bold block mt-1">
-                      {errors.subscriptionAgreement}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* GCash Reference */}
+              {/* GCash Reference Input */}
               {paymentMethod === 'GCash' &&
                 selectedPlan !== 'No Subscription' && (
-                  <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-zinc-800 text-xs font-semibold animate-fade-in">
-                    <label
-                      className={`uppercase text-[9px] font-bold ${isGcashValid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
-                    >
+                  <div className="space-y-1 pt-1">
+                    <label className="text-[10px] uppercase font-bold text-(--color-text)/80 block">
                       {isGcashValid
-                        ? '✓ GCash Reference Code Validated'
-                        : 'GCash Transaction Reference No. *'}
+                        ? '✓ GCash Reference Validated'
+                        : 'GCash Reference Number *'}
                     </label>
                     <input
                       type="text"
@@ -3191,65 +3048,130 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         setGcashReference(e.target.value.replace(/\D/g, ''))
                       }
                       placeholder="Enter 10 to 13-digit Reference Code"
-                      className={`w-full p-2.5 border rounded-xl outline-none font-mono text-xs ${
-                        isGcashValid
-                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300'
-                          : 'border-slate-300 dark:border-rose-500/50 bg-white dark:bg-zinc-950 text-slate-900 dark:text-white'
-                      }`}
+                      className="w-full px-3 py-2 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-xl font-mono text-xs font-bold outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                     />
                   </div>
                 )}
 
-              {/* Printed ID Option */}
-              <div className="pt-3 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between select-none font-semibold">
+              {/* Cash Amount Tendered Input */}
+              {paymentMethod === 'Cash' && totalPrice > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] uppercase font-bold text-(--color-text)/80 block">
+                      Amount Tendered (Cash Received) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCashTendered(String(totalPrice))}
+                      className="text-[9px] font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400 cursor-pointer transition-colors"
+                    >
+                      Exact (₱{totalPrice.toLocaleString()})
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-(--color-text)/40 pointer-events-none">
+                      ₱
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={cashTendered}
+                      onChange={(e) => setCashTendered(e.target.value)}
+                      placeholder={totalPrice.toLocaleString()}
+                      className="w-full pl-7 pr-3.5 py-2 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-xl font-mono text-xs font-bold outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
+                    />
+                  </div>
+
+                  {/* Change or Shortfall Notice */}
+                  {cashTendered !== '' && (
+                    <div className="flex justify-between items-center text-[10px] font-mono font-bold pt-0.5 px-0.5">
+                      {numericCashTendered >= totalPrice ? (
+                        <span className="text-emerald-500">
+                          Change: ₱
+                          {cashChange.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-rose-500">
+                          Short by: ₱
+                          {(totalPrice - numericCashTendered).toLocaleString(
+                            undefined,
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Membership Card Option */}
+              <div className="pt-2 border-t border-(--border-color) flex items-center justify-between">
                 <div>
-                  <span className="font-bold text-slate-900 dark:text-slate-200 block">
-                    Add Membership Card for Entry (3 Years Expiry)
+                  <span className="font-bold text-(--color-text) block text-xs">
+                    Issue Physical Entry Card (+₱{cardFee})
                   </span>
-                  <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">
-                    A membership card for check-in.
+                  <span className="text-[10px] text-(--color-text)/50">
+                    Printed RFID / QR membership card
                   </span>
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
                     checked={addIdCard}
                     onChange={(e) => setAddIdCard(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-300 dark:border-zinc-700 text-blue-600 accent-blue-600 cursor-pointer"
+                    className="sr-only"
                   />
-                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                    Add Card (+₱{cardFee})
-                  </span>
+                  <div
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+                      addIdCard
+                        ? 'bg-(--color-primary)'
+                        : 'bg-(--bg-card) border border-(--border-color)'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                        addIdCard ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
                 </label>
               </div>
 
-              {/* Fee Breakdown (Only shown when Total Price > 0) */}
+              {/* Fee Breakdown */}
               {totalPrice > 0 && (
-                <div className="border-t border-dashed border-slate-300 dark:border-zinc-800 pt-3 space-y-1 font-mono text-xs">
-                  {planBasePrice > 0 && (
-                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>Plan Base Price:</span>
-                      <span className="text-slate-900 dark:text-slate-200">
-                        ₱{planBasePrice.toLocaleString()}.00
+                <div className="border-t border-(--border-color) pt-3 space-y-1 font-mono text-xs">
+                  <div className="flex justify-between text-(--color-text)/60">
+                    <span>Base Plan:</span>
+                    <span className="text-(--color-text) font-bold">
+                      ₱{planBasePrice.toLocaleString()}.00
+                    </span>
+                  </div>
+                  {paymentMethod === 'GCash' && (
+                    <div className="flex justify-between text-(--color-text)/60">
+                      <span>GCash Fee:</span>
+                      <span className="text-amber-500 font-bold">
+                        +₱{gcashFee}.00
                       </span>
                     </div>
                   )}
-                  {paymentMethod === 'GCash' &&
-                    selectedPlan !== 'No Subscription' && (
-                      <div className="flex justify-between text-emerald-700 dark:text-emerald-400 font-bold">
-                        <span>GCash Fee:</span>
-                        <span>+₱{gcashFee}.00</span>
-                      </div>
-                    )}
                   {addIdCard && (
-                    <div className="flex justify-between text-blue-700 dark:text-blue-400 font-bold">
-                      <span>Card Printing Fee:</span>
-                      <span>+₱{cardFee}.00</span>
+                    <div className="flex justify-between text-(--color-text)/60">
+                      <span>Card Printing:</span>
+                      <span className="text-(--color-primary-light) font-bold">
+                        +₱{cardFee}.00
+                      </span>
                     </div>
                   )}
-                  <div className="flex justify-between font-bold text-sm text-slate-900 dark:text-white pt-1.5 border-t border-slate-200 dark:border-zinc-800">
-                    <span>Invoice Total:</span>
-                    <span className="text-emerald-600 dark:text-emerald-400 text-base">
+                  <div className="flex justify-between font-bold text-sm pt-2 border-t border-(--border-color)">
+                    <span className="text-(--color-text)">TOTAL PAYABLE:</span>
+                    <span className="text-emerald-500 text-base font-black">
                       ₱{totalPrice.toLocaleString()}.00
                     </span>
                   </div>
@@ -3258,26 +3180,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             </div>
           )}
 
-          {/* STEP 3: ENROLLMENT COMPLETE */}
+          {/* STEP 3: SUCCESS & RECEIPT */}
           {step === 3 && finishedIds && (
-            <div className="py-2 space-y-4 animate-scale-up">
-              <div className="text-center space-y-1">
-                <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-                <h4 className="font-heading text-sm tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-bold">
-                  {selectedPlan === 'No Subscription' && !addIdCard
-                    ? 'Profile Saved Successfully'
-                    : 'Intake Successful'}
+            <div className="py-4 space-y-4 animate-scale-up text-center">
+              <div className="w-12 h-12 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+                <CheckCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-black text-sm uppercase text-(--color-text)">
+                  Enrollment Successful
                 </h4>
-                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-medium leading-none">
-                  {selectedPlan === 'No Subscription' && !addIdCard
-                    ? 'Member profile registered and verified in database without an active subscription.'
-                    : 'The member subscription and payment have been verified and recorded.'}
+                <p className="text-[11px] text-(--color-text)/60 font-mono mt-0.5">
+                  Receipt: {finishedIds.receipt_no} • ID:{' '}
+                  {finishedIds.member_id}
                 </p>
               </div>
 
-              {/* Render Receipt ONLY for paid plans / paid card issuance */}
               {selectedPlan !== 'No Subscription' || addIdCard ? (
                 <div className="w-full flex justify-center pt-2">
                   <OfficialReceipt
@@ -3294,32 +3212,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       paymentMethod: paymentMethod,
                       gcashRefNo: gcashReference,
                       transactionDate: finishedIds.transaction_date,
-                      processedBy: 'WOLF PALOMAR STAFF',
+                      processedBy: 'FRONTDESK STAFF',
                       qrValue: finishedIds.receipt_no,
                     }}
                   />
                 </div>
               ) : (
-                /* Clean Summary Card for Profile-Only */
-                <div className="p-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-center space-y-2 max-w-sm mx-auto shadow-sm">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                      Member Profile Created
-                    </span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white block">
-                      {getCombinedFullName()}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-slate-100 dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700">
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Assigned Member ID
-                    </span>
-                    <span className="text-sm font-mono font-black text-blue-600 dark:text-blue-400 block mt-0.5">
-                      {finishedIds.member_id}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-mono">
-                    No subscription invoice generated for this profile.
+                <div className="p-4 bg-(--bg-card) border border-(--border-color) rounded-2xl max-w-xs mx-auto text-center space-y-1">
+                  <span className="text-xs font-black uppercase text-(--color-text) block">
+                    Profile Registered
+                  </span>
+                  <p className="text-[11px] text-(--color-text)/60 font-mono">
+                    {finishedIds.member_id}
                   </p>
                 </div>
               )}
@@ -3327,24 +3231,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
         </div>
 
-        {/* PINNED FOOTER BAR */}
-        <div className="p-4 sm:px-6 border-t border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-[#12141a] flex justify-between items-center shrink-0 select-none">
+        {/* STICKY FOOTER */}
+        <div className="p-4 sm:px-6 border-t border-(--border-color) bg-(--bg-card) flex justify-between items-center shrink-0">
           {step < 3 ? (
             <>
               <button
                 type="button"
                 disabled={step === 1 || isSubmitting}
                 onClick={handleBack}
-                className="px-4 py-2.5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer disabled:opacity-40 disabled:pointer-events-none transition-colors bg-white dark:bg-transparent flex items-center gap-1.5"
+                className="px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) hover:bg-(--bg-card) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
               >
-                {step === 2 ? (
-                  <>
-                    <ChevronLeft className="w-4 h-4 text-blue-500" />
-                    <span>Edit Information</span>
-                  </>
-                ) : (
-                  'Back'
-                )}
+                Back
               </button>
 
               {step === 2 ? (
@@ -3352,16 +3249,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   type="button"
                   onClick={handleExecuteCheckout}
                   disabled={isConfirmDisabled || isSubmitting}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md shadow-emerald-500/10 transition-all flex items-center gap-2 justify-center"
+                  className="px-6 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-black rounded-xl uppercase tracking-wider text-xs cursor-pointer shadow-lg transition-all flex items-center gap-2 active:scale-95 disabled:opacity-40"
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>
-                        {selectedPlan === 'No Subscription'
-                          ? 'Saving...'
-                          : 'Processing...'}
-                      </span>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Processing...</span>
                     </>
                   ) : (
                     <span>
@@ -3375,12 +3268,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={handleStep1Next}
-                  className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md transition-all"
+                  className="px-6 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-black rounded-xl uppercase tracking-wider text-xs cursor-pointer shadow-lg transition-all flex items-center gap-1.5 active:scale-95"
                 >
-                  Next
+                  <span>Next: Choose Plan</span>
+                  <ChevronLeft className="w-4 h-4 rotate-180" />
                 </button>
               ) : (
-                <div />
+                <button
+                  type="button"
+                  onClick={() => setIntakeMethod('Manual')}
+                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-xs"
+                >
+                  Manual Intake
+                </button>
               )}
             </>
           ) : (
@@ -3390,19 +3290,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <button
                     type="button"
                     onClick={() => receiptRef.current?.handleDownloadJpg()}
-                    className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                    className="px-3.5 py-2 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
-                    <Download className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Download Image</span>
+                    <Download className="w-3.5 h-3.5 text-(--color-primary)" />
+                    <span>Download</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => receiptRef.current?.handlePrint()}
-                    className="px-3.5 py-2 bg-white dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-zinc-700 rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                    className="px-3.5 py-2 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Printer className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Print Receipt</span>
+                    <span>Print</span>
                   </button>
                 </div>
               ) : (
@@ -3415,7 +3315,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   handleModalClose();
                   onComplete?.();
                 }}
-                className="px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white font-bold rounded-xl uppercase tracking-wider text-[9px] font-heading cursor-pointer border-none shadow-md transition-all"
+                className="px-6 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-black rounded-xl uppercase tracking-wider text-xs cursor-pointer shadow-md transition-all"
               >
                 Close
               </button>
@@ -3644,11 +3544,11 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2 text-left">
-          {/* MONTHLY PLAN CARD */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-3xl mx-auto pt-2 text-left">
+          {/* MONTHLY PLAN CARD (UNLIMITED ALL-ACCESS) */}
           <motion.div
-            whileHover={isMonthlyValid ? { scale: 1.01 } : {}}
-            transition={{ duration: 0.2 }}
+            whileHover={isMonthlyValid ? { y: -4, scale: 1.01 } : {}}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
               if (isMonthlyValid) {
                 setModalConfig({
@@ -3658,43 +3558,79 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                 });
               }
             }}
-            className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+            className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
               isMonthlyValid
-                ? 'border-(--border-color) hover:border-emerald-500/40 cursor-pointer'
+                ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
                 : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                  Intake Choice 2 • Standard Plan
-                </span>
-                <Award
-                  className={`w-5 h-5 ${isMonthlyValid ? 'text-emerald-500' : 'text-slate-400'}`}
-                />
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-16 -right-16 w-36 h-36 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/25 transition-all" />
+
+            <div className="space-y-4 relative z-10">
+              {/* Header Badge & Icon */}
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    Unlimited All-Access
+                  </span>
+                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
+                    Monthly Membership
+                  </h4>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm shrink-0">
+                  <Award className="w-5 h-5" />
+                </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">
-                  Monthly Membership
-                </h4>
+              {/* Rate Comparison Box: No Membership vs With Membership */}
+              <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">
+                    Regular Walk-In Rate:
+                  </span>
+                  <span className="font-mono line-through text-slate-400 dark:text-slate-500">
+                    ₱100 / visit
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
+                  <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3 h-3 stroke-[3]" /> Daily Check-In Fee:
+                  </span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 text-sm font-black">
+                    ₱0 / FREE
+                  </span>
+                </div>
               </div>
 
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-                Provides unlimited facility access with standard lobby card
-                scanning. Daily entry fee is calculated as ₱0 per check-in
-                visit.
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                Ideal for frequent gym goers. Enjoy unlimited entrance and ₱0
+                daily door fee for 30 consecutive days.
               </p>
             </div>
 
-            <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-              <span
-                className={`text-2xl font-mono font-black ${isMonthlyValid ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-400 dark:text-zinc-500'}`}
-              >
-                {isMonthlyValid
-                  ? `₱${settings.monthly_plan_price.toLocaleString()}`
-                  : '₱ --'}
-              </span>
+            {/* Price Footer & CTA Button */}
+            <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-4 mt-4 relative z-10">
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                  Recurring Fee
+                </span>
+                <span
+                  className={`text-2xl font-mono font-black tracking-tight ${
+                    isMonthlyValid
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-slate-400 dark:text-zinc-500'
+                  }`}
+                >
+                  {isMonthlyValid
+                    ? `₱${settings.monthly_plan_price.toLocaleString()}`
+                    : '₱ --'}
+                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
+                    / 30 Days
+                  </span>
+                </span>
+              </div>
 
               <button
                 type="button"
@@ -3709,17 +3645,17 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                     });
                   }
                 }}
-                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none transition-all shadow-md shadow-emerald-600/20"
               >
                 {isMonthlyValid ? 'Select Monthly' : 'Unavailable'}
               </button>
             </div>
           </motion.div>
 
-          {/* YEARLY PLAN CARD */}
+          {/* YEARLY PLAN CARD (DISCOUNT PER-VISIT TIER) */}
           <motion.div
-            whileHover={isYearlyValid ? { scale: 1.01 } : {}}
-            transition={{ duration: 0.2 }}
+            whileHover={isYearlyValid ? { y: -4, scale: 1.01 } : {}}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
               if (isYearlyValid) {
                 setModalConfig({
@@ -3729,46 +3665,86 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                 });
               }
             }}
-            className={`p-6 rounded-3xl bg-(--bg-card) border transition-all flex flex-col justify-between h-64 shadow-md relative overflow-hidden ${
+            className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
               isYearlyValid
-                ? 'border-(--border-color) hover:border-blue-500/40 cursor-pointer'
+                ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
                 : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                  Intake Choice 2 • Discount Plan
-                </span>
-                <Award
-                  className={`w-5 h-5 ${isYearlyValid ? 'text-blue-500' : 'text-slate-400'}`}
-                />
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-16 -right-16 w-36 h-36 bg-blue-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/25 transition-all" />
+
+            <div className="space-y-4 relative z-10">
+              {/* Header Badge & Icon */}
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                    <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    365-Day VIP Discount Tier
+                  </span>
+                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
+                    Yearly Membership
+                  </h4>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm shrink-0">
+                  <Award className="w-5 h-5" />
+                </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <h4 className="font-heading text-lg text-slate-900 dark:text-white uppercase leading-none">
-                  Yearly Membership
-                </h4>
+              {/* Rate Comparison Box: No Membership vs With Membership */}
+              <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">
+                    Regular Walk-In Rate:
+                  </span>
+                  <span className="font-mono line-through text-slate-400 dark:text-slate-500">
+                    ₱100 / visit
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
+                  <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                    <Check className="w-3 h-3 stroke-[3]" /> Member Daily Rate:
+                  </span>
+                  <span className="font-mono text-blue-600 dark:text-blue-400 text-sm font-black">
+                    ₱
+                    {isYearlyValid
+                      ? settings.yearly_member_checkin_fee.toLocaleString()
+                      : '--'}{' '}
+                    / visit
+                    <span className="ml-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
+                      50% OFF
+                    </span>
+                  </span>
+                </div>
               </div>
 
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-                Enables discounted facility access key card. Walk-in daily rates
-                are reduced to ₱
-                {isYearlyValid
-                  ? settings.yearly_member_checkin_fee.toLocaleString()
-                  : '--'}{' '}
-                per visit.
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                Pay an annual registration fee once, then slash all daily
+                walk-in check-in costs by half for an entire year.
               </p>
             </div>
 
-            <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-              <span
-                className={`text-2xl font-mono font-black ${isYearlyValid ? 'text-blue-600 dark:text-blue-500' : 'text-slate-400 dark:text-zinc-500'}`}
-              >
-                {isYearlyValid
-                  ? `₱${settings.yearly_plan_price.toLocaleString()}`
-                  : '₱ --'}
-              </span>
+            {/* Price Footer & CTA Button */}
+            <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-4 mt-4 relative z-10">
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                  Annual Pass Fee
+                </span>
+                <span
+                  className={`text-2xl font-mono font-black tracking-tight ${
+                    isYearlyValid
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-slate-400 dark:text-zinc-500'
+                  }`}
+                >
+                  {isYearlyValid
+                    ? `₱${settings.yearly_plan_price.toLocaleString()}`
+                    : '₱ --'}
+                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
+                    / 1 Year
+                  </span>
+                </span>
+              </div>
 
               <button
                 type="button"
@@ -3783,7 +3759,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                     });
                   }
                 }}
-                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] disabled:bg-slate-300 dark:disabled:bg-zinc-800 disabled:text-slate-500 dark:disabled:text-zinc-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[#0c2950] dark:hover:bg-[#9c0202] transition-colors shadow-md"
+                className="py-2.5 px-4 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none transition-all shadow-md"
               >
                 {isYearlyValid ? 'Select Yearly' : 'Unavailable'}
               </button>

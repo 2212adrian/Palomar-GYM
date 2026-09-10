@@ -174,6 +174,17 @@ export const IncidentReports: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = useResponsiveItemsPerPage();
 
+  // Close modal when resizing into desktop/landscape mode
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsDetailModalOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const openCreateModal = useCallback(() => {
     if (isAdmin) {
       toast.info(
@@ -251,7 +262,7 @@ export const IncidentReports: React.FC = () => {
           className="hidden sm:inline-flex px-3.5 py-2.5 bg-slate-100 dark:bg-[#161920] border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl transition-all active:scale-95 cursor-pointer items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold"
         >
           <PhoneCall className="w-4 h-4 text-blue-500" />
-          <span>Emergency Staff Contacts</span>
+          <span>Palomar Contacts</span>
         </button>
 
         {!isAdmin && (
@@ -275,7 +286,9 @@ export const IncidentReports: React.FC = () => {
       );
       if (target) {
         setSelectedReport(target);
-        setIsDetailModalOpen(true);
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+          setIsDetailModalOpen(true);
+        }
         window.history.replaceState({}, document.title);
       }
     }
@@ -624,7 +637,12 @@ export const IncidentReports: React.FC = () => {
       setIsDetailModalOpen(false);
     } else {
       setSelectedReport(report);
-      setIsDetailModalOpen(true);
+      // Only show mobile overlay modal on small / portrait viewports (< 1024px)
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setIsDetailModalOpen(true);
+      } else {
+        setIsDetailModalOpen(false);
+      }
 
       if (isAdmin && report.status === 'Unread' && !report.is_archived) {
         await updateStatus(report.id, 'Read');
@@ -862,19 +880,20 @@ export const IncidentReports: React.FC = () => {
   ) => {
     return (
       <div className="space-y-6 text-xs relative">
-        {!isModalContext && (
-          <div
-            className={`absolute -top-5 -left-5 -right-5 h-1.5 rounded-t-2xl ${
-              report.priority === 'High'
-                ? 'bg-red-500'
-                : report.priority === 'Medium'
-                  ? 'bg-amber-500'
-                  : 'bg-green-500'
-            }`}
-          />
-        )}
-
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 dark:border-white/5 pb-4">
+        <div
+          className={`absolute -top-5 -left-5 -right-5 h-1.5 rounded-t-2xl ${
+            report.priority === 'High'
+              ? 'bg-red-500'
+              : report.priority === 'Medium'
+                ? 'bg-amber-500'
+                : 'bg-green-500'
+          }`}
+        />
+        <div
+          className={`flex items-start justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-4 ${
+            isModalContext ? 'pr-10' : ''
+          }`}
+        >
           <div className="space-y-1.5 flex-1 min-w-0">
             <span
               className={`px-2 py-0.5 rounded text-[9px] font-heading tracking-widest uppercase ${
@@ -929,7 +948,11 @@ export const IncidentReports: React.FC = () => {
               }`}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${report.status === 'Unread' && !report.is_archived ? 'bg-red-500' : 'bg-green-500'}`}
+                className={`w-1.5 h-1.5 rounded-full ${
+                  report.status === 'Unread' && !report.is_archived
+                    ? 'bg-red-500'
+                    : 'bg-green-500'
+                }`}
               />
               {report.is_archived
                 ? 'Archived'
@@ -940,9 +963,11 @@ export const IncidentReports: React.FC = () => {
 
             {!isModalContext && (
               <button
+                type="button"
                 onClick={() => setSelectedReport(null)}
-                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
                 title="Unselect current report file"
+                aria-label="Unselect current report file"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -981,62 +1006,67 @@ export const IncidentReports: React.FC = () => {
         {/* Actions panel according to Role */}
         <div className="border-t border-slate-100 dark:border-white/5 pt-4">
           {isAdmin ? (
-            <div className="space-y-3.5">
+            <div className="space-y-3">
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Admin Controls
               </h4>
-              <div className="flex flex-wrap gap-2">
+
+              <div className="grid grid-cols-3 gap-2">
                 {report.status === 'Unread' ? (
                   <button
+                    type="button"
                     onClick={() => updateStatus(report.id, 'Read')}
-                    className="flex items-center gap-1.5 px-4 py-2 border border-green-500/20 text-green-600 dark:text-green-400 bg-green-500/5 hover:bg-green-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                   >
-                    <Check className="w-4 h-4" />
-                    Mark Reviewed
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Reviewed</span>
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => updateStatus(report.id, 'Unread')}
-                    className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                   >
-                    <Mail className="w-4 h-4" />
-                    Mark as unread
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Unread</span>
                   </button>
                 )}
 
                 {!report.is_archived ? (
                   <button
+                    type="button"
                     onClick={() => toggleArchive(report.id, true)}
-                    className="flex items-center gap-1.5 px-4 py-2 border border-blue-500/20 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-blue-500/20 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                   >
-                    <Archive className="w-4 h-4" />
-                    Archive Report
+                    <Archive className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Archive</span>
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => toggleArchive(report.id, false)}
-                    className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                   >
-                    <Archive className="w-4 h-4" />
-                    Restore Workspace
+                    <Archive className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Restore</span>
                   </button>
                 )}
 
                 <button
+                  type="button"
                   onClick={() => startPendingDelete(report)}
-                  className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Report
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Delete</span>
                 </button>
               </div>
 
-              <div className="p-3.5 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/10 rounded-xl flex items-start gap-2 text-xs text-blue-600 dark:text-blue-300">
-                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="p-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200/60 dark:border-white/5 rounded-xl flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
+                <Info className="w-3.5 h-3.5 shrink-0 text-blue-500" />
                 <span>
-                  Marking reports as reviewed updates the status for staff.
-                  Archived incidents can always be retrieved via the "Archived"
-                  filter.
+                  Status changes sync with staff. Archived reports can be
+                  retrieved anytime.
                 </span>
               </div>
             </div>
@@ -1046,25 +1076,28 @@ export const IncidentReports: React.FC = () => {
                 Staff Actions
               </h4>
               {report.status === 'Unread' && !report.is_archived ? (
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
+                    type="button"
                     onClick={() => {
                       if (isModalContext) setIsDetailModalOpen(false);
                       openEditModal(report);
                     }}
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
                   >
                     Edit Details
                   </button>
                   <button
+                    type="button"
                     onClick={() => startPendingDelete(report)}
-                    className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
                   >
-                    Delete Report
+                    <Trash2 className="w-4 h-4 shrink-0" />
+                    <span>Delete Report</span>
                   </button>
                 </div>
               ) : (
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
                   <span>
                     This incident report has been reviewed or archived by gym
@@ -1451,7 +1484,7 @@ export const IncidentReports: React.FC = () => {
           )}
         </div>
 
-        {/* Right Column: Desktop Inline Detail Panel */}
+        {/* Right Column: Desktop / Landscape Inline Detail Panel */}
         <div
           className={`transition-all duration-300 ease-in-out hidden lg:block overflow-hidden ${
             selectedReport
@@ -1475,17 +1508,20 @@ export const IncidentReports: React.FC = () => {
         onConfirmAll={handleConfirmAll}
       />
 
-      {/* Mobile & Tablet Detail Modal Overlay (Portaled to document.body) */}
+      {/* Mobile & Tablet Detail Modal Overlay (lg:hidden ensures it NEVER opens in landscape/desktop) */}
       {isDetailModalOpen &&
         selectedReport &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 lg:hidden">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/70 backdrop-blur-xs"
-              onClick={() => setSelectedReport(null)}
+              onClick={() => {
+                setSelectedReport(null);
+                setIsDetailModalOpen(false);
+              }}
             />
             <motion.div
               initial={{ opacity: 0, y: 50, scale: 0.95 }}
@@ -1494,13 +1530,17 @@ export const IncidentReports: React.FC = () => {
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
               className="p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/5 rounded-2xl space-y-6 shadow-2xl relative w-full max-w-lg max-h-[90vh] overflow-y-auto z-10"
             >
+              {/* Dedicated Top-Right Close Button */}
               <button
                 type="button"
-                onClick={() => setSelectedReport(null)}
-                className="absolute top-4 right-4 z-50 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg cursor-pointer transition-colors"
+                onClick={() => {
+                  setSelectedReport(null);
+                  setIsDetailModalOpen(false);
+                }}
+                className="absolute top-4 right-4 z-20 p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
                 title="Close report modal"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
 
               {renderDetailPanelContent(selectedReport, true)}
@@ -1529,7 +1569,7 @@ export const IncidentReports: React.FC = () => {
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
                 <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   <PhoneCall className="w-4 h-4 text-blue-500" />
-                  <span>Emergency Escalation Directory</span>
+                  <span>Palomar Contacts for emergency situations</span>
                 </div>
                 <button
                   onClick={() => setShowContactsModal(false)}

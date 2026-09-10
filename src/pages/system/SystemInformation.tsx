@@ -86,7 +86,7 @@ const tableDisplayMapping: Record<
   }
 > = {
   members: {
-    label: 'Members Directory',
+    label: 'Members List',
     purpose:
       'Enrolled member profiles, contact directories, and security metadata',
     status: 'Active',
@@ -560,7 +560,7 @@ export const SystemInformation: React.FC = () => {
       dbTables.find((t) => t.table_name === name)?.record_count || 0;
     return [
       {
-        name: 'Members Directory',
+        name: 'Members List',
         count: getCount('members'),
         label: 'Enrolled profiles',
         icon: <Users className="w-4 h-4 text-indigo-500" />,
@@ -861,7 +861,7 @@ export const SystemInformation: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <Database className="w-4 h-4 text-amber-500" />
               <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
-                CORE DIRECTORY TELEMETRY
+                Count of Records
               </h3>
             </div>
             <span className="text-[9px] font-heading font-black tracking-widest px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-md">

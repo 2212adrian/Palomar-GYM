@@ -25,7 +25,7 @@ export const InventoryAlertsSection: React.FC<InventoryAlertsSectionProps> = ({
               Inventory & Restock Alerts
             </h3>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-              Retail items and supplements below minimum threshold.
+              Low stock items that require immediate attention.
             </p>
           </div>
           <button

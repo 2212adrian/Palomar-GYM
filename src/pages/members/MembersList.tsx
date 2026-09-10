@@ -849,6 +849,8 @@ export const MembersList: React.FC<MembersListProps> = ({
     {
       key: 'subscription',
       header: 'Subscription Plan',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
       sortable: true,
       sortValue: (item) => {
         const sub = getActiveSubscription(item.member_id);
@@ -858,12 +860,12 @@ export const MembersList: React.FC<MembersListProps> = ({
         const subInfo = getSubscriptionDetails(item.member_id);
 
         return (
-          <div className="text-left leading-tight space-y-0.5 py-0.5">
+          <div className="flex flex-col items-center justify-center text-center leading-tight space-y-0.5 py-0.5">
             <span className="font-extrabold text-xs block text-slate-900 dark:text-zinc-100 truncate">
               {subInfo.planName}
             </span>
 
-            <div className="flex flex-wrap items-center gap-1">
+            <div className="flex flex-wrap items-center justify-center gap-1">
               <span
                 className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase border ${subInfo.badgeStyle}`}
               >
@@ -885,6 +887,8 @@ export const MembersList: React.FC<MembersListProps> = ({
     {
       key: 'card_printed',
       header: 'Card Status',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
       sortable: true,
       sortValue: (item) => {
         const cardObj = getActiveCard(item.member_id);
@@ -905,89 +909,75 @@ export const MembersList: React.FC<MembersListProps> = ({
         const cardObj = getActiveCard(item.member_id);
         const isQr = cardObj?.card_type === 'QR';
 
-        // 1. NO CARD (gray inactive)
-        if (
-          !cardObj ||
-          cardObj.card_type === 'None' ||
-          cardObj.payment_status !== 'PAID'
-        ) {
-          return (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
-              <span>NO CARD</span>
-            </span>
-          );
-        }
-
-        // 2. PAID • UNCLAIMED (Yellow)
-        if (
-          cardObj.payment_status === 'PAID' &&
-          cardObj.claim_status === 'UNCLAIMED'
-        ) {
-          return (
-            <div
-              className="flex items-center gap-1.5 flex-wrap"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  isQr ? setQrModalMember(item) : setManualModalMember(item)
-                }
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:opacity-85 cursor-pointer transition-opacity"
-                title="Physical card fee is paid but card is not yet claimed by member. Click to view."
-              >
-                <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
-                <span>PAID • UNCLAIMED</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setClaimModalData({ member: item, card: cardObj });
-                  setClaimNotes('');
-                }}
-                className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1 transition-transform active:scale-95"
-                title="Mark this physical card as claimed by member"
-              >
-                <Check className="w-2.5 h-2.5" />
-                <span>Claim</span>
-              </button>
-            </div>
-          );
-        }
-
-        // 3. PAID • CLAIMED (Green)
-        if (
-          cardObj.payment_status === 'PAID' &&
-          cardObj.claim_status === 'CLAIMED'
-        ) {
-          return (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isQr) {
-                  setQrModalMember(item);
-                } else {
-                  setManualModalMember(item);
-                }
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 cursor-pointer hover:opacity-85 transition-opacity"
-              title="Physical card fee is paid and claimed by member. Click to view or print."
-            >
-              <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-              <span>PAID • CLAIMED</span>
-            </button>
-          );
-        }
-
-        // Fallback: NO CARD (gray inactive)
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
-            <span>NO CARD</span>
-          </span>
+          <div className="flex items-center justify-center">
+            {/* 1. NO CARD (gray inactive) */}
+            {(!cardObj ||
+              cardObj.card_type === 'None' ||
+              cardObj.payment_status !== 'PAID') && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                <span>NO CARD</span>
+              </span>
+            )}
+
+            {/* 2. PAID • UNCLAIMED (Yellow) */}
+            {cardObj &&
+              cardObj.payment_status === 'PAID' &&
+              cardObj.claim_status === 'UNCLAIMED' && (
+                <div
+                  className="flex items-center justify-center gap-1.5 flex-wrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      isQr ? setQrModalMember(item) : setManualModalMember(item)
+                    }
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:opacity-85 cursor-pointer transition-opacity"
+                    title="Physical card fee is paid but card is not yet claimed by member. Click to view."
+                  >
+                    <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                    <span>PAID • UNCLAIMED</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClaimModalData({ member: item, card: cardObj });
+                      setClaimNotes('');
+                    }}
+                    className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1 transition-transform active:scale-95"
+                    title="Mark this physical card as claimed by member"
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    <span>Claim</span>
+                  </button>
+                </div>
+              )}
+
+            {/* 3. PAID • CLAIMED (Green) */}
+            {cardObj &&
+              cardObj.payment_status === 'PAID' &&
+              cardObj.claim_status === 'CLAIMED' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isQr) {
+                      setQrModalMember(item);
+                    } else {
+                      setManualModalMember(item);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 cursor-pointer hover:opacity-85 transition-opacity"
+                  title="Physical card fee is paid and claimed by member. Click to view or print."
+                >
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                  <span>PAID • CLAIMED</span>
+                </button>
+              )}
+          </div>
         );
       },
     },
@@ -997,10 +987,15 @@ export const MembersList: React.FC<MembersListProps> = ({
       cellClassName: 'text-right min-w-[200px]',
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
+        const isMenuOpen = openActionMenuId === item.id;
 
         return (
           <div
-            className="opacity-90 group-hover/row:opacity-100 transition-opacity duration-150 flex items-center justify-end gap-1.5 select-none relative"
+            className={`transition-opacity duration-150 flex items-center justify-end gap-1.5 select-none relative ${
+              isMenuOpen
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             {subInfo.canRenew && (
@@ -1207,11 +1202,11 @@ export const MembersList: React.FC<MembersListProps> = ({
           {/* TOP SWITCH TABS */}
           <div className="flex border-b border-(--border-color) bg-(--bg-card) p-1 rounded-t-3xl select-none">
             {[
-              { id: 'Directory', icon: Users, label: 'Members Directory' },
+              { id: 'Directory', icon: Users, label: 'Members List' },
               {
                 id: 'Queue',
                 icon: CreditCard,
-                label: 'Online Registration Queue',
+                label: 'Online Registration',
               },
             ].map((item) => {
               const Icon = item.icon;

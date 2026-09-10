@@ -29,6 +29,7 @@ import {
   CreditCard,
   Calendar,
   Users,
+  Frown,
 } from 'lucide-react';
 import type {
   DashboardTab,
@@ -55,6 +56,30 @@ interface RevenueAnalyticsTabProps {
   timeRange: TimeRangeFilter;
   onTimeRangeChange: (range: TimeRangeFilter) => void;
 }
+
+/**
+ * Empty state placeholder displaying a big frowning face
+ * when no statistics or graph datapoints are available.
+ */
+const EmptyChartPlaceholder: React.FC<{
+  title: string;
+  description: string;
+  className?: string;
+}> = ({ title, description, className = 'h-[260px] sm:h-[300px]' }) => (
+  <div
+    className={`w-full flex flex-col items-center justify-center text-center p-6 sm:p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-[#1e232d]/30 select-none ${className}`}
+  >
+    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3.5 text-slate-400 dark:text-slate-500 shadow-inner">
+      <Frown className="w-9 h-9 sm:w-11 sm:h-11 stroke-[1.5]" />
+    </div>
+    <h4 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">
+      {title}
+    </h4>
+    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1 leading-relaxed">
+      {description}
+    </p>
+  </div>
+);
 
 export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   metrics,
@@ -91,13 +116,9 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   ];
 
   const pieProductData = useMemo(() => {
-    const soldOnly = topProducts.filter((p) => p.total_sold > 0);
+    const soldOnly = topProducts.filter((p) => (p.total_sold || 0) > 0);
     if (soldOnly.length === 0) {
-      return topProducts.slice(0, 5).map((p) => ({
-        name: p.product_name,
-        value: p.total_sold || 1,
-        revenue: p.total_revenue || 0,
-      }));
+      return [];
     }
     return soldOnly.slice(0, 6).map((p) => ({
       name: p.product_name,
@@ -132,6 +153,42 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
     }
   }, [timeRange]);
 
+  // ─── Data Availability Checks ───
+  const hasCombinedData = useMemo(() => {
+    return (
+      revenueTimeline.length > 0 &&
+      revenueTimeline.some(
+        (pt) => (pt.salesRevenue || 0) > 0 || (pt.logbookRevenue || 0) > 0
+      )
+    );
+  }, [revenueTimeline]);
+
+  const hasSalesData = useMemo(() => {
+    return (
+      topProducts.length > 0 &&
+      topProducts.some(
+        (p) => (p.total_sold || 0) > 0 || (p.total_revenue || 0) > 0
+      )
+    );
+  }, [topProducts]);
+
+  const hasTrafficData = useMemo(() => {
+    return (
+      attendanceHourly.length > 0 &&
+      attendanceHourly.some((h) => (h.members || 0) > 0 || (h.walkIns || 0) > 0)
+    );
+  }, [attendanceHourly]);
+
+  const hasSubscriptionData = useMemo(() => {
+    const totalSubs = subscriptionBreakdown?.totalSubscribers || 0;
+    const timelineHasData =
+      subscriptionBreakdown?.timeline &&
+      subscriptionBreakdown.timeline.some(
+        (t) => (t.monthly || 0) > 0 || (t.yearly || 0) > 0
+      );
+    return totalSubs > 0 || Boolean(timelineHasData);
+  }, [subscriptionBreakdown]);
+
   const revenueGrowthPercent =
     metrics.lastMonthTotalRevenue > 0
       ? ((metrics.monthTotalRevenue - metrics.lastMonthTotalRevenue) /
@@ -148,7 +205,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
     <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs overflow-hidden transition-all">
       {/* ─── ADAPTIVE BROWSER-TABBED HEADER BAR ─── */}
       <div className="border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/90 dark:bg-[#0c0e12]/60 px-3 sm:px-5 pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        {/* TAB BUTTONS (Smooth horizontal touch scrolling with no scrollbar) */}
+        {/* TAB BUTTONS */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 md:pb-0 -mx-1 px-1">
           {/* TAB 1: COMBINED */}
           <button
@@ -225,7 +282,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
           </button>
         </div>
 
-        {/* TIME RANGE FILTER (Segmented Pill Controller) */}
+        {/* TIME RANGE FILTER */}
         <div className="flex items-center bg-slate-200/60 dark:bg-[#1e232d] p-1 rounded-xl shrink-0 self-stretch sm:self-auto mb-2 md:mb-2.5">
           {(['today', 'week', 'month', 'year'] as TimeRangeFilter[]).map(
             (range) => (
@@ -257,7 +314,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               {/* Total Combined */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {rangeLabel} Total Combined
+                  {rangeLabel} - Total Combined
                 </span>
                 <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-heading mt-1">
                   {formatPHP(rangeTotalRevenue)}
@@ -283,26 +340,26 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               {/* Product POS Sales */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {rangeLabel} POS Product Sales
+                  {rangeLabel} - SALES
                 </span>
                 <div className="text-2xl sm:text-3xl font-black text-[#123c73] dark:text-blue-400 font-heading mt-1">
                   {formatPHP(rangeSalesRevenue)}
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2.5">
-                  Inventory items, refreshments & gym gear
+                  Product that has been sold
                 </p>
               </div>
 
               {/* Passes & Subscriptions */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {rangeLabel} Passes & Memberships
+                  {rangeLabel} - Logbook
                 </span>
                 <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-heading mt-1">
                   {formatPHP(rangeLogbookRevenue)}
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2.5">
-                  Walk-in guest passes & member recurring plans
+                  Walk-in Guest, Memberships, and Passes
                 </p>
               </div>
             </div>
@@ -315,132 +372,142 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Revenue Velocity Telemetry • {rangeLabel}
                   </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                    Dual-stream tracking of POS merchandise vs access
-                    admissions.
+                    Dual-stream tracking of product sales vs logbook revenue
+                    over time.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3 text-xs font-bold">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-3 rounded-xs bg-[#123c73] dark:bg-blue-400" />
-                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">
-                      Product Sales
-                    </span>
+                {hasCombinedData && (
+                  <div className="flex items-center gap-3 text-xs font-bold">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-xs bg-[#123c73] dark:bg-blue-400" />
+                      <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                        Product - Sales
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-xs bg-[#10b981]" />
+                      <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                        Member - Logbook
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-3 rounded-xs bg-[#10b981]" />
-                    <span className="text-slate-600 dark:text-slate-300 text-[11px]">
-                      Memberships/Passes
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Chart */}
-              <div className="h-[240px] sm:h-[300px] lg:h-[320px] w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={revenueTimeline}
-                    margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                  >
-                    <defs>
-                      <linearGradient
-                        id="colorSales"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor={THEME_BLUE}
-                          stopOpacity={0.4}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={THEME_BLUE}
-                          stopOpacity={0.0}
-                        />
-                      </linearGradient>
-                      <linearGradient
-                        id="colorLogbook"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor={THEME_GREEN}
-                          stopOpacity={0.4}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={THEME_GREEN}
-                          stopOpacity={0.0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#94a3b8"
-                      strokeOpacity={0.2}
-                    />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 10, fill: '#64748b' }}
-                      axisLine={{ stroke: '#94a3b8', strokeOpacity: 0.2 }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      width={45}
-                      tick={{ fontSize: 10, fill: '#64748b' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(val) =>
-                        `₱${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`
-                      }
-                    />
-                    <Tooltip
-                      formatter={(val: any, name: any) => [
-                        formatPHP(Number(val)),
-                        name === 'salesRevenue'
-                          ? 'Product POS'
-                          : 'Passes & Plans',
-                      ]}
-                      labelFormatter={(label) => `${label}`}
-                      contentStyle={{
-                        backgroundColor: '#161920',
-                        borderColor: '#334155',
-                        borderRadius: '12px',
-                        color: '#f8fafc',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="salesRevenue"
-                      stroke={THEME_BLUE}
-                      strokeWidth={2.5}
-                      fillOpacity={1}
-                      fill="url(#colorSales)"
-                      name="salesRevenue"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="logbookRevenue"
-                      stroke={THEME_GREEN}
-                      strokeWidth={2.5}
-                      fillOpacity={1}
-                      fill="url(#colorLogbook)"
-                      name="logbookRevenue"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              {/* Chart OR Empty Placeholder */}
+              {!hasCombinedData ? (
+                <EmptyChartPlaceholder
+                  title="No Revenue Activity Recorded"
+                  description={`There are no sales transactions or membership entries logged for ${rangeLabel.toLowerCase()}. Check back once activity is recorded.`}
+                  className="h-[240px] sm:h-[300px] lg:h-[320px]"
+                />
+              ) : (
+                <div className="h-[240px] sm:h-[300px] lg:h-[320px] w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={revenueTimeline}
+                      margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id="colorSales"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor={THEME_BLUE}
+                            stopOpacity={0.4}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor={THEME_BLUE}
+                            stopOpacity={0.0}
+                          />
+                        </linearGradient>
+                        <linearGradient
+                          id="colorLogbook"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor={THEME_GREEN}
+                            stopOpacity={0.4}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor={THEME_GREEN}
+                            stopOpacity={0.0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#94a3b8"
+                        strokeOpacity={0.2}
+                      />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        axisLine={{ stroke: '#94a3b8', strokeOpacity: 0.2 }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        width={45}
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(val) =>
+                          `₱${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`
+                        }
+                      />
+                      <Tooltip
+                        formatter={(val: any, name: any) => [
+                          formatPHP(Number(val)),
+                          name === 'salesRevenue'
+                            ? 'Product POS'
+                            : 'Passes & Plans',
+                        ]}
+                        labelFormatter={(label) => `${label}`}
+                        contentStyle={{
+                          backgroundColor: '#161920',
+                          borderColor: '#334155',
+                          borderRadius: '12px',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="salesRevenue"
+                        stroke={THEME_BLUE}
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#colorSales)"
+                        name="salesRevenue"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="logbookRevenue"
+                        stroke={THEME_GREEN}
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#colorLogbook)"
+                        name="logbookRevenue"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -453,7 +520,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase font-heading">
-                  Top Performing Merchandise ({rangeLabel})
+                  Most Sold Products ({rangeLabel})
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                   Ranking retail items by total quantity sold, revenue share,
@@ -462,206 +529,220 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               </div>
 
               {/* Chart Format Toggle: Pie Chart vs Bar Chart */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setSalesChartView('pie')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    salesChartView === 'pie'
-                      ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <PieChartIcon className="w-3.5 h-3.5" />
-                  <span>Pie Chart</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSalesChartView('bar')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    salesChartView === 'bar'
-                      ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <BarChart2 className="w-3.5 h-3.5" />
-                  <span>Ranking Bar</span>
-                </button>
-              </div>
+              {hasSalesData && (
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSalesChartView('pie')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      salesChartView === 'pie'
+                        ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <PieChartIcon className="w-3.5 h-3.5" />
+                    <span>Pie Chart</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalesChartView('bar')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      salesChartView === 'bar'
+                        ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <BarChart2 className="w-3.5 h-3.5" />
+                    <span>Ranking Bar</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Product Visual Chart (Pie or Bar) */}
-              <div className="lg:col-span-2 space-y-3">
-                {salesChartView === 'pie' ? (
-                  <div className="h-[280px] sm:h-[320px] w-full flex items-center justify-center p-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={pieProductData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={95}
-                          paddingAngle={4}
-                          dataKey="value"
-                          nameKey="name"
+            {!hasSalesData ? (
+              <EmptyChartPlaceholder
+                title="No Product Sales Yet"
+                description={`No products have been sold or logged for ${rangeLabel.toLowerCase()}. When POS sales occur, ranking breakdowns will appear here.`}
+                className="h-[300px] sm:h-[340px]"
+              />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Product Visual Chart (Pie or Bar) */}
+                <div className="lg:col-span-2 space-y-3">
+                  {salesChartView === 'pie' ? (
+                    <div className="h-[280px] sm:h-[320px] w-full flex items-center justify-center p-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pieProductData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={95}
+                            paddingAngle={4}
+                            dataKey="value"
+                            nameKey="name"
+                          >
+                            {pieProductData.map((_, index) => (
+                              <Cell
+                                key={`pie-cell-${index}`}
+                                fill={PIE_COLORS[index % PIE_COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(val: any, name: any, item: any) => [
+                              `${val} units sold (${formatPHP(item.payload.revenue || 0)})`,
+                              name,
+                            ]}
+                            contentStyle={{
+                              backgroundColor: '#161920',
+                              borderColor: '#334155',
+                              borderRadius: '12px',
+                              color: '#f8fafc',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+                            }}
+                          />
+                          <Legend
+                            verticalAlign="bottom"
+                            height={40}
+                            iconType="circle"
+                            formatter={(val) => (
+                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                {val.length > 18
+                                  ? val.slice(0, 18) + '...'
+                                  : val}
+                              </span>
+                            )}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="h-[280px] sm:h-[320px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={topProducts.slice(0, 5)}
+                          layout="vertical"
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                         >
-                          {pieProductData.map((_, index) => (
-                            <Cell
-                              key={`pie-cell-${index}`}
-                              fill={PIE_COLORS[index % PIE_COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(val: any, name: any, item: any) => [
-                            `${val} units sold (${formatPHP(item.payload.revenue || 0)})`,
-                            name,
-                          ]}
-                          contentStyle={{
-                            backgroundColor: '#161920',
-                            borderColor: '#334155',
-                            borderRadius: '12px',
-                            color: '#f8fafc',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
-                          }}
-                        />
-                        <Legend
-                          verticalAlign="bottom"
-                          height={40}
-                          iconType="circle"
-                          formatter={(val) => (
-                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                              {val.length > 18 ? val.slice(0, 18) + '...' : val}
-                            </span>
-                          )}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-[280px] sm:h-[320px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={topProducts.slice(0, 5)}
-                        layout="vertical"
-                        margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          horizontal={false}
-                          stroke="#94a3b8"
-                          strokeOpacity={0.2}
-                        />
-                        <XAxis
-                          type="number"
-                          tick={{ fontSize: 10, fill: '#64748b' }}
-                          allowDecimals={false}
-                        />
-                        <YAxis
-                          dataKey="product_name"
-                          type="category"
-                          width={100}
-                          tick={{ fontSize: 11, fill: '#64748b' }}
-                          tickFormatter={(name) =>
-                            name.length > 14 ? name.slice(0, 14) + '...' : name
-                          }
-                        />
-                        <Tooltip
-                          formatter={(val: any) => [
-                            `${val} units sold`,
-                            'Volume Sold',
-                          ]}
-                          contentStyle={{
-                            backgroundColor: '#161920',
-                            borderColor: '#334155',
-                            borderRadius: '12px',
-                            color: '#f8fafc',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                          }}
-                        />
-                        <Bar
-                          dataKey="total_sold"
-                          fill="#123c73"
-                          radius={[0, 6, 6, 0]}
-                        >
-                          {topProducts.slice(0, 5).map((_, index) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={
-                                index === 0
-                                  ? '#123c73'
-                                  : index === 1
-                                    ? '#2563eb'
-                                    : '#3b82f6'
-                              }
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            horizontal={false}
+                            stroke="#94a3b8"
+                            strokeOpacity={0.2}
+                          />
+                          <XAxis
+                            type="number"
+                            tick={{ fontSize: 10, fill: '#64748b' }}
+                            allowDecimals={false}
+                          />
+                          <YAxis
+                            dataKey="product_name"
+                            type="category"
+                            width={100}
+                            tick={{ fontSize: 11, fill: '#64748b' }}
+                            tickFormatter={(name) =>
+                              name.length > 14
+                                ? name.slice(0, 14) + '...'
+                                : name
+                            }
+                          />
+                          <Tooltip
+                            formatter={(val: any) => [
+                              `${val} units sold`,
+                              'Volume Sold',
+                            ]}
+                            contentStyle={{
+                              backgroundColor: '#161920',
+                              borderColor: '#334155',
+                              borderRadius: '12px',
+                              color: '#f8fafc',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                            }}
+                          />
+                          <Bar
+                            dataKey="total_sold"
+                            fill="#123c73"
+                            radius={[0, 6, 6, 0]}
+                          >
+                            {topProducts.slice(0, 5).map((_, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={
+                                  index === 0
+                                    ? '#123c73'
+                                    : index === 1
+                                      ? '#2563eb'
+                                      : '#3b82f6'
+                                }
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
 
-              {/* Top Seller Ranked List */}
-              <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 bg-slate-50/50 dark:bg-[#1e232d]/40 flex flex-col justify-between">
-                <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 mb-3 font-heading flex items-center gap-1.5">
-                    <TrendingUp className="w-4 h-4 text-[#123c73] dark:text-blue-400" />
-                    Top Seller Leaderboard
-                  </h4>
-                  <div className="space-y-3">
-                    {topProducts.slice(0, 4).map((p, idx) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60 dark:border-slate-800 last:border-0 last:pb-0"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                {/* Top Seller Ranked List */}
+                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 bg-slate-50/50 dark:bg-[#1e232d]/40 flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 mb-3 font-heading flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-[#123c73] dark:text-blue-400" />
+                      Top Seller Leaderboard
+                    </h4>
+                    <div className="space-y-3">
+                      {topProducts.slice(0, 4).map((p, idx) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60 dark:border-slate-800 last:border-0 last:pb-0"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                idx === 0
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'
+                                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              #{idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p
+                                className="text-xs font-bold text-slate-900 dark:text-white truncate"
+                                title={p.product_name}
+                              >
+                                {p.product_name}
+                              </p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                {p.total_sold} units •{' '}
+                                {formatPHP(p.total_revenue)}
+                              </p>
+                            </div>
+                          </div>
+
                           <span
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
-                              idx === 0
-                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'
-                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                              p.status === 'Low Stock'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : p.status === 'Out of Stock'
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                             }`}
                           >
-                            #{idx + 1}
+                            {p.status}
                           </span>
-                          <div className="min-w-0">
-                            <p
-                              className="text-xs font-bold text-slate-900 dark:text-white truncate"
-                              title={p.product_name}
-                            >
-                              {p.product_name}
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                              {p.total_sold} units •{' '}
-                              {formatPHP(p.total_revenue)}
-                            </p>
-                          </div>
                         </div>
-
-                        <span
-                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
-                            p.status === 'Low Stock'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              : p.status === 'Out of Stock'
-                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                          }`}
-                        >
-                          {p.status}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -724,69 +805,79 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     Hourly check-in volume aggregated by member type.
                   </div>
-                  <div className="bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 px-3 py-1 rounded-xl text-xs font-bold text-[#123c73] dark:text-blue-300 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Peak Hour: {metrics.peakHourLabel}</span>
-                  </div>
+                  {hasTrafficData && (
+                    <div className="bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 px-3 py-1 rounded-xl text-xs font-bold text-[#123c73] dark:text-blue-300 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Peak Hour: {metrics.peakHourLabel}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="h-[260px] sm:h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={attendanceHourly}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#94a3b8"
-                        strokeOpacity={0.2}
-                      />
-                      <XAxis
-                        dataKey="hour"
-                        tick={{ fontSize: 10, fill: '#64748b' }}
-                        tickFormatter={(val) => val.replace(':00', '')}
-                      />
-                      <YAxis
-                        width={40}
-                        tick={{ fontSize: 10, fill: '#64748b' }}
-                        allowDecimals={false}
-                        domain={[0, 'auto']}
-                      />
-                      <Tooltip
-                        formatter={(val: any, name: any) => [
-                          `${val} visits`,
-                          name === 'members'
-                            ? 'Registered Members'
-                            : 'Walk-In Guests',
-                        ]}
-                        labelFormatter={(label) => `${label}`}
-                        contentStyle={{
-                          backgroundColor: '#161920',
-                          borderColor: '#334155',
-                          borderRadius: '12px',
-                          color: '#f8fafc',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      <Bar
-                        dataKey="members"
-                        stackId="a"
-                        fill="#123c73"
-                        radius={[0, 0, 0, 0]}
-                        name="members"
-                      />
-                      <Bar
-                        dataKey="walkIns"
-                        stackId="a"
-                        fill="#10b981"
-                        radius={[4, 4, 0, 0]}
-                        name="walkIns"
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                {!hasTrafficData ? (
+                  <EmptyChartPlaceholder
+                    title="No Foot Traffic Recorded"
+                    description={`No member or guest check-ins recorded for ${rangeLabel.toLowerCase()}. Turnstile or counter logs will plot peak hours here.`}
+                    className="h-[260px] sm:h-[300px]"
+                  />
+                ) : (
+                  <div className="h-[260px] sm:h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={attendanceHourly}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#94a3b8"
+                          strokeOpacity={0.2}
+                        />
+                        <XAxis
+                          dataKey="hour"
+                          tick={{ fontSize: 10, fill: '#64748b' }}
+                          tickFormatter={(val) => val.replace(':00', '')}
+                        />
+                        <YAxis
+                          width={40}
+                          tick={{ fontSize: 10, fill: '#64748b' }}
+                          allowDecimals={false}
+                          domain={[0, 'auto']}
+                        />
+                        <Tooltip
+                          formatter={(val: any, name: any) => [
+                            `${val} visits`,
+                            name === 'members'
+                              ? 'Registered Members'
+                              : 'Walk-In Guests',
+                          ]}
+                          labelFormatter={(label) => `${label}`}
+                          contentStyle={{
+                            backgroundColor: '#161920',
+                            borderColor: '#334155',
+                            borderRadius: '12px',
+                            color: '#f8fafc',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                          }}
+                        />
+                        <Bar
+                          dataKey="members"
+                          stackId="a"
+                          fill="#123c73"
+                          radius={[0, 0, 0, 0]}
+                          name="members"
+                        />
+                        <Bar
+                          dataKey="walkIns"
+                          stackId="a"
+                          fill="#10b981"
+                          radius={[4, 4, 0, 0]}
+                          name="walkIns"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             )}
 
@@ -903,36 +994,44 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setSubscriptionChartView('timeline')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        subscriptionChartView === 'timeline'
-                          ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <BarChart2 className="w-3.5 h-3.5" />
-                      <span>Timeline Bar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSubscriptionChartView('distribution')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        subscriptionChartView === 'distribution'
-                          ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <PieChartIcon className="w-3.5 h-3.5" />
-                      <span>Donut Ratio</span>
-                    </button>
-                  </div>
+                  {hasSubscriptionData && (
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionChartView('timeline')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          subscriptionChartView === 'timeline'
+                            ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <BarChart2 className="w-3.5 h-3.5" />
+                        <span>Timeline Bar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubscriptionChartView('distribution')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          subscriptionChartView === 'distribution'
+                            ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <PieChartIcon className="w-3.5 h-3.5" />
+                        <span>Donut Ratio</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Render Selected Chart Format */}
-                {subscriptionChartView === 'timeline' ? (
+                {/* Render Selected Chart Format OR Empty Placeholder */}
+                {!hasSubscriptionData ? (
+                  <EmptyChartPlaceholder
+                    title="No Subscription Data"
+                    description={`No monthly or yearly membership acquisitions were recorded for ${rangeLabel.toLowerCase()}.`}
+                    className="h-[260px] sm:h-[300px]"
+                  />
+                ) : subscriptionChartView === 'timeline' ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-end gap-4 text-xs font-bold">
                       <div className="flex items-center gap-1.5">
@@ -1122,8 +1221,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   </span>
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Export bookkeeping records in CSV spreadsheets or printable
-                  PDF format.
+                  Generate official sales journals, inventory logs, and
+                  subscription reports for BIR compliance and internal audits.
                 </p>
               </div>
 

@@ -172,12 +172,8 @@ export const Dashboard: React.FC = () => {
                 <Dumbbell className="w-4 h-4" />
               </div>
               <h1 className="text-lg sm:text-2xl font-black tracking-tight uppercase font-heading text-slate-900 dark:text-white truncate">
-                Gym Operations Hub
+                GYM Analytics Dashboard
               </h1>
-              <span className="text-[10px] sm:text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60 flex items-center gap-1.5 shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live Telemetry
-              </span>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-2 flex-wrap font-medium">
@@ -189,7 +185,7 @@ export const Dashboard: React.FC = () => {
                 •
               </span>
               <span className="truncate">
-                Staff:{' '}
+                Logged In Email:{' '}
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
                   {user?.email || 'Active Staff'}
                 </span>

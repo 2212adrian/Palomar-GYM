@@ -1059,6 +1059,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </span>
             </div>
 
+            {/* Stats Carousel Plan Card */}
             <div className="min-w-35 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
               <span className="text-[9px] font-bold text-slate-400 uppercase block">
                 Active Plan
@@ -1068,7 +1069,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   activeContract
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : targetSubForDisplay?.status === 'Voided'
-                      ? 'text-amber-600 dark:text-amber-400'
+                      ? 'text-rose-600 dark:text-rose-400'
                       : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
@@ -1960,7 +1961,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               {isAdmin && (activeContract || queuedContract) && (
                 <div className="pt-2 border-t border-(--border-color) space-y-3 select-none">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-heading font-bold tracking-wider text-rose-500 uppercase">
+                    <span className="text-xs font-heading font-bold tracking-wider text-rose-600 dark:text-rose-400 uppercase">
                       DANGER ZONE
                     </span>
                     <div className="h-px flex-1 bg-rose-500/20" />
@@ -1972,12 +1973,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                     if (!eligibility.eligible) {
                       return (
-                        <div className="p-3.5 bg-zinc-900/80 border border-zinc-800 rounded-2xl text-left space-y-1">
-                          <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs uppercase">
-                            <Lock className="w-4 h-4 text-slate-400" />
+                        <div className="p-3.5 bg-slate-100 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-2xl text-left space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-bold text-xs uppercase">
+                            <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                             <span>Void Subscription Unavailable</span>
                           </div>
-                          <p className="text-xs text-slate-400 leading-relaxed">
+                          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             🔒 {eligibility.reason}
                           </p>
                         </div>
@@ -1985,15 +1986,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     }
 
                     return (
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl gap-3">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 rounded-2xl gap-3">
                         <div className="text-left space-y-0.5">
-                          <span className="font-bold text-xs text-rose-400 block">
+                          <span className="font-bold text-xs text-rose-600 dark:text-rose-400 block">
                             Void{' '}
                             {queuedContract
                               ? 'Queued Renewal'
                               : 'Active Subscription'}
                           </span>
-                          <span className="text-xs text-slate-400 block">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 block">
                             Cancel contract ({subToVoid?.id}) and purge its
                             specific receipt while keeping historical receipts
                             safe.
@@ -2848,9 +2849,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             }}
             className="space-y-4 text-left font-body"
           >
-            <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-xs space-y-1">
+            <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs space-y-1">
               <p className="font-bold flex items-center gap-1.5">
-                <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+                <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>
                   This will cancel contract {targetVoidSub?.id} and purge its
                   receipt ({targetVoidSub?.receipt_number || 'N/A'}). Past

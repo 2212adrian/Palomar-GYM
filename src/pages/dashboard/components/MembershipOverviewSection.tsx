@@ -25,7 +25,7 @@ export const MembershipOverviewSection: React.FC<
             Membership Status Overview
           </h3>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-            Subscription health and renewal alerts requiring staff attention.
+            Subscsription and membership statistics at a glance.
           </p>
         </div>
         <button
