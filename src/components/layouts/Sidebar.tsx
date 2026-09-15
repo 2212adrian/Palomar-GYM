@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Settings,
   Loader2,
+  Wallet,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -48,6 +49,7 @@ interface ChildItem {
   notificationCount?: number;
   notificationColor?: 'red' | 'amber';
   description?: string;
+  moneyStat?: number;
 }
 
 interface MenuItem {
@@ -56,6 +58,7 @@ interface MenuItem {
   roles?: ('admin' | 'staff')[];
   path?: string;
   notificationCount?: number;
+  totalMoney?: number;
   children?: ChildItem[];
 }
 
@@ -164,6 +167,142 @@ export const Sidebar: React.FC<SidebarProps> = ({
     null
   );
 
+  // Real-time Today's Total Money for Register Sale and Logbook
+  const [todaySalesTotal, setTodaySalesTotal] = useState<number>(0);
+  const [todayLogbookTotal, setTodayLogbookTotal] = useState<number>(0);
+
+  useEffect(() => {
+    // 1. Listen to broadcast events dispatched by Sales and Logbook components
+    const handleSalesUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.revenue === 'number') {
+        setTodaySalesTotal(customEvent.detail.revenue);
+      }
+    };
+
+    const handleLogbookUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.revenue === 'number') {
+        setTodayLogbookTotal(customEvent.detail.revenue);
+      }
+    };
+
+    window.addEventListener('sales-kpi-update', handleSalesUpdate);
+    window.addEventListener('logbook-kpi-update', handleLogbookUpdate);
+
+    // 2. Hydrate from session storage cache if present
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const cachedSales = sessionStorage.getItem(`sales_sanitized_${todayStr}`);
+      if (cachedSales) {
+        const parsedSales = JSON.parse(cachedSales);
+        if (Array.isArray(parsedSales)) {
+          const rev = parsedSales.reduce(
+            (acc: number, t: any) => acc + (Number(t.total_amount) || 0),
+            0
+          );
+          setTodaySalesTotal(rev);
+        }
+      }
+      const cachedLogbook = sessionStorage.getItem(
+        `logbook_sanitized_${todayStr}`
+      );
+      if (cachedLogbook) {
+        const parsedLog = JSON.parse(cachedLogbook);
+        if (Array.isArray(parsedLog)) {
+          const rev = parsedLog.reduce(
+            (acc: number, l: any) =>
+              l.paymentStatus === 'Paid'
+                ? acc + (Number(l.amountPaid) || 0)
+                : acc,
+            0
+          );
+          setTodayLogbookTotal(rev);
+        }
+      }
+    } catch {}
+
+    // 3. Query Supabase directly for accurate live numbers
+    const fetchTodayTotals = async () => {
+      try {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const startOfDay = new Date(
+          `${dateStr}T00:00:00.000+08:00`
+        ).toISOString();
+        const endOfDay = new Date(
+          `${dateStr}T23:59:59.999+08:00`
+        ).toISOString();
+
+        const [salesRes, logbookRes] = await Promise.all([
+          supabase
+            .from('sales')
+            .select('total_amount')
+            .is('deleted_at', null)
+            .gte('created_at', startOfDay)
+            .lte('created_at', endOfDay),
+          supabase
+            .from('attendance_logs')
+            .select('amount_paid, payment_status')
+            .is('deleted_at', null)
+            .gte('timestamp', startOfDay)
+            .lte('timestamp', endOfDay),
+        ]);
+
+        if (salesRes.data) {
+          const total = salesRes.data.reduce(
+            (acc: number, r: any) => acc + (Number(r.total_amount) || 0),
+            0
+          );
+          setTodaySalesTotal(total);
+        }
+
+        if (logbookRes.data) {
+          const total = logbookRes.data.reduce((acc: number, r: any) => {
+            if (r.payment_status === 'Paid') {
+              return acc + (Number(r.amount_paid) || 0);
+            }
+            return acc;
+          }, 0);
+          setTodayLogbookTotal(total);
+        }
+      } catch (err) {
+        // silent fallback
+      }
+    };
+
+    fetchTodayTotals();
+
+    // 4. Real-time subscription to sales and attendance_logs
+    const salesChannel = supabase
+      .channel('sidebar-sales-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        () => fetchTodayTotals()
+      )
+      .subscribe();
+
+    const logbookChannel = supabase
+      .channel('sidebar-logbook-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_logs' },
+        () => fetchTodayTotals()
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('sales-kpi-update', handleSalesUpdate);
+      window.removeEventListener('logbook-kpi-update', handleLogbookUpdate);
+      supabase.removeChannel(salesChannel);
+      supabase.removeChannel(logbookChannel);
+    };
+  }, []);
+
   // Logout Inline Confirmation States
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] =
@@ -218,11 +357,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ),
         roles: ['admin', 'staff'],
         notificationCount: isAdmin ? expiringSubsCount : undefined,
+        totalMoney: todayLogbookTotal,
         children: [
           {
             name: 'Logbook',
             path: '/logbook',
             description: 'Instant gate/logbook telemetry',
+            moneyStat: todayLogbookTotal,
           },
           {
             name: 'Member List',
@@ -246,11 +387,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ),
         roles: ['admin', 'staff'],
         notificationCount: isAdmin ? stockAlertsCount : undefined,
+        totalMoney: todaySalesTotal,
         children: [
           {
             name: 'Register Sale',
             path: '/sales',
             description: 'Point of Registry Sales',
+            moneyStat: todaySalesTotal,
           },
           {
             name: 'Product List',
@@ -271,6 +414,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         notificationCount: isAdmin ? incidentUnreadCount : 0,
         path: '/reports',
       },
+      {
+        name: 'CASH MANAGEMENT',
+        icon: (
+          <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+        ),
+        roles: ['admin', 'staff'],
+        path: '/cash-management',
+      },
     ];
   }, [
     location.pathname,
@@ -278,6 +429,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
+    todaySalesTotal,
+    todayLogbookTotal,
   ]);
 
   // Role Filtering
@@ -668,7 +821,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                   {!collapsed && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {!isExpanded && item.totalMoney !== undefined && (
+                        <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
+                          ₱{Number(item.totalMoney).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
                       {!isExpanded &&
                         item.notificationCount !== undefined &&
                         item.notificationCount > 0 && (
@@ -726,6 +884,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </div>
 
                                 <div className="flex items-center gap-1.5 shrink-0">
+                                  {child.moneyStat !== undefined && (
+                                    <span
+                                      className="text-[9.5px] font-mono font-black px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs flex items-center gap-1"
+                                      title="Today's Total Money"
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                      ₱{Number(child.moneyStat).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+
                                   {child.notificationCount !== undefined &&
                                     child.notificationCount > 0 && (
                                       <span
@@ -1052,7 +1220,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="font-bold">{item.name}</span>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {!isMobileExpanded && item.totalMoney !== undefined && (
+                          <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
+                            ₱{Number(item.totalMoney).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        )}
                         {!isMobileExpanded &&
                           item.notificationCount !== undefined &&
                           item.notificationCount > 0 && (
@@ -1109,6 +1282,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   </div>
 
                                   <div className="flex items-center gap-1.5 shrink-0">
+                                    {child.moneyStat !== undefined && (
+                                      <span
+                                        className="text-[9.5px] font-mono font-black px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs flex items-center gap-1"
+                                        title="Today's Total Money"
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        ₱{Number(child.moneyStat).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </span>
+                                    )}
+
                                     {child.notificationCount !== undefined &&
                                       child.notificationCount > 0 && (
                                         <span

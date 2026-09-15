@@ -32,6 +32,9 @@ import { LogbookPage } from '../pages/logbook/LogbookPage';
 // Import Smart Terminal Scanner Page
 import { ScannerPage } from '../pages/scanner/ScannerPage';
 
+// Import Cash Management Page
+import { CashManagementPage } from '../pages/cash/CashManagementPage';
+
 /**
  * Detects if the current environment is an installed Capacitor application
  * or an installed Progressive Web App (PWA) running in standalone mode.
@@ -61,23 +64,19 @@ export const isAppOrPWA = (): boolean => {
 };
 
 /**
- * Dynamic entry resolver for the root `/` path.
- * - Installed App / PWA: Directs internal staff to the Login screen.
- * - Standard Browser: Renders the Public Anonymous Pre-Registration page.
+ * Default entry resolver for the root `/` path.
+ * Public users land on the Pre-Registration portal by default.
  */
 const RootEntry: React.FC = () => {
-  if (isAppOrPWA()) {
-    return <Navigate to="/login" replace />;
-  }
-  return <OnlineRegistrationPage />;
+  return <Navigate to="/register" replace />;
 };
 
 /**
- * Dynamic fallback resolver for wildcard `*` route.
+ * Fallback resolver for wildcard `*` route.
+ * Redirects unknown URLs directly to the registration page.
  */
 const FallbackEntry: React.FC = () => {
-  const target = isAppOrPWA() ? '/login' : '/register';
-  return <Navigate to={target} replace />;
+  return <Navigate to="/register" replace />;
 };
 
 // Shared context for dynamic header buttons
@@ -143,6 +142,12 @@ const ROUTE_HEADERS: Record<
     title: 'Incident Reports',
     description:
       'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.',
+  },
+  '/cash-management': {
+    subtitle: 'Console / Cash Flow',
+    title: 'Live Cash Management',
+    description:
+      'Real-time physical cash drawer control, cash-in/out tracking, digital collections, and daily reconciliation.',
   },
 };
 
@@ -271,6 +276,7 @@ const router = createBrowserRouter([
                   { path: '/members/list', element: <LogbookPage /> },
                   { path: '/members/plans', element: <StaffPlansConsole /> },
                   { path: '/reports', element: <IncidentReports /> },
+                  { path: '/cash-management', element: <CashManagementPage /> },
                   { path: '/settings/:activeTab', element: <Settings /> },
                   { path: '/settings', element: <Settings /> },
                   {

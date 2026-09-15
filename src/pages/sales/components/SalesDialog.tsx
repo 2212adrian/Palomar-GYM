@@ -16,6 +16,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
 interface SalesDialogProps {
@@ -55,6 +56,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ratesConfig, setRatesConfig] = useState<any>(null);
+
+  // Cash Session State
+  const { isSessionOpen } = useCashSessionStore();
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
@@ -400,6 +404,12 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
 
     if (paymentMethod === 'Cash') {
+      if (!isSessionOpen) {
+        toast.error(
+          'Cannot accept Cash: No active cash drawer session is open. Please open a cash session first in Cash Management.'
+        );
+        return;
+      }
       const received = Number(amountReceived);
       if (isNaN(received) || received < totalPayable) {
         toast.error('Insufficient cash received.');

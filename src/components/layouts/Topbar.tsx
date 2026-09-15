@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   PackageX,
   Bell,
+  Wallet,
 } from 'lucide-react';
 import {
   motion,
@@ -35,6 +36,7 @@ import {
   useNotificationStore,
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { NotificationPopover } from './NotificationPopover';
 
 interface TopbarProps {
@@ -81,6 +83,7 @@ const SEGMENT_MAP: Record<string, string> = {
   sales: 'SALES',
   products: 'PRODUCT LIST',
   reports: 'REPORTS',
+  'cash-management': 'CASH MANAGEMENT',
   bir: 'BIR RECORDS',
   settings: 'SETTINGS',
   'personal-account': 'PERSONAL ACCOUNT',
@@ -534,6 +537,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const isPlansView = location.pathname.includes('/plans');
   const salesView = isProductsView ? 'inventory' : 'register';
 
+  // Live Cash Management Session State
+  const { isSessionOpen, currentDrawerCash } = useCashSessionStore();
+
   const handleToggleSalesView = () => {
     if (salesView === 'register') {
       navigate('/sales/products');
@@ -566,6 +572,10 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       case 'reports':
         return (
           <BarChart3 className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />
+        );
+      case 'cash-management':
+        return (
+          <Wallet className="w-4 h-4 text-(--color-primary) shrink-0 mr-1.5" />
         );
       case 'settings':
       case 'system':
@@ -637,38 +647,31 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
   return (
     <header className="h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-2.5 sm:px-4 md:px-6 z-40 select-none">
-      {/* 1. LEFT TITLE & ICON SECTION */}
-      <div
-        className={`flex items-center gap-1.5 sm:gap-2.5 shrink-0 ${
-          showKpiWidget
-            ? 'max-w-[28%] sm:max-w-[32%] md:max-w-[38%]'
-            : 'flex-1 min-w-0 max-w-[calc(100%-110px)] sm:max-w-[calc(100%-160px)]'
-        }`}
-      >
+      {/* 1. LEFT TITLE & TELEMETRY SECTION */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
         {subTab && (
           <button
             type="button"
             onClick={handleGoBackTrigger}
             aria-label="Go Back"
             title="Go Back"
-            className="lg:hidden h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95"
+            className="lg:hidden h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
         )}
 
-        <div className="flex items-center font-heading text-[10px] sm:text-xs lg:text-sm tracking-[0.6px] sm:tracking-[1.2px] uppercase whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+        <div className="flex items-center font-heading text-[10px] sm:text-xs lg:text-sm tracking-[0.6px] sm:tracking-[1.2px] uppercase whitespace-nowrap overflow-hidden text-ellipsis shrink-0">
           {getSectionIcon()}
           <span className="truncate">{renderStyledBreadcrumbs()}</span>
         </div>
-      </div>
 
-      {/* 2. MIDDLE MULTI-METRIC KPI CAPSULE */}
-      {showKpiWidget && (
-        <div
-          ref={kpiContainerRef}
-          className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center z-30 pointer-events-auto"
-        >
+        {/* TELEMETRY CAPSULE (Moved next to title to never collide with Drawer Closed) */}
+        {showKpiWidget && (
+          <div
+            ref={kpiContainerRef}
+            className="flex items-center justify-start z-30 pointer-events-auto shrink-0"
+          >
           <div
             className="relative"
             onMouseEnter={() => {
@@ -804,7 +807,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             {/* FLOATING TELEMETRY DROPDOWN */}
             <AnimatePresence>
               {(isKpiHovered || isKpiMobileOpen) && (
-                <div className="absolute top-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-[calc(100vw-24px)] max-w-sm sm:w-96 sm:max-w-none z-50 pointer-events-auto">
+                <div className="absolute top-[calc(100%+8px)] left-0 w-[calc(100vw-24px)] max-w-sm sm:w-96 sm:max-w-none z-50 pointer-events-auto">
                   <motion.div
                     initial={{ opacity: 0, y: 6, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1000,8 +1003,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           </div>
         </div>
       )}
+      </div>
 
-      {/* 3. RIGHT SECTION: ACTIONS & BELL */}
+      {/* 2. RIGHT SECTION: ACTIONS & BELL */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
         {isLogbookPath && isAdmin && (
           <button
@@ -1051,6 +1055,37 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             )}
           </button>
         )}
+
+        {/* LIVE CASH DRAWER CAPSULE */}
+        <button
+          type="button"
+          onClick={() => navigate('/cash-management')}
+          className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none"
+          title="Cash Register Drawer Status (Click to open Cash Management)"
+        >
+          <Wallet
+            className={`w-3.5 h-3.5 ${
+              isSessionOpen ? 'text-emerald-500' : 'text-rose-500'
+            }`}
+          />
+          <div className="flex items-center gap-1">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                isSessionOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+              }`}
+            />
+            <span className="hidden sm:inline font-mono font-bold text-slate-800 dark:text-slate-200">
+              {isSessionOpen
+                ? `₱${currentDrawerCash.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                  })}`
+                : 'DRAWER CLOSED'}
+            </span>
+            <span className="sm:hidden font-mono font-bold text-slate-800 dark:text-slate-200">
+              {isSessionOpen ? `₱${currentDrawerCash.toFixed(0)}` : 'CLOSED'}
+            </span>
+          </div>
+        </button>
 
         {/* TIME TELEMETRY (Desktop only) */}
         <div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">

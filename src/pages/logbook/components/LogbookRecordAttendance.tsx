@@ -32,6 +32,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { createPortal } from 'react-dom';
@@ -239,6 +240,7 @@ export const LogbookRecordAttendance: React.FC<
 > = ({ isOpen, initialSearch = '', onClose, onCheckInSuccess }) => {
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
+  const { isSessionOpen } = useCashSessionStore();
   const isSubmittingRef = useRef(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -955,6 +957,13 @@ export const LogbookRecordAttendance: React.FC<
 
   const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
+
+    if (derivedBilling.totalDue > 0 && paymentMethod === 'Cash' && !isSessionOpen) {
+      toast.error(
+        'Cannot accept Cash: No active cash drawer session is open. Please open a cash session first in Cash Management.'
+      );
+      return;
+    }
 
     if (duplicateLog && !adminOverride && !selectedClient.isWalkIn) {
       toast.error('Duplicate attendance requires override confirmation.');
