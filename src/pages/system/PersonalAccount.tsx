@@ -209,10 +209,7 @@ export const PersonalAccount: React.FC = () => {
           .update({ email_verification_enabled: nextState })
           .eq('id', user.id);
         if (dbError) {
-          console.warn(
-            'Profiles database update note:',
-            dbError.message
-          );
+          console.warn('Profiles database update note:', dbError.message);
         }
       }
 
@@ -367,9 +364,9 @@ export const PersonalAccount: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxOriginalSize = 20 * 1024 * 1024;
+    const maxOriginalSize = 8 * 1024 * 1024;
     if (file.size > maxOriginalSize) {
-      toast.error('File size exceeds the maximum allowed 20MB limit.');
+      toast.error('File size exceeds the maximum allowed 8MB limit.');
       return;
     }
 
@@ -595,7 +592,7 @@ export const PersonalAccount: React.FC = () => {
                     : `${profile?.role} Account`}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-mono">
-                  Max size 20MB.
+                  Max size 8MB.
                 </p>
 
                 {profile?.avatar_url && (
@@ -643,7 +640,8 @@ export const PersonalAccount: React.FC = () => {
                 />
                 {isSuperAdmin(user?.email) && (
                   <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                    Superadmin username is permanently locked and cannot be changed.
+                    Superadmin username is permanently locked and cannot be
+                    changed.
                   </p>
                 )}
               </div>
@@ -812,8 +810,8 @@ export const PersonalAccount: React.FC = () => {
                   isNonEmailAccount
                     ? 'Requires external email address'
                     : is2FAEnabled
-                    ? 'Click to disable'
-                    : 'Click to enable'
+                      ? 'Click to disable'
+                      : 'Click to enable'
                 }
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
                   is2FAEnabled
@@ -858,7 +856,8 @@ export const PersonalAccount: React.FC = () => {
               <div className="mt-3 flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-600 dark:text-amber-400 font-medium leading-normal">
                 <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
-                  This account has no external email address attached. Add an email to enable 2-step verification.
+                  This account has no external email address attached. Add an
+                  email to enable 2-step verification.
                 </span>
               </div>
             )}
@@ -876,7 +875,8 @@ export const PersonalAccount: React.FC = () => {
           <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5">
             <Lock className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
             <span>
-              Two-step verification adds an extra layer of defense against unauthorized logins by requiring access to your email inbox.
+              Two-step verification adds an extra layer of defense against
+              unauthorized logins by requiring access to your email inbox.
             </span>
           </div>
 
@@ -886,11 +886,13 @@ export const PersonalAccount: React.FC = () => {
             </h4>
             <ul className="space-y-2 text-slate-500 dark:text-slate-400 list-disc list-inside">
               <li>
-                When you sign in with your password, the system dispatches a verification code to your registered email address.
+                When you sign in with your password, the system dispatches a
+                verification code to your registered email address.
               </li>
               <li>Codes are single-use and expire in 10 minutes.</li>
               <li>
-                5 consecutive incorrect attempts will trigger an automatic security lockout.
+                5 consecutive incorrect attempts will trigger an automatic
+                security lockout.
               </li>
             </ul>
           </div>

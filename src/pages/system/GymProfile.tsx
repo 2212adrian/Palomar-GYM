@@ -255,7 +255,7 @@ export const GymProfile: React.FC = () => {
     if (!file) return;
 
     if (file.size > 20 * 1024 * 1024) {
-      toast.error('File size exceeds the 20MB limit.');
+      toast.error('File size exceeds the 8MB limit.');
       return;
     }
 
@@ -285,8 +285,8 @@ export const GymProfile: React.FC = () => {
 
     const filesToUpload = files.slice(0, remainingSlots);
     const compressedPromises = filesToUpload.map(async (file) => {
-      if (file.size > 20 * 1024 * 1024) {
-        toast.warn(`Skipped "${file.name}" because it exceeds the 20MB limit.`);
+      if (file.size > 8 * 1024 * 1024) {
+        toast.warn(`Skipped "${file.name}" because it exceeds the 8MB limit.`);
         return null;
       }
       try {

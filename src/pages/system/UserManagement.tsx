@@ -483,8 +483,8 @@ export const UserManagement: React.FC = () => {
   const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('File exceeds the 20MB limit.');
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('File exceeds the 8MB limit.');
       return;
     }
     setEditAvatarFile(file);
@@ -1419,8 +1419,8 @@ export const UserManagement: React.FC = () => {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
-                  if (file.size > 20 * 1024 * 1024) {
-                    toast.error('File exceeds the 20MB limit.');
+                  if (file.size > 8 * 1024 * 1024) {
+                    toast.error('File exceeds the 8MB limit.');
                     return;
                   }
                   setNewUserAvatar(file);

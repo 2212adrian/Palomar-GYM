@@ -166,7 +166,7 @@ VALUES ('avatars', 'avatars', false)
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE storage.buckets
-SET file_size_limit = 20971520, 
+SET file_size_limit = 8388608, 
     allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 WHERE id = 'avatars';
 

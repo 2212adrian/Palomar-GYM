@@ -3,10 +3,15 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('avatars', 'avatars', false)
 ON CONFLICT (id) DO NOTHING;
 
--- 2. Configure bucket rules (Max 20MB file size (20971520 bytes), limit allowed mime types)
+-- 2. Configure bucket rules (Max 8MB file size (8388608 bytes), limit allowed mime types)
 UPDATE storage.buckets
-SET file_size_limit = 20971520, 
-    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+SET file_size_limit = 8388608,
+    allowed_mime_types = ARRAY[
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp'
+    ]
 WHERE id = 'avatars';
 
 -- 3. Restrict select/read access to authenticated users only
