@@ -1,5 +1,6 @@
 // src/components/layout/NotificationPopover.tsx
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -37,6 +38,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   const navigate = useNavigate();
   const popoverRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [mounted, setMounted] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(
+    null
+  );
 
   const { user, profile } = useAuthStore();
   const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
@@ -58,11 +63,28 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   const totalNotifications =
     (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Compute anchor position for desktop screens
+  useEffect(() => {
+    if (isOpen) {
+      const trigger = document.getElementById('btn-topbar-notifications');
+      if (trigger) {
+        const rect = trigger.getBoundingClientRect();
+        setCoords({
+          top: rect.bottom + 8,
+          right: Math.max(12, window.innerWidth - rect.right),
+        });
+      }
+    }
+  }, [isOpen]);
+
   // Handle outside click & escape key
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Element | null;
-      // If clicked on the notification trigger button itself, do not handle here
       if (target && target.closest('#btn-topbar-notifications')) {
         return;
       }
@@ -127,42 +149,56 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
 
   const hasItemsInTab = showIncidents || showStock || showMembers;
 
-  return (
+  if (!mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop on mobile screens to easily dismiss */}
-          <div
-            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] sm:hidden"
+          {/* 1. SCRIM: Mobile only (hidden on PC/desktop with sm:hidden) */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[99998] bg-black/90 dark:bg-[#07090e]/95 backdrop-blur-md cursor-pointer sm:hidden"
             onClick={onClose}
           />
 
+          {/* 2. NOTIFICATION POPOVER */}
           <motion.div
             ref={popoverRef}
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="fixed inset-x-3 top-16 sm:inset-auto sm:absolute sm:right-0 sm:top-[calc(100%+8px)] sm:w-[390px] md:w-[410px] max-h-[calc(100vh-80px)] sm:max-h-[600px] bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col font-body select-none"
+            style={
+              coords &&
+              typeof window !== 'undefined' &&
+              window.innerWidth >= 640
+                ? { top: `${coords.top}px`, right: `${coords.right}px` }
+                : undefined
+            }
+            className="fixed left-2.5 right-2 top-2.5 sm:left-auto sm:right-4 sm:top-16 sm:w-[390px] md:w-[410px] max-h-[66vh] sm:max-h-[480px] bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl z-[99999] overflow-hidden flex flex-col font-body select-none"
           >
-            {/* 1. TOP HEADER */}
+            {/* TOP HEADER */}
             <div className="p-3 sm:p-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/90 dark:bg-zinc-900/80 backdrop-blur-md shrink-0">
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-blue-600/10 dark:bg-red-500/10 text-blue-600 dark:text-red-400 flex items-center justify-center shrink-0">
                   <Bell className="w-4 h-4" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white truncate">
                       Notifications
                     </h3>
                     {totalNotifications > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20">
+                      <span className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 shrink-0">
                         {formatBadgeCount(totalNotifications)}
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
                     {totalNotifications === 0
                       ? 'Everything is up to date'
                       : `${totalNotifications} active item${totalNotifications > 1 ? 's' : ''} require attention`}
@@ -170,7 +206,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 sm:gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 {totalNotifications > 0 && (
                   <button
                     type="button"
@@ -183,14 +219,15 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer -mr-1"
+                  aria-label="Close notifications"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* 2. CATEGORY TABS */}
+            {/* CATEGORY TABS */}
             {totalNotifications > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100/70 dark:bg-zinc-950/50 border-b border-slate-100 dark:border-white/5 overflow-x-auto scrollbar-none shrink-0">
                 <button
@@ -252,24 +289,24 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
               </div>
             )}
 
-            {/* 3. SCROLLABLE FEED */}
+            {/* SCROLLABLE FEED */}
             <div className="flex-1 overflow-y-auto p-2 space-y-2 divide-y divide-slate-100 dark:divide-white/5 scrollbar-thin">
               {!hasItemsInTab ? (
-                <div className="p-8 text-center space-y-2">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20">
-                    <ShieldCheck className="w-6 h-6" />
+                <div className="p-7 text-center space-y-2">
+                  <div className="w-11 h-11 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20">
+                    <ShieldCheck className="w-5 h-5" />
                   </div>
                   <h4 className="font-heading text-xs font-bold uppercase text-slate-800 dark:text-slate-200">
                     No Active Alerts
                   </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
                     All inventory stocks are healthy, subscriptions are current,
                     and reports are reviewed.
                   </p>
                 </div>
               ) : (
                 <>
-                  {/* ── INCIDENTS SECTION ── */}
+                  {/* INCIDENTS SECTION */}
                   {showIncidents && (
                     <div className="space-y-1.5 pt-1">
                       {activeTab === 'all' && (
@@ -331,10 +368,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                 e.stopPropagation();
                                 dismissAlert('incident', item.id);
                               }}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                               title="Dismiss alert"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         ))}
@@ -342,7 +379,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                     </div>
                   )}
 
-                  {/* ── STOCK ISSUES SECTION ── */}
+                  {/* STOCK ISSUES SECTION */}
                   {showStock && (
                     <div className="space-y-1.5 pt-2">
                       {activeTab === 'all' && (
@@ -399,10 +436,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                   e.stopPropagation();
                                   dismissAlert('stock', prod.id);
                                 }}
-                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                 title="Dismiss alert"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -411,7 +448,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                     </div>
                   )}
 
-                  {/* ── EXPIRING SUBSCRIPTIONS SECTION ── */}
+                  {/* EXPIRING SUBSCRIPTIONS SECTION */}
                   {showMembers && (
                     <div className="space-y-1.5 pt-2">
                       {activeTab === 'all' && (
@@ -465,10 +502,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                   e.stopPropagation();
                                   dismissAlert('member', sub.id);
                                 }}
-                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                 title="Dismiss alert"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -480,7 +517,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
               )}
             </div>
 
-            {/* 4. FOOTER */}
+            {/* FOOTER */}
             <div className="p-3 border-t border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-zinc-900/80 flex items-center justify-between text-[10px] font-heading shrink-0">
               {browserPermission !== 'granted' ? (
                 <button
@@ -510,7 +547,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 

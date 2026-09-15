@@ -322,12 +322,27 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     }
   }, [user?.email, profile?.role, subscribeRealtime]);
 
+  // Close dropdowns on route changes
+  useEffect(() => {
+    setIsKpiMobileOpen(false);
+    setIsKpiHovered(false);
+  }, [location.pathname]);
+
   const handleToggleNotifications = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsKpiMobileOpen(false);
     if (!isNotificationOpen) {
-      markBadgeSeen(); // Clears unread badge counter
+      markBadgeSeen();
     }
     toggleNotificationOpen();
+  };
+
+  const handleToggleKpi = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isKpiMobileOpen && isNotificationOpen) {
+      setNotificationOpen(false);
+    }
+    setIsKpiMobileOpen((prev) => !prev);
   };
 
   useEffect(() => {
@@ -442,6 +457,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
         !kpiContainerRef.current.contains(e.target as Node)
       ) {
         setIsKpiMobileOpen(false);
+        setIsKpiHovered(false);
       }
     };
 
@@ -651,19 +667,24 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       {showKpiWidget && (
         <div
           ref={kpiContainerRef}
-          className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center z-30 pointer-events-auto max-w-[44%] sm:max-w-none"
+          className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center z-30 pointer-events-auto"
         >
           <div
             className="relative"
-            onMouseEnter={() => setIsKpiHovered(true)}
-            onMouseLeave={() => setIsKpiHovered(false)}
+            onMouseEnter={() => {
+              if (window.matchMedia('(hover: hover)').matches) {
+                setIsKpiHovered(true);
+              }
+            }}
+            onMouseLeave={() => {
+              if (window.matchMedia('(hover: hover)').matches) {
+                setIsKpiHovered(false);
+              }
+            }}
           >
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsKpiMobileOpen((prev) => !prev);
-              }}
+              onClick={handleToggleKpi}
               aria-label="Today's Revenue & Metrics"
               className="flex items-center gap-1 sm:gap-2.5 md:gap-3 px-2 py-1 sm:px-4 sm:py-1.5 rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
             >
@@ -783,186 +804,197 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             {/* FLOATING TELEMETRY DROPDOWN */}
             <AnimatePresence>
               {(isKpiHovered || isKpiMobileOpen) && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
-                  transition={{ duration: 0.15 }}
-                  className="fixed inset-x-3.5 top-16 sm:inset-auto sm:absolute sm:top-[calc(100%+8px)] sm:left-1/2 sm:-translate-x-1/2 sm:w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 sm:p-4 backdrop-blur-xl z-50 select-none"
-                >
-                  <div className="border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">
-                    <span className="text-[9px] font-heading font-black tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
-                      {isMembersPath
-                        ? 'Member Directory Telemetry'
-                        : isProductsView
-                          ? 'Product Catalog Telemetry'
-                          : isSalesPath
-                            ? "Today's Sales Telemetry"
-                            : "Today's Telemetry Overview"}
-                    </span>
-                  </div>
+                <div className="absolute top-[calc(100%+8px)] left-1/2 -translate-x-1/2 w-[calc(100vw-24px)] max-w-sm sm:w-96 sm:max-w-none z-50 pointer-events-auto">
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 sm:p-4 backdrop-blur-xl select-none"
+                  >
+                    <div className="border-b border-slate-100 dark:border-slate-800 pb-2 mb-3 text-center sm:text-left">
+                      <span className="text-[9px] font-heading font-black tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
+                        {isMembersPath
+                          ? 'Member Directory Telemetry'
+                          : isProductsView
+                            ? 'Product Catalog Telemetry'
+                            : isSalesPath
+                              ? "Today's Sales Telemetry"
+                              : "Today's Telemetry Overview"}
+                      </span>
+                    </div>
 
-                  {isMembersPath ? (
-                    <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                      <div className="px-1 flex flex-col items-center">
-                        <Users className="w-4 h-4 text-blue-500 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          Total
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={membersKpiData.total} />
-                        </span>
+                    {isMembersPath ? (
+                      <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Users className="w-4 h-4 text-blue-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            Total
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber value={membersKpiData.total} />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Award className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold truncate max-w-full">
+                            Active
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={membersKpiData.activeSubscriptions}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Clock className="w-4 h-4 text-amber-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold truncate max-w-full">
+                            Expiring
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={membersKpiData.expiringSoon}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <UserX className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold truncate max-w-full">
+                            Locked
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={membersKpiData.suspendedMembers}
+                            />
+                          </span>
+                        </div>
                       </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <Award className="w-4 h-4 text-emerald-500 mb-1" />
-                        <span className="text-[8px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold">
-                          Active
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber
-                            value={membersKpiData.activeSubscriptions}
-                          />
-                        </span>
+                    ) : isProductsView ? (
+                      <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Layers className="w-4 h-4 text-blue-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            Catalog
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber value={productsKpiData.active} />
+                            /
+                            <AnimatedKpiNumber value={productsKpiData.total} />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Package className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold truncate max-w-full">
+                            In Stock
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={productsKpiData.inStock}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <AlertTriangle className="w-4 h-4 text-amber-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold truncate max-w-full">
+                            Low Stock
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={productsKpiData.lowStock}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <PackageX className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold truncate max-w-full">
+                            No Stock
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={productsKpiData.outOfStock}
+                            />
+                          </span>
+                        </div>
                       </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <Clock className="w-4 h-4 text-amber-500 mb-1" />
-                        <span className="text-[8px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold">
-                          Expiring
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber
-                            value={membersKpiData.expiringSoon}
-                          />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <UserX className="w-4 h-4 text-rose-500 mb-1" />
-                        <span className="text-[8px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold">
-                          Locked
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber
-                            value={membersKpiData.suspendedMembers}
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  ) : isProductsView ? (
-                    <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                      <div className="px-1 flex flex-col items-center">
-                        <Layers className="w-4 h-4 text-blue-500 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          Catalog
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={productsKpiData.active} />/
-                          <AnimatedKpiNumber value={productsKpiData.total} />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <Package className="w-4 h-4 text-emerald-500 mb-1" />
-                        <span className="text-[8px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold">
-                          In Stock
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={productsKpiData.inStock} />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <AlertTriangle className="w-4 h-4 text-amber-500 mb-1" />
-                        <span className="text-[8px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold">
-                          Low Stock
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={productsKpiData.lowStock} />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <PackageX className="w-4 h-4 text-rose-500 mb-1" />
-                        <span className="text-[8px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold">
-                          No Stock
-                        </span>
-                        <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber
-                            value={productsKpiData.outOfStock}
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  ) : isSalesPath ? (
-                    <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                      <div className="px-1 flex flex-col items-center">
-                        <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          Sales
-                        </span>
-                        <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={salesKpiData.salesCount} />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <DynamicBanknoteIcon
-                          trend={salesKpiData.revenueTrend}
-                        />
-                        <span className="text-[8px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1">
-                          Revenue
-                        </span>
-                        <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiCurrency
-                            value={salesKpiData.revenue}
+                    ) : isSalesPath ? (
+                      <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            Sales
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={salesKpiData.salesCount}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <DynamicBanknoteIcon
                             trend={salesKpiData.revenueTrend}
                           />
-                        </span>
+                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1 truncate max-w-full">
+                            Revenue
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiCurrency
+                              value={salesKpiData.revenue}
+                              trend={salesKpiData.revenueTrend}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Package className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            Items
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber value={salesKpiData.itemsSold} />
+                          </span>
+                        </div>
                       </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <Package className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          Items
-                        </span>
-                        <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={salesKpiData.itemsSold} />
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                      <div className="px-1 flex flex-col items-center">
-                        <Users className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          Check-ins
-                        </span>
-                        <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber value={logbookKpiData.checkins} />
-                        </span>
-                      </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <DynamicBanknoteIcon
-                          trend={logbookKpiData.revenueTrend}
-                        />
-                        <span className="text-[8px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1">
-                          Revenue
-                        </span>
-                        <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiCurrency
-                            value={logbookKpiData.revenue}
+                    ) : (
+                      <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <Users className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            Check-ins
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={logbookKpiData.checkins}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <DynamicBanknoteIcon
                             trend={logbookKpiData.revenueTrend}
                           />
-                        </span>
+                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1 truncate max-w-full">
+                            Revenue
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiCurrency
+                              value={logbookKpiData.revenue}
+                              trend={logbookKpiData.revenueTrend}
+                            />
+                          </span>
+                        </div>
+                        <div className="px-1 flex flex-col items-center min-w-0">
+                          <UserPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mb-1 shrink-0" />
+                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
+                            New Subs
+                          </span>
+                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                            <AnimatedKpiNumber
+                              value={logbookKpiData.newMembers}
+                            />
+                          </span>
+                        </div>
                       </div>
-                      <div className="px-1 flex flex-col items-center">
-                        <UserPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mb-1" />
-                        <span className="text-[8px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
-                          New Subs
-                        </span>
-                        <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
-                          <AnimatedKpiNumber
-                            value={logbookKpiData.newMembers}
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
+                    )}
+                  </motion.div>
+                </div>
               )}
             </AnimatePresence>
           </div>
