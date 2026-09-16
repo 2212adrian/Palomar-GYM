@@ -61,7 +61,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(
+    new Set()
+  );
   const itemsPerPage = 5;
 
   const fetchDeletedLogs = useCallback(async () => {
@@ -139,11 +141,21 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     if (!q) return deletedLogs;
     return deletedLogs.filter(
       (l) =>
-        String(l.id || '').toLowerCase().includes(q) ||
-        String(l.customerName || '').toLowerCase().includes(q) ||
-        String(l.customerType || '').toLowerCase().includes(q) ||
-        String(l.categoryOrPlan || '').toLowerCase().includes(q) ||
-        String(l.receiptNumber || '').toLowerCase().includes(q)
+        String(l.id || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(l.customerName || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(l.customerType || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(l.categoryOrPlan || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(l.receiptNumber || '')
+          .toLowerCase()
+          .includes(q)
     );
   }, [deletedLogs, searchQuery]);
 
@@ -154,7 +166,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     filteredLogs.forEach((log) => {
       const isCard =
         log.customerType === 'Card' ||
-        String(log.categoryOrPlan || '').toLowerCase().includes('card');
+        String(log.categoryOrPlan || '')
+          .toLowerCase()
+          .includes('card');
 
       // Group key resolution:
       // 1. Batch card purchase by receiptNumber
@@ -195,7 +209,10 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       grp.items.push(log);
       grp.totalAmount += log.amountPaid;
       grp.isGroup = grp.items.length > 1;
-      if (new Date(log.deletedAt).getTime() > new Date(grp.latestDeletedAt).getTime()) {
+      if (
+        new Date(log.deletedAt).getTime() >
+        new Date(grp.latestDeletedAt).getTime()
+      ) {
         grp.latestDeletedAt = log.deletedAt;
       }
     });
@@ -203,7 +220,10 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     return Array.from(groupsMap.values());
   }, [filteredLogs]);
 
-  const totalPages = Math.max(1, Math.ceil(groupedStacks.length / itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(groupedStacks.length / itemsPerPage)
+  );
   const clampedPage = Math.min(currentPage, totalPages);
 
   const paginatedStacks = useMemo(() => {
@@ -211,10 +231,14 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     return groupedStacks.slice(startIdx, startIdx + itemsPerPage);
   }, [groupedStacks, clampedPage, itemsPerPage]);
 
-  const checkDuplicateActiveAttendance = async (log: LogItem): Promise<boolean> => {
+  const checkDuplicateActiveAttendance = async (
+    log: LogItem
+  ): Promise<boolean> => {
     const isCard =
       log.customerType === 'Card' ||
-      String(log.categoryOrPlan || '').toLowerCase().includes('card');
+      String(log.categoryOrPlan || '')
+        .toLowerCase()
+        .includes('card');
 
     // For Card transactions, check if the member already has an active PAID card from a DIFFERENT transaction
     if (isCard) {
@@ -238,7 +262,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         }
       }
 
-      const uniqueTargets = Array.from(new Set(targetMemberIds)).filter(Boolean);
+      const uniqueTargets = Array.from(new Set(targetMemberIds)).filter(
+        Boolean
+      );
       if (uniqueTargets.length === 0) return false;
 
       // Check cards table: ONLY a conflict if member already has another active PAID card with a DIFFERENT receipt
@@ -341,7 +367,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       validToRestore.forEach((l) => {
         const isCardTx =
           l.customerType === 'Card' ||
-          String(l.categoryOrPlan || '').toLowerCase().includes('card');
+          String(l.categoryOrPlan || '')
+            .toLowerCase()
+            .includes('card');
 
         if (isCardTx) {
           if (l.memberId) allCardMemberIds.push(l.memberId);
@@ -352,7 +380,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         }
       });
 
-      const uniqueReceipts = Array.from(new Set(allReceiptNumbers)).filter(Boolean);
+      const uniqueReceipts = Array.from(new Set(allReceiptNumbers)).filter(
+        Boolean
+      );
 
       // Query receipts and cards for all member IDs belonging to these receipts
       if (uniqueReceipts.length > 0) {
@@ -403,7 +433,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
           .in('receipt_number', uniqueReceipts);
       }
 
-      const uniqueMemberIds = Array.from(new Set(allCardMemberIds)).filter(Boolean);
+      const uniqueMemberIds = Array.from(new Set(allCardMemberIds)).filter(
+        Boolean
+      );
 
       if (uniqueMemberIds.length > 0) {
         // Resolve both members.id and members.member_id
@@ -505,9 +537,12 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   };
 
   const handleSelectAllPage = () => {
-    const pageItemIds = paginatedStacks.flatMap((s) => s.items.map((i) => i.id));
+    const pageItemIds = paginatedStacks.flatMap((s) =>
+      s.items.map((i) => i.id)
+    );
     const allSelected =
-      pageItemIds.length > 0 && pageItemIds.every((id) => selectedIds.includes(id));
+      pageItemIds.length > 0 &&
+      pageItemIds.every((id) => selectedIds.includes(id));
 
     if (allSelected) {
       setSelectedIds((prev) => prev.filter((id) => !pageItemIds.includes(id)));
@@ -526,8 +561,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-[9999]"
     >
       {countdown && (
-        <span className="absolute top-6 right-13 text-[10px] font-mono font-black text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md animate-pulse">
-          Purge in: {countdown}
+        <span className="absolute top-6 right-13 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+          Shift Active
         </span>
       )}
 
@@ -541,11 +576,13 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       </button>
 
       <div className="space-y-4 pt-2">
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
           <span>
-            <strong>Notice:</strong> Items deleted today can be restored within
-            24 hours before automatic purging. Identical items are automatically stacked.
+            <strong>Please note:</strong> Check-ins removed during this shift
+            can be restored here while the register is open. When the cash
+            session is ended and closed, all items in this bin will be
+            permanently cleared.
           </span>
         </div>
 
@@ -715,7 +752,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                                   </span>
                                   <span className="text-[9px] text-slate-400">
                                     {subItem.categoryOrPlan}
-                                    {subItem.amountPaid > 0 && ` • ₱${subItem.amountPaid.toFixed(2)}`}
+                                    {subItem.amountPaid > 0 &&
+                                      ` • ₱${subItem.amountPaid.toFixed(2)}`}
                                   </span>
                                 </div>
                               </div>
@@ -774,7 +812,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                         </div>
                         <span className="text-[10px] text-slate-400 mt-0.5 block">
                           {tx.categoryOrPlan}
-                          {tx.amountPaid > 0 && ` • ₱${tx.amountPaid.toFixed(2)}`}
+                          {tx.amountPaid > 0 &&
+                            ` • ₱${tx.amountPaid.toFixed(2)}`}
                         </span>
                       </div>
                     </div>

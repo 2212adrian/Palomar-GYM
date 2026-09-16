@@ -12,7 +12,7 @@ import { compressImage } from '../../lib/imageCompressor';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-
+import { useNavbarStore } from '../../stores/useNavbarStore';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -74,6 +74,7 @@ export const Products: React.FC<ProductsProps> = ({
   const { user } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
+  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1516,9 +1517,16 @@ export const Products: React.FC<ProductsProps> = ({
       )}
 
       {/* MOBILE DIRECT ACTION BOTTOM BAR FOR PRODUCTS */}
-      {selectedProductIds.length === 0 &&
+      {location.pathname.startsWith('/sales/products') &&
+        selectedProductIds.length === 0 &&
         createPortal(
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+          <div
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
             {/* Summary stats on the left */}
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">

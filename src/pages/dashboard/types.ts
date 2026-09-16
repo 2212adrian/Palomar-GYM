@@ -2,7 +2,7 @@
 
 export type TimeRangeFilter = 'today' | 'week' | 'month' | 'year' | 'custom';
 
-export type DashboardTab = 'combined' | 'sales' | 'logbook' | 'reports';
+export type DashboardTab = 'combined' | 'sales' | 'logbook' | 'cash' | 'reports';
 
 export interface DashboardMetrics {
   activeMembersCount: number;

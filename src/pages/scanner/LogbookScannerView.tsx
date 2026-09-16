@@ -21,6 +21,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../stores/authStore';
 import { parseScannedMemberCode } from './scannerService';
+import { useSessionLock } from '../../hooks/useSessionLock';
 
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
@@ -58,6 +59,7 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
 }) => {
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
+  const { isLocked, getLockReason } = useSessionLock();
 
   const [isLoading, setIsLoading] = useState(false);
   const [memberData, setMemberData] = useState<MemberLogbookData | null>(null);
@@ -254,6 +256,13 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
   const handleConfirmAttendance = async () => {
     if (!memberData || isSubmitting) return;
 
+    if (isLocked) {
+      toast.error(
+        'Cannot record check-in: Cash drawer session is closed. Please open a cash session in Cash Management.'
+      );
+      return;
+    }
+
     if (
       baseEntryFee > 0 &&
       paymentMethod === 'GCash' &&
@@ -440,15 +449,21 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
               onClick={handleConfirmAttendance}
               disabled={
                 isSubmitting ||
+                isLocked ||
                 (baseEntryFee > 0 &&
                   paymentMethod === 'GCash' &&
                   referenceNumber.trim().length < 6)
               }
+              title={isLocked ? getLockReason('record check-ins') : undefined}
               className="w-full py-3.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
             >
               <UserCheck className="w-4.5 h-4.5" />
               <span>
-                {isSubmitting ? 'LOGGING...' : 'CONFIRM & LOG ATTENDANCE'}
+                {isSubmitting
+                  ? 'LOGGING...'
+                  : isLocked
+                    ? 'SESSION CLOSED (LOCKED)'
+                    : 'CONFIRM & LOG ATTENDANCE'}
               </span>
             </Button>
           ) : (

@@ -19,13 +19,13 @@ import {
   Plus,
   RotateCcw,
   ClipboardList,
-  FileSpreadsheet,
   ChevronRight,
   ChevronLeft,
   Users,
   Search,
   Printer,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import {
   motion,
@@ -52,13 +52,18 @@ import { TabLoader } from '../../components/ui/TabLoader';
 import { HeaderActionsContext } from '../../routes';
 import { LogbookRecordAttendance } from './components/LogbookRecordAttendance';
 import { LogbookRecycleBin } from './components/LogbookRecycleBin';
-import { LogbookReportCompiler } from './components/LogbookReportCompiler';
 import { useSessionLock } from '../../hooks/useSessionLock';
+import {
+  ClosedSessionGroup,
+  type SessionSummaryInfo,
+} from '../../components/ui/ClosedSessionGroup';
+import { useNavbarStore } from '../../stores/useNavbarStore';
 
 // Unified Official Receipt & TimelineCard
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
@@ -254,22 +259,6 @@ const PAYMENT_FILTERS = [
   { label: 'GCash', value: 'GCash' },
 ];
 
-const isLogDeletable = (log: LogRecord) => {
-  if (
-    log.isSubscription ||
-    (log as any).deletable === false ||
-    log.customerType === 'New Membership'
-  ) {
-    return false;
-  }
-
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const logDate = log.timestamp
-    ? format(parseISO(log.timestamp), 'yyyy-MM-dd')
-    : format(new Date(), 'yyyy-MM-dd');
-  return logDate === todayStr;
-};
-
 const TransactionSkeleton: React.FC = () => {
   return (
     <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
@@ -306,12 +295,32 @@ const TransactionSkeleton: React.FC = () => {
   );
 };
 
+const isCardRecord = (log: LogRecord): boolean => {
+  return (
+    log.customerType === 'Card' ||
+    String(log.categoryOrPlan || '')
+      .toLowerCase()
+      .includes('card')
+  );
+};
+
 export const LogbookPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { setActions } = useContext(HeaderActionsContext);
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
+  const { activeSession, isSessionOpen, isInitializing, history, loadHistory } =
+    useCashSessionStore();
+  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+
+  const [closedSessionsList, setClosedSessionsList] = useState<
+    SessionSummaryInfo[]
+  >([]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
@@ -319,6 +328,66 @@ export const LogbookPage: React.FC = () => {
       profile?.role || user?.user_metadata?.role || user?.app_metadata?.role;
     return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
+
+  // Non-intrusive alert toast informing user that session is closed without covering the screen
+  useEffect(() => {
+    if (!isInitializing && !isSessionOpen) {
+      toast.info(
+        'Cash drawer session is closed. Check-in entries and Recycle Bin are currently locked.',
+        {
+          toastId: 'cash-session-closed-notice',
+          autoClose: 5000,
+        }
+      );
+    }
+  }, [isInitializing, isSessionOpen]);
+
+  // Session-based deletability check
+  const isLogDeletable = useCallback(
+    (log: LogRecord) => {
+      if (
+        log.isSubscription ||
+        (log as any).deletable === false ||
+        log.customerType === 'New Membership'
+      ) {
+        return false;
+      }
+
+      if (!isSessionOpen || !activeSession) return false;
+
+      const logSessionId =
+        (log as any).cash_session_id || (log as any).cashSessionId;
+      if (logSessionId) {
+        return String(logSessionId) === String(activeSession.id);
+      }
+
+      if (log.timestamp && activeSession.opened_at) {
+        return (
+          new Date(log.timestamp).getTime() >=
+          new Date(activeSession.opened_at).getTime()
+        );
+      }
+
+      return false;
+    },
+    [isSessionOpen, activeSession]
+  );
+
+  const getLogDeleteDisabledReason = useCallback(
+    (log: LogRecord) => {
+      if (log.isSubscription || log.customerType === 'New Membership') {
+        return 'Subscription contracts cannot be deleted from Logbook.';
+      }
+      if (!isSessionOpen) {
+        return 'Cash session is closed. Open a cash session to manage attendance.';
+      }
+      if (!isLogDeletable(log)) {
+        return 'Locked: This check-in belongs to a closed cash session and cannot be modified.';
+      }
+      return undefined;
+    },
+    [isSessionOpen, isLogDeletable]
+  );
 
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
@@ -390,6 +459,31 @@ export const LogbookPage: React.FC = () => {
     };
   }, [resetTimelineFilters]);
 
+  // Merged closed sessions lookup
+  const mergedClosedSessions = useMemo(() => {
+    const map = new Map<string, SessionSummaryInfo>();
+    closedSessionsList.forEach((s) => map.set(String(s.id), s));
+    (history || []).forEach((s) => {
+      if (s.status === 'closed' || s.closed_at) {
+        map.set(String(s.id), {
+          id: String(s.id),
+          session_number: s.session_number,
+          opened_at: s.opened_at,
+          closed_at: s.closed_at,
+          opened_by_name: s.opened_by_name,
+          closed_by_name: s.closed_by_name,
+          status: s.status,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const tA = a.closed_at ? new Date(a.closed_at).getTime() : 0;
+      const tB = b.closed_at ? new Date(b.closed_at).getTime() : 0;
+      return tB - tA;
+    });
+  }, [closedSessionsList, history]);
+
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchAttendanceFromSupabase = useCallback(
     async (isBackground: boolean = false) => {
@@ -412,6 +506,19 @@ export const LogbookPage: React.FC = () => {
       }
 
       try {
+        // Fetch closed sessions list from Supabase
+        const { data: closedSessionsData } = await supabase
+          .from('cash_sessions')
+          .select(
+            'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+          )
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false });
+
+        if (closedSessionsData) {
+          setClosedSessionsList(closedSessionsData);
+        }
+
         let mappedLogs: LogRecord[] | null = null;
 
         try {
@@ -444,6 +551,7 @@ export const LogbookPage: React.FC = () => {
               deletable: Boolean(row.deletable),
               receiptNumber: row.receipt_number || null,
               memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
+              cash_session_id: row.cash_session_id || null,
             }));
           }
         } catch (rpcErr: any) {
@@ -515,6 +623,7 @@ export const LogbookPage: React.FC = () => {
                 deletable: true,
                 receiptNumber: a.receipt_number || null,
                 memberIds: Array.isArray(a.member_ids) ? a.member_ids : [],
+                cash_session_id: a.cash_session_id || null,
               });
             });
 
@@ -541,6 +650,7 @@ export const LogbookPage: React.FC = () => {
                 deletable: false,
                 receiptNumber: r.id || null,
                 memberIds: Array.isArray(r.member_ids) ? r.member_ids : [],
+                cash_session_id: r.cash_session_id || null,
               });
             });
 
@@ -592,17 +702,25 @@ export const LogbookPage: React.FC = () => {
           fetchAttendanceFromSupabase(true);
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_sessions' },
+        () => {
+          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+          loadHistory();
+          fetchAttendanceFromSupabase(true);
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [dateStr, fetchAttendanceFromSupabase]);
+  }, [dateStr, fetchAttendanceFromSupabase, loadHistory]);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const [selectedReceiptLog, setSelectedReceiptLog] =
     useState<LogRecord | null>(null);
@@ -685,63 +803,86 @@ export const LogbookPage: React.FC = () => {
     return filteredLogs.slice(0, visibleCount);
   }, [filteredLogs, visibleCount]);
 
-  const totalCollectedToday = useMemo(() => {
+  // Active session logs only (strictly 0 if session is closed)
+  const activeSessionLogs = useMemo(() => {
+    if (!isSessionOpen || !activeSession) return [];
+    return dayLogs.filter((log) => {
+      const sid = (log as any).cash_session_id
+        ? String((log as any).cash_session_id)
+        : null;
+      if (sid && activeSession?.id) {
+        return sid === String(activeSession.id);
+      }
+      if (log.timestamp && activeSession?.opened_at) {
+        return (
+          new Date(log.timestamp).getTime() >=
+          new Date(activeSession.opened_at).getTime()
+        );
+      }
+      return false;
+    });
+  }, [dayLogs, isSessionOpen, activeSession]);
+
+  const activeRevenue = useMemo(() => {
     return dayLogs.reduce((acc, log) => {
       if (log.paymentStatus === 'Paid') {
-        return acc + (log.amountPaid || 0);
+        return acc + (Number(log.amountPaid) || 0);
       }
       return acc;
     }, 0);
   }, [dayLogs]);
 
+  // Exclude card purchases/issuances from attendance check-ins count
+  const activeCheckinsCount = useMemo(() => {
+    return dayLogs.filter((log) => !isCardRecord(log)).length;
+  }, [dayLogs]);
+
+  const activeNewMembersCount = useMemo(() => {
+    return activeSessionLogs.filter(
+      (l: LogRecord) => l.customerType === 'New Membership' || l.isSubscription
+    ).length;
+  }, [activeSessionLogs]);
+
   const [revenueTrend, setRevenueTrend] = useState<
     'increasing' | 'decreasing' | 'neutral'
   >('neutral');
-  const prevRevenueRef = useRef<number>(totalCollectedToday);
+  const prevRevenueRef = useRef<number>(activeRevenue);
 
   useEffect(() => {
-    if (totalCollectedToday > prevRevenueRef.current) {
+    if (activeRevenue > prevRevenueRef.current) {
       setRevenueTrend('increasing');
-      const timer = setTimeout(() => {
-        setRevenueTrend('neutral');
-      }, 1800);
-      prevRevenueRef.current = totalCollectedToday;
+      const timer = setTimeout(() => setRevenueTrend('neutral'), 1800);
+      prevRevenueRef.current = activeRevenue;
       return () => clearTimeout(timer);
-    } else if (totalCollectedToday < prevRevenueRef.current) {
+    } else if (activeRevenue < prevRevenueRef.current) {
       setRevenueTrend('decreasing');
-      const timer = setTimeout(() => {
-        setRevenueTrend('neutral');
-      }, 1800);
-      prevRevenueRef.current = totalCollectedToday;
+      const timer = setTimeout(() => setRevenueTrend('neutral'), 1800);
+      prevRevenueRef.current = activeRevenue;
       return () => clearTimeout(timer);
     }
-    prevRevenueRef.current = totalCollectedToday;
-  }, [totalCollectedToday]);
-
-  const newMembersCount = useMemo(() => {
-    return dayLogs.filter(
-      (l: LogRecord) => l.customerType === 'New Membership' || l.isSubscription
-    ).length;
-  }, [dayLogs]);
+    prevRevenueRef.current = activeRevenue;
+  }, [activeRevenue]);
 
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('logbook-kpi-update', {
         detail: {
-          checkins: dayLogs.length,
-          revenue: totalCollectedToday,
-          newMembers: newMembersCount,
+          checkins: activeCheckinsCount,
+          revenue: activeRevenue,
+          newMembers: activeNewMembersCount,
           revenueTrend,
         },
       })
     );
-  }, [dayLogs.length, totalCollectedToday, newMembersCount, revenueTrend]);
+  }, [activeCheckinsCount, activeRevenue, activeNewMembersCount, revenueTrend]);
 
   const handleCheckInSuccess = (newLog: LogRecord) => {
     const normalizedLog: LogRecord = {
       ...newLog,
       id: String(newLog.id),
-    };
+      cash_session_id:
+        (newLog as any).cash_session_id || activeSession?.id || null,
+    } as any;
 
     setNewlyAddedId(normalizedLog.id);
     setTimeout(() => setNewlyAddedId(null), 2500);
@@ -1036,7 +1177,6 @@ export const LogbookPage: React.FC = () => {
       if (!stagedLog) return;
 
       try {
-        // 1. Soft-delete attendance record
         const { error } = await supabase
           .from('attendance')
           .update({
@@ -1047,7 +1187,6 @@ export const LogbookPage: React.FC = () => {
 
         if (error) throw error;
 
-        // 2. If it's a Card transaction, deactivate in cards table
         await deactivateCardsForLogRecord(stagedLog);
 
         toast.success(
@@ -1111,7 +1250,6 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
 
-    // Re-activate member card if it was a card transaction
     reactivateCardsForLogRecord(stagedLog);
 
     setStagedDeletions((prev) =>
@@ -1145,7 +1283,6 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
 
-    // Re-activate all cards in cards table
     itemsToRestore.forEach((log) => {
       reactivateCardsForLogRecord(log);
     });
@@ -1161,15 +1298,10 @@ export const LogbookPage: React.FC = () => {
     }
 
     if (!isLogDeletable(log)) {
-      if (log.isSubscription || log.customerType === 'New Membership') {
-        toast.error(
-          'Subscription transactions cannot be deleted from Logbook.'
-        );
-      } else {
-        toast.error(
-          'Only standard check-in logs recorded today can be deleted.'
-        );
-      }
+      toast.error(
+        getLogDeleteDisabledReason(log) ||
+          'Locked: This check-in cannot be removed.'
+      );
       return;
     }
 
@@ -1194,7 +1326,6 @@ export const LogbookPage: React.FC = () => {
     }, 380);
   };
 
-  // Clean up any staged deletes immediately if user leaves page
   useEffect(() => {
     return () => {
       if (stagedDeletionsRef.current.length > 0) {
@@ -1215,13 +1346,52 @@ export const LogbookPage: React.FC = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    const isActionLocked = isLocked || !isSessionOpen;
+    const actionLockReason = !isSessionOpen
+      ? 'Cash session is closed. Open a cash session to record new check-ins.'
+      : getLockReason('create a new check-in');
+
     if (activePage === 'logbook') {
       setActions(
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
+          {/* ─── RELOCATED LOGBOOK TELEMETRY CAPSULE ─── */}
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 select-none shadow-xs">
+            <>
+              <div className="flex items-center gap-1.5">
+                <DynamicBanknoteIcon trend={revenueTrend} />
+                <span className="font-heading font-black text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white">
+                  <AnimatedCurrency
+                    value={activeRevenue}
+                    trend={revenueTrend}
+                  />
+                </span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-600 font-bold">
+                •
+              </span>
+              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="font-heading font-bold text-xs">
+                  <AnimatedNumber value={activeCheckinsCount} />{' '}
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">
+                    Check-ins
+                  </span>
+                </span>
+              </div>
+            </>
+          </div>
+
           {role === 'admin' && (
             <>
+              {/* LOGBOOK RECYCLE BIN */}
               <Button
                 onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Recycle Bin is unavailable while the cash session is closed.'
+                    );
+                    return;
+                  }
                   if (stagedDeletionsRef.current.length > 0) {
                     stagedDeletionsRef.current.forEach((log) =>
                       handleConfirmDelete(String(log.id))
@@ -1229,35 +1399,48 @@ export const LogbookPage: React.FC = () => {
                   }
                   setIsRecycleBinOpen(true);
                 }}
+                disabled={!isSessionOpen}
+                title={
+                  !isSessionOpen
+                    ? 'Recycle Bin is locked: Cash session is closed'
+                    : 'Recycle Bin'
+                }
                 variant="secondary"
-                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
+                className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                  !isSessionOpen
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'
+                }`}
               >
                 <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
                 <span>RECYCLE BIN</span>
               </Button>
-
-              <Button
-                onClick={() => setIsReportModalOpen(true)}
-                variant="secondary"
-                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>GENERATE REPORT</span>
-              </Button>
             </>
           )}
 
+          {/* NEW CHECK-IN BUTTON */}
           <Button
             onClick={() => {
-              if (isLocked) return;
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot check in: Cash drawer session is closed.'
+                );
+                return;
+              }
+              if (isLocked) {
+                toast.error(getLockReason('create a new check-in'));
+                return;
+              }
               setInitialSearchVal('');
               setIsCreateModalOpen(true);
             }}
             variant="primary"
-            disabled={isLocked}
-            title={isLocked ? getLockReason('create a new check-in') : 'Create New Check-in'}
+            disabled={isActionLocked}
+            title={isActionLocked ? actionLockReason : 'Create New Check-in'}
             className={`hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
-              isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              isActionLocked
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer'
             }`}
           >
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
@@ -1280,28 +1463,62 @@ export const LogbookPage: React.FC = () => {
           </Button>
 
           {role === 'admin' && (
+            /* MEMBERS RECYCLE BIN */
             <Button
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent('trigger-member-recycle'))
+              onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Recycle Bin is unavailable while the cash session is closed.'
+                  );
+                  return;
+                }
+                window.dispatchEvent(new CustomEvent('trigger-member-recycle'));
+              }}
+              disabled={!isSessionOpen}
+              title={
+                !isSessionOpen
+                  ? 'Recycle Bin is locked: Cash session is closed'
+                  : 'Recycle Bin'
               }
               variant="secondary"
-              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
+              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                !isSessionOpen
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer'
+              }`}
             >
               <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
             </Button>
           )}
 
+          {/* ENROLL MEMBER BUTTON */}
           <Button
             onClick={() => {
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot enroll member: Cash drawer session is closed.'
+                );
+                return;
+              }
               if (isLocked) return;
               window.dispatchEvent(new CustomEvent('trigger-member-wizard'));
             }}
             variant="primary"
-            disabled={isLocked}
-            title={isLocked ? getLockReason('enroll new members or collect membership fees') : 'Enroll New Member'}
+            disabled={isActionLocked}
+            title={
+              !isSessionOpen
+                ? 'Cash session is closed. Open a cash session to enroll members.'
+                : isLocked
+                  ? getLockReason(
+                      'enroll new members or collect membership fees'
+                    )
+                  : 'Enroll New Member'
+            }
             className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
-              isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              isActionLocked
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer'
             }`}
           >
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
@@ -1314,7 +1531,18 @@ export const LogbookPage: React.FC = () => {
     return () => {
       setActions(null);
     };
-  }, [role, setActions, activePage, handleConfirmDelete]);
+  }, [
+    role,
+    setActions,
+    activePage,
+    handleConfirmDelete,
+    isSessionOpen,
+    isLocked,
+    getLockReason,
+    activeRevenue,
+    activeCheckinsCount,
+    revenueTrend,
+  ]);
 
   useEffect(() => {
     if (location.state && (location.state as any).refreshed) {
@@ -1487,29 +1715,6 @@ export const LogbookPage: React.FC = () => {
                   );
                 }
 
-                const hourlyGroups: { label: string; records: LogRecord[] }[] =
-                  [];
-
-                paginatedLogs.forEach((log) => {
-                  const rawTime = log.timestamp;
-                  let hourLabel = 'Unknown Time';
-                  if (rawTime) {
-                    try {
-                      hourLabel = format(parseISO(rawTime), 'hh:00 a');
-                    } catch (e) {
-                      console.error(e);
-                    }
-                  }
-                  const existingGroup = hourlyGroups.find(
-                    (g) => g.label === hourLabel
-                  );
-                  if (existingGroup) {
-                    existingGroup.records.push(log);
-                  } else {
-                    hourlyGroups.push({ label: hourLabel, records: [log] });
-                  }
-                });
-
                 if (totalItems === 0) {
                   const hasFilter =
                     ledgerSearch.trim() !== '' ||
@@ -1559,15 +1764,15 @@ export const LogbookPage: React.FC = () => {
                       ) : isSelectedDayToday ? (
                         <button
                           type="button"
-                          disabled={isLocked}
-                          title={isLocked ? getLockReason('record new check-in') : 'Record New Check-in'}
+                          disabled={isLocked || !isSessionOpen}
                           onClick={() => {
-                            if (isLocked) return;
                             setInitialSearchVal('');
                             setIsCreateModalOpen(true);
                           }}
                           className={`mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
-                            isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-90 active:scale-95'
+                            isLocked || !isSessionOpen
+                              ? 'opacity-50 cursor-not-allowed'
+                              : 'cursor-pointer hover:opacity-90 active:scale-95'
                           }`}
                         >
                           <Plus className="w-4 h-4" />
@@ -1578,9 +1783,187 @@ export const LogbookPage: React.FC = () => {
                   );
                 }
 
+                // ─── PARTITION LOGS: ONGOING vs. ENDED SESSIONS (WITH TIMESTAMP WINDOW FALLBACK) ───
+                const activeSessionId = activeSession?.id
+                  ? String(activeSession.id)
+                  : null;
+
+                const ongoingLogs: LogRecord[] = [];
+                const closedSessionGroups: {
+                  session: SessionSummaryInfo;
+                  records: LogRecord[];
+                }[] = [];
+                const closedMap = new Map<string, LogRecord[]>();
+
+                paginatedLogs.forEach((log) => {
+                  const logSid = (log as any).cash_session_id
+                    ? String((log as any).cash_session_id)
+                    : null;
+
+                  // 1. If active session is open and log belongs to it -> MUST BE ONGOING (not contained)
+                  if (
+                    isSessionOpen &&
+                    activeSessionId &&
+                    logSid === activeSessionId
+                  ) {
+                    ongoingLogs.push(log);
+                    return;
+                  }
+
+                  // 2. Check if log matches a closed session (via explicit ID OR timestamp window fallback)
+                  const matchedClosedSession = mergedClosedSessions.find(
+                    (cs) => {
+                      if (logSid && String(cs.id) === logSid) return true;
+
+                      // Timestamp window fallback:
+                      if (log.timestamp && cs.opened_at && cs.closed_at) {
+                        const t = new Date(log.timestamp).getTime();
+                        const o = new Date(cs.opened_at).getTime();
+                        const c = new Date(cs.closed_at).getTime();
+                        return t >= o && t <= c;
+                      }
+                      return false;
+                    }
+                  );
+
+                  if (matchedClosedSession) {
+                    const sid = String(matchedClosedSession.id);
+                    if (!closedMap.has(sid)) {
+                      closedMap.set(sid, []);
+                    }
+                    closedMap.get(sid)!.push(log);
+                  } else {
+                    ongoingLogs.push(log);
+                  }
+                });
+
+                closedMap.forEach((records, sid) => {
+                  const sessionMeta = mergedClosedSessions.find(
+                    (cs) => String(cs.id) === sid
+                  );
+                  if (sessionMeta) {
+                    closedSessionGroups.push({ session: sessionMeta, records });
+                  }
+                });
+
+                // Group ongoing logs by hour
+                const ongoingHourlyGroups: {
+                  label: string;
+                  records: LogRecord[];
+                }[] = [];
+                ongoingLogs.forEach((log) => {
+                  const rawTime = log.timestamp;
+                  let hourLabel = 'Unknown Time';
+                  if (rawTime) {
+                    try {
+                      hourLabel = format(parseISO(rawTime), 'hh:00 a');
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }
+                  const existing = ongoingHourlyGroups.find(
+                    (g) => g.label === hourLabel
+                  );
+                  if (existing) {
+                    existing.records.push(log);
+                  } else {
+                    ongoingHourlyGroups.push({
+                      label: hourLabel,
+                      records: [log],
+                    });
+                  }
+                });
+
+                const renderTimelineCard = (log: LogRecord) => {
+                  const strId = String(log.id);
+                  const isNew = strId === newlyAddedId;
+                  const isDeleting = deletingIds.includes(strId);
+
+                  return (
+                    <motion.div
+                      key={strId}
+                      layout
+                      initial={{
+                        opacity: 0,
+                        y: -15,
+                        scale: 0.96,
+                        boxShadow:
+                          '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
+                      }}
+                      animate={
+                        isDeleting
+                          ? {
+                              opacity: 0,
+                              scale: 0.92,
+                              y: -5,
+                              boxShadow:
+                                '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                              filter: 'brightness(0.9)',
+                            }
+                          : {
+                              opacity: 1,
+                              y: 0,
+                              scale: 1,
+                              boxShadow: isNew
+                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                            }
+                      }
+                      exit={{
+                        opacity: 0,
+                        scale: 0.9,
+                        y: -10,
+                        boxShadow:
+                          '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                      }}
+                      transition={{
+                        layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                        boxShadow: {
+                          duration: isDeleting ? 0.15 : 1.5,
+                          ease: 'easeOut',
+                        },
+                        opacity: { duration: isDeleting ? 0.38 : 0.3 },
+                      }}
+                      className="rounded-2xl transition-all overflow-hidden"
+                    >
+                      <TimelineCard
+                        mode="attendance"
+                        data={log}
+                        canDelete={isLogDeletable(log) && !isDeleting}
+                        deleteDisabledReason={getLogDeleteDisabledReason(log)}
+                        onSelectReceipt={(rec) => {
+                          setSelectedReceiptLog(rec);
+                          setIsReceiptModalOpen(true);
+                        }}
+                        onTriggerDelete={handleDeleteLog}
+                        onTriggerCollectPayment={(record) => {
+                          if (!isLogDeletable(record)) {
+                            toast.error(
+                              'Cannot collect payment: this record belongs to a closed cash session.'
+                            );
+                            return;
+                          }
+                          handleTriggerCollectPayment(record);
+                        }}
+                        onTriggerUndoPayment={(record) => {
+                          if (!isLogDeletable(record)) {
+                            toast.error(
+                              'Cannot undo payment: this record belongs to a closed cash session.'
+                            );
+                            return;
+                          }
+                          handleTriggerUndoPayment(record);
+                        }}
+                        onDragEnd={handleDragEnd}
+                      />
+                    </motion.div>
+                  );
+                };
+
                 return (
                   <div className="space-y-6">
-                    {hourlyGroups.map((group) => (
+                    {/* 1. ONGOING / UNGROUPED CARDS (ACTIVE SESSION) */}
+                    {ongoingHourlyGroups.map((group) => (
                       <div
                         key={group.label}
                         className="space-y-4 font-body animate-fade-in"
@@ -1594,94 +1977,49 @@ export const LogbookPage: React.FC = () => {
 
                         <div className="space-y-2.5">
                           <AnimatePresence mode="popLayout" initial={false}>
-                            {group.records.map((log) => {
-                              const strId = String(log.id);
-                              const isNew = strId === newlyAddedId;
-                              const isDeleting = deletingIds.includes(strId);
-
-                              return (
-                                <motion.div
-                                  key={strId}
-                                  layout
-                                  initial={{
-                                    opacity: 0,
-                                    y: -15,
-                                    scale: 0.96,
-                                    boxShadow:
-                                      '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
-                                  }}
-                                  animate={
-                                    isDeleting
-                                      ? {
-                                          opacity: 0,
-                                          scale: 0.92,
-                                          y: -5,
-                                          boxShadow:
-                                            '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                          filter: 'brightness(0.9)',
-                                        }
-                                      : {
-                                          opacity: 1,
-                                          y: 0,
-                                          scale: 1,
-                                          boxShadow: isNew
-                                            ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                            : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
-                                        }
-                                  }
-                                  exit={{
-                                    opacity: 0,
-                                    scale: 0.9,
-                                    y: -10,
-                                    boxShadow:
-                                      '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                  }}
-                                  transition={{
-                                    layout: {
-                                      duration: 0.35,
-                                      ease: [0.16, 1, 0.3, 1],
-                                    },
-                                    boxShadow: {
-                                      duration: isDeleting ? 0.15 : 1.5,
-                                      ease: 'easeOut',
-                                    },
-                                    opacity: {
-                                      duration: isDeleting ? 0.38 : 0.3,
-                                    },
-                                  }}
-                                  className="rounded-2xl transition-all overflow-hidden"
-                                >
-                                   <TimelineCard
-                                    mode="attendance"
-                                    data={log}
-                                    canDelete={
-                                      isLogDeletable(log) && !isDeleting
-                                    }
-                                    deleteDisabledReason={
-                                      isLocked ? getLockReason('delete check-in records') : undefined
-                                    }
-                                    onSelectReceipt={(rec) => {
-                                      setSelectedReceiptLog(rec);
-                                      setIsReceiptModalOpen(true);
-                                    }}
-                                    onTriggerDelete={handleDeleteLog}
-                                    onTriggerCollectPayment={
-                                      handleTriggerCollectPayment
-                                    }
-                                    onTriggerUndoPayment={
-                                      handleTriggerUndoPayment
-                                    }
-                                    onDragEnd={handleDragEnd}
-                                  />
-                                </motion.div>
-                              );
-                            })}
+                            {group.records.map(renderTimelineCard)}
                           </AnimatePresence>
                         </div>
                       </div>
                     ))}
 
-                    {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
+                    {/* ─── SEPARATOR: ACTIVE VS ENDED SESSIONS ─── */}
+                    {ongoingHourlyGroups.length > 0 &&
+                      closedSessionGroups.length > 0 && (
+                        <div className="flex items-center gap-3 pt-3 select-none">
+                          <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
+                            <Lock className="w-3 h-3 text-blue-500" />
+                            <span>
+                              CLOSED SESSIONS ({closedSessionGroups.length})
+                            </span>
+                          </div>
+                          <div className="h-px flex-1 bg-gradient-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                        </div>
+                      )}
+
+                    {/* 2. CONTAINED CLOSED SESSION ACCORDIONS (DEFAULT COLLAPSED, BLUE) */}
+                    {closedSessionGroups.map((group) => {
+                      const totalRev = group.records.reduce((sum, r) => {
+                        if (r.paymentStatus === 'Paid') {
+                          return sum + (Number(r.amountPaid) || 0);
+                        }
+                        return sum;
+                      }, 0);
+
+                      return (
+                        <ClosedSessionGroup
+                          key={group.session.id}
+                          session={group.session}
+                          mode="attendance"
+                          totalRevenue={totalRev}
+                          itemCount={group.records.length}
+                        >
+                          {group.records.map(renderTimelineCard)}
+                        </ClosedSessionGroup>
+                      );
+                    })}
+
+                    {/* LAZY LOADING SENTINEL */}
                     {totalItems > 0 && (
                       <div
                         ref={loadMoreRef}
@@ -1717,20 +2055,24 @@ export const LogbookPage: React.FC = () => {
                       </div>
                     )}
 
-                    {/* ─── QUICK ACTION HORIZONTAL CHECK-IN BUTTON ─── */}
+                    {/* QUICK ACTION HORIZONTAL CHECK-IN BUTTON */}
                     <motion.button
-                      whileHover={isLocked ? {} : { scale: 1.01 }}
-                      whileTap={isLocked ? {} : { scale: 0.98 }}
+                      whileHover={
+                        isLocked || !isSessionOpen ? {} : { scale: 1.01 }
+                      }
+                      whileTap={
+                        isLocked || !isSessionOpen ? {} : { scale: 0.98 }
+                      }
                       type="button"
-                      disabled={isLocked}
-                      title={isLocked ? getLockReason('create a new check-in') : 'Create New Check-in'}
+                      disabled={isLocked || !isSessionOpen}
                       onClick={() => {
-                        if (isLocked) return;
                         setInitialSearchVal('');
                         setIsCreateModalOpen(true);
                       }}
                       className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
-                        isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                        isLocked || !isSessionOpen
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
                       }`}
                     >
                       <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
@@ -1867,14 +2209,6 @@ export const LogbookPage: React.FC = () => {
         />
       )}
 
-      {isReportModalOpen && (
-        <LogbookReportCompiler
-          isOpen={isReportModalOpen}
-          onClose={() => setIsReportModalOpen(false)}
-          logs={logs}
-        />
-      )}
-
       {/* CONSOLIDATED STACKABLE UNDO TOAST */}
       <UndoToast
         items={undoToastItems}
@@ -1888,13 +2222,19 @@ export const LogbookPage: React.FC = () => {
       {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
       {activePage === 'logbook' &&
         createPortal(
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
+          <div
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1.5 shrink-0">
                 <DynamicBanknoteIcon trend={revenueTrend} />
                 <span className="text-[11px]">
                   <AnimatedCurrency
-                    value={totalCollectedToday}
+                    value={activeRevenue}
                     trend={revenueTrend}
                   />
                 </span>
@@ -1903,52 +2243,70 @@ export const LogbookPage: React.FC = () => {
               <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
                 <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-[11px] truncate">
-                  <AnimatedNumber value={dayLogs.length} /> Check-ins
+                  <AnimatedNumber value={activeCheckinsCount} /> Check-ins
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
               {role === 'admin' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (stagedDeletionsRef.current.length > 0) {
-                        stagedDeletionsRef.current.forEach((log) =>
-                          handleConfirmDelete(String(log.id))
-                        );
-                      }
-                      setIsRecycleBinOpen(true);
-                    }}
-                    className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                    title="Recycle Bin"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsReportModalOpen(true)}
-                    className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                    title="Generate Report"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  disabled={!isSessionOpen}
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Recycle Bin is unavailable while the cash session is closed.'
+                      );
+                      return;
+                    }
+                    if (stagedDeletionsRef.current.length > 0) {
+                      stagedDeletionsRef.current.forEach((log) =>
+                        handleConfirmDelete(String(log.id))
+                      );
+                    }
+                    setIsRecycleBinOpen(true);
+                  }}
+                  className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-all ${
+                    !isSessionOpen
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    !isSessionOpen
+                      ? 'Recycle Bin is locked: Cash session is closed'
+                      : 'Recycle Bin'
+                  }
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
 
               <button
                 type="button"
-                disabled={isLocked}
-                title={isLocked ? getLockReason('record new check-in') : 'Record New Check-In'}
+                disabled={isLocked || !isSessionOpen}
+                title={
+                  !isSessionOpen
+                    ? 'Cash session is closed. Open a cash session to record check-ins.'
+                    : isLocked
+                      ? getLockReason('record new check-in')
+                      : 'Record New Check-In'
+                }
                 onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot check in: Cash drawer session is closed.'
+                    );
+                    return;
+                  }
                   if (isLocked) return;
                   setInitialSearchVal('');
                   setIsCreateModalOpen(true);
                 }}
                 className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md transition-all ${
-                  isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95'
+                  isLocked || !isSessionOpen
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer active:scale-95'
                 }`}
               >
                 <Plus className="w-4 h-4 shrink-0" />

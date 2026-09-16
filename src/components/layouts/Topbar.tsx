@@ -24,6 +24,7 @@ import {
   ArrowUpRight,
   Smartphone,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import {
   motion,
@@ -269,6 +270,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     isSessionOpen,
     currentDrawerCash,
     activeSession,
+    isInitializing,
+    isLoading: isCashLoading,
     loadActiveSession,
     refreshTransactions,
   } = useCashSessionStore();
@@ -279,7 +282,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   );
   const cashContainerRef = useRef<HTMLDivElement>(null);
 
-  // Logbook Telemetry
+  // Logbook Telemetry (Active Session Only)
   const [logbookKpiData, setLogbookKpiData] = useState<LogbookKpiData>({
     checkins: 0,
     revenue: 0,
@@ -287,13 +290,31 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     revenueTrend: 'neutral',
   });
 
-  // Sales Register Telemetry
+  // Sales Register Telemetry (Active Session Only)
   const [salesKpiData, setSalesKpiData] = useState<SalesKpiData>({
     revenue: 0,
     salesCount: 0,
     itemsSold: 0,
     revenueTrend: 'neutral',
   });
+
+  // Reset metrics to 0 whenever session is confirmed closed and not initializing
+  useEffect(() => {
+    if (!isSessionOpen && !isInitializing) {
+      setSalesKpiData({
+        revenue: 0,
+        salesCount: 0,
+        itemsSold: 0,
+        revenueTrend: 'neutral',
+      });
+      setLogbookKpiData({
+        checkins: 0,
+        revenue: 0,
+        newMembers: 0,
+        revenueTrend: 'neutral',
+      });
+    }
+  }, [isSessionOpen, isInitializing]);
 
   // Products Inventory Telemetry
   const [productsKpiData, setProductsKpiData] = useState<ProductsKpiData>({
@@ -381,6 +402,11 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       setNotificationOpen(false);
     }
     setIsCashPopoverOpen((prev) => !prev);
+  };
+
+  const handleOpenTransactionModal = (type: CashTransactionType) => {
+    setIsCashPopoverOpen(false);
+    setActiveTxType(type);
   };
 
   useEffect(() => {
@@ -514,8 +540,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const isMembersPath = location.pathname.startsWith('/members');
   const isProductsView = location.pathname === '/sales/products';
   const isPlansView = location.pathname.includes('/plans');
-  const showKpiWidget =
-    isLogbookPath || isSalesPath || (isMembersPath && !isPlansView);
+  const showKpiWidget = isProductsView || (isMembersPath && !isPlansView);
 
   const getSectionIcon = () => {
     const firstSegment =
@@ -607,6 +632,12 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     });
   };
 
+  // If we are initializing OR an open session has not yet loaded its drawer balance, stay in loading mode
+  const isCashChecking =
+    isInitializing ||
+    (isSessionOpen && currentDrawerCash === null) ||
+    (isCashLoading && !activeSession);
+
   return (
     <header className="h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-3 sm:px-4 md:px-6 z-40 select-none">
       {/* 1. LEFT TITLE & DESKTOP TELEMETRY */}
@@ -652,7 +683,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
               <button
                 type="button"
                 onClick={handleToggleKpi}
-                aria-label="Today's Metrics"
+                aria-label="Active Session Metrics"
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
               >
                 {isMembersPath ? (
@@ -706,29 +737,53 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                     </div>
                   </>
                 ) : isSalesPath ? (
-                  <>
-                    <div className="flex items-center gap-1.5">
-                      <DynamicBanknoteIcon trend={salesKpiData.revenueTrend} />
-                      <span className="font-heading font-black text-sm tracking-tight">
-                        <AnimatedKpiCurrency
-                          value={salesKpiData.revenue}
+                  isCashChecking ? (
+                    <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>CHECKING DRAWER...</span>
+                    </div>
+                  ) : !isSessionOpen ? (
+                    <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <span>SESSION CLOSED</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <DynamicBanknoteIcon
                           trend={salesKpiData.revenueTrend}
                         />
-                      </span>
-                    </div>
-                    <span className="text-slate-300 dark:text-zinc-600 font-bold">
-                      •
-                    </span>
-                    <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                      <ShoppingBag className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span className="font-heading font-bold text-xs">
-                        <AnimatedKpiNumber value={salesKpiData.salesCount} />{' '}
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
-                          Sales
+                        <span className="font-heading font-black text-sm tracking-tight">
+                          <AnimatedKpiCurrency
+                            value={salesKpiData.revenue}
+                            trend={salesKpiData.revenueTrend}
+                          />
                         </span>
+                      </div>
+                      <span className="text-slate-300 dark:text-zinc-600 font-bold">
+                        •
                       </span>
-                    </div>
-                  </>
+                      <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <ShoppingBag className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span className="font-heading font-bold text-xs">
+                          <AnimatedKpiNumber value={salesKpiData.salesCount} />{' '}
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+                            Sales
+                          </span>
+                        </span>
+                      </div>
+                    </>
+                  )
+                ) : isCashChecking ? (
+                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>CHECKING DRAWER...</span>
+                  </div>
+                ) : !isSessionOpen ? (
+                  <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    <span>SESSION CLOSED</span>
+                  </div>
                 ) : (
                   <>
                     <div className="flex items-center gap-1.5">
@@ -776,8 +831,12 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                             : isProductsView
                               ? 'Product Catalog Telemetry'
                               : isSalesPath
-                                ? "Today's Sales Telemetry"
-                                : "Today's Telemetry Overview"}
+                                ? isSessionOpen
+                                  ? `Active Session #${activeSession?.session_number || ''} Sales Telemetry`
+                                  : 'Sales Telemetry (Session Closed)'
+                                : isSessionOpen
+                                  ? `Active Session #${activeSession?.session_number || ''} Logbook Telemetry`
+                                  : 'Logbook Telemetry (Session Closed)'}
                         </span>
                       </div>
 
@@ -956,6 +1015,15 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                           </div>
                         </div>
                       )}
+
+                      {!isSessionOpen &&
+                        !isCashChecking &&
+                        (isSalesPath || isLogbookPath) && (
+                          <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider text-center pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
+                            Drawer session is closed. Telemetry resets for the
+                            next session.
+                          </p>
+                        )}
                     </motion.div>
                   </div>
                 )}
@@ -973,38 +1041,54 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
             type="button"
             onClick={handleToggleCashPopover}
             className={`flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none ${
-              isSessionOpen
-                ? 'border-emerald-500/30 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30'
-                : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700'
+              isCashChecking
+                ? 'border-slate-200 dark:border-zinc-700/80 bg-slate-100/80 dark:bg-zinc-800/80 text-slate-500'
+                : isSessionOpen
+                  ? 'border-emerald-500/30 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30'
+                  : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700'
             }`}
             title="Cash Register Drawer Status"
           >
-            <Wallet
-              className={`w-3.5 h-3.5 ${
-                isSessionOpen
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-rose-500'
-              }`}
-            />
-            <div className="flex items-center gap-1.5 font-mono font-bold">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isSessionOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+            {isCashChecking ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+            ) : (
+              <Wallet
+                className={`w-3.5 h-3.5 ${
+                  isSessionOpen
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-rose-500'
                 }`}
               />
-              <span
-                className={
-                  isSessionOpen
-                    ? 'text-emerald-700 dark:text-emerald-300 font-extrabold'
-                    : 'text-rose-600 dark:text-rose-400 text-[10px]'
-                }
-              >
-                {isSessionOpen
-                  ? `₱${currentDrawerCash.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                    })}`
-                  : 'CLOSED'}
-              </span>
+            )}
+            <div className="flex items-center gap-1.5 font-mono font-bold">
+              {isCashChecking ? (
+                <span className="text-[10px] text-slate-500 tracking-wider">
+                  LOADING...
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isSessionOpen
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-rose-500'
+                    }`}
+                  />
+                  <span
+                    className={
+                      isSessionOpen
+                        ? 'text-emerald-700 dark:text-emerald-300 font-extrabold'
+                        : 'text-rose-600 dark:text-rose-400 text-[10px]'
+                    }
+                  >
+                    {isSessionOpen && currentDrawerCash !== null
+                      ? `₱${currentDrawerCash.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                        })}`
+                      : 'CLOSED'}
+                  </span>
+                </>
+              )}
             </div>
           </button>
 
@@ -1027,25 +1111,37 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                         PHYSICAL DRAWER CASH
                       </span>
                     </div>
-                    <span
-                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        isSessionOpen
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {isSessionOpen ? 'ACTIVE' : 'CLOSED'}
-                    </span>
+                    {isCashChecking ? (
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                        CHECKING...
+                      </span>
+                    ) : (
+                      <span
+                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          isSessionOpen
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {isSessionOpen ? 'ACTIVE' : 'CLOSED'}
+                      </span>
+                    )}
                   </div>
 
-                  {/* Cash Amount Box (Directly Revealed) */}
+                  {/* Cash Amount Box */}
                   <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60">
                     <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-1">
                       Live In-Drawer Balance
                     </div>
 
                     <div className="text-2xl font-mono font-black text-slate-900 dark:text-white transition-all">
-                      {isSessionOpen ? (
+                      {isCashChecking ||
+                      (isSessionOpen && currentDrawerCash === null) ? (
+                        <div className="flex items-center gap-2 text-sm text-slate-400 font-normal">
+                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                          <span>Loading drawer balance...</span>
+                        </div>
+                      ) : isSessionOpen && currentDrawerCash !== null ? (
                         `₱${currentDrawerCash.toLocaleString('en-US', {
                           minimumFractionDigits: 2,
                         })}`
@@ -1056,7 +1152,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                       )}
                     </div>
 
-                    {isSessionOpen && activeSession && (
+                    {!isCashChecking && isSessionOpen && activeSession && (
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">
                         Session #{activeSession.session_number} • Opener:{' '}
                         {activeSession.opened_by_name}
@@ -1064,15 +1160,16 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                     )}
                   </div>
 
-                  {/* Quick Action Buttons (Cash In, Cash Out, Digital In) */}
-                  {isSessionOpen ? (
+                  {/* Quick Action Buttons */}
+                  {isCashChecking ? (
+                    <div className="text-[11px] text-slate-400 text-center py-2">
+                      Loading session actions...
+                    </div>
+                  ) : isSessionOpen ? (
                     <div className="grid grid-cols-3 gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsCashPopoverOpen(false);
-                          setActiveTxType('cash_in');
-                        }}
+                        onClick={() => handleOpenTransactionModal('cash_in')}
                         className="flex flex-col items-center justify-center p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 active:scale-95 transition-all text-center cursor-pointer"
                       >
                         <ArrowDownRight className="w-4 h-4 mb-0.5 text-emerald-600 dark:text-emerald-400" />
@@ -1081,10 +1178,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsCashPopoverOpen(false);
-                          setActiveTxType('cash_out');
-                        }}
+                        onClick={() => handleOpenTransactionModal('cash_out')}
                         className="flex flex-col items-center justify-center p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-500/20 active:scale-95 transition-all text-center cursor-pointer"
                       >
                         <ArrowUpRight className="w-4 h-4 mb-0.5 text-rose-600 dark:text-rose-400" />
@@ -1093,10 +1187,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsCashPopoverOpen(false);
-                          setActiveTxType('digital_in');
-                        }}
+                        onClick={() => handleOpenTransactionModal('digital_in')}
                         className="flex flex-col items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-500/20 active:scale-95 transition-all text-center cursor-pointer"
                       >
                         <Smartphone className="w-4 h-4 mb-0.5 text-blue-600 dark:text-blue-400" />
@@ -1133,7 +1224,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           {currentTimeFull}
         </div>
 
-        {/* NOTIFICATION BELL BUTTON - (Hidden on mobile portrait, shown on `hidden md:flex`) */}
+        {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (
           <div className="relative hidden md:flex">
             <button
@@ -1181,7 +1272,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       </div>
 
       {/* QUICK CASH TRANSACTION MODAL TRIGGERED DIRECTLY FROM TOPBAR */}
-      {isSessionOpen && activeSession && activeTxType && (
+      {activeSession && activeTxType && (
         <CashTransactionModal
           isOpen={Boolean(activeTxType)}
           onClose={() => setActiveTxType(null)}

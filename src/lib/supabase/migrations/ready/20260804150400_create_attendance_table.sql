@@ -1,3 +1,7 @@
+-- Migration: Create Attendance Table with Soft Delete
+-- Description: Creates attendance logging table, triggers, and soft-delete functions.
+-- Timestamp: 20260804150400_create_attendance_table.sql
+
 BEGIN;
 
 -- 1. Create Table safely IF NOT EXISTS
@@ -35,15 +39,12 @@ ALTER TABLE public.attendance
 CREATE OR REPLACE FUNCTION public.handle_attendance_soft_delete()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If already soft-deleted, allow physical DELETE statement (used by nightly purge job)
+    -- If already soft-deleted, allow physical DELETE statement (used by session close purge)
     IF OLD.deleted_at IS NOT NULL THEN
         RETURN OLD;
     END IF;
 
     -- HARD DELETE BYPASS: Only New Membership enrollments bypass soft-delete.
-    -- They are physically purged from the database and NEVER enter the Recycle Bin.
-    -- (Note: Broad ILIKE '%Monthly%' or '%Yearly%' checks were removed so existing member 
-    -- check-ins like "Monthly Member Entry" soft-delete properly instead of being hard-deleted).
     IF OLD.customer_type::text = 'New Membership' OR OLD.plan_name ILIKE '%Subscription Contract%' THEN
         RETURN OLD; -- Proceed with physical hard row removal
     END IF;
@@ -65,7 +66,7 @@ CREATE TRIGGER tr_attendance_soft_delete
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_attendance_soft_delete();
 
--- 3. Purge Function for soft-deleted items (ONLY purges standard check-in items where deleted_at IS NOT NULL)
+-- 3. Purge Function for soft-deleted items (invoked manually when cash session closes)
 CREATE OR REPLACE FUNCTION public.purge_soft_deleted_attendance()
 RETURNS void AS $$
 BEGIN
@@ -74,21 +75,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 4. Integrated pg_cron Schedule for Logbook Attendance Purging
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-
+-- 4. ELIMINATE CRON PURGE SCHEDULE
+-- Safely unschedule any existing purge cron job (purging is now handled manually when cash session closes)
 DO $$
 BEGIN
-    PERFORM cron.unschedule('daily-purge-soft-deleted-attendance');
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.unschedule('daily-purge-soft-deleted-attendance');
+    END IF;
 EXCEPTION WHEN OTHERS THEN
+    -- Ignore error if the job was not scheduled
 END $$;
-
--- Schedule daily purge at 12:00 AM Manila Time (16:00 UTC)
-SELECT cron.schedule(
-    'daily-purge-soft-deleted-attendance',
-    '0 16 * * *', 
-    'SELECT public.purge_soft_deleted_attendance();'
-);
 
 -- 5. Row Level Security (RLS) Configuration
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
@@ -136,7 +132,7 @@ CREATE POLICY "Allow authorized users to delete attendance" ON public.attendance
         )
     );
 
--- Enable Realtime
+-- 6. Enable Realtime
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN

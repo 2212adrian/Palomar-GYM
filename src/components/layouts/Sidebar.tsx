@@ -30,7 +30,7 @@ import pkg from '../../../package.json';
 // Texture imports for background accent layers
 import axiomTexture from '../../assets/textures/hexagons.svg';
 
-const APP_VERSION = pkg.version || '0.15.0';
+const APP_VERSION = pkg.version || '0.25.3';
 
 import { SidebarProfileFlipper } from './SidebarProfileFlipper';
 
@@ -47,19 +47,20 @@ interface ChildItem {
   path: string;
   roles?: ('admin' | 'staff')[];
   badge?: string;
+  revenueBadge?: string;
   notificationCount?: number;
   notificationColor?: 'red' | 'amber';
   description?: string;
-  moneyStat?: number;
 }
 
 interface MenuItem {
   name: string;
+  section?: string;
   icon: React.ReactNode;
   roles?: ('admin' | 'staff')[];
   path?: string;
+  revenueBadge?: string;
   notificationCount?: number;
-  totalMoney?: number;
   children?: ChildItem[];
 }
 
@@ -173,145 +174,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     null
   );
 
-  // Real-time Today's Total Money for Register Sale and Logbook
-  const [todaySalesTotal, setTodaySalesTotal] = useState<number>(0);
-  const [todayLogbookTotal, setTodayLogbookTotal] = useState<number>(0);
-
-  useEffect(() => {
-    const handleSalesUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (
-        customEvent.detail &&
-        typeof customEvent.detail.revenue === 'number'
-      ) {
-        setTodaySalesTotal(customEvent.detail.revenue);
-      }
-    };
-
-    const handleLogbookUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (
-        customEvent.detail &&
-        typeof customEvent.detail.revenue === 'number'
-      ) {
-        setTodayLogbookTotal(customEvent.detail.revenue);
-      }
-    };
-
-    window.addEventListener('sales-kpi-update', handleSalesUpdate);
-    window.addEventListener('logbook-kpi-update', handleLogbookUpdate);
-
-    // Initial session hydration
-    try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const cachedSales = sessionStorage.getItem(`sales_sanitized_${todayStr}`);
-      if (cachedSales) {
-        const parsedSales = JSON.parse(cachedSales);
-        if (Array.isArray(parsedSales)) {
-          const rev = parsedSales.reduce(
-            (acc: number, t: any) => acc + (Number(t.total_amount) || 0),
-            0
-          );
-          setTodaySalesTotal(rev);
-        }
-      }
-      const cachedLogbook = sessionStorage.getItem(
-        `logbook_sanitized_${todayStr}`
-      );
-      if (cachedLogbook) {
-        const parsedLog = JSON.parse(cachedLogbook);
-        if (Array.isArray(parsedLog)) {
-          const rev = parsedLog.reduce(
-            (acc: number, l: any) =>
-              l.paymentStatus === 'Paid'
-                ? acc + (Number(l.amountPaid) || 0)
-                : acc,
-            0
-          );
-          setTodayLogbookTotal(rev);
-        }
-      }
-    } catch {}
-
-    const fetchTodayTotals = async () => {
-      try {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        const dateStr = `${yyyy}-${mm}-${dd}`;
-        const startOfDay = new Date(
-          `${dateStr}T00:00:00.000+08:00`
-        ).toISOString();
-        const endOfDay = new Date(
-          `${dateStr}T23:59:59.999+08:00`
-        ).toISOString();
-
-        const [salesRes, logbookRes] = await Promise.all([
-          supabase
-            .from('sales')
-            .select('total_amount')
-            .is('deleted_at', null)
-            .gte('created_at', startOfDay)
-            .lte('created_at', endOfDay),
-          supabase
-            .from('attendance_logs')
-            .select('amount_paid, payment_status')
-            .is('deleted_at', null)
-            .gte('timestamp', startOfDay)
-            .lte('timestamp', endOfDay),
-        ]);
-
-        if (salesRes.data) {
-          const total = salesRes.data.reduce(
-            (acc: number, r: any) => acc + (Number(r.total_amount) || 0),
-            0
-          );
-          setTodaySalesTotal(total);
-        }
-
-        if (logbookRes.data) {
-          const total = logbookRes.data.reduce((acc: number, r: any) => {
-            if (r.payment_status === 'Paid') {
-              return acc + (Number(r.amount_paid) || 0);
-            }
-            return acc;
-          }, 0);
-          setTodayLogbookTotal(total);
-        }
-      } catch (err) {
-        // silent fallback
-      }
-    };
-
-    fetchTodayTotals();
-
-    const salesChannel = supabase
-      .channel('sidebar-sales-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sales' },
-        () => fetchTodayTotals()
-      )
-      .subscribe();
-
-    const logbookChannel = supabase
-      .channel('sidebar-logbook-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_logs' },
-        () => fetchTodayTotals()
-      )
-      .subscribe();
-
-    return () => {
-      window.removeEventListener('sales-kpi-update', handleSalesUpdate);
-      window.removeEventListener('logbook-kpi-update', handleLogbookUpdate);
-      supabase.removeChannel(salesChannel);
-      supabase.removeChannel(logbookChannel);
-    };
-  }, []);
-
   // Logout Confirmation States
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] =
@@ -331,33 +193,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   }, [location.pathname]);
 
-  // Dynamic Navigation Menu Structure
+  // Navigation Menu: Shift Session -> Sources of Income -> Gym Operations
   const navigationMenu: MenuItem[] = useMemo(() => {
     const isMemberSection = location.pathname.startsWith('/members');
 
     return [
+      // 1. SESSION & DRAWER (Shift Starting & Closing Point)
       {
         name: 'CASH MANAGEMENT',
+        section: 'SESSION & DRAWER',
         icon: (
           <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
         roles: ['admin', 'staff'],
         path: '/cash-management',
       },
+
+      // 2. SOURCES OF INCOME (Active Daily Business Generators)
       {
         name: 'SALES',
+        section: 'SOURCES OF INCOME',
         icon: (
           <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
         roles: ['admin', 'staff'],
+        revenueBadge: '₱710.00',
         notificationCount: isAdmin ? stockAlertsCount : undefined,
-        totalMoney: todaySalesTotal,
         children: [
           {
             name: 'Register Sale',
             path: '/sales',
             description: 'Point of Registry Sales',
-            moneyStat: todaySalesTotal,
+            revenueBadge: '₱710.00',
           },
           {
             name: 'Product List',
@@ -377,14 +244,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
         roles: ['admin', 'staff'],
+        revenueBadge: '₱0.00',
         notificationCount: isAdmin ? expiringSubsCount : undefined,
-        totalMoney: todayLogbookTotal,
         children: [
           {
             name: 'Logbook',
             path: '/logbook',
             description: 'Instant gate/logbook telemetry',
-            moneyStat: todayLogbookTotal,
           },
           {
             name: 'Member List',
@@ -401,8 +267,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ],
       },
+
+      // 3. GYM OPERATIONS (Macro Performance & Facility)
       {
         name: 'DASHBOARD',
+        section: 'GYM OPERATIONS',
         icon: (
           <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
@@ -437,8 +306,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
-    todaySalesTotal,
-    todayLogbookTotal,
   ]);
 
   const allowedMenu = useMemo(() => {
@@ -615,7 +482,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside
-        className="hidden lg:flex flex-col border-r border-slate-200/80 dark:border-white/5 bg-[#f0f4f8] dark:bg-[#0c0e12] h-full relative z-20 select-none shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.2,0,0,1)] transform-gpu will-change-[width]"
+        className="hidden lg:flex flex-col border-r border-slate-200/80 dark:border-white/5 bg-slate-100/70 dark:bg-[#0c0e12] h-full relative z-20 select-none shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.2,0,0,1)] transform-gpu will-change-[width]"
         style={{ width: collapsed ? '5.25rem' : '20rem' }}
       >
         <div
@@ -626,7 +493,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
         />
 
-        {/* DESKTOP HEADER (EXPANDED STATE) */}
+        {/* DESKTOP HEADER (WITH FLUIDISM) */}
         <div
           className={`transition-all duration-300 ease-in-out relative z-10 shrink-0 ${
             collapsed
@@ -634,7 +501,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               : 'opacity-100'
           }`}
         >
-          <div className="relative bg-white/80 dark:bg-[var(--bg-card)]/80 border-b border-slate-200/80 dark:border-white/10 p-3 shadow-xs backdrop-blur-md">
+          <div className="relative bg-white/80 dark:bg-[#12151c]/90 border-b border-slate-200/80 dark:border-white/10 p-3.5 shadow-xs backdrop-blur-md">
+            {/* Signature Fluid Wave */}
             <div className="absolute top-0 right-0 md:right-auto md:left-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0 md:-scale-x-100">
               <svg
                 viewBox="0 0 160 80"
@@ -647,6 +515,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
               </svg>
             </div>
+
             <div className="relative z-10 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -694,7 +563,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* DESKTOP HEADER (COLLAPSED MINIRAIL) */}
+        {/* DESKTOP HEADER (COLLAPSED STATE) */}
         <div
           className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 shrink-0 transition-all duration-300 ease-in-out ${
             collapsed
@@ -721,7 +590,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* ACCORDION NAVIGATION BUTTONS */}
-        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 relative z-10 font-body">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5 relative z-10 font-heading">
           {allowedMenu.map((item, index) => {
             const visibleChildren = item.children || [];
             const isSingleItem = Boolean(
@@ -734,19 +603,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
             const isExpanded = !collapsed && expandedMenu === item.name;
 
-            if (isSingleItem && item.path) {
-              return (
-                <div key={index} className="space-y-2">
+            return (
+              <div key={index} className="space-y-1">
+                {/* Subtle Section Header */}
+                {!collapsed && item.section && (
+                  <div className="pt-2.5 pb-1 px-1 flex items-center justify-between">
+                    <span className="text-[9.5px] font-heading font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase">
+                      {item.section}
+                    </span>
+                    <span className="h-px flex-1 ml-3 bg-slate-200/70 dark:bg-white/5" />
+                  </div>
+                )}
+
+                {isSingleItem && item.path ? (
                   <Link
                     to={item.path}
-                    className={`flex items-center font-heading text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
+                    className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
                       collapsed
                         ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0'
-                        : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
+                        : 'w-full h-[52px] px-4 rounded-[16px] justify-between'
                     } ${
                       isSingleActive
                         ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
-                        : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
+                        : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-[#141720] dark:text-slate-200 dark:hover:bg-[#1c202c] border-slate-200/90 dark:border-white/5 shadow-xs'
                     }`}
                     title={collapsed ? item.name : undefined}
                   >
@@ -755,7 +634,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className={
                           isSingleActive
                             ? 'text-[#123c73] dark:text-white'
-                            : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                            : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
                         }
                       >
                         {item.icon}
@@ -767,185 +646,182 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
                     </div>
 
-                    {collapsed &&
-                      item.notificationCount !== undefined &&
-                      item.notificationCount > 0 && (
-                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20 animate-pulse">
-                          {formatBadgeCount(item.notificationCount)}
-                        </span>
-                      )}
-
-                    {!collapsed &&
-                      item.notificationCount !== undefined &&
-                      item.notificationCount > 0 && (
-                        <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
-                          {formatBadgeCount(item.notificationCount)}
-                        </span>
-                      )}
-                  </Link>
-                </div>
-              );
-            }
-
-            return (
-              <div key={index} className="space-y-2">
-                <button
-                  onClick={() => handleParentMenuClick(item, false)}
-                  className={`flex items-center font-heading text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
-                    collapsed
-                      ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0'
-                      : 'w-full h-[56px] px-4 rounded-[16px] justify-between'
-                  } ${
-                    isExpanded || isChildActive
-                      ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#161920] dark:text-slate-200 dark:hover:bg-[#1e232d] border-slate-200/80 dark:border-white/5 shadow-xs'
-                  }`}
-                  title={collapsed ? item.name : undefined}
-                >
-                  <div className="flex items-center gap-3 shrink-0 min-w-0">
-                    <span
-                      className={
-                        isExpanded || isChildActive
-                          ? 'text-[#123c73] dark:text-white'
-                          : 'text-slate-400 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                      }
-                    >
-                      {item.icon}
-                    </span>
                     {!collapsed && (
-                      <span className="whitespace-nowrap font-bold truncate">
-                        {item.name}
-                      </span>
-                    )}
-                  </div>
-
-                  {collapsed &&
-                    item.notificationCount !== undefined &&
-                    item.notificationCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20 animate-pulse">
-                        {formatBadgeCount(item.notificationCount)}
-                      </span>
-                    )}
-
-                  {!collapsed && (
-                    <div className="flex items-center gap-1.5">
-                      {item.totalMoney !== undefined && (
-                        <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
-                          ₱
-                          {Number(item.totalMoney).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                          })}
-                        </span>
-                      )}
-                      {item.notificationCount !== undefined &&
-                        item.notificationCount > 0 && (
-                          <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
-                            {formatBadgeCount(item.notificationCount)}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.revenueBadge && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight shrink-0">
+                            {item.revenueBadge}
                           </span>
                         )}
-                      <ChevronDown
-                        className={`w-4 h-4 shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-white' : 'opacity-60'}`}
-                      />
-                    </div>
-                  )}
-                </button>
-
-                {!collapsed && (
+                        {item.notificationCount !== undefined &&
+                          item.notificationCount > 0 && (
+                            <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                              {formatBadgeCount(item.notificationCount)}
+                            </span>
+                          )}
+                      </div>
+                    )}
+                  </Link>
+                ) : (
                   <div
-                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                    className={`transition-all duration-200 rounded-[16px] overflow-hidden ${
                       isExpanded
-                        ? 'grid-rows-[1fr] opacity-100 mt-2'
-                        : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                        ? 'bg-slate-200/60 dark:bg-[#10131b] shadow-sm border border-slate-300/80 dark:border-white/10'
+                        : ''
                     }`}
                   >
-                    <div className="overflow-hidden">
-                      <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
-                        {visibleChildren.map((child, cIdx) => {
-                          const isActive = isPathActive(child.path);
-                          return (
-                            <Link
-                              key={cIdx}
-                              to={child.path}
-                              className={`block p-3 rounded-xl transition-all duration-200 border ${
-                                isActive
-                                  ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs'
-                                  : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <span
-                                    className={`w-2 h-2 rounded-full shrink-0 transition-all ${
-                                      isActive
-                                        ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125'
-                                        : 'bg-slate-300 dark:bg-slate-600'
-                                    }`}
-                                  />
-                                  <span
-                                    className={`text-[11px] font-heading tracking-wider uppercase transition-colors truncate ${
-                                      isActive
-                                        ? 'text-[#123c73] dark:text-white font-black'
-                                        : 'text-slate-700 dark:text-slate-300 font-bold'
-                                    }`}
-                                  >
-                                    {child.name}
-                                  </span>
-                                </div>
+                    <button
+                      onClick={() => handleParentMenuClick(item, false)}
+                      className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group outline-none focus:outline-none ${
+                        collapsed
+                          ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0'
+                          : `w-full h-[52px] px-4 justify-between ${
+                              isExpanded
+                                ? 'rounded-t-[16px] rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
+                                : 'rounded-[16px] ' +
+                                  (isChildActive
+                                    ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
+                                    : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-[#141720] dark:text-slate-200 dark:hover:bg-[#1c202c] border-slate-200/90 dark:border-white/5 shadow-xs')
+                            }`
+                      }`}
+                      title={collapsed ? item.name : undefined}
+                    >
+                      <div className="flex items-center gap-3 shrink-0 min-w-0">
+                        <span
+                          className={
+                            isExpanded || isChildActive
+                              ? 'text-[#123c73] dark:text-white'
+                              : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                          }
+                        >
+                          {item.icon}
+                        </span>
+                        {!collapsed && (
+                          <span className="whitespace-nowrap font-bold truncate">
+                            {item.name}
+                          </span>
+                        )}
+                      </div>
 
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {child.moneyStat !== undefined && (
-                                    <span
-                                      className="text-[9.5px] font-mono font-black px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs flex items-center gap-1"
-                                      title="Today's Total Money"
-                                    >
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                      ₱
-                                      {Number(child.moneyStat).toLocaleString(
-                                        'en-US',
-                                        { minimumFractionDigits: 2 }
-                                      )}
-                                    </span>
-                                  )}
+                      {!collapsed && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          {item.revenueBadge && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight shrink-0">
+                              {item.revenueBadge}
+                            </span>
+                          )}
 
-                                  {child.notificationCount !== undefined &&
-                                    child.notificationCount > 0 && (
-                                      <span
-                                        className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
-                                          child.notificationColor === 'amber'
-                                            ? 'bg-amber-500 text-white border border-amber-400/40'
-                                            : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
-                                        }`}
-                                      >
-                                        {formatBadgeCount(
-                                          child.notificationCount
-                                        )}
-                                      </span>
-                                    )}
+                          {item.notificationCount !== undefined &&
+                            item.notificationCount > 0 && (
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
+                                {formatBadgeCount(item.notificationCount)}
+                              </span>
+                            )}
 
-                                  {child.badge && (
-                                    <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
-                                      {child.badge}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                          <ChevronDown
+                            className={`w-4 h-4 shrink-0 transition-transform duration-300 ${
+                              isExpanded
+                                ? 'rotate-180 text-slate-900 dark:text-white'
+                                : 'text-slate-400'
+                            }`}
+                          />
+                        </div>
+                      )}
+                    </button>
 
-                              {child.description && (
-                                <p
-                                  className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
+                    {/* Submenu Accordion Container */}
+                    {!collapsed && (
+                      <div
+                        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                          isExpanded
+                            ? 'grid-rows-[1fr] opacity-100'
+                            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                        }`}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="p-2 space-y-1 border-t border-slate-200 dark:border-white/5 bg-slate-100/80 dark:bg-transparent rounded-b-[16px]">
+                            {visibleChildren.map((child, cIdx) => {
+                              const isActive = isPathActive(child.path);
+                              return (
+                                <Link
+                                  key={cIdx}
+                                  to={child.path}
+                                  className={`block p-2.5 rounded-xl transition-all duration-200 border ${
                                     isActive
-                                      ? 'text-[#123c73]/80 dark:text-white/80'
-                                      : 'text-slate-400 dark:text-slate-500'
+                                      ? 'bg-white dark:bg-white/10 border-slate-300/80 dark:border-white/20 shadow-xs'
+                                      : 'hover:bg-slate-200/60 dark:hover:bg-neutral-800/60 border-transparent'
                                   }`}
                                 >
-                                  {child.description}
-                                </p>
-                              )}
-                            </Link>
-                          );
-                        })}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <span
+                                        className={`w-2 h-2 rounded-full shrink-0 transition-all ${
+                                          isActive
+                                            ? 'bg-[#123c73] dark:bg-white shadow-[0_0_8px_rgba(18,60,115,0.4)] dark:shadow-[0_0_8px_rgba(255,255,255,0.8)] scale-125'
+                                            : 'bg-slate-400 dark:bg-slate-600'
+                                        }`}
+                                      />
+                                      <span
+                                        className={`text-[11px] font-heading tracking-wider uppercase transition-colors truncate ${
+                                          isActive
+                                            ? 'text-[#123c73] dark:text-white font-black'
+                                            : 'text-slate-700 dark:text-slate-300 font-bold'
+                                        }`}
+                                      >
+                                        {child.name}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {child.revenueBadge && (
+                                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
+                                          {child.revenueBadge}
+                                        </span>
+                                      )}
+
+                                      {child.notificationCount !== undefined &&
+                                        child.notificationCount > 0 && (
+                                          <span
+                                            className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
+                                              child.notificationColor ===
+                                              'amber'
+                                                ? 'bg-amber-500 text-white border border-amber-400/40'
+                                                : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                            }`}
+                                          >
+                                            {formatBadgeCount(
+                                              child.notificationCount
+                                            )}
+                                          </span>
+                                        )}
+
+                                      {child.badge && (
+                                        <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                          {child.badge}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {child.description && (
+                                    <p
+                                      className={`font-sans normal-case text-[10.5px] font-normal mt-0.5 pl-4 leading-snug ${
+                                        isActive
+                                          ? 'text-slate-600 dark:text-slate-300'
+                                          : 'text-slate-500 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      {child.description}
+                                    </p>
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -961,7 +837,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {collapsed ? (
             <div className="space-y-3 relative">
-              {/* Collapsed Notifications Trigger */}
               {isAdmin && (
                 <button
                   type="button"
@@ -1076,10 +951,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <Link
                     to="/settings"
-                    className={`h-[52px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                    className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
                         ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
-                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
+                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
                     }`}
                   >
                     <Settings
@@ -1092,7 +967,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   <button
                     onClick={triggerDesktopConfirm}
-                    className="h-[52px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 shrink-0" />
                     <span>LOGOUT</span>
@@ -1118,7 +993,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
 
         <aside
-          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-[#f0f4f8] dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
+          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-slate-100 dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
             mobileOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -1166,13 +1041,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setMobileOpen(false)}
-                    aria-label="Close Drawer"
-                    className="w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
-                  >
-                    <X className="w-4 h-4 stroke-[2.5]" />
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleOpenMobileNotifications}
+                        aria-label="Notifications"
+                        title="Notifications"
+                        className="relative w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 transition-all cursor-pointer shrink-0"
+                      >
+                        <Bell className="w-4 h-4" />
+                        {unreadBadgeCount > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
+                            {formatBadgeCount(unreadBadgeCount)}
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setMobileOpen(false)}
+                      aria-label="Close Drawer"
+                      title="Close Drawer"
+                      className="w-8 h-8 rounded-full flex items-center justify-center bg-white/90 dark:bg-neutral-800 text-slate-700 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 shadow-xs hover:bg-slate-100 dark:hover:bg-neutral-700 transition-all cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="h-px bg-gradient-to-r from-slate-200 via-slate-200/50 to-transparent dark:from-white/10 dark:via-white/5" />
@@ -1193,32 +1088,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            {/* Mobile Accordion Nav Stack */}
-            <nav className="flex-1 min-h-0 overflow-y-auto space-y-3.5 p-5 pt-3">
-              {/* NOTIFICATION ITEM IN MOBILE DRAWER */}
-              {isAdmin && (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleOpenMobileNotifications}
-                    className="w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs hover:bg-slate-50 dark:hover:bg-[#1e232d]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-slate-400 dark:text-slate-400">
-                        <Bell className="w-5 h-5 shrink-0" />
-                      </span>
-                      <span className="font-bold">NOTIFICATIONS</span>
-                    </div>
-
-                    {unreadBadgeCount > 0 && (
-                      <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
-                        {formatBadgeCount(unreadBadgeCount)}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              )}
-
+            {/* MOBILE NAV ITEMS */}
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-2.5 p-5 pt-3 font-heading">
               {allowedMenu.map((item, idx) => {
                 const visibleChildren = item.children || [];
                 const isSingleItem = Boolean(
@@ -1228,16 +1099,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   isSingleItem && item.path ? isPathActive(item.path) : false;
                 const isMobileExpanded = mobileExpandedMenu === item.name;
 
-                if (isSingleItem && item.path) {
-                  return (
-                    <div key={idx} className="space-y-2">
+                return (
+                  <div key={idx} className="space-y-1">
+                    {item.section && (
+                      <div className="pt-2.5 pb-1 px-1 flex items-center justify-between">
+                        <span className="text-[9.5px] font-heading font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase">
+                          {item.section}
+                        </span>
+                        <span className="h-px flex-1 ml-3 bg-slate-200/70 dark:bg-white/5" />
+                      </div>
+                    )}
+
+                    {isSingleItem && item.path ? (
                       <Link
                         to={item.path}
                         onClick={() => setMobileOpen(false)}
-                        className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
+                        className={`w-full h-[52px] px-4 rounded-[16px] flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
                           isSingleActive
                             ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
-                            : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
+                            : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -1245,7 +1125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             className={
                               isSingleActive
                                 ? 'text-[#123c73] dark:text-white'
-                                : 'text-slate-400 dark:text-slate-400'
+                                : 'text-slate-500 dark:text-slate-400'
                             }
                           >
                             {item.icon}
@@ -1253,169 +1133,174 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span className="font-bold">{item.name}</span>
                         </div>
 
-                        {item.notificationCount !== undefined &&
-                          item.notificationCount > 0 && (
-                            <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
-                              {formatBadgeCount(item.notificationCount)}
+                        <div className="flex items-center gap-2">
+                          {item.revenueBadge && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight">
+                              {item.revenueBadge}
                             </span>
                           )}
+                          {item.notificationCount !== undefined &&
+                            item.notificationCount > 0 && (
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 animate-pulse">
+                                {formatBadgeCount(item.notificationCount)}
+                              </span>
+                            )}
+                        </div>
                       </Link>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={idx} className="space-y-2">
-                    <button
-                      onClick={() => handleParentMenuClick(item, true)}
-                      className={`w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
-                        isMobileExpanded
-                          ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
-                          : 'bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={
+                    ) : (
+                      <div
+                        className={`transition-all duration-200 rounded-[16px] overflow-hidden ${
+                          isMobileExpanded
+                            ? 'bg-slate-200/60 dark:bg-[#10131b] shadow-sm border border-slate-300/80 dark:border-white/10'
+                            : ''
+                        }`}
+                      >
+                        <button
+                          onClick={() => handleParentMenuClick(item, true)}
+                          className={`w-full h-[52px] px-4 flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer outline-none focus:outline-none ${
                             isMobileExpanded
-                              ? 'text-[#123c73] dark:text-white'
-                              : 'text-slate-400 dark:text-slate-400'
-                          }
-                        >
-                          {item.icon}
-                        </span>
-                        <span className="font-bold">{item.name}</span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {item.totalMoney !== undefined && (
-                          <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
-                            ₱
-                            {Number(item.totalMoney).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </span>
-                        )}
-                        {item.notificationCount !== undefined &&
-                          item.notificationCount > 0 && (
-                            <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
-                              {formatBadgeCount(item.notificationCount)}
-                            </span>
-                          )}
-                        <ChevronDown
-                          className={`w-4 h-4 transition-transform duration-300 ${
-                            isMobileExpanded
-                              ? 'rotate-180 text-white'
-                              : 'opacity-60'
+                              ? 'rounded-t-[16px] rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
+                              : 'rounded-[16px] bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs'
                           }`}
-                        />
-                      </div>
-                    </button>
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={
+                                isMobileExpanded
+                                  ? 'text-[#123c73] dark:text-white'
+                                  : 'text-slate-500 dark:text-slate-400'
+                              }
+                            >
+                              {item.icon}
+                            </span>
+                            <span className="font-bold">{item.name}</span>
+                          </div>
 
-                    <div
-                      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                        isMobileExpanded
-                          ? 'grid-rows-[1fr] opacity-100 mt-2'
-                          : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-                      }`}
-                    >
-                      <div className="overflow-hidden">
-                        <div className="bg-white dark:bg-[#161920] rounded-[16px] p-3 space-y-2 border border-slate-200/80 dark:border-white/5 shadow-inner">
-                          {visibleChildren.map((child, cIdx) => {
-                            const isActive = isPathActive(child.path);
-                            return (
-                              <Link
-                                key={cIdx}
-                                to={child.path}
-                                onClick={() => setMobileOpen(false)}
-                                className={`block p-3 rounded-xl transition-all duration-200 border ${
-                                  isActive
-                                    ? 'bg-[#123c73]/15 dark:bg-white/10 border-[#123c73]/30 dark:border-white/20 shadow-xs'
-                                    : 'hover:bg-slate-100/60 dark:hover:bg-neutral-800/60 border-transparent'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span
-                                      className={`w-2 h-2 rounded-full shrink-0 transition-all ${
-                                        isActive
-                                          ? 'bg-[#123c73] dark:bg-white dark:shadow-[0_0_8px_rgba(255,255,255,0.6)] scale-125'
-                                          : 'bg-slate-300 dark:bg-slate-600'
-                                      }`}
-                                    />
-                                    <span
-                                      className={`text-[11px] font-heading tracking-wider uppercase transition-colors truncate ${
-                                        isActive
-                                          ? 'text-[#123c73] dark:text-white font-black'
-                                          : 'text-slate-700 dark:text-slate-300 font-bold'
-                                      }`}
-                                    >
-                                      {child.name}
-                                    </span>
-                                  </div>
+                          <div className="flex items-center gap-2">
+                            {item.revenueBadge && (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight">
+                                {item.revenueBadge}
+                              </span>
+                            )}
 
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {child.moneyStat !== undefined && (
-                                      <span
-                                        className="text-[9.5px] font-mono font-black px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs flex items-center gap-1"
-                                        title="Today's Total Money"
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                        ₱
-                                        {Number(child.moneyStat).toLocaleString(
-                                          'en-US',
-                                          { minimumFractionDigits: 2 }
-                                        )}
-                                      </span>
-                                    )}
+                            {item.notificationCount !== undefined &&
+                              item.notificationCount > 0 && (
+                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs animate-pulse">
+                                  {formatBadgeCount(item.notificationCount)}
+                                </span>
+                              )}
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform duration-300 ${
+                                isMobileExpanded
+                                  ? 'rotate-180 text-slate-900 dark:text-white'
+                                  : 'text-slate-400'
+                              }`}
+                            />
+                          </div>
+                        </button>
 
-                                    {child.notificationCount !== undefined &&
-                                      child.notificationCount > 0 && (
-                                        <span
-                                          className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
-                                            child.notificationColor === 'amber'
-                                              ? 'bg-amber-500 text-white border border-amber-400/40'
-                                              : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
-                                          }`}
-                                        >
-                                          {formatBadgeCount(
-                                            child.notificationCount
-                                          )}
-                                        </span>
-                                      )}
-
-                                    {child.badge && (
-                                      <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
-                                        {child.badge}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {child.description && (
-                                  <p
-                                    className={`text-[10px] font-normal mt-1 pl-4 leading-relaxed ${
+                        {/* Submenu Accordion Container */}
+                        <div
+                          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                            isMobileExpanded
+                              ? 'grid-rows-[1fr] opacity-100'
+                              : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                          }`}
+                        >
+                          <div className="overflow-hidden">
+                            <div className="p-2 space-y-1 border-t border-slate-200 dark:border-white/5 bg-slate-100/80 dark:bg-transparent rounded-b-[16px]">
+                              {visibleChildren.map((child, cIdx) => {
+                                const isActive = isPathActive(child.path);
+                                return (
+                                  <Link
+                                    key={cIdx}
+                                    to={child.path}
+                                    onClick={() => setMobileOpen(false)}
+                                    className={`block p-2.5 rounded-xl transition-all duration-200 border ${
                                       isActive
-                                        ? 'text-[#123c73]/80 dark:text-white/80'
-                                        : 'text-slate-400 dark:text-slate-500'
+                                        ? 'bg-white dark:bg-white/10 border-slate-300/80 dark:border-white/20 shadow-xs'
+                                        : 'hover:bg-slate-200/60 dark:hover:bg-neutral-800/60 border-transparent'
                                     }`}
                                   >
-                                    {child.description}
-                                  </p>
-                                )}
-                              </Link>
-                            );
-                          })}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <span
+                                          className={`w-2 h-2 rounded-full shrink-0 transition-all ${
+                                            isActive
+                                              ? 'bg-[#123c73] dark:bg-white shadow-[0_0_8px_rgba(18,60,115,0.4)] dark:shadow-[0_0_8px_rgba(255,255,255,0.8)] scale-125'
+                                              : 'bg-slate-400 dark:bg-slate-600'
+                                          }`}
+                                        />
+                                        <span
+                                          className={`text-[11px] tracking-wider uppercase transition-colors truncate ${
+                                            isActive
+                                              ? 'text-[#123c73] dark:text-white font-black'
+                                              : 'text-slate-700 dark:text-slate-300 font-bold'
+                                          }`}
+                                        >
+                                          {child.name}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        {child.revenueBadge && (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
+                                            {child.revenueBadge}
+                                          </span>
+                                        )}
+
+                                        {child.notificationCount !==
+                                          undefined &&
+                                          child.notificationCount > 0 && (
+                                            <span
+                                              className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 ${
+                                                child.notificationColor ===
+                                                'amber'
+                                                  ? 'bg-amber-500 text-white border border-amber-400/40'
+                                                  : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                              }`}
+                                            >
+                                              {formatBadgeCount(
+                                                child.notificationCount
+                                              )}
+                                            </span>
+                                          )}
+
+                                        {child.badge && (
+                                          <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                            {child.badge}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {child.description && (
+                                      <p
+                                        className={`font-sans normal-case text-[10.5px] font-normal mt-0.5 pl-4 leading-snug ${
+                                          isActive
+                                            ? 'text-slate-600 dark:text-slate-300'
+                                            : 'text-slate-500 dark:text-slate-400'
+                                        }`}
+                                      >
+                                        {child.description}
+                                      </p>
+                                    )}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
             </nav>
 
-            {/* Mobile Footer Sticky Action Controls */}
-            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto shrink-0 bg-[#f0f4f8] dark:bg-[#0c0e12]">
+            {/* MOBILE FOOTER ACTIONS */}
+            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto shrink-0 bg-slate-100 dark:bg-[#0c0e12]">
               {showMobileLogoutConfirm ? (
                 <div className="w-full flex items-center justify-between p-2.5 rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
                   <span className="text-[9px]">
@@ -1447,10 +1332,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Link
                     to="/settings"
                     onClick={() => setMobileOpen(false)}
-                    className={`h-[52px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                    className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
                         ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
-                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
+                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
                     }`}
                   >
                     <Settings
@@ -1463,7 +1348,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   <button
                     onClick={triggerMobileConfirm}
-                    className="h-[52px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>LOGOUT</span>

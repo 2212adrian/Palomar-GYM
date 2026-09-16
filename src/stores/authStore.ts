@@ -1,4 +1,4 @@
-//src/stores/authStore.ts
+// src/stores/authStore.ts
 
 import { create } from 'zustand';
 import { Capacitor } from '@capacitor/core';
@@ -34,7 +34,7 @@ let activeAvatarObjectUrl: string | null = null;
 let activeProfileChannel: any = null;
 let activeProfileUserId: string | null = null; // Track currently subscribed User ID to prevent duplicate binds
 
-export const useAuthStore = create<AuthState>((set, _get) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   profile: null,
   loading: true,
@@ -46,7 +46,12 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
 
   checkSession: async () => {
     try {
-      set({ loading: true, error: null });
+      // Only show full-screen blocking loader on the initial cold boot
+      const isAlreadyInitialized = get().initialized;
+      if (!isAlreadyInitialized) {
+        set({ loading: true, error: null });
+      }
+
       const {
         data: { session },
         error: sessionError,
@@ -225,7 +230,9 @@ export const useAuthStore = create<AuthState>((set, _get) => ({
                         role: payload.new.role,
                         status: payload.new.status,
                         avatar_url: resolvedBlobUrl,
-                        email_verification_enabled: payload.new.email_verification_enabled ?? state.profile.email_verification_enabled,
+                        email_verification_enabled:
+                          payload.new.email_verification_enabled ??
+                          state.profile.email_verification_enabled,
                       }
                     : null,
                 }));
@@ -368,13 +375,20 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       loading: false,
       initialized: true,
     });
-  } else if (
-    event === 'SIGNED_IN' ||
-    event === 'TOKEN_REFRESHED' ||
-    event === 'USER_UPDATED'
-  ) {
+  } else if (event === 'TOKEN_REFRESHED') {
+    // Background token refresh: update user session quietly without unmounting UI or resetting page state
     if (session?.user) {
-      await useAuthStore.getState().checkSession();
+      useAuthStore.setState({ user: session.user });
+    }
+  } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+    if (session?.user) {
+      const currentUser = useAuthStore.getState().user;
+      // Only do a heavy check if user ID actually changed or if user explicitly updated profile
+      if (!currentUser || currentUser.id !== session.user.id || event === 'USER_UPDATED') {
+        await useAuthStore.getState().checkSession();
+      } else {
+        useAuthStore.setState({ user: session.user });
+      }
     }
   }
 });

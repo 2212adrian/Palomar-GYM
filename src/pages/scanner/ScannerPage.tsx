@@ -41,6 +41,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
+import { useScannerStore } from '../../stores/useScannerStore';
 import {
   scannerService,
   parseScannedMemberCode,
@@ -77,10 +78,31 @@ const getCameraErrorMessage = (err: any): string => {
   return msg || 'Camera initialization failed';
 };
 
-export const ScannerPage: React.FC = () => {
+interface ScannerPageProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const ScannerPage: React.FC<ScannerPageProps> = ({
+  isOpen: propIsOpen,
+  onClose: propOnClose,
+}) => {
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
+
+  // Connect to store if props not passed directly
+  const storeIsOpen = useScannerStore((s) => s.isOpen);
+  const storeCloseScanner = useScannerStore((s) => s.closeScanner);
+
+  const isOpen = propIsOpen !== undefined ? propIsOpen : storeIsOpen;
+  const handleClose = useCallback(() => {
+    if (propOnClose) {
+      propOnClose();
+    } else {
+      storeCloseScanner();
+    }
+  }, [propOnClose, storeCloseScanner]);
 
   const qrRegionId = 'hybrid-qr-reader';
 
@@ -98,9 +120,6 @@ export const ScannerPage: React.FC = () => {
 
   // Manual Input Ref
   const manualInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Overlay Visibility State
-  const [isOpen, setIsOpen] = useState(true);
 
   // Scan Mode: 'qr' (square reticle) vs 'barcode' (rectangle reticle)
   const [scanMode, setScanMode] = useState<'qr' | 'barcode'>('qr');
@@ -162,14 +181,16 @@ export const ScannerPage: React.FC = () => {
 
   const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
 
+  // Reset states when opened/closed
   useEffect(() => {
-    if (
-      manualInputRef.current &&
-      document.activeElement === manualInputRef.current
-    ) {
-      manualInputRef.current.blur();
+    if (!isOpen) {
+      setProductCart([]);
+      setLastScannedProduct(null);
+      setScanResult(null);
+      setScanFeedback('idle');
+      isExitingRef.current = false;
     }
-  }, []);
+  }, [isOpen]);
 
   // Fetch rates
   useEffect(() => {
@@ -194,6 +215,8 @@ export const ScannerPage: React.FC = () => {
 
   // Enumerate Connected Camera Devices
   useEffect(() => {
+    if (!isOpen) return;
+
     Html5Qrcode.getCameras()
       .then((devices) => {
         if (devices && devices.length > 0) {
@@ -221,7 +244,7 @@ export const ScannerPage: React.FC = () => {
         }
       })
       .catch((err) => console.warn('Camera enumeration error:', err));
-  }, [selectedCameraId]);
+  }, [isOpen, selectedCameraId]);
 
   const entryFee = useMemo(() => {
     if (!scanResult?.member) return 0;
@@ -290,7 +313,6 @@ export const ScannerPage: React.FC = () => {
     } finally {
       scannerRef.current = null;
 
-      // Release active tracks
       const qrRegion = document.getElementById(qrRegionId);
       const videoElements = qrRegion
         ? qrRegion.querySelectorAll('video')
@@ -342,7 +364,6 @@ export const ScannerPage: React.FC = () => {
     }
   };
 
-  // Synchronous Scan Processing Pipeline
   const handleProcessScan = async (rawCode: string) => {
     let cleanCode = rawCode.replace(/[\x00-\x1F\x7F-\x9F\uFFFD]/g, '').trim();
     if (!cleanCode) return;
@@ -371,9 +392,7 @@ export const ScannerPage: React.FC = () => {
       if (isCartMode && (result.type !== 'product' || !result.product)) {
         toast.error(
           'Cart mode active: only product barcodes (PR-XXXX / MFG) are allowed.',
-          {
-            toastId: 'cart-only-products',
-          }
+          { toastId: 'cart-only-products' }
         );
         return;
       }
@@ -408,9 +427,7 @@ export const ScannerPage: React.FC = () => {
         if (scannedProduct.hasStockLimit && targetQty > availableStock) {
           toast.error(
             `⚠️ Max stock reached! Only ${availableStock} unit(s) available for "${scannedProduct.productName}".`,
-            {
-              toastId: `stock-limit-${scannedProduct.id}`,
-            }
+            { toastId: `stock-limit-${scannedProduct.id}` }
           );
           return;
         }
@@ -435,12 +452,9 @@ export const ScannerPage: React.FC = () => {
         });
 
         setLastScannedProduct({ product: scannedProduct, quantity: targetQty });
-
         toast.success(
           `Scanned: ${scannedProduct.productName} (${targetQty}x)`,
-          {
-            toastId: `cart-scan-${scannedProduct.id}`,
-          }
+          { toastId: `cart-scan-${scannedProduct.id}` }
         );
       } else if (result.type === 'member' || result.type === 'registration') {
         if (result.type === 'member' && result.member) {
@@ -466,9 +480,7 @@ export const ScannerPage: React.FC = () => {
       } else {
         toast.error(
           `Unrecognized code: "${cleanCode.length > 25 ? cleanCode.substring(0, 25) + '...' : cleanCode}"`,
-          {
-            toastId: 'unrecognized-code-toast',
-          }
+          { toastId: 'unrecognized-code-toast' }
         );
       }
     } catch (err) {
@@ -480,8 +492,13 @@ export const ScannerPage: React.FC = () => {
     }
   };
 
-  // Camera Lifecycle (Direct in-app Html5Qrcode initialization across all platforms)
+  // Camera Lifecycle
   useEffect(() => {
+    if (!isOpen) {
+      forceStopCamera();
+      return;
+    }
+
     if (
       scanResult &&
       (scanResult.type === 'member' || scanResult.type === 'registration')
@@ -565,7 +582,6 @@ export const ScannerPage: React.FC = () => {
               return;
             }
 
-            // Query hardware capabilities like torch and continuous focus
             try {
               const videoElement = document.querySelector(
                 `#${qrRegionId} video`
@@ -621,7 +637,7 @@ export const ScannerPage: React.FC = () => {
       clearTimeout(timer);
       forceStopCamera();
     };
-  }, [selectedCameraId, scanResult?.type, scanMode]);
+  }, [isOpen, selectedCameraId, scanResult?.type, scanMode, forceStopCamera]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -666,9 +682,7 @@ export const ScannerPage: React.FC = () => {
     if (item.product.hasStockLimit && newQty > availableStock) {
       toast.error(
         `⚠️ Cannot exceed available stock (${availableStock}) for "${item.product.productName}".`,
-        {
-          toastId: `cart-qty-limit-${item.product.id}`,
-        }
+        { toastId: `cart-qty-limit-${item.product.id}` }
       );
       return;
     }
@@ -692,7 +706,9 @@ export const ScannerPage: React.FC = () => {
     if (productCart.length === 0 || isSubmittingSale) return;
 
     if (isLocked) {
-      toast.error(getLockReason('process product sales transactions'));
+      toast.error(
+        'Cannot process sale: Cash drawer session is closed. Please open a cash session in Cash Management.'
+      );
       return;
     }
 
@@ -781,8 +797,8 @@ export const ScannerPage: React.FC = () => {
       forceStopCamera();
       setProductCart([]);
       setLastScannedProduct(null);
-      setIsOpen(false);
-      setTimeout(() => navigate('/sales', { replace: true }), 200);
+      handleClose();
+      navigate('/sales');
     } catch (err: any) {
       console.error('Error placing order:', err);
       toast.error(err.message || 'Failed to place order.');
@@ -794,8 +810,10 @@ export const ScannerPage: React.FC = () => {
   const handleConfirmCheckIn = async () => {
     if (!scanResult?.member || isSubmittingCheckIn) return;
 
-    if (entryFee > 0 && isLocked) {
-      toast.error(getLockReason('collect entry fees or record paid check-ins'));
+    if (isLocked) {
+      toast.error(
+        'Cannot record check-in: Cash drawer session is closed. Please open a cash session in Cash Management.'
+      );
       return;
     }
 
@@ -872,15 +890,8 @@ export const ScannerPage: React.FC = () => {
       isExitingRef.current = true;
       forceStopCamera();
       setScanResult(null);
-      setIsOpen(false);
-      setTimeout(
-        () =>
-          navigate('/logbook', {
-            replace: true,
-            state: { refreshed: Date.now() },
-          }),
-        200
-      );
+      handleClose();
+      navigate('/logbook', { state: { refreshed: Date.now() } });
     } catch (err: any) {
       console.error('Check-in failed:', err);
       toast.error(err.message || 'Check-in failed.');
@@ -901,21 +912,16 @@ export const ScannerPage: React.FC = () => {
       scanResult?.member?.fullName ||
       parseScannedMemberCode(scanResult?.rawCode || '').memberIdPart;
     setScanResult(null);
-    setIsOpen(false);
-    setTimeout(() => {
-      navigate('/logbook', {
-        state: { openAttendanceModal: true, initialSearch: rawName },
-      });
-    }, 200);
+    handleClose();
+    navigate('/logbook', {
+      state: { openAttendanceModal: true, initialSearch: rawName },
+    });
   };
 
   const handleCloseScanner = () => {
     isExitingRef.current = true;
     forceStopCamera();
-    setIsOpen(false);
-    setTimeout(() => {
-      navigate(-1);
-    }, 200);
+    handleClose();
   };
 
   const isLockedByDuplicate = Boolean(
@@ -930,6 +936,8 @@ export const ScannerPage: React.FC = () => {
 
   const isCartMode = productCart.length > 0;
 
+  if (typeof document === 'undefined') return null;
+
   return createPortal(
     <>
       <AnimatePresence mode="wait">
@@ -940,7 +948,7 @@ export const ScannerPage: React.FC = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed inset-0 z-300 bg-slate-950/95 dark:bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
+            className="fixed inset-0 z-[15000] bg-slate-950/95 dark:bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
           >
             <div
               id="scanner-hidden-file-reader"
@@ -1062,7 +1070,7 @@ export const ScannerPage: React.FC = () => {
               </div>
             </motion.div>
 
-            {/* SCAN MODE TOGGLE BAR: QR vs. BARCODE */}
+            {/* SCAN MODE TOGGLE BAR */}
             <div className="w-full max-w-xs mt-2 mb-1 flex items-center p-1 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-lg z-10">
               <button
                 type="button"
@@ -1122,10 +1130,8 @@ export const ScannerPage: React.FC = () => {
                       : 'border-cyan-500/60'
                 }`}
               >
-                {/* LIVE IN-APP CAMERA CONTAINER */}
                 <div id={qrRegionId} className="w-full h-full" />
 
-                {/* DYNAMIC RETICLE HUD OVERLAY */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
                   <motion.div
                     layout
@@ -1138,7 +1144,6 @@ export const ScannerPage: React.FC = () => {
                     transition={{ type: 'spring', stiffness: 350, damping: 28 }}
                     className="relative flex items-center justify-center border border-white/15"
                   >
-                    {/* 4 Corners */}
                     <div
                       className={`absolute -top-1 -left-1 w-6 h-6 border-t-[3.5px] border-l-[3.5px] rounded-tl-xl transition-colors duration-300 ${
                         scanFeedback === 'success'
@@ -1176,7 +1181,6 @@ export const ScannerPage: React.FC = () => {
                       }`}
                     />
 
-                    {/* Center Target Indicator */}
                     {scanMode === 'qr' ? (
                       <div className="w-8 h-8 relative opacity-35 flex items-center justify-center">
                         <div className="w-full h-[1.5px] bg-cyan-300 absolute" />
@@ -1186,7 +1190,6 @@ export const ScannerPage: React.FC = () => {
                       <div className="w-full h-px bg-amber-400/25 absolute" />
                     )}
 
-                    {/* Animated Laser Scanning Line */}
                     {scanFeedback !== 'success' && (
                       <motion.div
                         animate={{ y: ['-110%', '110%'] }}
@@ -1206,7 +1209,6 @@ export const ScannerPage: React.FC = () => {
                   </motion.div>
                 </div>
 
-                {/* Camera Control Badges */}
                 {cameras.length > 0 && !isCartExpanded && (
                   <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0">
@@ -1685,7 +1687,7 @@ export const ScannerPage: React.FC = () => {
                       ? 'PRE-REGISTRATION TICKET'
                       : 'MEMBER PHOTO VERIFICATION'
                   }
-                  className="w-full max-w-md mx-auto p-3.5 sm:p-5 my-auto max-h-[95vh] relative text-left animate-fade-in z-350"
+                  className="w-full max-w-md mx-auto p-3.5 sm:p-5 my-auto max-h-[95vh] relative text-left animate-fade-in z-[16000]"
                 >
                   <button
                     type="button"
@@ -1759,17 +1761,15 @@ export const ScannerPage: React.FC = () => {
                             onClick={() => {
                               isExitingRef.current = true;
                               forceStopCamera();
-                              setIsOpen(false);
-                              setTimeout(() => {
-                                navigate('/members/plans', {
-                                  state: {
-                                    openWizard: true,
-                                    initialStep: 1,
-                                    initialIntakeMode: 'Manual',
-                                    prefillData: scanResult.registration,
-                                  },
-                                });
-                              }, 200);
+                              handleClose();
+                              navigate('/members/plans', {
+                                state: {
+                                  openWizard: true,
+                                  initialStep: 1,
+                                  initialIntakeMode: 'Manual',
+                                  prefillData: scanResult.registration,
+                                },
+                              });
                             }}
                             className="flex-1 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
                           >
@@ -1783,7 +1783,6 @@ export const ScannerPage: React.FC = () => {
                   {/* MEMBER PHOTO VERIFICATION VIEW */}
                   {scanResult.type === 'member' && scanResult.member && (
                     <div className="space-y-2.5 pt-1">
-                      {/* 1:1 SQUARE MEMBER PHOTO BADGE */}
                       <div className="flex justify-center">
                         <div
                           onClick={() => {
@@ -1838,7 +1837,6 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* MEMBER IDENTITY HEADER */}
                       <div className="text-center space-y-1">
                         <h3 className="font-heading text-base sm:text-lg font-black text-slate-900 dark:text-white uppercase tracking-wide leading-tight truncate">
                           {scanResult.member.fullName}
@@ -1850,7 +1848,6 @@ export const ScannerPage: React.FC = () => {
                             : ''}
                         </p>
 
-                        {/* STATUS & PLAN PILLS */}
                         <div className="flex items-center justify-center gap-1.5 flex-wrap pt-0.5">
                           <span
                             className={`px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black uppercase tracking-wider border ${
@@ -1874,7 +1871,6 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* RECEIPT BANNER (If scanning a specific receipt) */}
                       {scanResult.member.isSpecificReceiptScan && (
                         <div
                           className={`p-2 rounded-xl border text-[11px] space-y-0.5 text-center ${
@@ -1899,7 +1895,6 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* DATES GRID */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="p-2 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-0.5 text-center">
                           <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase flex items-center justify-center gap-1">
@@ -1936,7 +1931,6 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* ENTRY FEE SETTLEMENT (FOR YEARLY MEMBERS) */}
                       {scanResult.member.status !== 'Scheduled' &&
                         entryFee > 0 && (
                           <div className="p-2.5 bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-xl space-y-2 text-left">
@@ -2003,7 +1997,6 @@ export const ScannerPage: React.FC = () => {
                           </div>
                         )}
 
-                      {/* DUPLICATE ATTENDANCE WARNING */}
                       {scanResult.member.alreadyCheckedInToday && (
                         <div className="p-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-xl flex items-center justify-between gap-2">
                           <span className="text-[10px] font-bold uppercase truncate">
@@ -2023,7 +2016,6 @@ export const ScannerPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* ACTION BUTTONS */}
                       <div className="flex items-center gap-2 pt-1">
                         <Button
                           type="button"
@@ -2045,11 +2037,13 @@ export const ScannerPage: React.FC = () => {
                               isSubmittingCheckIn ||
                               isLockedByDuplicate ||
                               isLockedByPayment ||
-                              (isLocked && entryFee > 0)
+                              isLocked
                             }
                             title={
-                              isLocked && entryFee > 0
-                                ? getLockReason('collect entry fees')
+                              isLocked
+                                ? getLockReason(
+                                    'record check-ins or collect entry fees'
+                                  )
                                 : undefined
                             }
                             className="flex-1 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2058,11 +2052,13 @@ export const ScannerPage: React.FC = () => {
                             <span className="whitespace-nowrap">
                               {isSubmittingCheckIn
                                 ? 'Logging...'
-                                : isLockedByDuplicate
-                                  ? 'Override Req.'
-                                  : isLockedByPayment
-                                    ? 'Payment Req.'
-                                    : 'Confirm Entry'}
+                                : isLocked
+                                  ? 'Session Closed'
+                                  : isLockedByDuplicate
+                                    ? 'Override Req.'
+                                    : isLockedByPayment
+                                      ? 'Payment Req.'
+                                      : 'Confirm Entry'}
                             </span>
                           </Button>
                         ) : (

@@ -23,10 +23,10 @@ import {
   ChevronRight,
   RotateCcw,
   ShoppingBag,
-  FileSpreadsheet,
   Printer,
   Search,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -51,9 +51,13 @@ import { HeaderActionsContext } from '../../routes';
 import { SalesDialog } from './components/SalesDialog';
 import { Products } from './Products';
 import { SalesRecycleBin } from './components/SalesRecycleBin';
+import {
+  ClosedSessionGroup,
+  type SessionSummaryInfo,
+} from '../../components/ui/ClosedSessionGroup';
+import { useNavbarStore } from '../../stores/useNavbarStore';
 
 // Separated Modular Components
-import { SalesReportCompiler } from './components/SalesReportCompiler';
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 
 // Unified UI TimelineCard
@@ -201,14 +205,6 @@ const PAYMENT_FILTERS = [
   { label: 'GCash', value: 'GCash' },
 ];
 
-const isTransactionDeletable = (tx: any) => {
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const txDate = tx.created_at
-    ? format(new Date(tx.created_at), 'yyyy-MM-dd')
-    : format(new Date(), 'yyyy-MM-dd');
-  return txDate === todayStr;
-};
-
 // Formatter to produce clean human-readable product titles for the undo toast
 const formatSalesToastTitle = (tx: any) => {
   if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
@@ -271,10 +267,69 @@ export const Sales: React.FC = () => {
 
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
+  const { activeSession, isSessionOpen, isInitializing, history, loadHistory } =
+    useCashSessionStore();
+  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+
+  const [closedSessionsList, setClosedSessionsList] = useState<
+    SessionSummaryInfo[]
+  >([]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
     return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
+
+  // Non-intrusive alert toast informing user that session is closed without covering the screen
+  useEffect(() => {
+    if (!isInitializing && !isSessionOpen) {
+      toast.info(
+        'Cash drawer session is closed. New sales and Recycle Bin are currently locked.',
+        {
+          toastId: 'cash-session-closed-notice',
+          autoClose: 5000,
+        }
+      );
+    }
+  }, [isInitializing, isSessionOpen]);
+
+  // Session-based deletability check
+  const isTransactionDeletable = useCallback(
+    (tx: any) => {
+      if (!isSessionOpen || !activeSession) return false;
+
+      if (tx.cash_session_id) {
+        return String(tx.cash_session_id) === String(activeSession.id);
+      }
+
+      if (tx.created_at && activeSession.opened_at) {
+        return (
+          new Date(tx.created_at).getTime() >=
+          new Date(activeSession.opened_at).getTime()
+        );
+      }
+
+      return false;
+    },
+    [isSessionOpen, activeSession]
+  );
+
+  const getDeleteDisabledReason = useCallback(
+    (tx: any) => {
+      if (!isSessionOpen) {
+        return 'Cash session is closed. Open a cash session to manage sales.';
+      }
+      if (!isTransactionDeletable(tx)) {
+        return 'Locked: This sale belongs to a closed cash session and cannot be removed.';
+      }
+      return undefined;
+    },
+    [isSessionOpen, isTransactionDeletable]
+  );
 
   const handlePcViewTransition = (view: 'register' | 'inventory') => {
     if (view === 'inventory') {
@@ -324,7 +379,6 @@ export const Sales: React.FC = () => {
   const stagedDeletionsRef = useRef<any[]>([]);
   stagedDeletionsRef.current = stagedDeletions;
 
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
 
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
@@ -406,6 +460,31 @@ export const Sales: React.FC = () => {
     };
   }, []);
 
+  // Merged closed sessions lookup
+  const mergedClosedSessions = useMemo(() => {
+    const map = new Map<string, SessionSummaryInfo>();
+    closedSessionsList.forEach((s) => map.set(String(s.id), s));
+    (history || []).forEach((s) => {
+      if (s.status === 'closed' || s.closed_at) {
+        map.set(String(s.id), {
+          id: String(s.id),
+          session_number: s.session_number,
+          opened_at: s.opened_at,
+          closed_at: s.closed_at,
+          opened_by_name: s.opened_by_name,
+          closed_by_name: s.closed_by_name,
+          status: s.status,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const tA = a.closed_at ? new Date(a.closed_at).getTime() : 0;
+      const tB = b.closed_at ? new Date(b.closed_at).getTime() : 0;
+      return tB - tA;
+    });
+  }, [closedSessionsList, history]);
+
   const fetchRatesConfig = async () => {
     try {
       const { data, error } = await supabase
@@ -426,7 +505,6 @@ export const Sales: React.FC = () => {
     async (isBackground: boolean = false) => {
       const cacheKey = `sales_sanitized_${dateStr}`;
 
-      // 1. Instant Cache Hydration
       if (!isBackground) {
         const cachedSession = sessionStorage.getItem(cacheKey);
         if (cachedSession) {
@@ -444,7 +522,19 @@ export const Sales: React.FC = () => {
       }
 
       try {
-        // 2. Try RPC for sanitized DTO first
+        // Fetch closed sessions list from Supabase
+        const { data: closedSessionsData } = await supabase
+          .from('cash_sessions')
+          .select(
+            'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+          )
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false });
+
+        if (closedSessionsData) {
+          setClosedSessionsList(closedSessionsData);
+        }
+
         let freshTransactions: any[] | null = null;
 
         try {
@@ -453,7 +543,10 @@ export const Sales: React.FC = () => {
           });
 
           if (!error && data) {
-            freshTransactions = data;
+            freshTransactions = data.map((s: any) => ({
+              ...s,
+              cash_session_id: s.cash_session_id || null,
+            }));
           } else if (error) {
             const isOfflineErr =
               error?.message?.includes('No internet connection') ||
@@ -474,16 +567,15 @@ export const Sales: React.FC = () => {
           }
         }
 
-        // 3. Fallback to direct table query if RPC is not available or errored
         if (
           !freshTransactions &&
           (typeof navigator === 'undefined' || navigator.onLine)
         ) {
           try {
-            const startOfDay = new Date(
+            const startOfDayIso = new Date(
               `${dateStr}T00:00:00+08:00`
             ).toISOString();
-            const endOfDay = new Date(
+            const endOfDayIso = new Date(
               `${dateStr}T23:59:59.999+08:00`
             ).toISOString();
 
@@ -491,13 +583,14 @@ export const Sales: React.FC = () => {
               .from('sales')
               .select('*')
               .is('deleted_at', null)
-              .gte('created_at', startOfDay)
-              .lte('created_at', endOfDay)
+              .gte('created_at', startOfDayIso)
+              .lte('created_at', endOfDayIso)
               .order('created_at', { ascending: false });
 
             if (!salesErr && salesData) {
               freshTransactions = salesData.map((s: any) => ({
                 id: String(s.id),
+                cash_session_id: s.cash_session_id || null,
                 created_at: s.created_at,
                 receipt_no: s.receipt_no || String(s.id),
                 items: s.items || [],
@@ -573,19 +666,28 @@ export const Sales: React.FC = () => {
       )
       .subscribe();
 
+    const sessionsChannel = supabase
+      .channel(`sales_sessions_rt_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_sessions' },
+        () => {
+          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+          loadHistory();
+          fetchTransactions(true);
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(productsChannel);
+      supabase.removeChannel(sessionsChannel);
     };
-  }, [dateStr, fetchTransactions, fetchProducts]);
+  }, [dateStr, fetchTransactions, fetchProducts, loadHistory]);
 
   const isTabSelectable = (date: Date) => {
-    const today = new Date();
-    if (role === 'staff') {
-      return isToday(date);
-    } else {
-      return startOfDay(date).getTime() <= startOfDay(today).getTime();
-    }
+    return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
   };
 
   useEffect(() => {
@@ -600,7 +702,7 @@ export const Sales: React.FC = () => {
       }
       setSelectedDayIndex(fallbackIndex);
     }
-  }, [currentWeekStart, role]);
+  }, [currentWeekStart]);
 
   const dayTransactions = useMemo(() => transactions, [transactions]);
 
@@ -634,12 +736,10 @@ export const Sales: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState<number>(25);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Reset lazy load count on filter/date changes
   useEffect(() => {
     setVisibleCount(25);
   }, [dateStr, ledgerSearch, paymentFilter]);
 
-  // Lazy loading intersection observer
   useEffect(() => {
     const el = loadMoreRef.current;
     if (!el) return;
@@ -668,7 +768,25 @@ export const Sales: React.FC = () => {
     return filteredDayTransactions.slice(0, visibleCount);
   }, [filteredDayTransactions, visibleCount]);
 
-  const dailyRevenue = useMemo(() => {
+  // Active session transactions only (strictly 0 if session is closed)
+  const activeSessionTransactions = useMemo(() => {
+    if (!isSessionOpen || !activeSession) return [];
+    return dayTransactions.filter((tx) => {
+      const sid = tx.cash_session_id ? String(tx.cash_session_id) : null;
+      if (sid && activeSession?.id) {
+        return sid === String(activeSession.id);
+      }
+      if (tx.created_at && activeSession?.opened_at) {
+        return (
+          new Date(tx.created_at).getTime() >=
+          new Date(activeSession.opened_at).getTime()
+        );
+      }
+      return false;
+    });
+  }, [dayTransactions, isSessionOpen, activeSession]);
+
+  const activeRevenue = useMemo(() => {
     return dayTransactions.reduce(
       (acc, t) => acc + (Number(t.total_amount) || 0),
       0
@@ -678,33 +796,33 @@ export const Sales: React.FC = () => {
   const [revenueTrend, setRevenueTrend] = useState<
     'increasing' | 'decreasing' | 'neutral'
   >('neutral');
-  const prevRevenueRef = useRef<number>(dailyRevenue);
+  const prevRevenueRef = useRef<number>(activeRevenue);
 
   useEffect(() => {
-    if (dailyRevenue > prevRevenueRef.current) {
+    if (activeRevenue > prevRevenueRef.current) {
       setRevenueTrend('increasing');
       const timer = setTimeout(() => {
         setRevenueTrend('neutral');
       }, 1500);
-      prevRevenueRef.current = dailyRevenue;
+      prevRevenueRef.current = activeRevenue;
       return () => clearTimeout(timer);
-    } else if (dailyRevenue < prevRevenueRef.current) {
+    } else if (activeRevenue < prevRevenueRef.current) {
       setRevenueTrend('decreasing');
       const timer = setTimeout(() => {
         setRevenueTrend('neutral');
       }, 1500);
-      prevRevenueRef.current = dailyRevenue;
+      prevRevenueRef.current = activeRevenue;
       return () => clearTimeout(timer);
     }
-    prevRevenueRef.current = dailyRevenue;
-  }, [dailyRevenue]);
+    prevRevenueRef.current = activeRevenue;
+  }, [activeRevenue]);
 
-  const dailyCount = useMemo(() => {
+  const activeSalesCount = useMemo(() => {
     return dayTransactions.length;
   }, [dayTransactions]);
 
-  const itemsSoldToday = useMemo(() => {
-    return dayTransactions.reduce((acc, tx) => {
+  const activeItemsSold = useMemo(() => {
+    return activeSessionTransactions.reduce((acc, tx) => {
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
         return (
           acc +
@@ -716,28 +834,26 @@ export const Sales: React.FC = () => {
       }
       return acc + (Number(tx.quantity) || 1);
     }, 0);
-  }, [dayTransactions]);
+  }, [activeSessionTransactions]);
 
-  // BROADCAST SALES TELEMETRY TO TOPBAR
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('sales-kpi-update', {
         detail: {
-          revenue: dailyRevenue,
-          salesCount: dailyCount,
-          itemsSold: itemsSoldToday,
+          revenue: activeRevenue,
+          salesCount: activeSalesCount,
+          itemsSold: activeItemsSold,
           revenueTrend,
         },
       })
     );
-  }, [dailyRevenue, dailyCount, itemsSoldToday, revenueTrend]);
+  }, [activeRevenue, activeSalesCount, activeItemsSold, revenueTrend]);
 
   const handleSaleSuccess = async (newTx: any) => {
     try {
       const calculatedGcashFee =
         newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
 
-      // Inserting into sales automatically decrements inventory via DB trigger `tr_sales_deduct_stock_on_insert`
       const { data: insertedSale, error } = await supabase
         .from('sales')
         .insert([
@@ -751,6 +867,7 @@ export const Sales: React.FC = () => {
             gcash_fee_applied: calculatedGcashFee,
             reference_number:
               newTx.referenceNumber || newTx.reference_number || null,
+            cash_session_id: activeSession?.id || null,
           },
         ])
         .select()
@@ -771,7 +888,6 @@ export const Sales: React.FC = () => {
           return updated;
         });
 
-        // ─── Trigger instant Live Cash recalculation ───
         useCashSessionStore.getState().recalculateMetrics();
       }
 
@@ -818,7 +934,9 @@ export const Sales: React.FC = () => {
     }
 
     if (!isTransactionDeletable(tx)) {
-      toast.error('Only sales made today can be deleted.');
+      toast.error(
+        getDeleteDisabledReason(tx) || 'Locked: This sale cannot be removed.'
+      );
       return;
     }
 
@@ -841,7 +959,6 @@ export const Sales: React.FC = () => {
     }, 380);
   };
 
-  // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
   const handleConfirmDelete = useCallback(
     async (id: string) => {
       const stagedTx = stagedDeletionsRef.current.find(
@@ -850,7 +967,6 @@ export const Sales: React.FC = () => {
       if (!stagedTx) return;
 
       try {
-        // Soft-delete so metrics recalculate and Recycle Bin can restore it
         const { error } = await supabase
           .from('sales')
           .update({ deleted_at: new Date().toISOString() })
@@ -858,7 +974,6 @@ export const Sales: React.FC = () => {
 
         if (error) throw error;
 
-        // ─── Deduct from Live Cash immediately ───
         useCashSessionStore.getState().recalculateMetrics();
 
         const itemsList =
@@ -961,7 +1076,6 @@ export const Sales: React.FC = () => {
     toast.info(`Restored all ${itemsToRestore.length} sale transactions.`);
   };
 
-  // Clean up any staged deletes immediately if user leaves page
   useEffect(() => {
     return () => {
       if (stagedDeletionsRef.current.length > 0) {
@@ -973,13 +1087,48 @@ export const Sales: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const isActionLocked = isLocked || !isSessionOpen;
+    const actionLockReason = !isSessionOpen
+      ? 'Cash session is closed. Open a cash session to record new sales.'
+      : getLockReason('create new sales');
+
     if ((activeView as string) === 'register') {
       setActions(
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
           {role === 'admin' && (
             <>
+              {/* ─── RELOCATED TELEMETRY CAPSULE ─── */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 select-none shadow-xs">
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <DynamicBanknoteIcon trend={revenueTrend} />
+                    <span className="font-heading font-black text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white">
+                      <AnimatedCurrency value={activeRevenue} />
+                    </span>
+                  </div>
+                  <span className="text-slate-300 dark:text-zinc-600 font-bold">
+                    •
+                  </span>
+                  <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                    <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span className="font-heading font-bold text-xs">
+                      {activeSalesCount}{' '}
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">
+                        Sales
+                      </span>
+                    </span>
+                  </div>
+                </>
+              </div>
+              {/* RECYCLE BIN (DISABLED WHEN SESSION CLOSED) */}
               <Button
                 onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Recycle Bin is unavailable while the cash session is closed.'
+                    );
+                    return;
+                  }
                   if (stagedDeletionsRef.current.length > 0) {
                     stagedDeletionsRef.current.forEach((tx) =>
                       handleConfirmDelete(String(tx.id))
@@ -987,34 +1136,47 @@ export const Sales: React.FC = () => {
                   }
                   setIsRecycleBinOpen(true);
                 }}
+                disabled={!isSessionOpen}
+                title={
+                  !isSessionOpen
+                    ? 'Recycle Bin is locked: Cash session is closed'
+                    : 'Recycle Bin'
+                }
                 variant="secondary"
-                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
+                className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                  !isSessionOpen
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'
+                }`}
               >
                 <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
                 <span>RECYCLE BIN</span>
               </Button>
-
-              <Button
-                onClick={() => setIsReportModalOpen(true)}
-                variant="secondary"
-                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>GENERATE REPORT</span>
-              </Button>
             </>
           )}
 
+          {/* NEW SALE BUTTON */}
           <Button
             onClick={() => {
-              if (isLocked) return;
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot create new sale: Cash drawer session is closed.'
+                );
+                return;
+              }
+              if (isLocked) {
+                toast.error(getLockReason('create new sales'));
+                return;
+              }
               setIsCreateModalOpen(true);
             }}
             variant="primary"
-            disabled={isLocked}
-            title={isLocked ? getLockReason('create new sales') : 'Create New Sale'}
+            disabled={isActionLocked}
+            title={isActionLocked ? actionLockReason : 'Create New Sale'}
             className={`hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md whitespace-nowrap ${
-              isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              isActionLocked
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer'
             }`}
           >
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
@@ -1028,14 +1190,31 @@ export const Sales: React.FC = () => {
       } else {
         setActions(
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
+            {/* INVENTORY RECYCLE BIN */}
             <Button
-              onClick={() =>
+              onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Recycle Bin is unavailable while the cash session is closed.'
+                  );
+                  return;
+                }
                 window.dispatchEvent(
                   new CustomEvent('trigger-product-recovery')
-                )
+                );
+              }}
+              disabled={!isSessionOpen}
+              title={
+                !isSessionOpen
+                  ? 'Recycle Bin is locked: Cash session is closed'
+                  : 'Recycle Bin'
               }
               variant="secondary"
-              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
+              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                !isSessionOpen
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer'
+              }`}
             >
               <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
@@ -1073,11 +1252,15 @@ export const Sales: React.FC = () => {
     products,
     transactions,
     activeView,
-    dailyRevenue,
+    activeRevenue,
+    activeSalesCount,
     ratesConfig,
     selectedProductsCount,
     setActions,
     handleConfirmDelete,
+    isSessionOpen,
+    isLocked,
+    getLockReason,
   ]);
 
   const undoToastItems: UndoItem[] = useMemo(() => {
@@ -1207,7 +1390,7 @@ export const Sales: React.FC = () => {
             searchPlaceholder="Search here (E.g. Name, Product, ID)"
           />
 
-          {/* --- HOURLY LEDGER TIMELINE --- */}
+          {/* --- HOURLY LEDGER TIMELINE WITH CLOSED SESSION CONTAINERS --- */}
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
               {(() => {
@@ -1221,30 +1404,6 @@ export const Sales: React.FC = () => {
                   );
                 }
 
-                const hourlyGroups: { label: string; txs: any[] }[] = [];
-
-                paginatedTransactions.forEach((tx) => {
-                  const rawTime = tx.created_at || tx.createdAt;
-                  let hourLabel = 'Unknown Time';
-                  if (rawTime) {
-                    try {
-                      const date = parseISO(rawTime);
-                      hourLabel = format(date, 'hh:00 a');
-                    } catch (e) {
-                      console.error(e);
-                    }
-                  }
-
-                  const existingGroup = hourlyGroups.find(
-                    (g) => g.label === hourLabel
-                  );
-                  if (existingGroup) {
-                    existingGroup.txs.push(tx);
-                  } else {
-                    hourlyGroups.push({ label: hourLabel, txs: [tx] });
-                  }
-                });
-
                 if (totalItems === 0) {
                   const hasFilter =
                     ledgerSearch.trim() !== '' || paymentFilter !== 'All';
@@ -1257,7 +1416,7 @@ export const Sales: React.FC = () => {
                       exit={{ opacity: 0 }}
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
-                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-455 dark:text-zinc-650 mb-4 animate-pulse">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
                         {hasFilter ? (
                           <Search className="w-8 h-8" />
                         ) : (
@@ -1291,14 +1450,12 @@ export const Sales: React.FC = () => {
                       ) : isSelectedDayToday ? (
                         <button
                           type="button"
-                          disabled={isLocked}
-                          title={isLocked ? getLockReason('record new sale') : 'Record New Sale'}
-                          onClick={() => {
-                            if (isLocked) return;
-                            setIsCreateModalOpen(true);
-                          }}
+                          disabled={isLocked || !isSessionOpen}
+                          onClick={() => setIsCreateModalOpen(true)}
                           className={`mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
-                            isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-90 active:scale-95'
+                            isLocked || !isSessionOpen
+                              ? 'opacity-50 cursor-not-allowed'
+                              : 'cursor-pointer hover:opacity-90 active:scale-95'
                           }`}
                         >
                           <Plus className="w-4 h-4" />
@@ -1309,6 +1466,92 @@ export const Sales: React.FC = () => {
                   );
                 }
 
+                // ─── PARTITION: ONGOING vs. CLOSED SESSION TRANSACTIONS (WITH TIMESTAMP WINDOW FALLBACK) ───
+                const activeSessionId = activeSession?.id
+                  ? String(activeSession.id)
+                  : null;
+
+                const ongoingTransactions: any[] = [];
+                const closedSessionGroups: {
+                  session: SessionSummaryInfo;
+                  txs: any[];
+                }[] = [];
+                const closedGroupTracker = new Map<string, any[]>();
+
+                paginatedTransactions.forEach((tx) => {
+                  const sid = tx.cash_session_id
+                    ? String(tx.cash_session_id)
+                    : null;
+
+                  // 1. If session is currently open and tx belongs to it -> Live / Ongoing (not contained)
+                  if (
+                    isSessionOpen &&
+                    activeSessionId &&
+                    sid === activeSessionId
+                  ) {
+                    ongoingTransactions.push(tx);
+                    return;
+                  }
+
+                  // 2. Check if tx belongs to any closed session (by ID or timestamp window fallback)
+                  const matchedClosedSession = mergedClosedSessions.find(
+                    (cs) => {
+                      if (sid && String(cs.id) === sid) return true;
+
+                      // Timestamp window fallback:
+                      const txTimeStr = tx.created_at || tx.createdAt;
+                      if (txTimeStr && cs.opened_at && cs.closed_at) {
+                        const t = new Date(txTimeStr).getTime();
+                        const o = new Date(cs.opened_at).getTime();
+                        const c = new Date(cs.closed_at).getTime();
+                        return t >= o && t <= c;
+                      }
+                      return false;
+                    }
+                  );
+
+                  if (matchedClosedSession) {
+                    const csId = String(matchedClosedSession.id);
+                    if (!closedGroupTracker.has(csId)) {
+                      closedGroupTracker.set(csId, []);
+                    }
+                    closedGroupTracker.get(csId)!.push(tx);
+                  } else {
+                    ongoingTransactions.push(tx);
+                  }
+                });
+
+                closedGroupTracker.forEach((txs, sid) => {
+                  const sessionMeta = mergedClosedSessions.find(
+                    (cs) => String(cs.id) === sid
+                  );
+                  if (sessionMeta) {
+                    closedSessionGroups.push({ session: sessionMeta, txs });
+                  }
+                });
+
+                // Group ongoing transactions by hour
+                const ongoingHourlyGroups: { label: string; txs: any[] }[] = [];
+                ongoingTransactions.forEach((tx) => {
+                  const rawTime = tx.created_at || tx.createdAt;
+                  let hourLabel = 'Unknown Time';
+                  if (rawTime) {
+                    try {
+                      hourLabel = format(parseISO(rawTime), 'hh:00 a');
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }
+                  const existing = ongoingHourlyGroups.find(
+                    (g) => g.label === hourLabel
+                  );
+                  if (existing) {
+                    existing.txs.push(tx);
+                  } else {
+                    ongoingHourlyGroups.push({ label: hourLabel, txs: [tx] });
+                  }
+                });
+
                 const handleDragEnd = (_event: any, info: any, tx: any) => {
                   const swipeThreshold = 80;
                   if (info.offset.x > swipeThreshold) {
@@ -1318,15 +1561,81 @@ export const Sales: React.FC = () => {
                       handleDeleteTransaction(tx);
                     } else {
                       toast.warning(
-                        'Rollback Lock: Only current day sales can be removed.'
+                        getDeleteDisabledReason(tx) ||
+                          'Rollback Lock: This sale cannot be removed.'
                       );
                     }
                   }
                 };
 
+                const renderTimelineCard = (tx: any) => {
+                  const isNew = tx.id === newlyAddedId;
+                  const isDeleting = deletingIds.includes(tx.id);
+
+                  return (
+                    <motion.div
+                      key={tx.id}
+                      layout
+                      initial={{
+                        opacity: 0,
+                        y: -15,
+                        scale: 0.96,
+                        boxShadow:
+                          '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
+                      }}
+                      animate={
+                        isDeleting
+                          ? {
+                              opacity: 0,
+                              scale: 0.92,
+                              y: -5,
+                              boxShadow:
+                                '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                              filter: 'brightness(0.9)',
+                            }
+                          : {
+                              opacity: 1,
+                              y: 0,
+                              scale: 1,
+                              boxShadow: isNew
+                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                            }
+                      }
+                      exit={{
+                        opacity: 0,
+                        scale: 0.9,
+                        y: -10,
+                        boxShadow:
+                          '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                      }}
+                      transition={{
+                        layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                        boxShadow: {
+                          duration: isDeleting ? 0.15 : 1.5,
+                          ease: 'easeOut',
+                        },
+                        opacity: { duration: isDeleting ? 0.38 : 0.3 },
+                      }}
+                      className="rounded-2xl transition-all overflow-hidden"
+                    >
+                      <TimelineCard
+                        mode="sale"
+                        data={tx}
+                        canDelete={isTransactionDeletable(tx) && !isDeleting}
+                        deleteDisabledReason={getDeleteDisabledReason(tx)}
+                        onSelectReceipt={setSelectedReceiptTx}
+                        onTriggerDelete={handleDeleteTransaction}
+                        onDragEnd={handleDragEnd}
+                      />
+                    </motion.div>
+                  );
+                };
+
                 return (
                   <div className="space-y-6">
-                    {hourlyGroups.map((group) => (
+                    {/* 1. ONGOING / LIVE TRANSACTIONS (NOT CONTAINED) */}
+                    {ongoingHourlyGroups.map((group) => (
                       <div key={group.label} className="space-y-4">
                         <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
                           <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
@@ -1337,84 +1646,47 @@ export const Sales: React.FC = () => {
 
                         <div className="space-y-2.5">
                           <AnimatePresence mode="popLayout" initial={false}>
-                            {group.txs.map((tx) => {
-                              const isNew = tx.id === newlyAddedId;
-                              const isDeleting = deletingIds.includes(tx.id);
-
-                              return (
-                                <motion.div
-                                  key={tx.id}
-                                  layout
-                                  initial={{
-                                    opacity: 0,
-                                    y: -15,
-                                    scale: 0.96,
-                                    boxShadow:
-                                      '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
-                                  }}
-                                  animate={
-                                    isDeleting
-                                      ? {
-                                          opacity: 0,
-                                          scale: 0.92,
-                                          y: -5,
-                                          boxShadow:
-                                            '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                          filter: 'brightness(0.9)',
-                                        }
-                                      : {
-                                          opacity: 1,
-                                          y: 0,
-                                          scale: 1,
-                                          boxShadow: isNew
-                                            ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                            : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
-                                        }
-                                  }
-                                  exit={{
-                                    opacity: 0,
-                                    scale: 0.9,
-                                    y: -10,
-                                    boxShadow:
-                                      '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                  }}
-                                  transition={{
-                                    layout: {
-                                      duration: 0.35,
-                                      ease: [0.16, 1, 0.3, 1],
-                                    },
-                                    boxShadow: {
-                                      duration: isDeleting ? 0.15 : 1.5,
-                                      ease: 'easeOut',
-                                    },
-                                    opacity: {
-                                      duration: isDeleting ? 0.38 : 0.3,
-                                    },
-                                  }}
-                                  className="rounded-2xl transition-all overflow-hidden"
-                                >
-                                  <TimelineCard
-                                    mode="sale"
-                                    data={tx}
-                                    canDelete={
-                                      isTransactionDeletable(tx) && !isDeleting
-                                    }
-                                    deleteDisabledReason={
-                                      isLocked ? getLockReason('delete sales records') : undefined
-                                    }
-                                    onSelectReceipt={setSelectedReceiptTx}
-                                    onTriggerDelete={handleDeleteTransaction}
-                                    onDragEnd={handleDragEnd}
-                                  />
-                                </motion.div>
-                              );
-                            })}
+                            {group.txs.map(renderTimelineCard)}
                           </AnimatePresence>
                         </div>
                       </div>
                     ))}
 
-                    {/* ─── LAZY LOADING SENTINEL & STATUS ─── */}
+                    {/* ─── SEPARATOR: ACTIVE VS ENDED SESSIONS ─── */}
+                    {ongoingHourlyGroups.length > 0 &&
+                      closedSessionGroups.length > 0 && (
+                        <div className="flex items-center gap-3 pt-3 select-none">
+                          <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
+                            <Lock className="w-3 h-3 text-blue-500" />
+                            <span>
+                              CLOSED SESSIONS ({closedSessionGroups.length})
+                            </span>
+                          </div>
+                          <div className="h-px flex-1 bg-gradient-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                        </div>
+                      )}
+
+                    {/* 2. ENDED SESSION GROUPS (CONTAINED, DEFAULT COLLAPSED, BLUE) */}
+                    {closedSessionGroups.map((group) => {
+                      const totalRev = group.txs.reduce(
+                        (sum, t) => sum + (Number(t.total_amount) || 0),
+                        0
+                      );
+
+                      return (
+                        <ClosedSessionGroup
+                          key={group.session.id}
+                          session={group.session}
+                          mode="sale"
+                          totalRevenue={totalRev}
+                          itemCount={group.txs.length}
+                        >
+                          {group.txs.map(renderTimelineCard)}
+                        </ClosedSessionGroup>
+                      );
+                    })}
+
+                    {/* LAZY LOADING SENTINEL */}
                     {totalItems > 0 && (
                       <div
                         ref={loadMoreRef}
@@ -1450,19 +1722,21 @@ export const Sales: React.FC = () => {
                       </div>
                     )}
 
-                    {/* ─── QUICK ACTION HORIZONTAL CREATE NEW SALE BUTTON ─── */}
+                    {/* QUICK ACTION HORIZONTAL CREATE NEW SALE BUTTON */}
                     <motion.button
-                      whileHover={isLocked ? {} : { scale: 1.01 }}
-                      whileTap={isLocked ? {} : { scale: 0.98 }}
+                      whileHover={
+                        isLocked || !isSessionOpen ? {} : { scale: 1.01 }
+                      }
+                      whileTap={
+                        isLocked || !isSessionOpen ? {} : { scale: 0.98 }
+                      }
                       type="button"
-                      disabled={isLocked}
-                      title={isLocked ? getLockReason('create new sales') : 'Create New Sale'}
-                      onClick={() => {
-                        if (isLocked) return;
-                        setIsCreateModalOpen(true);
-                      }}
+                      disabled={isLocked || !isSessionOpen}
+                      onClick={() => setIsCreateModalOpen(true)}
                       className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
-                        isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                        isLocked || !isSessionOpen
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
                       }`}
                     >
                       <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
@@ -1508,15 +1782,6 @@ export const Sales: React.FC = () => {
           onClose={() => setIsCreateModalOpen(false)}
           products={products}
           onSaleSuccess={handleSaleSuccess}
-        />
-      )}
-
-      {/* DYNAMIC REPORTS COMPILER OVERLAY */}
-      {isReportModalOpen && (
-        <SalesReportCompiler
-          isOpen={isReportModalOpen}
-          onClose={() => setIsReportModalOpen(false)}
-          transactions={transactions}
         />
       )}
 
@@ -1585,62 +1850,88 @@ export const Sales: React.FC = () => {
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
       {activeView === 'register' &&
         createPortal(
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl">
+          <div
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1.5 shrink-0">
                 <DynamicBanknoteIcon trend={revenueTrend} />
                 <span className="text-[11px]">
-                  <AnimatedCurrency value={dailyRevenue} />
+                  <AnimatedCurrency value={activeRevenue} />
                 </span>
               </div>
               <span className="text-slate-300 dark:text-zinc-700">•</span>
               <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
                 <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="text-[11px] truncate">{dailyCount} Sales</span>
+                <span className="text-[11px] truncate">
+                  {activeSalesCount} Sales
+                </span>
               </div>
             </div>
 
             {/* Action Buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
               {role === 'admin' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (stagedDeletionsRef.current.length > 0) {
-                        stagedDeletionsRef.current.forEach((tx) =>
-                          handleConfirmDelete(String(tx.id))
-                        );
-                      }
-                      setIsRecycleBinOpen(true);
-                    }}
-                    className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                    title="Recycle Bin"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsReportModalOpen(true)}
-                    className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                    title="Generate Report"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  disabled={!isSessionOpen}
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Recycle Bin is unavailable while the cash session is closed.'
+                      );
+                      return;
+                    }
+                    if (stagedDeletionsRef.current.length > 0) {
+                      stagedDeletionsRef.current.forEach((tx) =>
+                        handleConfirmDelete(String(tx.id))
+                      );
+                    }
+                    setIsRecycleBinOpen(true);
+                  }}
+                  className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
+                    !isSessionOpen
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    !isSessionOpen
+                      ? 'Recycle Bin is locked: Cash session is closed'
+                      : 'Recycle Bin'
+                  }
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
 
               <button
                 type="button"
-                disabled={isLocked}
-                title={isLocked ? getLockReason('create new sale') : 'Create New Sale'}
+                disabled={isLocked || !isSessionOpen}
+                title={
+                  !isSessionOpen
+                    ? 'Cash session is closed. Open a cash session to record new sales.'
+                    : isLocked
+                      ? getLockReason('create new sale')
+                      : 'Create New Sale'
+                }
                 onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot create sale: Cash drawer session is closed.'
+                    );
+                    return;
+                  }
                   if (isLocked) return;
                   setIsCreateModalOpen(true);
                 }}
                 className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-all ${
-                  isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95'
+                  isLocked || !isSessionOpen
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer active:scale-95'
                 }`}
               >
                 <Plus className="w-4 h-4 shrink-0" />

@@ -28,7 +28,6 @@ export const useSessionLock = () => {
  * Throws an Error if the session is closed.
  */
 export const assertActiveCashSession = async (actionDesc: string = 'process transaction'): Promise<string> => {
-  // 1. Client-side memory check
   const storeState = useCashSessionStore.getState();
   if (!storeState.isSessionOpen) {
     throw new Error(
@@ -36,15 +35,14 @@ export const assertActiveCashSession = async (actionDesc: string = 'process tran
     );
   }
 
-  // 2. Direct database confirmation
   const { data, error } = await supabase
     .from('cash_sessions')
     .select('id')
+    .eq('status', 'open')
     .is('closed_at', null)
     .maybeSingle();
 
   if (error || !data) {
-    // Keep client store in sync if database state differs
     storeState.setSessionClosed();
     throw new Error(
       `Transaction restricted: No active cash drawer session found in database. Please open a cash session in Cash Management to ${actionDesc}.`

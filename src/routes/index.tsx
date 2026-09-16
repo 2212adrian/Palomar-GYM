@@ -29,9 +29,6 @@ import { OnlineRegistrationPage } from '../pages/members/components/OnlineRegist
 import { Sales } from '../pages/sales/Sales';
 import { LogbookPage } from '../pages/logbook/LogbookPage';
 
-// Import Smart Terminal Scanner Page
-import { ScannerPage } from '../pages/scanner/ScannerPage';
-
 // Import Cash Management Page
 import { CashManagementPage } from '../pages/cash/CashManagementPage';
 
@@ -118,12 +115,6 @@ const ROUTE_HEADERS: Record<
     title: 'GYM LOGBOOK',
     description:
       'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.',
-  },
-  '/scanner': {
-    subtitle: 'Terminal Station',
-    title: 'Smart Scanner',
-    description:
-      'Scan member access cards, QR codes, or product barcodes for instant check-in, subscription inspection, and POS inventory.',
   },
   '/members/list': {
     subtitle: 'List of Members',
@@ -272,11 +263,19 @@ const router = createBrowserRouter([
                   { path: '/sales', element: <Sales /> },
                   { path: '/sales/:subview', element: <Sales /> },
                   { path: '/logbook', element: <LogbookPage /> },
-                  { path: '/scanner', element: <ScannerPage /> },
+                  // Scanner is a global modal overlay; redirect any direct /scanner hits to /dashboard
+                  {
+                    path: '/scanner',
+                    element: <Navigate to="/dashboard" replace />,
+                  },
                   { path: '/members/list', element: <LogbookPage /> },
                   { path: '/members/plans', element: <StaffPlansConsole /> },
                   { path: '/reports', element: <IncidentReports /> },
                   { path: '/cash-management', element: <CashManagementPage /> },
+                  {
+                    path: '/cash',
+                    element: <Navigate to="/cash-management" replace />,
+                  },
                   { path: '/settings/:activeTab', element: <Settings /> },
                   { path: '/settings', element: <Settings /> },
                   {

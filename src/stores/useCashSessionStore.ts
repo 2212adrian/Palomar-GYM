@@ -25,17 +25,20 @@ export interface UnifiedActivityItem {
 
 interface CashSessionStoreState {
   activeSession: CashSession | null;
+  activeSessionId: string | null;
+  isInitializing: boolean;
   transactions: UnifiedActivityItem[];
   history: CashSession[];
   metrics: CashFlowMetrics;
   isLoading: boolean;
   isSessionOpen: boolean;
-  currentDrawerCash: number;
+  currentDrawerCash: number | null; // <-- Nullable so UI knows when data isn't ready
 
   loadActiveSession: () => Promise<void>;
   loadHistory: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   recalculateMetrics: () => Promise<void>;
+  setSessionClosed: () => void;
   subscribeRealtime: () => () => void;
 }
 
@@ -59,12 +62,26 @@ let debounceRecalculateTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useCashSessionStore = create<CashSessionStoreState>((set, get) => ({
   activeSession: null,
+  activeSessionId: null,
+  isInitializing: true,
   transactions: [],
   history: [],
   metrics: INITIAL_METRICS,
-  isLoading: false,
+  isLoading: true,
   isSessionOpen: false,
-  currentDrawerCash: 0,
+  currentDrawerCash: null, // <-- Defaults to null, NEVER 0
+
+  setSessionClosed: () => {
+    set({
+      activeSession: null,
+      activeSessionId: null,
+      isSessionOpen: false,
+      isInitializing: false,
+      transactions: [],
+      metrics: INITIAL_METRICS,
+      currentDrawerCash: null,
+    });
+  },
 
   loadActiveSession: async () => {
     try {
@@ -74,25 +91,34 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       if (!session) {
         set({
           activeSession: null,
+          activeSessionId: null,
           isSessionOpen: false,
+          isInitializing: false,
           transactions: [],
           metrics: INITIAL_METRICS,
-          currentDrawerCash: 0,
+          currentDrawerCash: null,
           isLoading: false,
         });
         return;
       }
 
+      // Immediately seed with the opening float so even if metrics take 200ms, it NEVER drops to 0!
+      const initialFloat = Number(session.opening_float || 0);
+
       set({
         activeSession: session,
+        activeSessionId: session.id,
         isSessionOpen: true,
+        // If we don't have drawer cash yet, preload the known starting float
+        currentDrawerCash: get().currentDrawerCash ?? initialFloat,
       });
 
+      // Await calculations BEFORE marking isInitializing as false
       await get().recalculateMetrics();
     } catch (err) {
       console.error('Failed to load active session:', err);
     } finally {
-      set({ isLoading: false });
+      set({ isLoading: false, isInitializing: false });
     }
   },
 
@@ -112,7 +138,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
   recalculateMetrics: async () => {
     const session = get().activeSession;
     if (!session) {
-      set({ metrics: INITIAL_METRICS, currentDrawerCash: 0, transactions: [] });
+      set({ metrics: INITIAL_METRICS, currentDrawerCash: null, transactions: [] });
       return;
     }
 
@@ -176,9 +202,9 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       // 2. Fetch POS Sales within Active Session Window
       const { data: salesData, error: salesErr } = await supabase
         .from('sales')
-        .select('id, total_amount, payment_method, product_name, items, receipt_no, reference_number, created_at, deleted_at')
+        .select('id, total_amount, payment_method, product_name, items, receipt_no, reference_number, created_at, deleted_at, cash_session_id')
         .is('deleted_at', null)
-        .gte('created_at', effectiveStart);
+        .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
 
       if (salesErr) {
         console.warn('Error fetching POS sales for cash session:', salesErr);
@@ -216,67 +242,11 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         };
       });
 
-      // 3. Fetch Attendance Check-Ins within Active Session Window
-      const { data: attendanceData, error: attErr } = await supabase
-        .from('attendance')
-        .select('id, customer_name, customer_type, plan_name, entry_fee, payment_method, gcash_ref_no, receipt_number, staff_name, check_in_time, created_at, deleted_at')
-        .is('deleted_at', null)
-        .or(`check_in_time.gte.${effectiveStart},created_at.gte.${effectiveStart}`);
-
-      if (attErr) {
-        console.error('Error fetching attendance for cash session:', attErr);
-      }
-
-      let cashAttendance = 0;
-      let digitalAttendance = 0;
-
-      const mappedAttendanceTxs: UnifiedActivityItem[] = [];
-
-      (attendanceData || []).forEach((a: any) => {
-        const amt = Number(a.entry_fee || 0);
-
-        if (amt > 0) {
-          const rcptNo = String(a.receipt_number || '').trim().toLowerCase();
-          const custType = String(a.customer_type || '').trim().toLowerCase();
-          const planName = String(a.plan_name || '').trim().toLowerCase();
-
-          // Skip card transactions and records already handled by receipts table
-          if (
-            (rcptNo && receiptIdsSet.has(rcptNo)) ||
-            custType === 'card' ||
-            planName.includes('card')
-          ) {
-            return;
-          }
-
-          const method = String(a.payment_method || '').trim().toLowerCase();
-          const isCash = method.includes('cash') && !method.includes('gcash');
-
-          if (isCash) {
-            cashAttendance += amt;
-          } else {
-            digitalAttendance += amt;
-          }
-
-          mappedAttendanceTxs.push({
-            id: String(a.id),
-            source: 'logbook',
-            type: isCash ? 'cash_in' : 'digital_in',
-            displayType: isCash ? 'CHECK-IN (CASH)' : 'CHECK-IN (GCASH)',
-            reason: `${a.customer_name || 'Guest'} (${a.customer_type || 'Walk-In'} - ${a.plan_name || 'Pass'})`,
-            reference_number: a.gcash_ref_no || a.receipt_number || null,
-            performed_by_name: a.staff_name || 'Reception',
-            amount: amt,
-            created_at: a.check_in_time || a.created_at,
-          });
-        }
-      });
-
-      // 4. Fetch Subscriptions, Renewals, and Card Purchases from receipts
+      // 3. First fetch receipts to avoid ReferenceError when filtering attendance
       const { data: receiptsData, error: rcptErr } = await supabase
         .from('receipts')
-        .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at')
-        .gte('created_at', effectiveStart);
+        .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at, cash_session_id')
+        .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
 
       if (rcptErr) {
         console.warn('Error fetching receipts for cash session:', rcptErr);
@@ -324,6 +294,61 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         };
       });
 
+      // 4. Fetch Attendance Check-Ins
+      const { data: attendanceData, error: attErr } = await supabase
+        .from('attendance')
+        .select('id, customer_name, customer_type, plan_name, entry_fee, payment_method, gcash_ref_no, receipt_number, staff_name, check_in_time, created_at, deleted_at, cash_session_id')
+        .is('deleted_at', null)
+        .or(`cash_session_id.eq.${session.id},check_in_time.gte.${effectiveStart},created_at.gte.${effectiveStart}`);
+
+      if (attErr) {
+        console.error('Error fetching attendance for cash session:', attErr);
+      }
+
+      let cashAttendance = 0;
+      let digitalAttendance = 0;
+
+      const mappedAttendanceTxs: UnifiedActivityItem[] = [];
+
+      (attendanceData || []).forEach((a: any) => {
+        const amt = Number(a.entry_fee || 0);
+
+        if (amt > 0) {
+          const rcptNo = String(a.receipt_number || '').trim().toLowerCase();
+          const custType = String(a.customer_type || '').trim().toLowerCase();
+          const planName = String(a.plan_name || '').trim().toLowerCase();
+
+          if (
+            (rcptNo && receiptIdsSet.has(rcptNo)) ||
+            custType === 'card' ||
+            planName.includes('card')
+          ) {
+            return;
+          }
+
+          const method = String(a.payment_method || '').trim().toLowerCase();
+          const isCash = method.includes('cash') && !method.includes('gcash');
+
+          if (isCash) {
+            cashAttendance += amt;
+          } else {
+            digitalAttendance += amt;
+          }
+
+          mappedAttendanceTxs.push({
+            id: String(a.id),
+            source: 'logbook',
+            type: isCash ? 'cash_in' : 'digital_in',
+            displayType: isCash ? 'CHECK-IN (CASH)' : 'CHECK-IN (GCASH)',
+            reason: `${a.customer_name || 'Guest'} (${a.customer_type || 'Walk-In'} - ${a.plan_name || 'Pass'})`,
+            reference_number: a.gcash_ref_no || a.receipt_number || null,
+            performed_by_name: a.staff_name || 'Reception',
+            amount: amt,
+            created_at: a.check_in_time || a.created_at,
+          });
+        }
+      });
+
       const totalCashLogbook = cashAttendance + cashReceipts;
       const totalDigitalLogbook = digitalAttendance + digitalReceipts;
 
@@ -356,7 +381,6 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         totalSessionCollections: Math.round(totalSessionCollections * 100) / 100,
       };
 
-      // 6. Combine all activity items and sort newest first
       const allUnifiedActivity = [
         ...mappedManualTxs,
         ...mappedSalesTxs,

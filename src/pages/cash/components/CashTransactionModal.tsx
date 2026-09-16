@@ -1,3 +1,4 @@
+// src/pages/cash/components/CashTransactionModal.tsx
 import React, { useState, useEffect } from 'react';
 import { ArrowDownRight, ArrowUpRight, Smartphone, Check } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -12,7 +13,7 @@ interface CashTransactionModalProps {
   onClose: () => void;
   type: CashTransactionType;
   sessionId: string;
-  currentDrawerCash?: number;
+  currentDrawerCash?: number | null; // <-- Accepts null or number
   onSuccess: () => Promise<void> | void;
 }
 
@@ -58,6 +59,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
   currentDrawerCash = 0,
   onSuccess,
 }) => {
+  const safeCurrentDrawerCash = currentDrawerCash ?? 0;
   const { user, profile } = useAuthStore();
   const config = TYPE_CONFIG[type];
   const Icon = config.icon;
@@ -84,9 +86,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
       return;
     }
 
-    if (type === 'cash_out' && numAmount > currentDrawerCash) {
+    if (type === 'cash_out' && numAmount > safeCurrentDrawerCash) {
       const confirmOverdraw = window.confirm(
-        `Warning: Amount (₱${numAmount.toFixed(2)}) exceeds current expected drawer cash (₱${currentDrawerCash.toFixed(2)}). Do you want to proceed anyway?`
+        `Warning: Amount (₱${numAmount.toFixed(2)}) exceeds current expected drawer cash (₱${safeCurrentDrawerCash.toFixed(2)}). Do you want to proceed anyway?`
       );
       if (!confirmOverdraw) return;
     }
@@ -152,7 +154,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
             {type === 'cash_out'
-              ? `${config.subtitle} (Current in drawer: ₱${currentDrawerCash.toLocaleString('en-US', { minimumFractionDigits: 2 })})`
+              ? `${config.subtitle} (Current in drawer: ₱${safeCurrentDrawerCash.toLocaleString('en-US', { minimumFractionDigits: 2 })})`
               : config.subtitle}
           </p>
         </div>

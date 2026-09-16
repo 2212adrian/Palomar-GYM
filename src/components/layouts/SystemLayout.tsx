@@ -14,6 +14,8 @@ import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { TabLoader } from '../ui/TabLoader';
+import { CashFloatModal } from '../../pages/cash/components/CashFloatModal';
+import { ScannerPage } from '../../pages/scanner/ScannerPage';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 
 interface TabLoadingContextType {
@@ -206,34 +208,50 @@ export const SystemLayout: React.FC = () => {
 
   return (
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
-      <div className="relative h-[100dvh] overflow-hidden bg-(--bg-page) text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
+      {/* 
+        Outer Shell:
+        Uses a muted backdrop (`bg-slate-100/90 dark:bg-[#0b0e14]`) 
+        so navigation & main workspace layers pop against it.
+      */}
+      <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
         {/* TAB LOADING OVERLAY */}
         <TabLoader isVisible={isTabLoading} />
 
-        {/* SIDEBAR */}
-        <Sidebar
-          collapsed={desktopCollapsed}
-          setCollapsed={setDesktopCollapsed}
-          mobileOpen={mobileDrawerOpen}
-          setMobileOpen={setMobileDrawerOpen}
-          onLogout={handleLogout}
-        />
+        {/* CASH FLOAT MODAL */}
+        <CashFloatModal />
+
+        {/* GLOBAL SMART SCANNER MODAL OVERLAY */}
+        <ScannerPage />
+
+        {/* SIDEBAR (Wrapper ensures an explicit boundary shadow cast to the right) */}
+        <aside className="relative z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
+          <Sidebar
+            collapsed={desktopCollapsed}
+            setCollapsed={setDesktopCollapsed}
+            mobileOpen={mobileDrawerOpen}
+            setMobileOpen={setMobileDrawerOpen}
+            onLogout={handleLogout}
+          />
+        </aside>
 
         {/* RIGHT CONTAINER VIEWPORT */}
         <div
-          className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative"
+          className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative bg-[var(--bg-page,#f8fafc)] dark:bg-[#0d1117]"
           style={{ transform: 'translate3d(0, 0, 0)' }}
         >
-          {/* Topbar wrapped in relative z-50 */}
-          <div className="relative z-50 shrink-0">
+          {/* Topbar: Distinct bottom border and slight depth shadow */}
+          <div className="relative z-20 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.04)] dark:shadow-none bg-white/95 dark:bg-[#111620]/95 backdrop-blur-md">
             <Topbar onMenuClick={() => setMobileDrawerOpen((prev) => !prev)} />
           </div>
 
           {/* Scrollable Main Content Pane */}
-          <div className="flex-1 relative min-w-0 px-0 sm:px-2 md:px-3 pt-14 sm:pt-16 h-full flex flex-col min-h-0">
+          <div className="flex-1 relative min-w-0 h-full flex flex-col min-h-0">
+            {/* Soft subtle scroll fade gradient at the top edge */}
+            <div className="pointer-events-none absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-slate-200/30 dark:from-black/20 to-transparent z-10" />
+
             <main
               ref={mainScrollRef}
-              className={`flex-1 pt-0 pb-6 sm:pb-8 px-2 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-hidden ${
+              className={`flex-1 pt-4 sm:pt-6 pb-6 sm:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
                 isTabLoading
                   ? 'opacity-0 pointer-events-none'
                   : 'opacity-100 transition-opacity duration-300'

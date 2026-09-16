@@ -125,15 +125,9 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     return isToday(addDays(currentWeekStart, selectedDayIndex));
   }, [currentWeekStart, selectedDayIndex]);
 
-  const isTabSelectable = useCallback(
-    (date: Date) => {
-      if (role === 'staff') {
-        return isToday(date);
-      }
-      return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
-    },
-    [role]
-  );
+  const isTabSelectable = useCallback((date: Date) => {
+    return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
+  }, []);
 
   useEffect(() => {
     const selectedDate = addDays(currentWeekStart, selectedDayIndex);
@@ -198,12 +192,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) return;
 
-    // Parse YYYY-MM-DD in local time
     const [year, month, day] = e.target.value.split('-').map(Number);
     const pickedDate = new Date(year, month - 1, day);
     const today = new Date();
 
-    // Lock future dates
     if (startOfDay(pickedDate).getTime() > startOfDay(today).getTime()) {
       return;
     }
@@ -254,8 +246,8 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         }
       `}</style>
 
-      {/* ─── VISIBLE CONTRASTING CONTAINER ─── */}
-      <div className="bg-slate-100 dark:bg-[#161920] border border-slate-200/90 dark:border-white/10 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-xs mb-4 space-y-3">
+      {/* ─── TIMELINE BAR CONTAINER (Elevated cleanly off the page) ─── */}
+      <div className="bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-white/10 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.06)] dark:shadow-none mb-4 space-y-3">
         {/* Top Header Row */}
         <div className="flex items-center justify-between w-full gap-2">
           {/* Left Controls: "<" & Mobile Search Toggle */}
@@ -263,7 +255,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             {role === 'admin' ? (
               <button
                 onClick={() => onWeekStartChange(subWeeks(currentWeekStart, 1))}
-                className="p-2 sm:p-2.5 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-50 dark:hover:bg-[#252b37] transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="p-2 sm:p-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 rounded-xl hover:bg-slate-100 dark:hover:bg-[#252b37] transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Previous week"
               >
                 <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
@@ -278,7 +270,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               className={`md:hidden p-2 sm:p-2.5 border rounded-xl transition-all cursor-pointer active:scale-95 shrink-0 relative shadow-xs ${
                 isSearchOpen || searchQuery
                   ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202]'
-                  : 'bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#252b37]'
+                  : 'bg-slate-50 dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#252b37]'
               }`}
               aria-label="Toggle search bar"
               title="Search records"
@@ -336,7 +328,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               <button
                 onClick={handleNextWeek}
                 disabled={isCurrentWeek}
-                className="p-2 sm:p-2.5 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-50 dark:hover:bg-[#252b37] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="p-2 sm:p-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 rounded-xl hover:bg-slate-100 dark:hover:bg-[#252b37] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Next week"
               >
                 <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700 dark:text-slate-200" />
@@ -381,9 +373,9 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     style={{ animationDelay: staggerDelay }}
                     className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
                       active
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-md scale-[1.03] z-10 font-bold'
+                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-[0_4px_12px_rgba(18,60,115,0.25)] scale-[1.03] z-10 font-bold'
                         : selectable
-                          ? 'bg-white dark:bg-[#1e232d] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-[#252b37] font-bold shadow-xs active:scale-95'
+                          ? 'bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:shadow-xs font-bold active:scale-95'
                           : 'bg-transparent border-transparent text-slate-400 dark:text-zinc-600 opacity-40 cursor-not-allowed'
                     }`}
                   >
@@ -405,7 +397,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
           </div>
         )}
 
-        {/* Search & Filters Row: Always open on Desktop (md:), collapsible on Mobile */}
+        {/* Search & Filters Row */}
         <div
           className={`grid transition-all duration-300 ease-in-out overflow-hidden md:grid-rows-[1fr] md:opacity-100 md:pointer-events-auto md:pt-1 ${
             isSearchOpen
@@ -415,6 +407,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
         >
           <div className="overflow-hidden min-h-0">
             <div className="flex items-center gap-2 w-full pt-1 pb-0.5">
+              {/* Search input field */}
               <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 pointer-events-none" />
                 <input
@@ -423,7 +416,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/30 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
+                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/20 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
                 />
                 {searchQuery && (
                   <button
@@ -449,7 +442,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                       MozAppearance: 'none',
                       appearance: 'none',
                     }}
-                    className="bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-xs"
+                    className="bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-white/20 transition-all shadow-xs"
                   >
                     {filterOptions.map((opt) => (
                       <option
@@ -479,7 +472,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                         MozAppearance: 'none',
                         appearance: 'none',
                       }}
-                      className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
+                      className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-400 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:bg-emerald-500/20 transition-all shadow-xs"
                     >
                       {paymentOptions.map((opt) => (
                         <option

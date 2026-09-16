@@ -40,10 +40,12 @@ export interface LogRecord {
   deletable?: boolean;
   receiptNumber?: string | null;
   memberIds?: string[];
+  cash_session_id?: string | null;
 }
 
 export interface SaleRecord {
   id: string;
+  cash_session_id?: string | null;
   created_at?: string;
   createdAt?: string;
   receipt_no: string;
@@ -123,7 +125,7 @@ export const getPaymentMethodInfo = (method: string) => {
       label: 'GCash',
       icon: Wallet,
       badgeClass:
-        'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-900/80 dark:text-blue-200 dark:border-blue-500 font-bold tracking-wider',
+        'bg-blue-50 text-blue-900 border-blue-200/90 dark:bg-blue-900/80 dark:text-blue-200 dark:border-blue-500 font-bold tracking-wider',
     };
   }
 
@@ -133,7 +135,7 @@ export const getPaymentMethodInfo = (method: string) => {
       label: 'Cash',
       icon: Banknote,
       badgeClass:
-        'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-900/80 dark:text-emerald-200 dark:border-emerald-500 font-bold tracking-wider',
+        'bg-emerald-50 text-emerald-900 border-emerald-200/90 dark:bg-emerald-900/80 dark:text-emerald-200 dark:border-emerald-500 font-bold tracking-wider',
     };
   }
 
@@ -142,7 +144,7 @@ export const getPaymentMethodInfo = (method: string) => {
     label: 'Promo',
     icon: Gift,
     badgeClass:
-      'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-900/80 dark:text-purple-200 dark:border-purple-500 font-bold tracking-wider',
+      'bg-purple-50 text-purple-900 border-purple-200/90 dark:bg-purple-900/80 dark:text-purple-200 dark:border-purple-500 font-bold tracking-wider',
   };
 };
 
@@ -151,65 +153,55 @@ const CATEGORY_THEMES = {
     label: 'CARD PURCHASE',
     shortLabel: 'CARD',
     icon: CreditCard,
-    bgClass:
-      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-amber-500 dark:bg-amber-400',
     badgeClass:
-      'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-500 font-bold',
+      'bg-amber-50 text-amber-900 border-amber-200/90 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-500 font-bold',
     iconBoxClass:
-      'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-600',
+      'bg-amber-50/80 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-600 shadow-xs',
     priceTextClass: 'text-amber-700 dark:text-amber-400 font-black',
   },
   walkin_student: {
     label: 'STUDENT WALK-IN',
     shortLabel: 'STUDENT',
     icon: GraduationCap,
-    bgClass:
-      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-cyan-500 dark:bg-cyan-400',
     badgeClass:
-      'bg-cyan-50 text-cyan-900 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-500 font-bold',
+      'bg-cyan-50 text-cyan-900 border-cyan-200/90 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-500 font-bold',
     iconBoxClass:
-      'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-600',
+      'bg-cyan-50/80 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-600 shadow-xs',
     priceTextClass: 'text-cyan-700 dark:text-cyan-400 font-black',
   },
   walkin_regular: {
     label: 'REGULAR WALK-IN',
     shortLabel: 'REGULAR',
     icon: User,
-    bgClass:
-      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-purple-500 dark:bg-purple-400',
     badgeClass:
-      'bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
+      'bg-purple-50 text-purple-900 border-purple-200/90 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
     iconBoxClass:
-      'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600',
+      'bg-purple-50/80 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600 shadow-xs',
     priceTextClass: 'text-purple-700 dark:text-purple-400 font-black',
   },
   member: {
     label: 'EXISTING MEMBER',
     shortLabel: 'MEMBER',
     icon: ShieldCheck,
-    bgClass:
-      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
-    borderAccent: 'bg-blue-500 dark:bg-blue-400',
+    borderAccent: 'bg-blue-600 dark:bg-blue-400',
     badgeClass:
-      'bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500 font-bold',
+      'bg-blue-50 text-blue-900 border-blue-200/90 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500 font-bold',
     iconBoxClass:
-      'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
+      'bg-blue-50/80 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600 shadow-xs',
     priceTextClass: 'text-blue-700 dark:text-blue-400 font-black',
   },
   new_subscription: {
     label: 'NEW MEMBERSHIP',
     shortLabel: 'SUBSCRIPTION',
     icon: Crown,
-    bgClass:
-      'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
     borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
     badgeClass:
-      'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500 font-bold',
+      'bg-emerald-50 text-emerald-900 border-emerald-200/90 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500 font-bold',
     iconBoxClass:
-      'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
+      'bg-emerald-50/80 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600 shadow-xs',
     priceTextClass: 'text-emerald-700 dark:text-emerald-400 font-black',
   },
 };
@@ -284,35 +276,29 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     const theme = isGCash
       ? {
           type: 'gcash',
-          bgClass:
-            'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
           borderAccent: 'bg-blue-500 dark:bg-blue-400',
-          badgeClass: 'bg-blue-600 text-white border border-blue-400 font-bold',
+          badgeClass: 'bg-blue-600 text-white border border-blue-500 font-bold',
           iconBoxClass:
-            'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600',
+            'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-600 shadow-xs',
           priceTextClass: 'text-blue-700 dark:text-blue-400 font-black',
         }
       : isCash
         ? {
             type: 'cash',
-            bgClass:
-              'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
             borderAccent: 'bg-emerald-500 dark:bg-emerald-400',
             badgeClass:
-              'bg-emerald-700 text-white border border-emerald-500 dark:bg-emerald-800 dark:text-emerald-100 dark:border-emerald-400 font-bold',
+              'bg-emerald-700 text-white border border-emerald-600 dark:bg-emerald-800 dark:text-emerald-100 dark:border-emerald-400 font-bold',
             iconBoxClass:
-              'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600',
+              'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-600 shadow-xs',
             priceTextClass: 'text-emerald-700 dark:text-emerald-400 font-black',
           }
         : {
             type: 'other',
-            bgClass:
-              'bg-white hover:bg-slate-50/90 border-slate-200/90 dark:bg-[#161920] dark:hover:bg-[#1e232d] dark:border-white/10 shadow-xs hover:shadow-md',
             borderAccent: 'bg-slate-400',
             badgeClass:
-              'bg-slate-700 text-white border border-slate-400 font-bold',
+              'bg-slate-700 text-white border border-slate-500 font-bold',
             iconBoxClass:
-              'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
+              'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 shadow-xs',
             priceTextClass: 'text-slate-800 dark:text-slate-300 font-black',
           };
 
@@ -338,15 +324,13 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     };
   }, [mode, data]);
 
+  // Clean, solid white card base with a soft physical shadow
+  const baseCardStyle =
+    'bg-white dark:bg-[#161920] hover:bg-slate-50/80 dark:hover:bg-[#1d222b] border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_-2px_rgba(15,23,42,0.06)] hover:shadow-[0_4px_16px_-4px_rgba(15,23,42,0.1)]';
+
   const containerClasses = useMemo(() => {
-    if (mode === 'attendance' && attendanceMeta) {
-      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-colors duration-150 will-change-transform transform-gpu ${attendanceMeta.theme.bgClass} p-2.5 sm:p-3.5`;
-    }
-    if (mode === 'sale' && saleMeta) {
-      return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl border transition-colors duration-150 will-change-transform transform-gpu ${saleMeta.theme.bgClass} p-2.5 sm:p-3.5`;
-    }
-    return 'pointer-events-auto bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-white/10 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 relative overflow-hidden select-none z-10 touch-pan-y w-full will-change-transform transform-gpu';
-  }, [mode, attendanceMeta, saleMeta]);
+    return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl transition-all duration-200 will-change-transform transform-gpu p-2.5 sm:p-3.5 ${baseCardStyle}`;
+  }, []);
 
   const CategoryIcon = attendanceMeta?.theme.icon || User;
   const PaymentIcon = attendanceMeta?.paymentMethodInfo.icon || Banknote;
@@ -447,14 +431,14 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
 
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span
-                    className={`px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${attendanceMeta.theme.badgeClass}`}
+                    className={`px-2 py-0.5 rounded-md text-[8.5px] sm:text-[9.5px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${attendanceMeta.theme.badgeClass}`}
                   >
                     <CategoryIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 stroke-[2]" />
                     <span>{attendanceMeta.theme.label}</span>
                   </span>
 
                   <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8.5px] sm:text-[9.5px] font-heading font-bold uppercase leading-none border shrink-0 ${attendanceMeta.paymentMethodInfo.badgeClass}`}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[8.5px] sm:text-[9.5px] font-heading font-bold uppercase leading-none border shrink-0 ${attendanceMeta.paymentMethodInfo.badgeClass}`}
                   >
                     <PaymentIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 stroke-[2]" />
                     <span>{attendanceMeta.paymentMethodInfo.label}</span>
@@ -493,7 +477,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     }}
                     className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase transition-all shrink-0 cursor-pointer font-bold border shadow-xs ${
                       attendanceMeta.isPaid
-                        ? 'bg-emerald-500/15 text-emerald-800 border-emerald-400 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-500 hover:bg-rose-500/15 hover:text-rose-700 hover:border-rose-400'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-500 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300'
                         : 'bg-amber-400 text-slate-950 border-amber-300 hover:bg-emerald-500 hover:text-white dark:bg-amber-500 animate-pulse'
                     }`}
                   >
@@ -503,8 +487,8 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   <div
                     className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase shrink-0 font-bold border select-none shadow-xs ${
                       attendanceMeta.isPaid
-                        ? 'bg-emerald-500/15 text-emerald-800 border-emerald-400 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
-                        : 'bg-rose-500/15 text-rose-700 border-rose-400 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
+                        : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
                     }`}
                   >
                     {attendanceMeta.isPaid ? 'PAID' : 'UNPAID'}
@@ -518,7 +502,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                       e.stopPropagation();
                       onSelectReceipt(attendanceMeta.log);
                     }}
-                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-300 hover:border-blue-400 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0"
+                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0 shadow-xs"
                     title="View Receipt"
                   >
                     <Printer className="w-4 h-4 stroke-[2]" />
@@ -534,10 +518,10 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                           onTriggerDelete(attendanceMeta.log);
                         }
                       }}
-                      className={`p-1.5 rounded-lg transition-all border shrink-0 ${
+                      className={`p-1.5 rounded-lg transition-all border shrink-0 shadow-xs ${
                         deleteDisabledReason
                           ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
-                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
+                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-200 hover:border-rose-300 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
                       }`}
                       title={deleteDisabledReason || 'Remove this check-in'}
                     >
@@ -581,7 +565,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   </h4>
 
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${saleMeta.theme.badgeClass}`}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${saleMeta.theme.badgeClass}`}
                   >
                     {saleMeta.isGCash ? (
                       <Wallet className="w-3 h-3 stroke-[2]" />
@@ -597,7 +581,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     saleMeta.tx.items.map((item: any, idx: number) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 text-[10px] font-sans font-bold border shrink-0"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 text-slate-800 border-slate-200/90 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 text-[10px] font-sans font-bold border shrink-0"
                       >
                         <span
                           className={`font-heading font-bold text-[10px] ${saleMeta.theme.priceTextClass}`}
@@ -654,7 +638,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                       e.stopPropagation();
                       onSelectReceipt(saleMeta.tx);
                     }}
-                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-300 hover:border-blue-400 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0"
+                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0 shadow-xs"
                     title="View Receipt"
                   >
                     <Printer className="w-4 h-4 stroke-[2]" />
@@ -670,10 +654,10 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                           onTriggerDelete(saleMeta.tx);
                         }
                       }}
-                      className={`p-1.5 rounded-lg transition-all border shrink-0 ${
+                      className={`p-1.5 rounded-lg transition-all border shrink-0 shadow-xs ${
                         deleteDisabledReason
                           ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
-                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
+                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-200 hover:border-rose-300 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
                       }`}
                       title={deleteDisabledReason || 'Remove this sale'}
                     >

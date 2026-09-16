@@ -1,5 +1,5 @@
--- Migration: Create Sales Table with Soft Delete, Stock Restoration, and pg_cron Purging
--- Description: Creates the sales transaction table, triggers for stock restoration / soft deleting, and schedules a daily cron job.
+-- Migration: Create Sales Table with Soft Delete and Stock Restoration
+-- Description: Creates the sales transaction table and triggers for stock restoration / soft deleting.
 -- Timestamp: 20260714170000_create_sales.sql
 
 BEGIN;
@@ -126,7 +126,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- FUNCTION: purge_old_soft_deleted_sales
--- Performs physical cleanup of soft-deleted records. Bypasses RLS limits via SECURITY DEFINER.
+-- Performs physical cleanup of soft-deleted records when invoked. Bypasses RLS limits via SECURITY DEFINER.
 CREATE OR REPLACE FUNCTION public.purge_old_soft_deleted_sales()
 RETURNS void AS $$
 BEGIN
@@ -174,7 +174,6 @@ DROP POLICY IF EXISTS "Allow authorized users to update sales" ON public.sales;
 DROP POLICY IF EXISTS "Allow authorized users to delete sales" ON public.sales;
 
 -- POLICY: View sales
--- Admins OR specific email can view all. Staff can view non-deleted sales from today.
 CREATE POLICY "Allow authenticated users to view sales" ON public.sales
     FOR SELECT
     TO authenticated
@@ -187,7 +186,6 @@ CREATE POLICY "Allow authenticated users to view sales" ON public.sales
     );
 
 -- POLICY: Insert sales
--- Allowed if not logically deleted.
 CREATE POLICY "Allow authenticated users to insert sales" ON public.sales
     FOR INSERT
     TO authenticated
@@ -196,7 +194,6 @@ CREATE POLICY "Allow authenticated users to insert sales" ON public.sales
     );
 
 -- POLICY: Update sales
--- Admins OR specific email only.
 CREATE POLICY "Allow authorized users to update sales" ON public.sales
     FOR UPDATE
     TO authenticated
@@ -210,7 +207,6 @@ CREATE POLICY "Allow authorized users to update sales" ON public.sales
     );
 
 -- POLICY: Delete sales
--- Admins OR specific email can delete. Staff can delete today's sales (Trigger converts to soft delete).
 CREATE POLICY "Allow authorized users to delete sales" ON public.sales
     FOR DELETE
     TO authenticated
@@ -222,26 +218,18 @@ CREATE POLICY "Allow authorized users to delete sales" ON public.sales
     );
 
 -- ==============================================================================
--- PART 6: MAINTENANCE
+-- PART 6: MAINTENANCE (ELIMINATE CRON PURGE)
 -- ==============================================================================
 
--- Ensure pg_cron is enabled
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-
--- Safely unschedule existing job if it exists to avoid duplication
+-- Safely unschedule any existing purge cron job (purging is now handled manually when cash session closes)
 DO $$
 BEGIN
-    PERFORM cron.unschedule('daily-purge-old-soft-deleted-sales');
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.unschedule('daily-purge-old-soft-deleted-sales');
+    END IF;
 EXCEPTION WHEN OTHERS THEN
-    -- Ignore error if the job wasn't scheduled yet
+    -- Ignore error if the job was not scheduled
 END $$;
-
--- Schedule daily purge of sales (Runs at 16:00 UTC / 12:00 AM Manila Time)
-SELECT cron.schedule(
-    'daily-purge-old-soft-deleted-sales',
-    '0 16 * * *', 
-    'SELECT public.purge_old_soft_deleted_sales();'
-);
 
 -- ==============================================================================
 -- PART 7: REALTIME

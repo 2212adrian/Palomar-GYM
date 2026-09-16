@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Check,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -41,6 +42,8 @@ import { Modal } from '../../components/ui/Modal';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { HeaderActionsContext } from '../../routes';
 import { supabase } from '../../lib/supabase/client';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { useNavbarStore } from '../../stores/useNavbarStore';
 
 // Import Shared Types
 import type {
@@ -96,6 +99,8 @@ export const MembersList: React.FC<MembersListProps> = ({
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const hasTriggeredRenewRef = useRef<boolean>(false);
+
+  const { isSessionOpen } = useCashSessionStore();
 
   const isPlansPath = useMemo(() => {
     return location.pathname.includes('/plans');
@@ -166,6 +171,33 @@ export const MembersList: React.FC<MembersListProps> = ({
   // Replacement toggle (enabled by default when staff wants to charge for lost/damaged card)
   const [chargeReplacements, setChargeReplacements] = useState(true);
 
+  // Unified click handler for Renew / Subscribe triggers across table & cards
+  const handleTableRenewOrSubscribe = useCallback(
+    (item: Member, hasSub: boolean, e: React.MouseEvent) => {
+      e.stopPropagation();
+
+      if (item.status === 'Suspended') {
+        toast.error(
+          `Cannot ${hasSub ? 'renew' : 'subscribe'}: Member "${item.full_name}" is currently suspended. Activate member to proceed.`,
+          { toastId: `suspended-${item.id}` }
+        );
+        return;
+      }
+
+      if (!isSessionOpen) {
+        toast.warning(
+          `Cannot ${hasSub ? 'renew' : 'subscribe'}: Cash drawer session is closed. Open a cash session in Cash Management first.`,
+          { toastId: 'cash-session-closed-enroll-block' }
+        );
+        return;
+      }
+
+      setWizardPrefillMember(item);
+      setIsWizardOpen(true);
+    },
+    [isSessionOpen]
+  );
+
   // Break down selected members into Unpaid (New) and Already Paid (Replacements)
   const batchMemberBreakdown = useMemo(() => {
     const selectedMembers = members.filter((m) =>
@@ -232,6 +264,9 @@ export const MembersList: React.FC<MembersListProps> = ({
       setLoading(false);
     }
   }, []);
+
+  // Listen to navbar floating sub-menu toggle
+  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
   useEffect(() => {
     const channel = supabase
@@ -304,6 +339,13 @@ export const MembersList: React.FC<MembersListProps> = ({
     const handlePrintEvent = () => handleOpenPrintModal();
     const handleRecycleEvent = () => setIsRecycleOpen(true);
     const handleWizardEvent = () => {
+      if (!isSessionOpen) {
+        toast.warning(
+          'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
+          { toastId: 'cash-session-closed-enroll-block' }
+        );
+        return;
+      }
       setWizardPrefillMember(undefined);
       setWizardPrefill(undefined);
       setIsWizardOpen(true);
@@ -318,7 +360,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
     };
-  }, [handleOpenPrintModal]);
+  }, [handleOpenPrintModal, isSessionOpen]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -374,6 +416,22 @@ export const MembersList: React.FC<MembersListProps> = ({
         hasTriggeredRenewRef.current = true;
         setSearchQuery(targetMember.full_name || targetMember.member_id);
 
+        if (targetMember.status === 'Suspended') {
+          toast.error(
+            `Cannot renew: ${targetMember.full_name} is suspended. Activate member first.`
+          );
+          navigate('/members/list', { replace: true, state: {} });
+          return;
+        }
+
+        if (!isSessionOpen) {
+          toast.warning(
+            'Cannot renew subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
+          );
+          navigate('/members/list', { replace: true, state: {} });
+          return;
+        }
+
         const now = Date.now();
         const memberActiveSubs = subscriptions.filter((s) => {
           if (s.member_id !== targetMember.member_id || s.status === 'Voided')
@@ -403,11 +461,9 @@ export const MembersList: React.FC<MembersListProps> = ({
     location.search,
     location.state,
     navigate,
+    isSessionOpen,
   ]);
 
-  /**
-   * Resolves currently active subscription for a member where start_date <= now <= end_date
-   */
   const getActiveSubscription = useCallback(
     (memberId: string): Subscription | undefined => {
       const now = Date.now();
@@ -421,9 +477,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     [subscriptions]
   );
 
-  /**
-   * Finds any queued/scheduled renewal subscription for a member that starts in the future
-   */
   const getQueuedSubscription = useCallback(
     (memberId: string): Subscription | undefined => {
       const now = Date.now();
@@ -436,9 +489,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     [subscriptions]
   );
 
-  /**
-   * Gets the most recent subscription record for details display
-   */
   const getLatestSubscriptionRecord = useCallback(
     (memberId: string): Subscription | undefined => {
       const memberSubs = subscriptions
@@ -465,7 +515,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     [cards]
   );
 
-  // Subscription Details Formatter
   const getSubscriptionDetails = useCallback(
     (memberId: string) => {
       const activeSub = getActiveSubscription(memberId);
@@ -491,8 +540,26 @@ export const MembersList: React.FC<MembersListProps> = ({
       const now = Date.now();
       const isPast = !isNaN(endMs) && endMs < now;
 
-      // 1. EXPIRED CONTRACT STATE
       if (isPast) {
+        // Calculate days since expiration
+        const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+
+        // If more than 7 days have elapsed, transition to "No Subscription"
+        if (daysExpired > 7) {
+          return {
+            hasSub: false,
+            canRenew: true,
+            planName: 'Profile Only',
+            statusLabel: 'No Subscription',
+            badgeStyle:
+              'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30',
+            dotColor: 'bg-slate-400',
+            subscribedAt: null,
+            queuedPlan: null,
+          };
+        }
+
+        // Within 7 days: Keep as "Expired"
         return {
           hasSub: false,
           canRenew: true,
@@ -512,7 +579,6 @@ export const MembersList: React.FC<MembersListProps> = ({
         };
       }
 
-      // 2. TRULY ACTIVE CONTRACT STATE
       const diffDays = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
 
       let badgeStyle =
@@ -560,7 +626,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     [getActiveSubscription, getQueuedSubscription, getLatestSubscriptionRecord]
   );
 
-  // Metric Summary Calculations
   const stats = useMemo(() => {
     const now = Date.now();
     let activeSubsCount = 0;
@@ -588,7 +653,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     };
   }, [members, subscriptions]);
 
-  // Broadcast Members Telemetry to Topbar
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('members-kpi-update', {
@@ -597,7 +661,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     );
   }, [stats]);
 
-  // Chip Filter Counts
   const chipCounts = useMemo(() => {
     const now = Date.now();
 
@@ -619,7 +682,10 @@ export const MembersList: React.FC<MembersListProps> = ({
         if (activeSub) return false;
         const latestSub = getLatestSubscriptionRecord(m.member_id);
         if (!latestSub) return false;
-        return new Date(latestSub.end_date).getTime() < now;
+        const endMs = new Date(latestSub.end_date).getTime();
+        if (isNaN(endMs) || endMs >= now) return false;
+        const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+        return daysExpired <= 7;
       }).length,
       has_card: members.filter((m) => {
         const card = getActiveCard(m.member_id);
@@ -643,7 +709,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     getActiveCard,
   ]);
 
-  // Filtered Members
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const now = Date.now();
@@ -681,7 +746,10 @@ export const MembersList: React.FC<MembersListProps> = ({
           if (activeSub) return false;
           const latestSub = getLatestSubscriptionRecord(m.member_id);
           if (!latestSub) return false;
-          return new Date(latestSub.end_date).getTime() < now;
+          const endMs = new Date(latestSub.end_date).getTime();
+          if (isNaN(endMs) || endMs >= now) return false;
+          const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+          return daysExpired <= 7;
         }
         case 'has_card': {
           const card = getActiveCard(m.member_id);
@@ -726,7 +794,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     }
   };
 
-  // Mobile Paginated Slice
   const totalMobilePages =
     Math.ceil(filteredMembers.length / itemsPerPage) || 1;
   const paginatedMobileMembers = useMemo(() => {
@@ -772,7 +839,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     return 'group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150 cursor-pointer';
   };
 
-  // COMPACT & ULTRA-LEGIBLE TABLE COLUMNS (OPTIMIZED ROW HEIGHT)
+  // COMPACT & ULTRA-LEGIBLE TABLE COLUMNS WITH GATED RENEW / SUBSCRIBE BUTTONS
   const columns: Column<Member>[] = [
     {
       key: 'select',
@@ -911,7 +978,6 @@ export const MembersList: React.FC<MembersListProps> = ({
 
         return (
           <div className="flex items-center justify-center">
-            {/* 1. NO CARD (gray inactive) */}
             {(!cardObj ||
               cardObj.card_type === 'None' ||
               cardObj.payment_status !== 'PAID') && (
@@ -921,7 +987,6 @@ export const MembersList: React.FC<MembersListProps> = ({
               </span>
             )}
 
-            {/* 2. PAID • UNCLAIMED (Yellow) */}
             {cardObj &&
               cardObj.payment_status === 'PAID' &&
               cardObj.claim_status === 'UNCLAIMED' && (
@@ -956,7 +1021,6 @@ export const MembersList: React.FC<MembersListProps> = ({
                 </div>
               )}
 
-            {/* 3. PAID • CLAIMED (Green) */}
             {cardObj &&
               cardObj.payment_status === 'PAID' &&
               cardObj.claim_status === 'CLAIMED' && (
@@ -988,6 +1052,8 @@ export const MembersList: React.FC<MembersListProps> = ({
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
         const isMenuOpen = openActionMenuId === item.id;
+        const isSuspended = item.status === 'Suspended';
+        const isActionDisabled = !isSessionOpen || isSuspended;
 
         return (
           <div
@@ -1000,16 +1066,31 @@ export const MembersList: React.FC<MembersListProps> = ({
           >
             {subInfo.canRenew && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setWizardPrefillMember(item);
-                  setIsWizardOpen(true);
-                }}
-                className="px-2.5 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white rounded-lg cursor-pointer border border-emerald-500/30 inline-flex items-center gap-1 text-[10px] font-heading tracking-wider uppercase font-extrabold transition-colors shadow-xs"
-                title="Enroll or renew member subscription contract"
+                type="button"
+                onClick={(e) =>
+                  handleTableRenewOrSubscribe(item, subInfo.hasSub, e)
+                }
+                title={
+                  isSuspended
+                    ? 'Member account is suspended. Activate member first.'
+                    : !isSessionOpen
+                      ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                      : subInfo.hasSub
+                        ? 'Renew Subscription'
+                        : 'Subscribe Plan'
+                }
+                className={`px-2.5 py-1 rounded-lg inline-flex items-center gap-1 text-[10px] font-heading tracking-wider uppercase font-extrabold transition-all shadow-xs ${
+                  isActionDisabled
+                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed border border-transparent'
+                    : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 cursor-pointer'
+                }`}
               >
-                <CreditCard className="w-3 h-3" />{' '}
-                {subInfo.hasSub ? 'Renew' : 'Subscribe'}
+                {isActionDisabled ? (
+                  <Lock className="w-3 h-3" />
+                ) : (
+                  <CreditCard className="w-3 h-3" />
+                )}
+                <span>{subInfo.hasSub ? 'Renew' : 'Subscribe'}</span>
               </button>
             )}
 
@@ -1130,14 +1211,35 @@ export const MembersList: React.FC<MembersListProps> = ({
 
             <Button
               onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                    { toastId: 'cash-session-closed-enroll-block' }
+                  );
+                  return;
+                }
                 setWizardPrefillMember(undefined);
                 setWizardPrefill(undefined);
                 setIsWizardOpen(true);
               }}
+              disabled={!isSessionOpen}
+              title={
+                !isSessionOpen
+                  ? 'Cash session is closed. Open a cash session to enroll members.'
+                  : 'Enroll New Member'
+              }
               variant="primary"
-              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
+              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
+                !isSessionOpen
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
+              {!isSessionOpen ? (
+                <Lock className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
+              ) : (
+                <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
+              )}
               <span>ENROLL MEMBER</span>
             </Button>
           </>
@@ -1157,6 +1259,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     isPlansPath,
     members,
     handleOpenPrintModal,
+    isSessionOpen,
   ]);
 
   useEffect(() => {
@@ -1199,6 +1302,22 @@ export const MembersList: React.FC<MembersListProps> = ({
         </div>
       ) : (
         <>
+          {/* Top Closed Session Banner */}
+          {!isSessionOpen && (
+            <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold uppercase select-none shadow-xs">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 shrink-0 text-yellow-500" />
+                <span>
+                  Cash drawer session is closed. Subscription enrollments,
+                  renewals, and card purchases are locked.
+                </span>
+              </div>
+              <span className="text-[10px] font-mono opacity-80 lowercase font-normal hidden sm:inline">
+                open session in cash management to proceed
+              </span>
+            </div>
+          )}
+
           {/* TOP SWITCH TABS */}
           <div className="flex border-b border-(--border-color) bg-(--bg-card) p-1 rounded-t-3xl select-none">
             {[
@@ -1408,18 +1527,38 @@ export const MembersList: React.FC<MembersListProps> = ({
 
                   {/* QUICK ACTION: ENROLL NEW MEMBER BUTTON (DESKTOP & TABLET) */}
                   <motion.button
-                    whileHover={{ scale: 1.006 }}
-                    whileTap={{ scale: 0.985 }}
+                    whileHover={!isSessionOpen ? {} : { scale: 1.006 }}
+                    whileTap={!isSessionOpen ? {} : { scale: 0.985 }}
                     type="button"
                     onClick={() => {
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                          { toastId: 'cash-session-closed-enroll-block' }
+                        );
+                        return;
+                      }
                       setWizardPrefillMember(undefined);
                       setWizardPrefill(undefined);
                       setIsWizardOpen(true);
                     }}
-                    className="hidden sm:flex w-full py-3 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-3 select-none"
+                    title={
+                      !isSessionOpen
+                        ? 'Cash drawer session is closed'
+                        : 'Enroll New Member'
+                    }
+                    className={`hidden sm:flex w-full py-3 px-4 rounded-2xl text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md transition-all duration-200 border border-white/10 group mt-3 select-none ${
+                      !isSessionOpen
+                        ? 'bg-slate-500 dark:bg-zinc-700 opacity-60 cursor-not-allowed'
+                        : 'bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] cursor-pointer hover:shadow-lg'
+                    }`}
                   >
                     <div className="w-5 h-5 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
-                      <Plus className="w-3.5 h-3.5 text-white" />
+                      {!isSessionOpen ? (
+                        <Lock className="w-3.5 h-3.5 text-white" />
+                      ) : (
+                        <Plus className="w-3.5 h-3.5 text-white" />
+                      )}
                     </div>
                     <span>ENROLL NEW MEMBER</span>
                   </motion.button>
@@ -1532,6 +1671,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                         );
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
+                        const isActionDisabled = !isSessionOpen || isSuspended;
 
                         return (
                           <div
@@ -1672,7 +1812,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                               </div>
                             </div>
 
-                            {/* Card Action Buttons Bar */}
+                            {/* Card Action Buttons Bar with Gated Renew */}
                             <div className="flex items-center gap-2 pt-2 border-t border-(--border-color)">
                               <button
                                 type="button"
@@ -1689,14 +1829,33 @@ export const MembersList: React.FC<MembersListProps> = ({
                               {subInfo.canRenew && (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setWizardPrefillMember(member);
-                                    setIsWizardOpen(true);
-                                  }}
-                                  className="flex-1 min-h-[40px] px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-emerald-500/20 transition-colors"
+                                  onClick={(e) =>
+                                    handleTableRenewOrSubscribe(
+                                      member,
+                                      subInfo.hasSub,
+                                      e
+                                    )
+                                  }
+                                  title={
+                                    isSuspended
+                                      ? 'Member account is suspended. Activate member first.'
+                                      : !isSessionOpen
+                                        ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                                        : subInfo.hasSub
+                                          ? 'Renew Subscription'
+                                          : 'Subscribe Plan'
+                                  }
+                                  className={`flex-1 min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+                                    isActionDisabled
+                                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed border border-transparent'
+                                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 cursor-pointer'
+                                  }`}
                                 >
-                                  <CreditCard className="w-3.5 h-3.5" />
+                                  {isActionDisabled ? (
+                                    <Lock className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <CreditCard className="w-3.5 h-3.5" />
+                                  )}
                                   <span>
                                     {subInfo.hasSub ? 'Renew' : 'Subscribe'}
                                   </span>
@@ -1758,6 +1917,13 @@ export const MembersList: React.FC<MembersListProps> = ({
             {activeTab === 'Queue' && (
               <OnlineQueue
                 onApproveLaunchWizard={(reg) => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot approve registration: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                      { toastId: 'queue-session-closed' }
+                    );
+                    return;
+                  }
                   setWizardPrefill(reg);
                   setWizardPrefillMember(undefined);
                   setIsWizardOpen(true);
@@ -1783,7 +1949,15 @@ export const MembersList: React.FC<MembersListProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsBatchBuyCardModalOpen(true)}
+              onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                  );
+                  return;
+                }
+                setIsBatchBuyCardModalOpen(true);
+              }}
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
             >
               <CreditCard className="w-3.5 h-3.5" />
@@ -1819,13 +1993,18 @@ export const MembersList: React.FC<MembersListProps> = ({
 
       {/* 2. MOBILE MULTI-SELECT BOTTOM BAR */}
       <AnimatePresence>
-        {isSelectionActive && (
+        {location.pathname.startsWith('/members') && isSelectionActive && (
           <motion.div
             initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
+            animate={{
+              y: isNavFloatingOpen ? 80 : 0,
+              opacity: isNavFloatingOpen ? 0 : 1,
+            }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-2.5 right-2.5 z-[210] bg-(--bg-card) text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none"
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-2.5 right-2.5 z-[210] bg-(--bg-card) text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none ${
+              isNavFloatingOpen ? 'pointer-events-none' : 'pointer-events-auto'
+            }`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
@@ -1846,10 +2025,17 @@ export const MembersList: React.FC<MembersListProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Batch Purchase Button with calculated fee */}
               <button
                 type="button"
-                onClick={() => setIsBatchBuyCardModalOpen(true)}
+                onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                    );
+                    return;
+                  }
+                  setIsBatchBuyCardModalOpen(true);
+                }}
                 className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-md active:scale-95 transition-transform"
                 title="Purchase cards for selected members"
               >
@@ -1864,7 +2050,6 @@ export const MembersList: React.FC<MembersListProps> = ({
                 </span>
               </button>
 
-              {/* Batch Print Button */}
               <button
                 type="button"
                 onClick={() => setShowBatchCardModal(true)}
@@ -1880,10 +2065,17 @@ export const MembersList: React.FC<MembersListProps> = ({
       </AnimatePresence>
 
       {/* 3. MOBILE DIRECT ACTION BOTTOM BAR */}
-      {activeTab === 'Directory' &&
+      {location.pathname.startsWith('/members') &&
+        activeTab === 'Directory' &&
         !isSelectionActive &&
         createPortal(
-          <div className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl">
+          <div
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
                 <Users className="w-3.5 h-3.5" />
@@ -1919,15 +2111,35 @@ export const MembersList: React.FC<MembersListProps> = ({
 
               <button
                 type="button"
+                disabled={!isSessionOpen}
                 onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                      { toastId: 'cash-session-closed-enroll-block' }
+                    );
+                    return;
+                  }
                   setWizardPrefillMember(undefined);
                   setWizardPrefill(undefined);
                   setIsWizardOpen(true);
                 }}
-                className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
-                title="Enroll Member"
+                className={`h-9 px-3 rounded-xl text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-transform ${
+                  !isSessionOpen
+                    ? 'bg-slate-500 dark:bg-zinc-700 opacity-60 cursor-not-allowed'
+                    : 'bg-[#123c73] dark:bg-[#bf0202] cursor-pointer active:scale-95'
+                }`}
+                title={
+                  !isSessionOpen
+                    ? 'Cash drawer session is closed'
+                    : 'Enroll Member'
+                }
               >
-                <Plus className="w-4 h-4" />
+                {!isSessionOpen ? (
+                  <Lock className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
                 <span className="text-[10px] hidden xs:inline">Enroll</span>
               </button>
             </div>
@@ -1999,15 +2211,25 @@ export const MembersList: React.FC<MembersListProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
                     const target = mobileActionSheetMember;
                     setMobileActionSheetMember(null);
-                    setWizardPrefillMember(target);
-                    setIsWizardOpen(true);
+                    const subInfo = getSubscriptionDetails(target.member_id);
+                    handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
                   }}
-                  className="w-full p-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                  className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
+                    !isSessionOpen ||
+                    mobileActionSheetMember.status === 'Suspended'
+                      ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
+                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                  }`}
                 >
-                  <CreditCard className="w-4 h-4" />
+                  {!isSessionOpen ||
+                  mobileActionSheetMember.status === 'Suspended' ? (
+                    <Lock className="w-4 h-4" />
+                  ) : (
+                    <CreditCard className="w-4 h-4" />
+                  )}
                   <span>Enroll or Renew Subscription</span>
                 </button>
 
@@ -2228,7 +2450,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold uppercase border bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-                            New Card (₱{batchMemberBreakdown.fee})
+                            New Card (₱${batchMemberBreakdown.fee})
                           </span>
                         )}
                       </div>
@@ -2302,6 +2524,12 @@ export const MembersList: React.FC<MembersListProps> = ({
                 batchMemberBreakdown.payableMembers.length === 0
               }
               onClick={async () => {
+                if (!isSessionOpen) {
+                  toast.error(
+                    'Cannot process batch card purchase: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                  );
+                  return;
+                }
                 setIsProcessingBatchPay(true);
                 try {
                   const memberIds = batchMemberBreakdown.payableMembers.map(

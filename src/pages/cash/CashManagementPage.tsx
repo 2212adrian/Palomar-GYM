@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import {
   Wallet,
@@ -12,6 +12,9 @@ import {
   Eye,
   CheckCircle2,
   AlertTriangle,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
@@ -25,9 +28,11 @@ import {
   SessionDetailsModal,
 } from './components/CashSessionModals';
 import { Button } from '../../components/ui/Button';
+import { Table, type Column } from '../../components/ui/Table';
 import type { CashSession, CashTransactionType } from '../../types/cash';
 
 const PRESET_FLOATS = [500, 1000, 2000, 3000, 5000];
+const SESSIONS_PER_PAGE = 5;
 
 export const CashManagementPage: React.FC = () => {
   const { user, profile } = useAuthStore();
@@ -62,12 +67,40 @@ export const CashManagementPage: React.FC = () => {
   const [openingNotes, setOpeningNotes] = useState('');
   const [isOpeningSession, setIsOpeningSession] = useState(false);
 
+  // Mobile history card pagination state
+  const [mobileHistoryPage, setMobileHistoryPage] = useState(1);
+
   useEffect(() => {
+    loadActiveSession();
+    loadHistory();
     const unsubscribe = subscribeRealtime();
     return () => {
       unsubscribe();
     };
-  }, [subscribeRealtime]);
+  }, [loadActiveSession, loadHistory, subscribeRealtime]);
+
+  // Find the most recent closed session with an actual counted cash figure
+  const lastClosedSession = useMemo(() => {
+    if (!history || history.length === 0) return null;
+    return (
+      history.find(
+        (s) => s.status === 'closed' && s.closing_actual_cash !== null
+      ) || null
+    );
+  }, [history]);
+
+  const lastCountedCash = useMemo(() => {
+    if (!lastClosedSession || lastClosedSession.closing_actual_cash === null)
+      return null;
+    return Number(lastClosedSession.closing_actual_cash);
+  }, [lastClosedSession]);
+
+  // Auto-populate opening float with the last counted cash when available
+  useEffect(() => {
+    if (lastCountedCash !== null && !isSessionOpen) {
+      setOpeningFloatInput(lastCountedCash.toString());
+    }
+  }, [lastCountedCash, isSessionOpen]);
 
   const handleStartSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,27 +143,161 @@ export const CashManagementPage: React.FC = () => {
     }
   };
 
+  // Table Column definitions for Cash Sessions History
+  const historyColumns: Column<CashSession>[] = useMemo(
+    () => [
+      {
+        key: 'session_number',
+        header: 'Session #',
+        sortable: true,
+        render: (s) => (
+          <span className="font-mono font-bold text-slate-900 dark:text-white">
+            {s.session_number}
+          </span>
+        ),
+      },
+      {
+        key: 'closed_at',
+        header: 'Date Closed',
+        sortable: true,
+        sortValue: (s) => (s.closed_at ? new Date(s.closed_at).getTime() : 0),
+        render: (s) => (
+          <span className="text-slate-500 dark:text-slate-400">
+            {s.closed_at
+              ? format(new Date(s.closed_at), 'MMM d, yyyy h:mm a')
+              : 'In progress'}
+          </span>
+        ),
+      },
+      {
+        key: 'opened_by_name',
+        header: 'Opened By',
+        sortable: true,
+        render: (s) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {s.opened_by_name || '-'}
+          </span>
+        ),
+      },
+      {
+        key: 'closed_by_name',
+        header: 'Closed By',
+        sortable: true,
+        render: (s) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {s.closed_by_name || '-'}
+          </span>
+        ),
+      },
+      {
+        key: 'opening_float',
+        header: 'Opening Float',
+        sortable: true,
+        headerClassName: 'text-right',
+        cellClassName: 'text-right',
+        sortValue: (s) => Number(s.opening_float || 0),
+        render: (s) => (
+          <span className="font-mono text-slate-700 dark:text-slate-300">
+            ₱
+            {Number(s.opening_float || 0).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+            })}
+          </span>
+        ),
+      },
+      {
+        key: 'closing_actual_cash',
+        header: 'Actual Counted',
+        sortable: true,
+        headerClassName: 'text-right',
+        cellClassName: 'text-right',
+        sortValue: (s) => Number(s.closing_actual_cash || 0),
+        render: (s) => (
+          <span className="font-mono font-bold text-slate-900 dark:text-white">
+            ₱
+            {Number(s.closing_actual_cash || 0).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+            })}
+          </span>
+        ),
+      },
+      {
+        key: 'discrepancy',
+        header: 'Discrepancy',
+        sortable: true,
+        headerClassName: 'text-center',
+        cellClassName: 'text-center',
+        sortValue: (s) => Number(s.discrepancy || 0),
+        render: (s) => {
+          const disc = Number(s.discrepancy || 0);
+          return (
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                disc === 0
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : disc > 0
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {disc === 0 && <CheckCircle2 className="w-3 h-3" />}
+              {disc !== 0 && <AlertTriangle className="w-3 h-3" />}
+              {disc === 0
+                ? 'BALANCED'
+                : disc > 0
+                  ? `+₱${disc.toFixed(2)} OVERAGE`
+                  : `-₱${Math.abs(disc).toFixed(2)} SHORTAGE`}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'actions',
+        header: 'Actions',
+        headerClassName: 'text-center',
+        cellClassName: 'text-center',
+        render: (s) => (
+          <button
+            onClick={() => setSelectedHistorySession(s)}
+            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 active:scale-95 text-slate-700 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Details
+          </button>
+        ),
+      },
+    ],
+    []
+  );
+
+  // Pagination for mobile card view
+  const totalMobilePages = Math.ceil(history.length / SESSIONS_PER_PAGE) || 1;
+  const paginatedMobileHistory = useMemo(() => {
+    const start = (mobileHistoryPage - 1) * SESSIONS_PER_PAGE;
+    return history.slice(start, start + SESSIONS_PER_PAGE);
+  }, [history, mobileHistoryPage]);
+
   return (
-    <div className="space-y-6 pb-12 font-body text-slate-900 dark:text-white">
+    <div className="space-y-5 sm:space-y-6 pb-16 sm:pb-12 font-body text-slate-900 dark:text-white max-w-7xl mx-auto px-1 sm:px-0">
       {/* Top Banner & Status Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#16181a] border border-slate-200/90 dark:border-white/10 shadow-xs">
         <div className="flex items-center gap-3">
           <div
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform ${
               isSessionOpen
                 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                 : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
             }`}
           >
-            <Wallet className="w-6 h-6" />
+            <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-heading font-black tracking-tight text-slate-900 dark:text-white">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base sm:text-xl font-heading font-black tracking-tight text-slate-900 dark:text-white">
                 LIVE CASH MANAGEMENT
               </h2>
               <span
-                className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
                   isSessionOpen
                     ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                     : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
@@ -147,7 +314,7 @@ export const CashManagementPage: React.FC = () => {
               </span>
             </div>
             {isSessionOpen && activeSession ? (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                 Session{' '}
                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                   {activeSession.session_number}
@@ -156,7 +323,7 @@ export const CashManagementPage: React.FC = () => {
                 {format(new Date(activeSession.opened_at), 'h:mm a')}
               </p>
             ) : (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 No cash session currently active. Money transactions require an
                 open session.
               </p>
@@ -164,26 +331,26 @@ export const CashManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Top Action Buttons */}
+        {/* 2x2 Grid on Mobile, Flex on Desktop */}
         {isSessionOpen && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-white/5">
             <button
               onClick={() => setActiveTxType('cash_in')}
-              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 cursor-pointer"
             >
               <ArrowDownRight className="w-4 h-4" />
               Cash In
             </button>
             <button
               onClick={() => setActiveTxType('cash_out')}
-              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+              className="px-3.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 cursor-pointer"
             >
               <ArrowUpRight className="w-4 h-4" />
               Cash Out
             </button>
             <button
               onClick={() => setActiveTxType('digital_in')}
-              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+              className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 cursor-pointer"
             >
               <Smartphone className="w-4 h-4" />
               Digital In
@@ -191,7 +358,7 @@ export const CashManagementPage: React.FC = () => {
             {isAdmin && (
               <button
                 onClick={() => setShowCloseModal(true)}
-                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 active:scale-95 text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4 text-emerald-500" />
                 Close Session
@@ -201,7 +368,7 @@ export const CashManagementPage: React.FC = () => {
         )}
       </div>
 
-      {/* Main Drawer Ledger */}
+      {/* Main Drawer Ledger & Metrics */}
       {isSessionOpen ? (
         <div className="space-y-6">
           <CashMetricsCards metrics={metrics} />
@@ -224,15 +391,15 @@ export const CashManagementPage: React.FC = () => {
         </div>
       ) : (
         /* Closed State */
-        <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8">
+        <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl p-5 sm:p-8 shadow-xs">
           {isAdmin ? (
             <div className="max-w-xl mx-auto text-center space-y-6">
-              <div className="w-16 h-16 rounded-3xl bg-[#1b365d]/10 dark:bg-[#bf0202]/15 text-[#1b365d] dark:text-[#bf0202] flex items-center justify-center mx-auto">
-                <Wallet className="w-8 h-8" />
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-[#1b365d]/10 dark:bg-[#bf0202]/15 text-[#1b365d] dark:text-[#bf0202] flex items-center justify-center mx-auto transition-transform hover:scale-105">
+                <Wallet className="w-7 h-7 sm:w-8 sm:h-8" />
               </div>
 
               <div>
-                <h3 className="text-xl font-heading font-black text-slate-900 dark:text-white">
+                <h3 className="text-lg sm:text-xl font-heading font-black text-slate-900 dark:text-white">
                   START NEW CASH SESSION
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
@@ -243,12 +410,26 @@ export const CashManagementPage: React.FC = () => {
 
               <form
                 onSubmit={handleStartSession}
-                className="space-y-5 text-left"
+                className="space-y-4 sm:space-y-5 text-left"
               >
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">
-                    Opening Float Amount (₱) *
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Opening Float Amount (₱) *
+                    </label>
+                    {lastCountedCash !== null && (
+                      <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                        Last Session:{' '}
+                        <strong className="text-emerald-600 dark:text-emerald-400">
+                          ₱
+                          {lastCountedCash.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </strong>
+                      </span>
+                    )}
+                  </div>
+
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">
                       ₱
@@ -256,23 +437,40 @@ export const CashManagementPage: React.FC = () => {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.01"
                       required
                       value={openingFloatInput}
                       onChange={(e) => setOpeningFloatInput(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3.5 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
-                  <div className="flex flex-wrap gap-2 mt-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2.5">
+                    {lastCountedCash !== null && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpeningFloatInput(lastCountedCash.toString())
+                        }
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 ${
+                          openingFloatInput === lastCountedCash.toString()
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Last: ₱{lastCountedCash.toLocaleString()}
+                      </button>
+                    )}
+
                     {PRESET_FLOATS.map((preset) => (
                       <button
                         type="button"
                         key={preset}
                         onClick={() => setOpeningFloatInput(preset.toString())}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 ${
                           openingFloatInput === preset.toString()
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                             : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-neutral-700'
                         }`}
                       >
@@ -299,7 +497,7 @@ export const CashManagementPage: React.FC = () => {
                   type="submit"
                   variant="primary"
                   loading={isOpeningSession}
-                  className="w-full py-4 text-sm font-heading font-black tracking-wider"
+                  className="w-full py-3.5 sm:py-4 text-xs sm:text-sm font-heading font-black tracking-wider shadow-sm transition-all duration-150 active:scale-[0.99]"
                 >
                   <Play className="w-4 h-4 mr-1.5" />
                   OPEN TODAY'S CASH SESSION
@@ -324,8 +522,8 @@ export const CashManagementPage: React.FC = () => {
         </div>
       )}
 
-      {/* Historical Sessions */}
-      <div className="space-y-3 pt-4">
+      {/* CASH SESSIONS HISTORY (5 rows per page with pagination) */}
+      <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-slate-500" />
@@ -338,99 +536,156 @@ export const CashManagementPage: React.FC = () => {
           </span>
         </div>
 
-        <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-          {history.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
-              No historical closed cash sessions found yet.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-neutral-900/60 text-slate-500 dark:text-slate-400 uppercase font-black tracking-wider text-[10px] border-b border-slate-200 dark:border-white/5">
-                  <tr>
-                    <th className="py-3 px-4">Session #</th>
-                    <th className="py-3 px-4">Date Closed</th>
-                    <th className="py-3 px-4">Opened By</th>
-                    <th className="py-3 px-4">Closed By</th>
-                    <th className="py-3 px-4 text-right">Opening Float</th>
-                    <th className="py-3 px-4 text-right">Actual Counted</th>
-                    <th className="py-3 px-4 text-center">Discrepancy</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {history.map((s) => {
-                    const disc = Number(s.discrepancy || 0);
-                    return (
-                      <tr
-                        key={s.id}
-                        className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]"
+        {/* Desktop & Tablet View: Reusable Table Component (5 rows per page) */}
+        <div className="hidden md:block">
+          <Table<CashSession>
+            data={history}
+            columns={historyColumns}
+            itemsPerPage={SESSIONS_PER_PAGE}
+            searchKeys={[
+              'session_number',
+              'opened_by_name',
+              'closed_by_name',
+              'notes',
+            ]}
+            searchPlaceholder="Search session # or staff..."
+            defaultSortKey="closed_at"
+            defaultSortDirection="desc"
+          />
+        </div>
+
+        {/* Mobile View: 5 cards per page with clean page controls */}
+        <div className="md:hidden space-y-3">
+          <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
+            {history.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                No historical cash sessions recorded yet.
+              </div>
+            ) : (
+              paginatedMobileHistory.map((s) => {
+                const disc = Number(s.discrepancy || 0);
+                return (
+                  <div
+                    key={s.id}
+                    className="p-3.5 space-y-2.5 active:bg-slate-50 dark:active:bg-neutral-900/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                        {s.session_number}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          disc === 0
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : disc > 0
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        }`}
                       >
-                        <td className="py-3 px-4 font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {s.session_number}
-                        </td>
-                        <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
-                          {s.closed_at
-                            ? format(
-                                new Date(s.closed_at),
-                                'MMM d, yyyy h:mm a'
-                              )
-                            : 'In progress'}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                          {s.opened_by_name}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                          {s.closed_by_name || '-'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                          ₱
-                          {Number(s.opening_float).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          ₱
-                          {Number(s.closing_actual_cash || 0).toLocaleString(
-                            'en-US',
-                            { minimumFractionDigits: 2 }
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                              disc === 0
-                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                : disc > 0
-                                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                                  : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                            }`}
-                          >
-                            {disc === 0 && <CheckCircle2 className="w-3 h-3" />}
-                            {disc !== 0 && (
-                              <AlertTriangle className="w-3 h-3" />
-                            )}
-                            {disc === 0
-                              ? 'BALANCED'
-                              : disc > 0
-                                ? `+₱${disc.toFixed(2)} OVERAGE`
-                                : `-₱${Math.abs(disc).toFixed(2)} CASH DISCREPANCY`}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => setSelectedHistorySession(s)}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Details
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        {disc === 0 && <CheckCircle2 className="w-2.5 h-2.5" />}
+                        {disc !== 0 && (
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                        )}
+                        {disc === 0
+                          ? 'BALANCED'
+                          : disc > 0
+                            ? `+₱${disc.toFixed(0)} OVER`
+                            : `-₱${Math.abs(disc).toFixed(0)} SHORT`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/70 dark:bg-neutral-900/40 p-2.5 rounded-xl">
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">
+                          Float In
+                        </p>
+                        <p className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                          ₱{Number(s.opening_float || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">
+                          Counted Out
+                        </p>
+                        <p className="font-mono font-bold text-slate-900 dark:text-white">
+                          ₱{Number(s.closing_actual_cash || 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="truncate">
+                        Closed:{' '}
+                        {s.closed_at
+                          ? format(new Date(s.closed_at), 'MMM d, h:mm a')
+                          : 'In progress'}
+                      </span>
+                      <button
+                        onClick={() => setSelectedHistorySession(s)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 active:scale-95 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Eye className="w-3 h-3" />
+                        Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Mobile Pagination Footer Controls */}
+          {history.length > SESSIONS_PER_PAGE && (
+            <div className="flex items-center justify-between px-1 py-1 text-xs">
+              <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                Page {mobileHistoryPage} of {totalMobilePages} ({history.length}{' '}
+                total)
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobileHistoryPage((prev) => Math.max(prev - 1, 1))
+                  }
+                  disabled={mobileHistoryPage === 1}
+                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                {Array.from({ length: totalMobilePages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setMobileHistoryPage(p)}
+                      className={`w-7 h-7 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        mobileHistoryPage === p
+                          ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
+                          : 'border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobileHistoryPage((prev) =>
+                      Math.min(prev + 1, totalMobilePages)
+                    )
+                  }
+                  disabled={mobileHistoryPage === totalMobilePages}
+                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </div>

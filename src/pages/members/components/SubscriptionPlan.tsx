@@ -7,7 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Award,
@@ -36,10 +36,12 @@ import {
   UserPlus,
   Trash2,
   Ban,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../../../lib/supabase/client';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import {
   memberService,
   subscriptionService,
@@ -105,7 +107,6 @@ interface SignaturePadProps {
   readOnly?: boolean;
 }
 
-// Canvas Signature Pad Component
 export const SignaturePad: React.FC<SignaturePadProps> = ({
   label,
   value,
@@ -340,6 +341,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillData,
   prefillMember,
 }) => {
+  const { isSessionOpen, loadActiveSession, subscribeRealtime } =
+    useCashSessionStore();
+
   const [step, setStep] = useState<number>(() =>
     initialStep !== undefined ? initialStep : 1
   );
@@ -401,14 +405,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      loadActiveSession();
+      const unsub = subscribeRealtime();
       fetchWizardSettings();
       memberService.getAll().then(setAllMembers).catch(console.error);
       subscriptionService
         .getAll()
         .then(setAllSubscriptions)
         .catch(console.error);
+
+      return () => {
+        unsub();
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, loadActiveSession, subscribeRealtime]);
 
   const cardFee = settings.card_printing_fee || 50;
   const gcashFee = settings.gcash_fee || 10;
@@ -1556,6 +1566,16 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleExecuteCheckout = async () => {
     if (isSubmitting) return;
 
+    // Strict guard: if cash session is closed, strictly prevent financial actions
+    const isPaidPlan = selectedPlan !== 'No Subscription';
+    const isPaidCard = addIdCard && cardFee > 0;
+    if (!isSessionOpen && (isPaidPlan || isPaidCard)) {
+      toast.error(
+        'Cash drawer session is closed. Paid subscriptions and cards cannot be transacted.'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -1797,18 +1817,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const numericCashTendered = parseFloat(cashTendered) || 0;
   const cashChange = Math.max(0, numericCashTendered - totalPrice);
 
-  // Automatically default Cash Received to Total Price so checkout is enabled immediately
-  useEffect(() => {
-    if (step === 2 && paymentMethod === 'Cash' && totalPrice > 0) {
-      setCashTendered((prev) =>
-        !prev || Number(prev) < totalPrice ? String(totalPrice) : prev
-      );
-    }
-  }, [step, paymentMethod, totalPrice]);
+// Automatically sync Cash Received to Total Price whenever plan or add-ons change
+useEffect(() => {
+  if (step === 2 && paymentMethod === 'Cash') {
+    setCashTendered(totalPrice > 0 ? String(totalPrice) : '');
+  }
+}, [step, paymentMethod, totalPrice]);
 
   const isPlanLocked =
     intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
+
+  // STRICT SESSION ENFORCEMENT:
+  // If session is closed, paid transactions (Monthly, Yearly, physical card purchase) are prohibited.
+  const isPaidTransaction = selectedPlan !== 'No Subscription' || addIdCard;
+  const isSessionBlocked = !isSessionOpen && isPaidTransaction;
+
   const isConfirmDisabled =
+    isSessionBlocked ||
     (paymentMethod === 'GCash' &&
       selectedPlan !== 'No Subscription' &&
       !isGcashValid) ||
@@ -2066,7 +2091,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </span>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* EXISTING MEMBER - BLUE THEMED */}
+                    {/* EXISTING MEMBER */}
                     <div
                       onClick={handleChooseExistingMember}
                       className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
@@ -2099,7 +2124,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
 
-                    {/* CREATE NEW MEMBER - EMERALD THEMED */}
+                    {/* CREATE NEW MEMBER */}
                     <div
                       onClick={handleChooseCreateNewMember}
                       className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
@@ -2242,7 +2267,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         )}
                       </div>
                     ) : (
-                      /* EMPTY SEARCH BADGE */
                       <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-(--bg-input)/30 text-center flex flex-col items-center justify-center space-y-2.5 select-none">
                         <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center shadow-xs">
                           <Users className="w-6 h-6 stroke-[2.2]" />
@@ -2935,6 +2959,25 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {/* STEP 2: CHECKOUT INVOICE & PLAN SELECTION */}
           {step === 2 && (
             <div className="p-4 sm:p-5 bg-(--bg-input)/50 rounded-2xl border border-(--border-color) text-left space-y-4 animate-fade-in">
+              {/* CASH SESSION CLOSED WARNING NOTICE */}
+              {!isSessionOpen && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-500 flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-black uppercase tracking-wider block">
+                      Cash Register Session Is Closed
+                    </span>
+                    <p className="text-[11px] text-amber-500/90 leading-relaxed font-medium">
+                      Paid transactions (Monthly/Yearly subscriptions &amp;
+                      physical cards) cannot be transacted or logged while the
+                      cash session is closed. You can still modify and save
+                      member profile records using <strong>Profile Only</strong>
+                      .
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Member Summary Header */}
               <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
                 <div>
@@ -2963,16 +3006,30 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   Select Membership Option
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* MONTHLY PLAN OPTION */}
                   <div
-                    onClick={() =>
-                      !isPlanLocked && setSelectedPlan('Monthly Membership')
-                    }
-                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                      selectedPlan === 'Monthly Membership'
-                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
-                        : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-emerald-500/40'
+                    onClick={() => {
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cash drawer is closed. Open a session before selecting paid subscriptions.'
+                        );
+                        return;
+                      }
+                      if (!isPlanLocked) setSelectedPlan('Monthly Membership');
+                    }}
+                    className={`p-3.5 rounded-2xl border-2 transition-all relative ${
+                      !isSessionOpen
+                        ? 'opacity-60 border-(--border-color) bg-(--bg-card) cursor-not-allowed'
+                        : selectedPlan === 'Monthly Membership'
+                          ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 shadow-sm ring-2 ring-emerald-500/20 cursor-pointer'
+                          : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-emerald-500/40 cursor-pointer'
                     }`}
                   >
+                    {!isSessionOpen && (
+                      <span className="absolute top-2 right-2 flex items-center gap-1 text-[8px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md">
+                        <Lock className="w-2.5 h-2.5" /> Closed
+                      </span>
+                    )}
                     <span className="text-xs uppercase font-black block">
                       Monthly Plan
                     </span>
@@ -2981,16 +3038,30 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     </span>
                   </div>
 
+                  {/* YEARLY PLAN OPTION */}
                   <div
-                    onClick={() =>
-                      !isPlanLocked && setSelectedPlan('Yearly Membership')
-                    }
-                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                      selectedPlan === 'Yearly Membership'
-                        ? 'border-(--color-primary) bg-(--color-primary)/10 text-(--color-primary-light) shadow-sm ring-2 ring-[var(--color-primary)]/20'
-                        : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-(--color-primary)/40'
+                    onClick={() => {
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cash drawer is closed. Open a session before selecting paid subscriptions.'
+                        );
+                        return;
+                      }
+                      if (!isPlanLocked) setSelectedPlan('Yearly Membership');
+                    }}
+                    className={`p-3.5 rounded-2xl border-2 transition-all relative ${
+                      !isSessionOpen
+                        ? 'opacity-60 border-(--border-color) bg-(--bg-card) cursor-not-allowed'
+                        : selectedPlan === 'Yearly Membership'
+                          ? 'border-(--color-primary) bg-(--color-primary)/10 text-(--color-primary-light) shadow-sm ring-2 ring-[var(--color-primary)]/20 cursor-pointer'
+                          : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-(--color-primary)/40 cursor-pointer'
                     }`}
                   >
+                    {!isSessionOpen && (
+                      <span className="absolute top-2 right-2 flex items-center gap-1 text-[8px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md">
+                        <Lock className="w-2.5 h-2.5" /> Closed
+                      </span>
+                    )}
                     <span className="text-xs uppercase font-black block">
                       Yearly Plan
                     </span>
@@ -2999,16 +3070,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     </span>
                   </div>
 
+                  {/* PROFILE ONLY OPTION */}
                   <div
                     onClick={() =>
                       !isPlanLocked && setSelectedPlan('No Subscription')
                     }
-                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative ${
                       selectedPlan === 'No Subscription'
                         ? 'border-amber-500 bg-amber-500/10 text-amber-500 shadow-sm ring-2 ring-amber-500/20'
                         : 'border-(--border-color) bg-(--bg-card) text-(--color-text) hover:border-amber-500/40'
                     }`}
                   >
+                    {!isSessionOpen && (
+                      <span className="absolute top-2 right-2 flex items-center gap-1 text-[8px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md">
+                        Available
+                      </span>
+                    )}
                     <span className="text-xs uppercase font-black block">
                       Profile Only
                     </span>
@@ -3137,31 +3214,51 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <div>
                   <span className="font-bold text-(--color-text) block text-xs">
                     Issue Physical Entry Card (+₱{cardFee})
+                    {!isSessionOpen && (
+                      <span className="ml-2 text-[9px] text-amber-500 font-mono font-bold uppercase">
+                        (Disabled - Session Closed)
+                      </span>
+                    )}
                   </span>
                   <span className="text-[10px] text-(--color-text)/50">
                     Printed RFID / QR membership card
                   </span>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label
+                  className={`relative inline-flex items-center ${
+                    !isSessionOpen
+                      ? 'cursor-not-allowed opacity-50'
+                      : 'cursor-pointer'
+                  }`}
+                >
                   <input
                     type="checkbox"
                     checked={addIdCard}
-                    onChange={(e) => setAddIdCard(e.target.checked)}
+                    disabled={!isSessionOpen}
+                    onChange={(e) => {
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cash drawer is closed. Cannot issue physical card.'
+                        );
+                        return;
+                      }
+                      setAddIdCard(e.target.checked);
+                    }}
                     className="sr-only"
                   />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
-                      addIdCard
-                        ? 'bg-(--color-primary)'
-                        : 'bg-(--bg-card) border border-(--border-color)'
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                        addIdCard ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </div>
+                 <div
+  className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+    addIdCard
+      ? 'bg-(--color-primary)'
+      : 'bg-slate-300 dark:bg-zinc-700 border border-slate-400/60 dark:border-zinc-600'
+  }`}
+>
+  <div
+    className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${
+      addIdCard ? 'translate-x-5' : 'translate-x-0'
+    }`}
+  />
+</div>
                 </label>
               </div>
 
@@ -3270,12 +3367,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   type="button"
                   onClick={handleExecuteCheckout}
                   disabled={isConfirmDisabled || isSubmitting}
-                  className="px-6 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-black rounded-xl uppercase tracking-wider text-xs cursor-pointer shadow-lg transition-all flex items-center gap-2 active:scale-95 disabled:opacity-40"
+                  className={`px-6 py-2.5 font-black rounded-xl uppercase tracking-wider text-xs shadow-lg transition-all flex items-center gap-2 active:scale-95 ${
+                    isSessionBlocked
+                      ? 'bg-neutral-800 text-neutral-400 border border-neutral-700 cursor-not-allowed opacity-60'
+                      : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
+                  }`}
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       <span>Processing...</span>
+                    </>
+                  ) : isSessionBlocked ? (
+                    <>
+                      <Lock className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Session Closed (Payment Blocked)</span>
                     </>
                   ) : (
                     <span>
@@ -3357,7 +3463,9 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   onOnboardingSuccess,
 }) => {
   const navigate = useNavigate();
-  const location = useLocation();
+
+  const { isSessionOpen, loadActiveSession, subscribeRealtime } =
+    useCashSessionStore();
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -3367,24 +3475,36 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
     prefillData?: OnlineRegistration;
   }>({ isOpen: false, mode: null, plan: null });
 
-  useEffect(() => {
-    if (location.state?.openWizard) {
-      setModalConfig({
-        isOpen: true,
-        mode: location.state.initialIntakeMode || 'Manual',
-        plan: location.state.initialPlan || 'Monthly Membership',
-        step: location.state.initialStep ?? 1,
-        prefillData: location.state.prefillData,
-      });
-      window.history.replaceState({}, document.title);
-    }
-  }, [location.state]);
-
+  // 1. SETTINGS MUST BE DECLARED FIRST
   const [settings, setSettings] =
     useState<MembershipSettings>(DEFAULT_SETTINGS);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
+
+  const regularWalkInRate: number =
+    typeof (settings as any)?.regular_walk_in === 'number'
+      ? (settings as any).regular_walk_in
+      : typeof (settings as any)?.walkin_regular_fee === 'number'
+        ? (settings as any).walkin_regular_fee
+        : typeof (settings as any)?.walkin_fee === 'number'
+          ? (settings as any).walkin_fee
+          : 100;
+
+  const yearlyCheckInFee: number =
+    typeof (settings as any)?.yearly_walk_in === 'number'
+      ? (settings as any).yearly_walk_in
+      : typeof (settings as any)?.yearly_member_checkin_fee === 'number'
+        ? (settings as any).yearly_member_checkin_fee
+        : 50;
+
+  // 3. DYNAMIC DISCOUNT CALCULATION
+  const yearlyDiscountPercentage: number = useMemo(() => {
+    if (regularWalkInRate <= 0) return 0;
+    const diff = regularWalkInRate - yearlyCheckInFee;
+    const discount = Math.round((diff / regularWalkInRate) * 100);
+    return discount > 0 ? discount : 0;
+  }, [regularWalkInRate, yearlyCheckInFee]);
 
   const fetchSettings = async () => {
     setIsLoadingSettings(true);
@@ -3423,8 +3543,13 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
     settings.yearly_plan_price > 0;
 
   useEffect(() => {
+    loadActiveSession();
+    const unsub = subscribeRealtime();
     fetchSettings();
-  }, []);
+    return () => {
+      unsub();
+    };
+  }, [loadActiveSession, subscribeRealtime]);
 
   return (
     <div className="relative space-y-6">
@@ -3458,7 +3583,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* SUPABASE CONNECTION FALLBACK ALERT BANNER */}
+      {/* CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>
         {(settingsError || isUsingFallback) && (
           <motion.div
@@ -3510,7 +3635,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           setModalConfig({
             isOpen: true,
             mode: 'Import',
-            plan: 'Monthly Membership',
+            plan: isSessionOpen ? 'Monthly Membership' : 'No Subscription',
           });
         }}
         className="p-5 rounded-3xl bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border border-blue-200 dark:border-blue-500/30 hover:border-blue-400 transition-all cursor-pointer flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none"
@@ -3521,14 +3646,14 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           </div>
           <div className="space-y-1">
             <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
-              Intake Choice 1
+              Scan QR Code
             </span>
             <h4 className="font-heading text-base text-slate-900 dark:text-white uppercase leading-none font-bold">
-              Scan Lobby QR / Search Pre-Registration
+              use camera to scan qr code
             </h4>
             <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-tight">
-              Retrieve client pre-registration profiles via live QR scanner or
-              Registration ID search.
+              Scan the lobby QR code to quickly import pre-registered member
+              data.
             </p>
           </div>
         </div>
@@ -3566,58 +3691,76 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-3xl mx-auto pt-2 text-left">
-          {/* MONTHLY PLAN CARD (UNLIMITED ALL-ACCESS) */}
+          {/* MONTHLY PLAN CARD */}
           <motion.div
-            whileHover={isMonthlyValid ? { y: -4, scale: 1.01 } : {}}
+            whileHover={
+              isMonthlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
+            }
             transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
-              if (isMonthlyValid) {
-                setModalConfig({
-                  isOpen: true,
-                  mode: 'Manual',
-                  plan: 'Monthly Membership',
-                });
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                );
+                return;
               }
+              setModalConfig({
+                isOpen: true,
+                mode: 'Import',
+                plan: 'Monthly Membership',
+              });
             }}
             className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              isMonthlyValid
-                ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
-                : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+              !isSessionOpen
+                ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                : isMonthlyValid
+                  ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
+                  : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
-            {/* Ambient Background Glow */}
+            {/* Ambient Glow */}
             <div className="absolute -top-16 -right-16 w-36 h-36 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/25 transition-all" />
 
             <div className="space-y-4 relative z-10">
-              {/* Header Badge & Icon */}
               <div className="flex justify-between items-start">
-                <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-                    <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                    Unlimited All-Access
-                  </span>
-                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                      <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      100% Free Check-Ins
+                    </span>
+                    {!isSessionOpen && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        <Lock className="w-2.5 h-2.5" /> Session Closed
+                      </span>
+                    )}
+                  </div>
+
+                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold">
                     Monthly Membership
                   </h4>
                 </div>
+
                 <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm shrink-0">
                   <Award className="w-5 h-5" />
                 </div>
               </div>
 
-              {/* Rate Comparison Box: No Membership vs With Membership */}
+              {/* Rate Comparison Box */}
               <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
                 <div className="flex items-center justify-between text-[10px]">
                   <span className="text-slate-500 dark:text-slate-400 font-medium">
                     Regular Walk-In Rate:
                   </span>
                   <span className="font-mono line-through text-slate-400 dark:text-slate-500">
-                    ₱100 / visit
+                    {regularWalkInRate !== null
+                      ? `₱${regularWalkInRate.toLocaleString()} / visit`
+                      : '--'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
                   <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <Check className="w-3 h-3 stroke-[3]" /> Daily Check-In Fee:
+                    <Check className="w-3 h-3 stroke-3" /> Daily Check-In Fee:
                   </span>
                   <span className="font-mono text-emerald-600 dark:text-emerald-400 text-sm font-black">
                     ₱0 / FREE
@@ -3655,9 +3798,14 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
               <button
                 type="button"
-                disabled={!isMonthlyValid}
-                onClick={(e) => {
-                  e.stopPropagation();
+                disabled={!isMonthlyValid || !isSessionOpen}
+                onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                    );
+                    return;
+                  }
                   if (isMonthlyValid) {
                     setModalConfig({
                       isOpen: true,
@@ -3666,18 +3814,36 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                     });
                   }
                 }}
-                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none transition-all shadow-md shadow-emerald-600/20"
+                className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
+                  !isSessionOpen
+                    ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                    : isMonthlyValid
+                      ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white cursor-pointer shadow-emerald-600/20'
+                      : 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                }`}
               >
-                {isMonthlyValid ? 'Select Monthly' : 'Unavailable'}
+                {!isSessionOpen
+                  ? 'Session Closed'
+                  : isMonthlyValid
+                    ? 'Select Monthly'
+                    : 'Unavailable'}
               </button>
             </div>
           </motion.div>
 
-          {/* YEARLY PLAN CARD (DISCOUNT PER-VISIT TIER) */}
+          {/* YEARLY PLAN CARD */}
           <motion.div
-            whileHover={isYearlyValid ? { y: -4, scale: 1.01 } : {}}
+            whileHover={
+              isYearlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
+            }
             transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                );
+                return;
+              }
               if (isYearlyValid) {
                 setModalConfig({
                   isOpen: true,
@@ -3687,22 +3853,30 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               }
             }}
             className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              isYearlyValid
-                ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
-                : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+              !isSessionOpen
+                ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                : isYearlyValid
+                  ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
+                  : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
-            {/* Ambient Background Glow */}
+            {/* Ambient Glow */}
             <div className="absolute -top-16 -right-16 w-36 h-36 bg-blue-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/25 transition-all" />
 
             <div className="space-y-4 relative z-10">
-              {/* Header Badge & Icon */}
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
-                    <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                    365-Day VIP Discount Tier
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                      <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                      365-Day VIP Tier
+                    </span>
+                    {!isSessionOpen && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        <Lock className="w-2.5 h-2.5" /> Session Closed
+                      </span>
+                    )}
+                  </div>
                   <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
                     Yearly Membership
                   </h4>
@@ -3712,36 +3886,40 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                 </div>
               </div>
 
-              {/* Rate Comparison Box: No Membership vs With Membership */}
+              {/* Rate Comparison Box */}
               <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
                 <div className="flex items-center justify-between text-[10px]">
                   <span className="text-slate-500 dark:text-slate-400 font-medium">
                     Regular Walk-In Rate:
                   </span>
                   <span className="font-mono line-through text-slate-400 dark:text-slate-500">
-                    ₱100 / visit
+                    ₱{regularWalkInRate?.toLocaleString()} / visit
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
                   <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                    <Check className="w-3 h-3 stroke-[3]" /> Member Daily Rate:
+                    <Check className="w-3 h-3 stroke-3" /> Member Daily Rate:
                   </span>
                   <span className="font-mono text-blue-600 dark:text-blue-400 text-sm font-black">
-                    ₱
-                    {isYearlyValid
-                      ? settings.yearly_member_checkin_fee.toLocaleString()
-                      : '--'}{' '}
-                    / visit
-                    <span className="ml-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
-                      50% OFF
-                    </span>
+                    ₱{yearlyCheckInFee?.toLocaleString()} / visit
+                    {yearlyDiscountPercentage !== null &&
+                      yearlyDiscountPercentage > 0 && (
+                        <span className="ml-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
+                          {yearlyDiscountPercentage}% OFF
+                        </span>
+                      )}
                   </span>
                 </div>
               </div>
 
               <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
                 Pay an annual registration fee once, then slash all daily
-                walk-in check-in costs by half for an entire year.
+                walk-in check-in costs
+                {yearlyDiscountPercentage !== null &&
+                yearlyDiscountPercentage > 0
+                  ? ` by ${yearlyDiscountPercentage}%`
+                  : ''}{' '}
+                for an entire year.
               </p>
             </div>
 
@@ -3769,9 +3947,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
               <button
                 type="button"
-                disabled={!isYearlyValid}
+                disabled={!isYearlyValid || !isSessionOpen}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cash drawer is closed. Paid subscriptions cannot be transacted.'
+                    );
+                    return;
+                  }
                   if (isYearlyValid) {
                     setModalConfig({
                       isOpen: true,
@@ -3780,9 +3964,19 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                     });
                   }
                 }}
-                className="py-2.5 px-4 bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none transition-all shadow-md"
+                className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
+                  !isSessionOpen
+                    ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                    : isYearlyValid
+                      ? 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white cursor-pointer'
+                      : 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                }`}
               >
-                {isYearlyValid ? 'Select Yearly' : 'Unavailable'}
+                {!isSessionOpen
+                  ? 'Session Closed'
+                  : isYearlyValid
+                    ? 'Select Yearly'
+                    : 'Unavailable'}
               </button>
             </div>
           </motion.div>

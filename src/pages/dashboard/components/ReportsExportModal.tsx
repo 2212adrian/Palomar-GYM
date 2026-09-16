@@ -24,6 +24,7 @@ import {
   Table as TableIcon,
   ShieldCheck,
   TrendingUp,
+  Wallet,
   X,
 } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
@@ -41,7 +42,13 @@ import type {
 import { formatPHP } from '../dashboardService';
 
 export type ReportCategoryType =
-  'bir' | 'sales' | 'attendance' | 'subscriptions' | 'combined' | 'inventory';
+  | 'bir'
+  | 'sales'
+  | 'attendance'
+  | 'subscriptions'
+  | 'combined'
+  | 'inventory'
+  | 'cash';
 
 interface ReportsExportModalProps {
   isOpen: boolean;
@@ -98,6 +105,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   const [liveAttendanceData, setLiveAttendanceData] = useState<any[]>([]);
   const [liveSubsData, setLiveSubsData] = useState<any[]>([]);
   const [liveCombinedData, setLiveCombinedData] = useState<any[]>([]);
+  const [liveCashData, setLiveCashData] = useState<any[]>([]);
 
   // Fetch VAT percentage from rates_config on load
   useEffect(() => {
@@ -158,6 +166,29 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         ],
         filePrefix: 'BIR_Official_Tax_Register',
         icon: ShieldCheck,
+      },
+      {
+        id: 'cash',
+        title: 'Cash Drawer Sessions & End-of-Day Balancing',
+        shortLabel: 'Cash Sessions',
+        badge: 'Cash Register Audit',
+        description:
+          'Official front-desk cashier reconciliation register capturing shift opening floats, actual counted drawer cash, expected closing totals, and variance discrepancy shortages or overages.',
+        legalPurpose:
+          'End-of-day register balancing, internal cash audit inspection, and shift handover compliance.',
+        columns: [
+          'Session #',
+          'Opened At',
+          'Closed At',
+          'Opened By',
+          'Closed By',
+          'Opening Float (₱)',
+          'Counted Cash (₱)',
+          'Discrepancy (₱)',
+          'Status',
+        ],
+        filePrefix: 'Cash_Drawer_Reconciliations',
+        icon: Wallet,
       },
       {
         id: 'sales',
@@ -348,7 +379,18 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         );
         setLiveBirData(items);
 
-        // ─── 2. POS & INVENTORY SALES REGISTER ───
+        // ─── 2. CASH SESSIONS REGISTER (NEW) ───
+      } else if (reportType === 'cash') {
+        const { data } = await supabase
+          .from('cash_sessions')
+          .select('*')
+          .gte('opened_at', startIso)
+          .lte('opened_at', endIso)
+          .order('opened_at', { ascending: false });
+
+        setLiveCashData(data || []);
+
+        // ─── 3. POS & INVENTORY SALES REGISTER ───
       } else if (reportType === 'sales') {
         const [salesRes, prodRes] = await Promise.all([
           supabase
@@ -375,7 +417,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           }
         > = {};
 
-        // Populate all existing products
         allProds.forEach((p) => {
           prodMap[p.id] = {
             barcode:
@@ -390,7 +431,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           };
         });
 
-        // Parse all sales in the date range
         allSales.forEach((s) => {
           const itemsParsed: {
             id?: string;
@@ -474,7 +514,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             }
           }
 
-          // Aggregate into prodMap
           itemsParsed.forEach((item) => {
             let target:
               | {
@@ -536,7 +575,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         );
         setLiveSalesData(list);
 
-        // ─── 3. ATTENDANCE PASSES (AGGREGATED BY CUSTOMER NAME) ───
+        // ─── 4. ATTENDANCE PASSES ───
       } else if (reportType === 'attendance') {
         const { data } = await supabase
           .from('attendance')
@@ -600,7 +639,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         );
         setLiveAttendanceData(aggregatedList);
 
-        // ─── 4. MEMBERSHIP SUBSCRIPTIONS ───
+        // ─── 5. MEMBERSHIP SUBSCRIPTIONS ───
       } else if (reportType === 'subscriptions') {
         const { data } = await supabase
           .from('subscriptions')
@@ -612,7 +651,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
 
         setLiveSubsData(data || []);
 
-        // ─── 5. CONSOLIDATED OPERATIONS & FINANCIAL SUMMARY ───
+        // ─── 6. CONSOLIDATED SUMMARY ───
       } else if (reportType === 'combined') {
         const [salesRes, attRes, subsRes] = await Promise.all([
           supabase
@@ -770,6 +809,26 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         label: 'Gross Receipts',
         secondary: `${liveBirData.filter((i) => i.payment_method === 'Cash').length} Cash / ${liveBirData.filter((i) => i.payment_method === 'GCash').length} GCash`,
       };
+    } else if (reportType === 'cash') {
+      const totalCounted = liveCashData.reduce(
+        (acc, s) =>
+          acc +
+          Number(
+            s.closing_actual_cash !== null
+              ? s.closing_actual_cash
+              : s.opening_float || 0
+          ),
+        0
+      );
+      const balancedCount = liveCashData.filter(
+        (s) => Number(s.discrepancy || 0) === 0 && s.status === 'closed'
+      ).length;
+      return {
+        count: liveCashData.length,
+        totalValue: totalCounted,
+        label: 'Drawer Cash Counted',
+        secondary: `${balancedCount} Balanced / ${liveCashData.length - balancedCount} Variances`,
+      };
     } else if (reportType === 'sales') {
       const gross = liveSalesData.reduce((acc, p) => acc + p.revenue, 0);
       const units = liveSalesData.reduce((acc, p) => acc + p.sold, 0);
@@ -824,6 +883,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   }, [
     reportType,
     liveBirData,
+    liveCashData,
     liveSalesData,
     liveAttendanceData,
     liveSubsData,
@@ -847,6 +907,18 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         csvContent += `"Receipt / Ref #","Date / Time","Customer Name","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales (PHP)","VAT (${vatPercentage}%) (PHP)","Net Sales (PHP)","Payment Method","Status"\n`;
         liveBirData.forEach((item) => {
           csvContent += `"${item.receipt_no}","${item.date}","${item.customer_name}","${item.transaction_type}","${item.gross_sales.toFixed(2)}","${item.vat_exempt_sales.toFixed(2)}","${item.vat_amount.toFixed(2)}","${item.net_sales.toFixed(2)}","${item.payment_method}","${item.status}"\n`;
+        });
+      } else if (reportType === 'cash') {
+        csvContent += `"Session #","Opened At","Closed At","Opened By","Closed By","Opening Float (PHP)","Counted Cash (PHP)","Discrepancy (PHP)","Status"\n`;
+        liveCashData.forEach((s) => {
+          const disc = Number(s.discrepancy || 0);
+          const discStr =
+            disc === 0
+              ? 'Balanced'
+              : disc > 0
+                ? `+${disc.toFixed(2)}`
+                : `${disc.toFixed(2)}`;
+          csvContent += `"${s.session_number}","${s.opened_at || ''}","${s.closed_at || 'In Progress'}","${s.opened_by_name || '-'}","${s.closed_by_name || '-'}","${Number(s.opening_float || 0).toFixed(2)}","${Number(s.closing_actual_cash || 0).toFixed(2)}","${discStr}","${String(s.status || '').toUpperCase()}"\n`;
         });
       } else if (reportType === 'sales') {
         csvContent += `"Barcode ID","Product Name","Unit Selling Price (PHP)","Units Sold","Gross Sales (PHP)","Current Stock"\n`;
@@ -1114,6 +1186,110 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           y -= 13;
         });
 
+        // CASH REGISTER RECONCILIATION PDF (NEW)
+      } else if (reportType === 'cash') {
+        const headers = [
+          { label: 'SESSION #', x: 30 },
+          { label: 'OPENED AT', x: 130 },
+          { label: 'CLOSED AT', x: 235 },
+          { label: 'OPENED BY', x: 340 },
+          { label: 'CLOSED BY', x: 440 },
+          { label: 'FLOAT (PHP)', x: 540 },
+          { label: 'COUNTED (PHP)', x: 630 },
+          { label: 'DISCREPANCY', x: 720 },
+          { label: 'STATUS', x: 790 },
+        ];
+        drawTableHeaders(headers);
+
+        liveCashData.forEach((row, idx) => {
+          if (checkPageBreak()) drawTableHeaders(headers);
+          if (idx % 2 === 1) {
+            page.drawRectangle({
+              x: 25,
+              y: y - 3,
+              width: width - 50,
+              height: 13,
+              color: rgb(0.97, 0.98, 0.99),
+            });
+          }
+          const disc = Number(row.discrepancy || 0);
+          const discText =
+            disc === 0
+              ? 'Balanced'
+              : disc > 0
+                ? `+₱${disc.toFixed(2)}`
+                : `-₱${Math.abs(disc).toFixed(2)}`;
+
+          page.drawText(String(row.session_number || '').slice(0, 15), {
+            x: 30,
+            y,
+            size: 6.5,
+            font: fontBold,
+            color: rgb(0.07, 0.23, 0.45),
+          });
+          page.drawText(String(row.opened_at || '').slice(0, 16), {
+            x: 130,
+            y,
+            size: 6.5,
+            font,
+            color: rgb(0.3, 0.3, 0.3),
+          });
+          page.drawText(
+            row.closed_at ? String(row.closed_at).slice(0, 16) : 'In Progress',
+            {
+              x: 235,
+              y,
+              size: 6.5,
+              font,
+              color: rgb(0.3, 0.3, 0.3),
+            }
+          );
+          page.drawText(String(row.opened_by_name || '-').slice(0, 14), {
+            x: 340,
+            y,
+            size: 6.5,
+            font,
+            color: rgb(0.1, 0.1, 0.1),
+          });
+          page.drawText(String(row.closed_by_name || '-').slice(0, 14), {
+            x: 440,
+            y,
+            size: 6.5,
+            font,
+            color: rgb(0.1, 0.1, 0.1),
+          });
+          page.drawText(Number(row.opening_float || 0).toFixed(2), {
+            x: 540,
+            y,
+            size: 6.5,
+            font,
+            color: rgb(0.2, 0.2, 0.2),
+          });
+          page.drawText(Number(row.closing_actual_cash || 0).toFixed(2), {
+            x: 630,
+            y,
+            size: 6.5,
+            font: fontBold,
+            color: rgb(0.07, 0.23, 0.45),
+          });
+          page.drawText(discText, {
+            x: 720,
+            y,
+            size: 6.5,
+            font: fontBold,
+            color: disc === 0 ? rgb(0.06, 0.6, 0.35) : rgb(0.85, 0.2, 0.2),
+          });
+          page.drawText(String(row.status || '').toUpperCase(), {
+            x: 790,
+            y,
+            size: 6.5,
+            font: fontBold,
+            color:
+              row.status === 'open' ? rgb(0.15, 0.4, 0.9) : rgb(0.3, 0.3, 0.3),
+          });
+          y -= 13;
+        });
+
         // POS SALES PDF
       } else if (reportType === 'sales') {
         const headers = [
@@ -1250,7 +1426,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           y -= 13;
         });
 
-        // MEMBERSHIPS PDF (STATUS REMOVED)
+        // MEMBERSHIPS PDF
       } else if (reportType === 'subscriptions') {
         const headers = [
           { label: 'CONTRACT ID', x: 30 },
@@ -1446,10 +1622,10 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               Select Report Category
             </label>
             <span className="text-[10px] text-slate-500 font-mono">
-              5 Formats Available
+              6 Formats Available
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 select-none">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 select-none">
             {reportCategories.map((cat) => {
               const Icon = cat.icon;
               const isSelected = reportType === cat.id;
@@ -1566,7 +1742,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-zinc-900 text-slate-700 dark:text-slate-300 font-body">
-                    {/* BIR TABLE PREVIEW (TIN REMOVED) */}
+                    {/* BIR TABLE PREVIEW */}
                     {reportType === 'bir' &&
                       liveBirData.slice(0, 5).map((row, idx) => (
                         <tr
@@ -1606,7 +1782,69 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                         </tr>
                       ))}
 
-                    {/* POS & INVENTORY TABLE PREVIEW (STATUS ACTIVE REMOVED) */}
+                    {/* CASH REGISTER SESSIONS PREVIEW (NEW) */}
+                    {reportType === 'cash' &&
+                      liveCashData.slice(0, 5).map((row, idx) => {
+                        const disc = Number(row.discrepancy || 0);
+                        return (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
+                          >
+                            <td className="p-2.5 font-mono text-xs font-bold text-[#123c73] dark:text-blue-400">
+                              {row.session_number}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap text-slate-500">
+                              {String(row.opened_at || '').slice(0, 16)}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap text-slate-500">
+                              {row.closed_at
+                                ? String(row.closed_at).slice(0, 16)
+                                : 'In Progress'}
+                            </td>
+                            <td className="p-2.5 font-medium">
+                              {row.opened_by_name || '-'}
+                            </td>
+                            <td className="p-2.5 font-medium">
+                              {row.closed_by_name || '-'}
+                            </td>
+                            <td className="p-2.5 font-mono">
+                              ₱{Number(row.opening_float || 0).toFixed(2)}
+                            </td>
+                            <td className="p-2.5 font-bold">
+                              ₱{Number(row.closing_actual_cash || 0).toFixed(2)}
+                            </td>
+                            <td
+                              className={`p-2.5 font-bold ${
+                                disc === 0
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : disc > 0
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-rose-600 dark:text-rose-400'
+                              }`}
+                            >
+                              {disc === 0
+                                ? 'Balanced'
+                                : disc > 0
+                                  ? `+₱${disc.toFixed(2)}`
+                                  : `-₱${Math.abs(disc).toFixed(2)}`}
+                            </td>
+                            <td className="p-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                  row.status === 'open'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-slate-300'
+                                }`}
+                              >
+                                {row.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                    {/* POS & INVENTORY TABLE PREVIEW */}
                     {reportType === 'sales' &&
                       liveSalesData.slice(0, 5).map((row, idx) => (
                         <tr
@@ -1632,7 +1870,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                         </tr>
                       ))}
 
-                    {/* ATTENDANCE PASSES TABLE PREVIEW (AGGREGATED VISITS) */}
+                    {/* ATTENDANCE PASSES TABLE PREVIEW */}
                     {reportType === 'attendance' &&
                       liveAttendanceData.slice(0, 5).map((row, idx) => (
                         <tr
@@ -1662,7 +1900,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                         </tr>
                       ))}
 
-                    {/* SUBSCRIPTIONS TABLE PREVIEW (STATUS REMOVED) */}
+                    {/* SUBSCRIPTIONS TABLE PREVIEW */}
                     {reportType === 'subscriptions' &&
                       liveSubsData.slice(0, 5).map((row, idx) => (
                         <tr

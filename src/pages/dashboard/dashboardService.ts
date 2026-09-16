@@ -38,8 +38,37 @@ export const formatNumber = (val: number): string => {
   return new Intl.NumberFormat('en-PH').format(val || 0);
 };
 
+// Helper: Determine if a receipt record is for a physical or RFID card
+const isCardReceipt = (r: any): boolean => {
+  const type = String(r.receipt_type || r.customer_type || '').toLowerCase();
+  const desc = String(
+    r.item_description || r.category_or_plan || r.plan_name || ''
+  ).toLowerCase();
+  return (
+    type === 'card' ||
+    type.includes('card') ||
+    desc.includes('card')
+  );
+};
+
+// Helper: Extract total fee from attendance (accounting for card_fee & amount_paid)
+const getAttendanceFee = (a: any): number => {
+  const entryFee = Number(a.entry_fee || 0);
+  const amountPaid = Number(a.amount_paid || 0);
+  const cardFee = Number(a.card_fee || 0);
+
+  if (amountPaid > 0) return amountPaid;
+  return entryFee + cardFee;
+};
+
+// Helper: Extract total fee from card / receipts
+const getReceiptFee = (r: any): number => {
+  return Number(r.amount || r.amount_paid || r.total_amount || r.card_fee || 0);
+};
+
 export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
   const now = new Date();
+  const nowMs = now.getTime();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const yesterdayStart = startOfDay(subDays(now, 1));
@@ -65,41 +94,87 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
   }
 
   try {
-    const [membersRes, attendanceRes, salesRes, productsRes, subscriptionsRes] =
-      await Promise.all([
-        supabase.from('members').select('*').is('deleted_at', null),
-        supabase
-          .from('attendance')
-          .select('*')
-          .is('deleted_at', null)
-          .order('check_in_time', { ascending: false })
-          .limit(1500),
-        supabase
-          .from('sales')
-          .select('*')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .limit(1500),
-        supabase.from('products').select('*').is('deleted_at', null),
-        supabase
-          .from('subscriptions')
-          .select('*, members(full_name, phone)')
-          .is('voided_at', null)
-          .order('created_at', { ascending: false })
-          .limit(1500),
-      ]);
+    const [
+      membersRes,
+      attendanceRes,
+      salesRes,
+      productsRes,
+      subscriptionsRes,
+      receiptsRes,
+    ] = await Promise.all([
+      supabase.from('members').select('*').is('deleted_at', null),
+      supabase
+        .from('attendance')
+        .select('*')
+        .is('deleted_at', null)
+        .order('check_in_time', { ascending: false })
+        .limit(1500),
+      supabase
+        .from('sales')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1500),
+      supabase.from('products').select('*').is('deleted_at', null),
+      supabase
+        .from('subscriptions')
+        .select('*, members(full_name, phone)')
+        .is('voided_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1500),
+      supabase
+        .from('receipts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1500),
+    ]);
 
     const members = membersRes.data || [];
     const attendance = attendanceRes.data || [];
     const sales = salesRes.data || [];
     const products = productsRes.data || [];
     const subscriptions = subscriptionsRes.data || [];
+    const receipts = receiptsRes.data || [];
+
+    // Filter standalone card receipts (avoid duplicate counting with attendance & subscriptions)
+    const attendanceReceiptNos = new Set(
+      attendance
+        .map((a) => String(a.receipt_number || a.id || ''))
+        .filter(Boolean)
+    );
+    const subscriptionReceiptNos = new Set(
+      subscriptions
+        .map((s) => String(s.receipt_number || s.id || ''))
+        .filter(Boolean)
+    );
+
+    const standaloneCardReceipts = receipts.filter((r) => {
+      if (r.deleted_at || r.voided_at) return false;
+      if (r.payment_status && r.payment_status !== 'Paid') return false;
+
+      const rId = String(r.id || '');
+      const rNo = String(r.receipt_number || r.receipt_no || '');
+      if (attendanceReceiptNos.has(rId) || (rNo && attendanceReceiptNos.has(rNo))) {
+        return false;
+      }
+      if (subscriptionReceiptNos.has(rId) || (rNo && subscriptionReceiptNos.has(rNo))) {
+        return false;
+      }
+
+      return (
+        isCardReceipt(r) ||
+        r.customer_type === 'Card' ||
+        r.receipt_type === 'card'
+      );
+    });
 
     const hasRealData =
       members.length > 0 ||
       attendance.length > 0 ||
       sales.length > 0 ||
-      products.length > 0;
+      products.length > 0 ||
+      subscriptions.length > 0 ||
+      receipts.length > 0;
 
     // --- Metrics ---
     const activeMembersCount =
@@ -129,14 +204,6 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       todaySalesList.reduce((acc, s) => acc + Number(s.total_amount || 0), 0) ||
       (hasRealData ? 0 : 4250);
 
-    const todayLogbookList = attendance.filter((a) => {
-      const d = new Date(a.check_in_time);
-      return d >= todayStart && d <= todayEnd;
-    });
-    const todayLogbookRevenue =
-      todayLogbookList.reduce((acc, a) => acc + Number(a.entry_fee || 0), 0) ||
-      (hasRealData ? 0 : 3600);
-
     const todaySubsList = subscriptions.filter((sub) => {
       const d = new Date(sub.created_at);
       return d >= todayStart && d <= todayEnd;
@@ -145,8 +212,26 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       todaySubsList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) ||
       (hasRealData ? 0 : 2500);
 
-    const todayTotalRevenue =
-      todaySalesRevenue + todayLogbookRevenue + todaySubsRevenue;
+    const todayCardList = standaloneCardReceipts.filter((r) => {
+      const d = new Date(r.created_at);
+      return d >= todayStart && d <= todayEnd;
+    });
+    const todayCardRevenue = todayCardList.reduce(
+      (acc, r) => acc + getReceiptFee(r),
+      0
+    );
+
+    const todayAttendanceRev = todayAttendanceList.reduce(
+      (acc, a) => acc + getAttendanceFee(a),
+      0
+    );
+
+    // Combines Walk-ins, Subscriptions, and Physical Card purchases to align with Logbook
+    const todayLogbookRevenue =
+      todayAttendanceRev + todaySubsRevenue + todayCardRevenue ||
+      (hasRealData ? 0 : 3600);
+
+    const todayTotalRevenue = todaySalesRevenue + todayLogbookRevenue;
 
     const yesterdaySalesList = sales.filter((s) => {
       const d = new Date(s.created_at);
@@ -157,11 +242,28 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         (acc, s) => acc + Number(s.total_amount || 0),
         0
       ) || (hasRealData ? 0 : 3800);
+
+    const yesterdaySubsList = subscriptions.filter((sub) => {
+      const d = new Date(sub.created_at);
+      return d >= yesterdayStart && d <= yesterdayEnd;
+    });
+    const yesterdayCardList = standaloneCardReceipts.filter((r) => {
+      const d = new Date(r.created_at);
+      return d >= yesterdayStart && d <= yesterdayEnd;
+    });
+
     const yesterdayLogbookRevenue =
       yesterdayAttendanceList.reduce(
-        (acc, a) => acc + Number(a.entry_fee || 0),
+        (acc, a) => acc + getAttendanceFee(a),
         0
-      ) || (hasRealData ? 0 : 2900);
+      ) +
+      yesterdaySubsList.reduce(
+        (acc, sub) => acc + Number(sub.price || 0),
+        0
+      ) +
+      yesterdayCardList.reduce((acc, r) => acc + getReceiptFee(r), 0) ||
+      (hasRealData ? 0 : 2900);
+
     const yesterdayTotalRevenue =
       yesterdaySalesRevenue + yesterdayLogbookRevenue;
 
@@ -180,7 +282,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           const d = new Date(a.check_in_time);
           return d >= monthStart && d <= monthEnd;
         })
-        .reduce((acc, a) => acc + Number(a.entry_fee || 0), 0) ||
+        .reduce((acc, a) => acc + getAttendanceFee(a), 0) ||
       (hasRealData ? 0 : 72400);
 
     const monthSubs =
@@ -192,48 +294,93 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         .reduce((acc, sub) => acc + Number(sub.price || 0), 0) ||
       (hasRealData ? 0 : 48500);
 
-    const monthTotalRevenue = monthSales + monthAttendance + monthSubs;
+    const monthCards =
+      standaloneCardReceipts
+        .filter((r) => {
+          const d = new Date(r.created_at);
+          return d >= monthStart && d <= monthEnd;
+        })
+        .reduce((acc, r) => acc + getReceiptFee(r), 0) || 0;
+
+    const monthTotalRevenue =
+      monthSales + monthAttendance + monthSubs + monthCards;
     const lastMonthTotalRevenue = hasRealData
       ? monthTotalRevenue * 0.92
       : 195000;
 
-    // Expiring memberships
+    // --- Expiring Memberships & Expired Count (With 7-Day Rule Applied) ---
     const expiringSoonList: ExpiringMemberItem[] = [];
+    const processedExpiringMemberIds = new Set<string>();
     let expiredCount = 0;
 
+    // Group valid subscriptions by member_id
+    const subsByMember = new Map<string, any[]>();
     subscriptions.forEach((sub) => {
-      if (!sub.end_date) return;
-      const end = parseISO(sub.end_date);
-      const diff = differenceInDays(end, now);
-      const memberName = sub.members?.full_name || sub.member_id || 'Member';
-      const memberPhone = sub.members?.phone || 'N/A';
+      if (sub.voided_at || sub.status === 'Voided' || !sub.member_id) return;
+      if (!subsByMember.has(sub.member_id)) {
+        subsByMember.set(sub.member_id, []);
+      }
+      subsByMember.get(sub.member_id)!.push(sub);
+    });
 
-      const memberSubs = subscriptions.filter(
-        (s) =>
-          s.member_id === sub.member_id && !s.voided_at && s.status !== 'Voided'
-      );
-      const activeSubs = memberSubs.filter((s) => {
-        if (!s.end_date) return false;
-        return new Date(s.end_date).getTime() >= now.getTime();
+    // Evaluate each member once
+    subsByMember.forEach((memberSubs) => {
+      // Sort newest to oldest
+      memberSubs.sort((a, b) => {
+        const timeA = new Date(a.end_date || a.created_at).getTime();
+        const timeB = new Date(b.end_date || b.created_at).getTime();
+        return timeB - timeA;
       });
 
-      if (diff >= 0 && diff <= 7) {
-        expiringSoonList.push({
-          id: sub.id,
-          member_id: sub.member_id,
-          full_name: memberName,
-          phone: memberPhone,
-          plan_type: sub.plan_type
-            ? `${sub.plan_type.toUpperCase()} PLAN`
-            : 'MONTHLY PASS',
-          end_date: format(end, 'MMM dd, yyyy'),
-          daysRemaining: diff,
-          status: 'Expiring',
-          subscriptionCount: memberSubs.length,
-          activeSubscriptionsCount: activeSubs.length,
-        });
-      } else if (diff < 0) {
-        expiredCount++;
+      // Find active subscriptions
+      const activeSubs = memberSubs.filter((s) => {
+        if (!s.end_date) return false;
+        const startMs = new Date(s.start_date || s.created_at).getTime();
+        const endMs = new Date(s.end_date).getTime();
+        return startMs <= nowMs && endMs >= nowMs;
+      });
+
+      // 1. Expiring soon: Active subscriptions expiring in 0-7 days
+      activeSubs.forEach((sub) => {
+        if (!sub.end_date) return;
+        const end = parseISO(sub.end_date);
+        const diff = differenceInDays(end, now);
+
+        if (diff >= 0 && diff <= 7 && !processedExpiringMemberIds.has(sub.member_id)) {
+          processedExpiringMemberIds.add(sub.member_id);
+          const memberName = sub.members?.full_name || sub.member_id || 'Member';
+          const memberPhone = sub.members?.phone || 'N/A';
+
+          expiringSoonList.push({
+            id: sub.id,
+            member_id: sub.member_id,
+            full_name: memberName,
+            phone: memberPhone,
+            plan_type: sub.plan_type
+              ? `${sub.plan_type.toUpperCase()} PLAN`
+              : 'MONTHLY PASS',
+            end_date: format(end, 'MMM dd, yyyy'),
+            daysRemaining: diff,
+            status: 'Expiring',
+            subscriptionCount: memberSubs.length,
+            activeSubscriptionsCount: activeSubs.length,
+          });
+        }
+      });
+
+      // 2. Expired: Has NO active subscription, and latest subscription ended <= 7 days ago
+      if (activeSubs.length === 0) {
+        const latestSub = memberSubs[0];
+        if (latestSub && latestSub.end_date) {
+          const endMs = new Date(latestSub.end_date).getTime();
+          if (!isNaN(endMs) && endMs < nowMs) {
+            const daysSinceExpired = Math.floor((nowMs - endMs) / (1000 * 60 * 60 * 24));
+            // Only count as Expired if 7 days or less have elapsed
+            if (daysSinceExpired <= 7) {
+              expiredCount++;
+            }
+          }
+        }
       }
     });
 
@@ -283,12 +430,11 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         return d >= monthStart && d <= monthEnd;
       }).length || (hasRealData ? 0 : 24);
 
-    // --- 3. Context-Aware Attendance Distribution & Peak Metric ---
+    // --- Context-Aware Attendance Distribution & Peak Metric ---
     const attendanceHourly: AttendanceHourData[] = [];
     let peakHourDisplay = '5:00 PM - 6:00 PM';
 
     if (timeRange === 'today') {
-      // HOURLY TIMELINE (6 AM to 10 PM)
       const hourBuckets: Record<
         number,
         { visits: number; walkIns: number; members: number }
@@ -332,7 +478,6 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           ? `${maxH % 12 || 12}:00 PM - ${(maxH + 1) % 12 || 12}:00 PM`
           : `${maxH}:00 AM - ${maxH + 1}:00 AM`;
     } else if (timeRange === 'year') {
-      // 12-MONTH TIMELINE
       let maxMonthLabel = '';
       let maxMonthVisits = -1;
 
@@ -368,7 +513,6 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         ? `Busiest Month: ${maxMonthLabel}`
         : 'Busiest Month: July';
     } else {
-      // DAILY TIMELINE for Week (7 days) & Month (30 days)
       const daysCount = timeRange === 'week' ? 7 : 30;
       let maxDayLabel = '';
       let maxDayVisits = -1;
@@ -405,7 +549,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         : 'Peak Day: Friday';
     }
 
-    // --- 4. Revenue Timeline ---
+    // --- Revenue Timeline (Incorporates Attendance, Subscriptions, and Card Purchases) ---
     const revenueTimeline: RevenueTimelinePoint[] = [];
 
     if (timeRange === 'today') {
@@ -426,14 +570,19 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           const d = new Date(sub.created_at);
           return isSameDay(d, now) && d.getHours() === h;
         });
+        const cardList = standaloneCardReceipts.filter((r) => {
+          const d = new Date(r.created_at);
+          return isSameDay(d, now) && d.getHours() === h;
+        });
 
         const sRev = sList.reduce(
           (acc, s) => acc + Number(s.total_amount || 0),
           0
         );
         const aRev =
-          aList.reduce((acc, a) => acc + Number(a.entry_fee || 0), 0) +
-          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0);
+          aList.reduce((acc, a) => acc + getAttendanceFee(a), 0) +
+          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) +
+          cardList.reduce((acc, r) => acc + getReceiptFee(r), 0);
 
         revenueTimeline.push({
           date: `${format(now, 'yyyy-MM-dd')} ${h}:00`,
@@ -441,7 +590,8 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           salesRevenue: sRev,
           logbookRevenue: aRev,
           totalRevenue: sRev + aRev,
-          transactionsCount: sList.length + aList.length + subList.length,
+          transactionsCount:
+            sList.length + aList.length + subList.length + cardList.length,
         });
       }
     } else if (timeRange === 'year') {
@@ -463,14 +613,19 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           const d = new Date(sub.created_at);
           return d >= mStart && d <= mEnd;
         });
+        const cardList = standaloneCardReceipts.filter((r) => {
+          const d = new Date(r.created_at);
+          return d >= mStart && d <= mEnd;
+        });
 
         const sRev = sList.reduce(
           (acc, s) => acc + Number(s.total_amount || 0),
           0
         );
         const aRev =
-          aList.reduce((acc, a) => acc + Number(a.entry_fee || 0), 0) +
-          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0);
+          aList.reduce((acc, a) => acc + getAttendanceFee(a), 0) +
+          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) +
+          cardList.reduce((acc, r) => acc + getReceiptFee(r), 0);
 
         revenueTimeline.push({
           date: format(monthDate, 'yyyy-MM'),
@@ -478,7 +633,8 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           salesRevenue: sRev,
           logbookRevenue: aRev,
           totalRevenue: sRev + aRev,
-          transactionsCount: sList.length + aList.length + subList.length,
+          transactionsCount:
+            sList.length + aList.length + subList.length + cardList.length,
         });
       }
     } else {
@@ -501,14 +657,18 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         const subList = subscriptions.filter((sub) =>
           isSameDay(new Date(sub.created_at), targetDate)
         );
+        const cardList = standaloneCardReceipts.filter((r) =>
+          isSameDay(new Date(r.created_at), targetDate)
+        );
 
         const sRev = sList.reduce(
           (acc, s) => acc + Number(s.total_amount || 0),
           0
         );
         const aRev =
-          aList.reduce((acc, a) => acc + Number(a.entry_fee || 0), 0) +
-          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0);
+          aList.reduce((acc, a) => acc + getAttendanceFee(a), 0) +
+          subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) +
+          cardList.reduce((acc, r) => acc + getReceiptFee(r), 0);
 
         let finalSRev = sRev;
         let finalARev = aRev;
@@ -525,13 +685,16 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           logbookRevenue: finalARev,
           totalRevenue: finalSRev + finalARev,
           transactionsCount:
-            sList.length + aList.length + subList.length ||
+            sList.length +
+              aList.length +
+              subList.length +
+              cardList.length ||
             (hasRealData ? 0 : Math.floor(finalSRev / 150)),
         });
       }
     }
 
-    // --- 5. Top Sold Products ---
+    // --- Top Sold Products ---
     const productLookupById = new Map<string, any>();
     const productLookupByName = new Map<string, any>();
 
@@ -713,7 +876,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     topProducts.sort((a, b) => b.total_sold - a.total_sold);
 
-    // --- 6. Recent Activity Feed ---
+    // --- Recent Activity Feed ---
     const activityItems: ActivityFeedItem[] = [];
 
     attendance.slice(0, 15).forEach((a) => {
@@ -724,9 +887,9 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         title: a.customer_name || 'Member',
         subtitle:
           a.customer_type === 'Walk-In'
-            ? `Walk-In Pass (${formatPHP(Number(a.entry_fee || 0))})`
+            ? `Walk-In Pass (${formatPHP(getAttendanceFee(a))})`
             : `${a.plan_name || 'Member Access Pass'} • Checked In`,
-        amount: Number(a.entry_fee || 0),
+        amount: getAttendanceFee(a),
         timestamp: a.check_in_time,
         badgeText:
           a.customer_type === 'Walk-In'
@@ -769,12 +932,25 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       });
     });
 
+    standaloneCardReceipts.slice(0, 10).forEach((r) => {
+      activityItems.push({
+        id: `act-card-${r.id}`,
+        type: 'checkin',
+        title: r.customer_name || 'Member',
+        subtitle: `${r.item_description || r.plan_name || 'Physical Card'} • Issued`,
+        amount: getReceiptFee(r),
+        timestamp: r.created_at,
+        badgeText: 'Card Issue',
+        badgeVariant: 'purple',
+      });
+    });
+
     activityItems.sort(
       (a, b) =>
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
 
-    // --- 7. BIR Compliance Data ---
+    // --- BIR Compliance Data ---
     const birReportItems: BirReportItem[] = [];
 
     sales.forEach((s) => {
@@ -817,12 +993,32 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       });
     });
 
+    standaloneCardReceipts.forEach((r) => {
+      const amt = getReceiptFee(r);
+      birReportItems.push({
+        receipt_no: r.receipt_number || `CRD-${String(r.id).slice(0, 8)}`,
+        date: format(new Date(r.created_at), 'yyyy-MM-dd HH:mm'),
+        customer_name: r.customer_name || 'Gym Member',
+        tin_number: 'N/A',
+        transaction_type: 'Product Sale',
+        gross_sales: amt,
+        vat_exempt_sales: amt,
+        vatable_sales: 0,
+        vat_amount: 0,
+        net_sales: amt,
+        payment_method: r.payment_method || 'Cash',
+        payment_ref:
+          r.gcash_ref_no || (r.payment_method === 'GCash' ? 'GCASH-TX' : 'CASH'),
+        status: r.deleted_at || r.voided_at ? 'Voided' : 'Valid',
+      });
+    });
+
     attendance
       .filter(
-        (a) => a.customer_type === 'Walk-In' && Number(a.entry_fee || 0) > 0
+        (a) => a.customer_type === 'Walk-In' && getAttendanceFee(a) > 0
       )
       .forEach((a) => {
-        const fee = Number(a.entry_fee || 0);
+        const fee = getAttendanceFee(a);
         birReportItems.push({
           receipt_no: a.receipt_number || `LOG-${a.id.slice(0, 8)}`,
           date: format(new Date(a.check_in_time), 'yyyy-MM-dd HH:mm'),
@@ -887,7 +1083,6 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       const isYearly = isYearlyPlan(sub);
       const price = Number(sub.price || 0);
 
-      // Active status
       if (sub.end_date) {
         const end = parseISO(sub.end_date);
         const start = sub.start_date
@@ -902,7 +1097,6 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         }
       }
 
-      // Range filter
       const created = sub.created_at
         ? parseISO(sub.created_at)
         : sub.start_date

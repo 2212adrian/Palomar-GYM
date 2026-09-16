@@ -26,6 +26,8 @@ import {
   SwitchCamera,
   UserPlus,
   ArrowRight,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -134,7 +136,6 @@ const getCameraErrorMessage = (err: any): string => {
 const extractCleanMemberId = (rawCode: string): string => {
   let cleaned = (rawCode || '').trim();
 
-  // Handle JSON
   if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
     try {
       const parsed = JSON.parse(cleaned);
@@ -148,7 +149,6 @@ const extractCleanMemberId = (rawCode: string): string => {
     } catch (_) {}
   }
 
-  // Handle URL
   if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
     try {
       const url = new URL(cleaned);
@@ -162,7 +162,6 @@ const extractCleanMemberId = (rawCode: string): string => {
     } catch (_) {}
   }
 
-  // Handle Colon Format (e.g. MEM-000015:2029-08-24 or MEMBER:MEM-000015)
   if (cleaned.includes(':')) {
     const parts = cleaned.split(':');
     const memPart = parts.find(
@@ -179,9 +178,6 @@ const extractCleanMemberId = (rawCode: string): string => {
   return cleaned;
 };
 
-/**
- * Generates sequential numbers: (1), (2), (3)... for walk-in duplicate names
- */
 const generateUniqueWalkInName = (
   baseName: string,
   existingLogs: any[]
@@ -205,7 +201,6 @@ const generateUniqueWalkInName = (
     return cleanBase;
   }
 
-  // Find all used suffix numbers
   const existingNumbers = new Set<number>();
   let hasBaseWithoutNumber = false;
 
@@ -222,12 +217,10 @@ const generateUniqueWalkInName = (
     }
   }
 
-  // If the plain base name hasn't been used yet, use it
   if (!hasBaseWithoutNumber) {
     return cleanBase;
   }
 
-  // Find lowest available sequential number starting at 1 -> (1), (2), (3)...
   let nextNumber = 1;
   while (existingNumbers.has(nextNumber)) {
     nextNumber++;
@@ -241,7 +234,7 @@ export const LogbookRecordAttendance: React.FC<
 > = ({ isOpen, initialSearch = '', onClose, onCheckInSuccess }) => {
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
-  const { isSessionOpen } = useCashSessionStore();
+  const { activeSession, isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
   const isSubmittingRef = useRef(false);
 
@@ -286,10 +279,14 @@ export const LogbookRecordAttendance: React.FC<
 
   const [adminOverride, setAdminOverride] = useState(false);
 
-  const [walkinRegularFee, setWalkinRegularFee] = useState(100);
-  const [walkinStudentFee, setWalkinStudentFee] = useState(80);
-  const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
-  const [gcashFeeRate, setGcashFeeRate] = useState(10);
+  // Dynamic rates state: Never initialized with hardcoded values
+  const [walkinRegularFee, setWalkinRegularFee] = useState<number | null>(null);
+  const [walkinStudentFee, setWalkinStudentFee] = useState<number | null>(null);
+  const [yearlyMemberFee, setYearlyMemberFee] = useState<number | null>(null);
+  const [gcashFeeRate, setGcashFeeRate] = useState<number | null>(null);
+
+  const [isRatesLoading, setIsRatesLoading] = useState(true);
+  const [ratesError, setRatesError] = useState<string | null>(null);
 
   const stopAllCameraTracks = () => {
     if (scannerRef.current) {
@@ -334,6 +331,9 @@ export const LogbookRecordAttendance: React.FC<
   }, [selectedClient]);
 
   const loadRates = useCallback(async () => {
+    setIsRatesLoading(true);
+    setRatesError(null);
+
     try {
       const { data: ratesData, error } = await supabase
         .from('rates_config')
@@ -343,20 +343,46 @@ export const LogbookRecordAttendance: React.FC<
 
       if (error) throw error;
 
-      if (ratesData) {
-        setWalkinRegularFee(Number(ratesData.regular_walk_in) || 100);
-        setWalkinStudentFee(Number(ratesData.student_walk_in) || 80);
-        setYearlyMemberFee(Number(ratesData.yearly_walk_in) || 50);
-        setGcashFeeRate(Number(ratesData.gcash_fee) ?? 10);
+      if (
+        ratesData &&
+        ratesData.regular_walk_in !== null &&
+        ratesData.regular_walk_in !== undefined &&
+        ratesData.student_walk_in !== null &&
+        ratesData.student_walk_in !== undefined
+      ) {
+        setWalkinRegularFee(Number(ratesData.regular_walk_in));
+        setWalkinStudentFee(Number(ratesData.student_walk_in));
+        setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
+        setGcashFeeRate(Number(ratesData.gcash_fee ?? 0));
       } else {
+        // Fallback to settings service from database
         const activeSettings = await settingsService.load();
-        setWalkinRegularFee(activeSettings.regular_walkin_fee || 100);
-        setWalkinStudentFee(activeSettings.student_walkin_fee || 80);
-        setYearlyMemberFee(activeSettings.yearly_member_checkin_fee || 50);
-        setGcashFeeRate(activeSettings.gcash_fee ?? 10);
+        if (
+          activeSettings?.regular_walkin_fee == null ||
+          activeSettings?.student_walkin_fee == null
+        ) {
+          throw new Error('Pricing data is missing or incomplete in Supabase.');
+        }
+
+        setWalkinRegularFee(Number(activeSettings.regular_walkin_fee));
+        setWalkinStudentFee(Number(activeSettings.student_walkin_fee));
+        setYearlyMemberFee(
+          Number(activeSettings.yearly_member_checkin_fee ?? 0)
+        );
+        setGcashFeeRate(Number(activeSettings.gcash_fee ?? 0));
       }
-    } catch (e) {
-      console.warn('Failed to load rates configuration:', e);
+    } catch (err: any) {
+      console.error('Failed to load rates configuration:', err);
+      setWalkinRegularFee(null);
+      setWalkinStudentFee(null);
+      setYearlyMemberFee(null);
+      setGcashFeeRate(null);
+      setRatesError(
+        'Unable to fetch live pricing from the server. Please verify your internet connection, close this window, and reopen it.'
+      );
+      toast.error('Failed to load live pricing rates from Supabase.');
+    } finally {
+      setIsRatesLoading(false);
     }
   }, []);
 
@@ -476,7 +502,6 @@ export const LogbookRecordAttendance: React.FC<
     }
   }, []);
 
-  // Duplicate lock ONLY applies to registered members (non-members are never blocked)
   const duplicateLog = useMemo(() => {
     if (!selectedClient || selectedClient.isWalkIn) return null;
     return todayLogs.find(
@@ -488,7 +513,6 @@ export const LogbookRecordAttendance: React.FC<
     duplicateLog && !adminOverride && !selectedClient?.isWalkIn
   );
 
-  // Live numbered name preview for non-member walk-in input
   const walkInPreviewName = useMemo(() => {
     if (!memberSearch.trim()) return '';
     return generateUniqueWalkInName(memberSearch.trim(), todayLogs);
@@ -520,7 +544,6 @@ export const LogbookRecordAttendance: React.FC<
     }
   }, []);
 
-  // Comprehensive Scan Processing (Direct Member Validation)
   const handleBarcodeOrQrScanned = useCallback(
     async (scannedText: string) => {
       const raw = scannedText.trim();
@@ -530,7 +553,6 @@ export const LogbookRecordAttendance: React.FC<
       const cleanIdUpper = cleanId.toUpperCase();
       const rawUpper = raw.toUpperCase();
 
-      // 1. Check if it's an online registration ticket
       if (cleanIdUpper.startsWith('REG-') || rawUpper.startsWith('REG-')) {
         try {
           const { data: regData } = await supabase
@@ -560,7 +582,6 @@ export const LogbookRecordAttendance: React.FC<
         }
       }
 
-      // 2. Lookup in loaded members list
       const matchedMember = dynamicMembers.find((m) => {
         const mid = (m.memberId || '').toUpperCase();
         const dbId = (m.id || '').toUpperCase();
@@ -593,7 +614,6 @@ export const LogbookRecordAttendance: React.FC<
         return;
       }
 
-      // 3. Fallback: Search online if members list wasn't cached yet
       try {
         const [members, subscriptions] = await Promise.all([
           memberService.getAll(),
@@ -650,7 +670,6 @@ export const LogbookRecordAttendance: React.FC<
         console.warn('Fallback member lookup error:', err);
       }
 
-      // 4. If code is unrecognized, populate search bar
       stopAllCameraTracks();
       setShowLiveScanner(false);
       setFilterMode('non-member');
@@ -895,14 +914,29 @@ export const LogbookRecordAttendance: React.FC<
   };
 
   const derivedBilling = useMemo(() => {
+    if (
+      walkinRegularFee === null ||
+      walkinStudentFee === null ||
+      yearlyMemberFee === null ||
+      gcashFeeRate === null
+    ) {
+      return {
+        subtotal: 0,
+        title: 'Pricing Unavailable',
+        convenienceFee: 0,
+        totalDue: 0,
+        calculatedChange: 0,
+      };
+    }
+
     let subtotal = 0;
     let title = 'None Selected';
 
     if (selectedEntry === 'walkin_regular') {
-      subtotal = Number(walkinRegularFee) || 0;
+      subtotal = walkinRegularFee;
       title = 'Walk-In Regular Pass';
     } else if (selectedEntry === 'walkin_student') {
-      subtotal = Number(walkinStudentFee) || 0;
+      subtotal = walkinStudentFee;
       title = 'Walk-In Student Pass';
     } else if (
       selectedEntry === 'member_entry' &&
@@ -913,7 +947,7 @@ export const LogbookRecordAttendance: React.FC<
         ?.toLowerCase()
         .includes('year');
       if (isYearly) {
-        subtotal = Number(yearlyMemberFee) || 0;
+        subtotal = yearlyMemberFee;
         title = 'Yearly Member Entry';
       } else {
         subtotal = 0;
@@ -922,7 +956,7 @@ export const LogbookRecordAttendance: React.FC<
     }
 
     const convenienceFee =
-      paymentMethod === 'GCash' && subtotal > 0 ? Number(gcashFeeRate) || 0 : 0;
+      paymentMethod === 'GCash' && subtotal > 0 ? gcashFeeRate : 0;
     const totalDue = Math.max(0, subtotal + convenienceFee);
     const calculatedChange = Math.max(
       0,
@@ -958,14 +992,29 @@ export const LogbookRecordAttendance: React.FC<
   }, [paymentMethod, derivedBilling.totalDue]);
 
   const handleCompleteCheckIn = async () => {
-    if (isSubmittingRef.current || isSuccess || !selectedClient) return;
-
-    if (derivedBilling.totalDue > 0 && isLocked) {
-      toast.error(getLockReason('record paid check-in transactions'));
+    if (
+      isSubmittingRef.current ||
+      isSuccess ||
+      !selectedClient ||
+      ratesError ||
+      walkinRegularFee === null ||
+      walkinStudentFee === null
+    ) {
       return;
     }
 
-    if (derivedBilling.totalDue > 0 && paymentMethod === 'Cash' && !isSessionOpen) {
+    if (isLocked || !isSessionOpen) {
+      toast.error(
+        'Cannot record check-in: Cash drawer session is closed. Please open a cash session first in Cash Management.'
+      );
+      return;
+    }
+
+    if (
+      derivedBilling.totalDue > 0 &&
+      paymentMethod === 'Cash' &&
+      !isSessionOpen
+    ) {
       toast.error(
         'Cannot accept Cash: No active cash drawer session is open. Please open a cash session first in Cash Management.'
       );
@@ -1019,6 +1068,7 @@ export const LogbookRecordAttendance: React.FC<
             payment_method:
               derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
             staff_name: user?.email || 'Counter Staff',
+            cash_session_id: activeSession?.id || null,
           },
         ])
         .select()
@@ -1055,6 +1105,7 @@ export const LogbookRecordAttendance: React.FC<
         status: selectedClient.isWalkIn
           ? 'Active'
           : selectedClient.status || 'Active',
+        cash_session_id: inserted.cash_session_id || activeSession?.id || null,
       };
 
       setIsSuccess(true);
@@ -1076,6 +1127,10 @@ export const LogbookRecordAttendance: React.FC<
   };
 
   const isFormValid = useMemo(() => {
+    if (!isSessionOpen || isLocked) return false;
+    if (ratesError || walkinRegularFee === null || walkinStudentFee === null) {
+      return false;
+    }
     if (!selectedClient || !selectedEntry) return false;
     if (duplicateLog && !adminOverride && !selectedClient.isWalkIn)
       return false;
@@ -1097,6 +1152,11 @@ export const LogbookRecordAttendance: React.FC<
       return referenceNumber.trim().length >= 6;
     }
   }, [
+    isSessionOpen,
+    isLocked,
+    ratesError,
+    walkinRegularFee,
+    walkinStudentFee,
     selectedClient,
     selectedEntry,
     duplicateLog,
@@ -1154,7 +1214,67 @@ export const LogbookRecordAttendance: React.FC<
       </button>
 
       <AnimatePresence mode="wait">
-        {!isSuccess ? (
+        {/* CASE 1: FETCHING ERROR - STRICTLY FORBID ATTENDANCE ACTION */}
+        {ratesError ? (
+          <motion.div
+            key="attendance-rates-error"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="py-6 px-4 text-center space-y-4"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border-2 border-rose-500/30 text-rose-500 flex items-center justify-center mx-auto shadow-sm">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5 max-w-sm mx-auto">
+              <h3 className="text-base font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                Unable to Retrieve Rates
+              </h3>
+              <p className="text-xs text-(--color-text)/70 leading-relaxed">
+                {ratesError}
+              </p>
+            </div>
+
+            <div className="pt-3 space-y-2">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={loadRates}
+                className="w-full py-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Retry Rate Connection</span>
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  stopAllCameraTracks();
+                  onClose();
+                }}
+                className="w-full py-2.5 bg-(--bg-input) hover:bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-bold text-(--color-text)/80 hover:text-(--color-text) uppercase tracking-wider cursor-pointer transition-colors"
+              >
+                Close Window
+              </button>
+            </div>
+          </motion.div>
+        ) : isRatesLoading ? (
+          /* CASE 2: LOADING SPINNER FOR LIVE RATES */
+          <motion.div
+            key="attendance-loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="py-16 flex flex-col items-center justify-center space-y-3"
+          >
+            <Loader2 className="w-8 h-8 text-(--color-primary) animate-spin" />
+            <p className="text-xs font-bold uppercase tracking-wider text-(--color-text)/60">
+              Fetching pricing rates from Supabase...
+            </p>
+          </motion.div>
+        ) : !isSuccess ? (
+          /* CASE 3: STANDARD ATTENDANCE FORM */
           <motion.div
             key="attendance-form"
             initial={{ opacity: 0 }}
@@ -1258,46 +1378,45 @@ export const LogbookRecordAttendance: React.FC<
                 {/* LIVE CAMERA VIEWFINDER */}
                 {showLiveScanner && (
                   <div className="mt-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl relative text-center animate-fade-in z-30 shadow-2xl space-y-2">
-                    {/* CSS Reset for html5-qrcode video & shaded region */}
                     <style>{`
-      #live-qr-reader {
-        width: 100% !important;
-        height: 100% !important;
-        border: none !important;
-        background: transparent !important;
-        position: relative !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        overflow: hidden !important;
-      }
-      #live-qr-reader__scan_region {
-        width: 100% !important;
-        height: 100% !important;
-        position: absolute !important;
-        inset: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        overflow: hidden !important;
-        background: transparent !important;
-      }
-      #live-qr-reader video {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: cover !important;
-        position: absolute !important;
-        inset: 0 !important;
-        border-radius: 1rem !important;
-      }
-      #qr-shaded-region,
-      #live-qr-reader__scan_region svg,
-      #live-qr-reader__scan_region img,
-      #live-qr-reader__dashboard,
-      #live-qr-reader__dashboard_section,
-      #live-qr-reader__header_message {
-        display: none !important;
-      }
-    `}</style>
+                      #live-qr-reader {
+                        width: 100% !important;
+                        height: 100% !important;
+                        border: none !important;
+                        background: transparent !important;
+                        position: relative !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        overflow: hidden !important;
+                      }
+                      #live-qr-reader__scan_region {
+                        width: 100% !important;
+                        height: 100% !important;
+                        position: absolute !important;
+                        inset: 0 !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        overflow: hidden !important;
+                        background: transparent !important;
+                      }
+                      #live-qr-reader video {
+                        width: 100% !important;
+                        height: 100% !important;
+                        object-fit: cover !important;
+                        position: absolute !important;
+                        inset: 0 !important;
+                        border-radius: 1rem !important;
+                      }
+                      #qr-shaded-region,
+                      #live-qr-reader__scan_region svg,
+                      #live-qr-reader__scan_region img,
+                      #live-qr-reader__dashboard,
+                      #live-qr-reader__dashboard_section,
+                      #live-qr-reader__header_message {
+                        display: none !important;
+                      }
+                    `}</style>
 
                     <div className="flex items-center justify-between border-b border-(--border-color) pb-1.5">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
@@ -1386,7 +1505,6 @@ export const LogbookRecordAttendance: React.FC<
                         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                           {suggestions.map((m) => {
                             const isSuspended = m.status === 'Suspended';
-                            const isExpired = m.status === 'Expired';
                             const isLocked = isSuspended;
                             const isNonActive = m.status !== 'Active';
 
@@ -1445,7 +1563,7 @@ export const LogbookRecordAttendance: React.FC<
                                       className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                                         isSuspended
                                           ? 'bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30'
-                                          : isExpired
+                                          : m.status === 'Expired'
                                             ? 'bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30'
                                             : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                                       }`}
@@ -1548,7 +1666,9 @@ export const LogbookRecordAttendance: React.FC<
                               </div>
                             </div>
                             <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                              ₱{walkinRegularFee.toFixed(2)}
+                              {walkinRegularFee !== null
+                                ? `₱${walkinRegularFee.toFixed(2)}`
+                                : '...'}
                             </div>
                           </button>
 
@@ -1581,7 +1701,9 @@ export const LogbookRecordAttendance: React.FC<
                               </div>
                             </div>
                             <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                              ₱{walkinStudentFee.toFixed(2)}
+                              {walkinStudentFee !== null
+                                ? `₱${walkinStudentFee.toFixed(2)}`
+                                : '...'}
                             </div>
                           </button>
                         </div>
@@ -1589,7 +1711,11 @@ export const LogbookRecordAttendance: React.FC<
 
                       <button
                         type="button"
-                        disabled={!memberSearch.trim()}
+                        disabled={
+                          !memberSearch.trim() ||
+                          walkinRegularFee === null ||
+                          walkinStudentFee === null
+                        }
                         onClick={handleContinueAsWalkIn}
                         className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-slate-500 disabled:opacity-40 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                       >
@@ -1611,7 +1737,7 @@ export const LogbookRecordAttendance: React.FC<
               </div>
             )}
 
-            {/* DUPLICATE CHECK-IN ALERT (Only for Registered Members) */}
+            {/* DUPLICATE CHECK-IN ALERT */}
             {duplicateLog && !selectedClient?.isWalkIn && (
               <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/40 text-amber-700 dark:text-amber-400 rounded-2xl flex flex-col items-center text-center space-y-2 animate-fade-in shadow-md">
                 <div className="flex items-center justify-center gap-2 font-black text-xs sm:text-sm">
@@ -1744,7 +1870,9 @@ export const LogbookRecordAttendance: React.FC<
                           </div>
                         </div>
                         <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                          ₱{walkinRegularFee.toFixed(2)}
+                          {walkinRegularFee !== null
+                            ? `₱${walkinRegularFee.toFixed(2)}`
+                            : '...'}
                         </div>
                       </button>
 
@@ -1777,7 +1905,9 @@ export const LogbookRecordAttendance: React.FC<
                           </div>
                         </div>
                         <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0 ml-1">
-                          ₱{walkinStudentFee.toFixed(2)}
+                          {walkinStudentFee !== null
+                            ? `₱${walkinStudentFee.toFixed(2)}`
+                            : '...'}
                         </div>
                       </button>
                     </div>
@@ -1804,7 +1934,9 @@ export const LogbookRecordAttendance: React.FC<
                         {selectedClient.membership
                           ?.toLowerCase()
                           .includes('year')
-                          ? `₱${yearlyMemberFee.toFixed(2)}`
+                          ? yearlyMemberFee !== null
+                            ? `₱${yearlyMemberFee.toFixed(2)}`
+                            : '...'
                           : '₱0.00'}
                       </div>
                     </button>
@@ -1952,22 +2084,25 @@ export const LogbookRecordAttendance: React.FC<
                           !isFormValid ||
                           isSubmitting ||
                           isLockedByDuplicate ||
-                          (isLocked && derivedBilling.totalDue > 0)
+                          isLocked ||
+                          !isSessionOpen
                         }
                         title={
-                          isLocked && derivedBilling.totalDue > 0
-                            ? getLockReason('collect entry fees')
+                          isLocked || !isSessionOpen
+                            ? getLockReason('record check-ins')
                             : undefined
                         }
                         className={`w-full py-3.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 disabled:opacity-50 ${
-                          isLocked && derivedBilling.totalDue > 0
+                          isLocked || !isSessionOpen
                             ? 'cursor-not-allowed opacity-50'
                             : 'cursor-pointer'
                         }`}
                       >
                         {isSubmitting
                           ? 'RECORDING CHECK-IN...'
-                          : 'COMPLETE CHECK-IN'}
+                          : isLocked || !isSessionOpen
+                            ? 'SESSION CLOSED (LOCKED)'
+                            : 'COMPLETE CHECK-IN'}
                       </Button>
                     </div>
                   </div>
@@ -1976,6 +2111,7 @@ export const LogbookRecordAttendance: React.FC<
             )}
           </motion.div>
         ) : (
+          /* CASE 4: ATTENDANCE CONFIRMED BANNER */
           <motion.div
             key="attendance-success"
             initial={{ opacity: 0, scale: 0.85, y: 16 }}

@@ -57,6 +57,7 @@ import { isSuperAdmin } from '../../../constants/auth';
 import { supabase } from '../../../lib/supabase/client';
 import { Table, type Column } from '../../../components/ui/Table';
 import { MemberAvatar, MemberPhotoModal } from './MemberAvatar';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -70,6 +71,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   onMutationSuccess,
 }) => {
   const { user, profile } = useAuthStore() as any;
+  const { isSessionOpen } = useCashSessionStore();
 
   // Role resolution
   const role = useMemo<'admin' | 'staff'>(() => {
@@ -81,6 +83,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   // Local state to keep UI updated dynamically
   const [localMember, setLocalMember] = useState<Member>(member);
+
+  // Suspended & Session Check
+  const isSuspended = localMember.status === 'Suspended';
+  const isEnrollDisabled = !isSessionOpen || isSuspended;
+
+  const handleEnrollOrRenewClick = () => {
+    if (isSuspended) {
+      toast.error(
+        'Cannot enroll or renew subscription: Member account is currently suspended. Activate member first.',
+        { toastId: 'member-suspended-enroll-block' }
+      );
+      return;
+    }
+    if (!isSessionOpen) {
+      toast.warning(
+        'Cannot enroll or renew subscription: Cash drawer session is closed. Open a cash session in Cash Management first.',
+        { toastId: 'cash-session-closed-enroll-block' }
+      );
+      return;
+    }
+    setIsWizardOpen(true);
+  };
 
   const [activeTab, setActiveTab] = useState<
     'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'
@@ -201,7 +225,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     loadProfileCollections();
   }, [localMember.member_id, refreshKey]);
 
-  // Real-time Supabase postgres_changes listener
   useEffect(() => {
     if (!localMember.member_id) return;
 
@@ -264,7 +287,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     };
   }, []);
 
-  // Resolves the currently active subscription
   const activeContract = useMemo(() => {
     const now = Date.now();
     return subscriptions.find((s: Subscription) => {
@@ -276,7 +298,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     });
   }, [subscriptions, localMember.member_id]);
 
-  // Resolves any scheduled renewal plan
   const queuedContract = useMemo(() => {
     const now = Date.now();
     return subscriptions.find((s: Subscription) => {
@@ -303,16 +324,23 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const targetSubForDisplay = activeContract || latestContract;
 
-  const expiredDaysText = useMemo(() => {
-    if (!targetSubForDisplay) return null;
+  const isRecentlyExpired = useMemo(() => {
+    if (!targetSubForDisplay || activeContract) return false;
     const endMs = new Date(targetSubForDisplay.end_date).getTime();
     const now = Date.now();
-    if (isNaN(endMs) || endMs >= now) return null;
+    if (isNaN(endMs) || endMs >= now) return false;
 
     const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
-    return daysExpired === 0 ? '-1 day ago' : `-${daysExpired} days ago`;
-  }, [targetSubForDisplay]);
+    return daysExpired <= 7;
+  }, [targetSubForDisplay, activeContract]);
 
+  const expiredDaysText = useMemo(() => {
+    if (!isRecentlyExpired || !targetSubForDisplay) return null;
+    const endMs = new Date(targetSubForDisplay.end_date).getTime();
+    const now = Date.now();
+    const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+    return daysExpired === 0 ? '-1 day ago' : `-${daysExpired} days ago`;
+  }, [isRecentlyExpired, targetSubForDisplay]);
   const stats = useMemo(() => {
     return {
       totalSpent: receipts.reduce(
@@ -352,7 +380,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   }, [currentCard]);
 
-  // Card Reissue Token Handler
   const handleConfirmReissueToken = async () => {
     try {
       if (currentCard) {
@@ -375,7 +402,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Card Unbind Handler
   const handleConfirmUnbindCard = async () => {
     try {
       if (currentCard) {
@@ -402,7 +428,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Card Claim Handler
   const handleConfirmMarkClaimed = async () => {
     if (!currentCard) return;
     setIsClaimingInProfile(true);
@@ -427,7 +452,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Card Undo Claim Handler (Reverts claim back to UNCLAIMED)
   const handleConfirmUndoClaim = async () => {
     if (!currentCard) return;
     setIsUndoingClaim(true);
@@ -460,9 +484,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  // Card Payment Handler
   const handleConfirmPayCard = async () => {
     if (!currentCard) return;
+    if (!isSessionOpen) {
+      toast.error(
+        'Cannot process card fee: Cash drawer session is closed. Open a cash session in Cash Management first.'
+      );
+      return;
+    }
     setIsPayingCard(true);
     try {
       const fee = cardFeeAmount;
@@ -961,7 +990,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-40 flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
+      className="fixed inset-0 z-[250] flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
       onClick={onClose}
     >
       <motion.div
@@ -969,7 +998,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         animate={{ x: 0, y: 0 }}
         exit={{ x: '100%', y: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-        className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-(--bg-card) border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
+        className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-white dark:bg-[#16181a] border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* COMPACT HEADER WITH CLICKABLE AVATAR */}
@@ -1068,16 +1097,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 className={`text-xs font-bold truncate block mt-1 ${
                   activeContract
                     ? 'text-emerald-600 dark:text-emerald-400'
-                    : targetSubForDisplay?.status === 'Voided'
+                    : isRecentlyExpired
                       ? 'text-rose-600 dark:text-rose-400'
-                      : 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {activeContract
                   ? 'Active'
                   : targetSubForDisplay?.status === 'Voided'
                     ? 'Voided'
-                    : 'Expired'}
+                    : isRecentlyExpired
+                      ? 'Expired'
+                      : 'No Subscription'}
               </span>
             </div>
 
@@ -1151,10 +1182,27 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   {!queuedContract && (
                     <button
                       type="button"
-                      onClick={() => setIsWizardOpen(true)}
-                      className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors"
+                      onClick={handleEnrollOrRenewClick}
+                      title={
+                        isSuspended
+                          ? 'Member account is suspended. Activate member first.'
+                          : !isSessionOpen
+                            ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                            : expiredDaysText
+                              ? 'Renew Subscription'
+                              : 'Subscribe Plan'
+                      }
+                      className={`w-full sm:w-auto min-h-11 px-4 py-2.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors ${
+                        isEnrollDisabled
+                          ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      }`}
                     >
-                      <CreditCard className="w-4 h-4" />
+                      {isEnrollDisabled ? (
+                        <Lock className="w-4 h-4" />
+                      ) : (
+                        <CreditCard className="w-4 h-4" />
+                      )}
                       <span>
                         {expiredDaysText
                           ? 'Renew Subscription'
@@ -1186,8 +1234,26 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('Cards')}
-                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                      onClick={() => {
+                        if (isSuspended) {
+                          toast.error(
+                            'Cannot issue card: Member account is suspended.'
+                          );
+                          return;
+                        }
+                        if (!isSessionOpen) {
+                          toast.warning(
+                            'Cannot issue card: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                          );
+                          return;
+                        }
+                        setActiveTab('Cards');
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase transition-colors ${
+                        isEnrollDisabled
+                          ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                      }`}
                     >
                       Issue Card
                     </button>
@@ -1709,16 +1775,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
                         activeContract
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                          : expiredDaysText
+                          : isRecentlyExpired
                             ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                            : 'bg-slate-500/10 text-slate-500 border-slate-500/20'
                       }`}
                     >
                       {activeContract
                         ? 'ACTIVE'
-                        : expiredDaysText
+                        : isRecentlyExpired
                           ? `EXPIRED (${expiredDaysText})`
-                          : 'INACTIVE'}
+                          : 'NO SUBSCRIPTION'}
                     </span>
                   )}
                 </div>
@@ -1730,10 +1796,24 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </p>
                     <button
                       type="button"
-                      onClick={() => setIsWizardOpen(true)}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-heading font-bold uppercase rounded-xl border-none cursor-pointer transition-colors"
+                      onClick={handleEnrollOrRenewClick}
+                      title={
+                        isSuspended
+                          ? 'Member account is suspended. Activate member first.'
+                          : !isSessionOpen
+                            ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                            : 'Enroll Subscription'
+                      }
+                      className={`px-3.5 py-1.5 text-xs font-heading font-bold uppercase rounded-xl border-none transition-colors flex items-center justify-center gap-1.5 mx-auto ${
+                        isEnrollDisabled
+                          ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      }`}
                     >
-                      Enroll Subscription
+                      {isEnrollDisabled ? (
+                        <Lock className="w-3.5 h-3.5" />
+                      ) : null}
+                      <span>Enroll Subscription</span>
                     </button>
                   </div>
                 ) : (
@@ -1941,10 +2021,27 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div className="pt-2">
                         <button
                           type="button"
-                          onClick={() => setIsWizardOpen(true)}
-                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm flex items-center gap-2 transition-colors"
+                          onClick={handleEnrollOrRenewClick}
+                          title={
+                            isSuspended
+                              ? 'Member account is suspended. Activate member first.'
+                              : !isSessionOpen
+                                ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                                : activeContract
+                                  ? 'Schedule Plan Renewal / Extension'
+                                  : 'Renew Subscription'
+                          }
+                          className={`px-4 py-2.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border-none shadow-sm flex items-center gap-2 transition-colors ${
+                            isEnrollDisabled
+                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                          }`}
                         >
-                          <CreditCard className="w-4 h-4" />
+                          {isEnrollDisabled ? (
+                            <Lock className="w-4 h-4" />
+                          ) : (
+                            <CreditCard className="w-4 h-4" />
+                          )}
                           <span>
                             {activeContract
                               ? 'Schedule Plan Renewal / Extension'
@@ -2422,7 +2519,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsPayCardModalOpen(true)}
-                          className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                          className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center gap-1.5 shadow-md transition-all"
                         >
                           <CreditCard className="w-4 h-4" />
                           <span>Pay Card Fee (₱{cardFeeAmount})</span>
@@ -2570,33 +2667,28 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
-                disabled={hasActiveSubscription}
                 onClick={() => {
                   setActiveTab('Overview');
                   setIsEditing(!isEditing);
                 }}
-                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                  hasActiveSubscription
-                    ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
-                    : isEditing
-                      ? 'bg-blue-600 text-white shadow-md cursor-pointer'
-                      : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
+                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none cursor-pointer ${
+                  isEditing
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20'
                 }`}
               >
-                {hasActiveSubscription ? (
-                  <Lock className="w-4 h-4" />
+                {isEditing ? (
+                  <>
+                    <X className="w-4 h-4" />
+                    <span>CANCEL EDITING</span>
+                  </>
                 ) : (
-                  <Pencil className="w-4 h-4" />
+                  <>
+                    <Pencil className="w-4 h-4" />
+                    <span>EDIT DETAILS</span>
+                  </>
                 )}
-                <span>{isEditing ? 'Cancel Edit' : 'Edit Details'}</span>
               </button>
-
-              {hasActiveSubscription && (
-                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
-                  🔒 Profile details are locked while an active subscription
-                  contract exists.
-                </div>
-              )}
             </div>
 
             <div className="relative group flex-1 sm:flex-initial">

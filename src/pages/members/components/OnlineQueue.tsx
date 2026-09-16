@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   Copy,
   Check,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -39,6 +40,7 @@ import { useResponsiveItemsPerPage } from '../../../lib/useResponsiveItemsPerPag
 // Import Types & Services
 import { registrationService, settingsService } from '../memberService';
 import type { OnlineRegistration } from '../../../types/members';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 
 interface OnlineQueueProps {
   onApproveLaunchWizard: (reg: OnlineRegistration) => void;
@@ -81,6 +83,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   stagedRejectionsRef.current = stagedRejections;
 
   const itemsPerPage = useResponsiveItemsPerPage();
+  const { isSessionOpen } = useCashSessionStore();
 
   const fetchQueue = useCallback(async () => {
     setIsSyncing(true);
@@ -589,11 +592,33 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
           <button
             onClick={() => {
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot approve registration: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                  { toastId: 'queue-session-closed' }
+                );
+                return;
+              }
               onApproveLaunchWizard(item);
             }}
-            className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none cursor-pointer transition-all shadow-xs"
+            disabled={!isSessionOpen}
+            title={
+              !isSessionOpen
+                ? 'Locked: Cash session is closed. Open a cash session to enroll members.'
+                : 'Approve & Launch Enrollment Wizard'
+            }
+            className={`py-1.5 px-3 font-bold rounded-lg font-heading text-[9px] tracking-wider uppercase flex items-center gap-1 border-none transition-all shadow-xs ${
+              !isSessionOpen
+                ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-50 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+            }`}
           >
-            <CheckSquare className="w-3.5 h-3.5" /> Approve
+            {!isSessionOpen ? (
+              <Lock className="w-3.5 h-3.5" />
+            ) : (
+              <CheckSquare className="w-3.5 h-3.5" />
+            )}
+            <span>Approve</span>
           </button>
         </div>
       ),
@@ -649,6 +674,22 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   return (
     <div className="space-y-4 pb-28 sm:pb-0">
+      {/* Closed Session Warning Banner */}
+      {!isSessionOpen && (
+        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold uppercase select-none animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 shrink-0 text-rose-500" />
+            <span>
+              Cash drawer session is closed. Approving pre-registrations and
+              enrolling members are locked.
+            </span>
+          </div>
+          <span className="text-[10px] font-mono opacity-80 lowercase font-normal hidden sm:inline">
+            open session in cash management to proceed
+          </span>
+        </div>
+      )}
+
       {/* Queue Header & Actions (Desktop / Tablet Header) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none">
         <div>
@@ -656,9 +697,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             Online Pre-Registrations Queue
           </h3>
         </div>
-
-        {/* Desktop Buttons */}
-        <div className="hidden sm:flex items-center gap-2"></div>
 
         {/* Desktop Buttons */}
         <div className="hidden sm:flex items-center gap-2">
@@ -1177,15 +1215,53 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                 </div>
               )}
 
-              {/* Submission Footer Metadata */}
-              <div className="pt-2 border-t border-(--border-color) text-[10px] text-slate-500 dark:text-slate-400 flex justify-between items-center font-mono">
-                <span>
-                  Submitted:{' '}
-                  {new Date(selectedReg.submitted_at).toLocaleString('en-US')}
-                </span>
-                <span className="italic">
-                  {selectedReg.notes || 'No extra notes'}
-                </span>
+              {/* Submission Footer Metadata & Direct Action Buttons */}
+              <div className="pt-2 border-t border-(--border-color) flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                <div>
+                  <span>
+                    Submitted:{' '}
+                    {new Date(selectedReg.submitted_at).toLocaleString('en-US')}
+                  </span>
+                  {selectedReg.notes && (
+                    <span className="italic block text-slate-400 mt-0.5">
+                      Notes: {selectedReg.notes}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Cannot approve registration: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                        { toastId: 'queue-preview-session-closed' }
+                      );
+                      return;
+                    }
+                    const regToApprove = selectedReg;
+                    setSelectedReg(null);
+                    onApproveLaunchWizard(regToApprove);
+                  }}
+                  disabled={!isSessionOpen}
+                  title={
+                    !isSessionOpen
+                      ? 'Locked: Cash session is closed'
+                      : 'Approve & Launch Enrollment Wizard'
+                  }
+                  className={`py-2 px-4 font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 border-none transition-all shadow-md shrink-0 ${
+                    !isSessionOpen
+                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-50 cursor-not-allowed'
+                      : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
+                  }`}
+                >
+                  {!isSessionOpen ? (
+                    <Lock className="w-3.5 h-3.5" />
+                  ) : (
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  )}
+                  <span>Approve &amp; Enroll</span>
+                </button>
               </div>
             </div>
           </div>,

@@ -8,6 +8,8 @@ import {
   ArrowRight,
   CreditCard,
   AlertTriangle,
+  CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import {
@@ -45,11 +47,13 @@ interface SubscriptionData {
   memberId: string;
   fullName: string;
   avatarUrl?: string | null;
-  status: 'Active' | 'Expires Soon' | 'Expired' | 'Suspended';
+  status:
+    'Active' | 'Expires Soon' | 'Expired' | 'No Subscription' | 'Suspended';
   planName: string;
   startDate: string;
   expDate: string;
   remainingDays: number;
+  daysExpired?: number;
 }
 
 export const SubscriptionScannerView: React.FC<
@@ -124,22 +128,48 @@ export const SubscriptionScannerView: React.FC<
 
         if (member) {
           playBeepSound();
-          const activeSub = allSubscriptions.find(
-            (s: Subscription) =>
-              s.member_id === member.member_id && s.status === 'Active'
-          );
 
-          const now = new Date();
-          let calculatedStatus: SubscriptionData['status'] = 'Expired';
+          const now = Date.now();
+
+          // 1. Find currently active subscription
+          const activeSub = allSubscriptions.find((s: Subscription) => {
+            if (s.member_id !== member.member_id || s.status === 'Voided')
+              return false;
+            const startMs = new Date(s.start_date).getTime();
+            const endMs = new Date(s.end_date).getTime();
+            return startMs <= now && endMs >= now;
+          });
+
+          // 2. If no active sub, retrieve the most recent past contract
+          const latestSub = !activeSub
+            ? allSubscriptions
+                .filter(
+                  (s: Subscription) =>
+                    s.member_id === member.member_id && s.status !== 'Voided'
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(b.created_at || b.start_date).getTime() -
+                    new Date(a.created_at || a.start_date).getTime()
+                )[0]
+            : null;
+
+          let calculatedStatus: SubscriptionData['status'] = 'No Subscription';
           let planName = 'No Active Subscription';
           let startDateStr = 'N/A';
           let expDateStr = 'N/A';
           let remainingDays = 0;
+          let daysExpired: number | undefined = undefined;
 
           if (member.status === 'Suspended') {
             calculatedStatus = 'Suspended';
           } else if (activeSub) {
-            planName = activeSub.plan_name || 'Active Membership';
+            planName =
+              activeSub.plan_name ||
+              (activeSub.plan_type === 'yearly'
+                ? 'Yearly Membership'
+                : 'Monthly Membership');
+
             startDateStr = new Date(activeSub.start_date).toLocaleDateString(
               'en-US',
               { month: 'short', day: 'numeric', year: 'numeric' }
@@ -152,18 +182,44 @@ export const SubscriptionScannerView: React.FC<
             const endDate = new Date(activeSub.end_date);
             remainingDays = Math.max(
               0,
-              Math.ceil(
-                (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-              )
+              Math.ceil((endDate.getTime() - now) / (1000 * 60 * 60 * 24))
             );
 
-            if (remainingDays <= 0) {
-              calculatedStatus = 'Expired';
-            } else if (remainingDays <= 7) {
+            if (remainingDays <= 7) {
               calculatedStatus = 'Expires Soon';
             } else {
               calculatedStatus = 'Active';
             }
+          } else if (latestSub) {
+            const endMs = new Date(latestSub.end_date).getTime();
+            const diffDays = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
+
+            startDateStr = new Date(latestSub.start_date).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            );
+            expDateStr = new Date(latestSub.end_date).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            );
+            remainingDays = 0;
+
+            // 7-Day Rule: Expired if within 7 days, else "No Subscription"
+            if (diffDays <= 7) {
+              calculatedStatus = 'Expired';
+              daysExpired = diffDays;
+              planName =
+                latestSub.plan_name ||
+                (latestSub.plan_type === 'yearly'
+                  ? 'Yearly Membership'
+                  : 'Monthly Membership');
+            } else {
+              calculatedStatus = 'No Subscription';
+              planName = 'No Active Subscription';
+            }
+          } else {
+            calculatedStatus = 'No Subscription';
+            planName = 'No Active Subscription';
           }
 
           setSubData({
@@ -176,6 +232,7 @@ export const SubscriptionScannerView: React.FC<
             startDate: startDateStr,
             expDate: expDateStr,
             remainingDays,
+            daysExpired,
           });
         } else {
           setNotFound(true);
@@ -218,26 +275,45 @@ export const SubscriptionScannerView: React.FC<
       ) : subData ? (
         <div className="space-y-4 pt-1">
           <div className="p-4 bg-slate-50 dark:bg-zinc-900 border-2 border-(--border-color) rounded-2xl space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white overflow-hidden flex items-center justify-center font-black text-lg shrink-0 border border-blue-500/40">
-                {subData.avatarUrl ? (
-                  <img
-                    src={subData.avatarUrl}
-                    alt={subData.fullName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span>{subData.fullName[0]?.toUpperCase()}</span>
-                )}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white overflow-hidden flex items-center justify-center font-black text-lg shrink-0 border border-blue-500/40 shadow-xs">
+                  {subData.avatarUrl ? (
+                    <img
+                      src={subData.avatarUrl}
+                      alt={subData.fullName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{subData.fullName[0]?.toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-base text-(--color-text) truncate uppercase">
+                    {subData.fullName}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    ID: {subData.memberId}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-base text-(--color-text) truncate uppercase">
-                  {subData.fullName}
-                </h3>
-                <p className="text-xs text-slate-500 font-mono">
-                  ID: {subData.memberId}
-                </p>
-              </div>
+
+              {/* Header Status Badge */}
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-black uppercase tracking-wider shrink-0 border ${
+                  subData.status === 'Active'
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                    : subData.status === 'Expires Soon'
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                      : subData.status === 'Expired'
+                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                        : subData.status === 'Suspended'
+                          ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40'
+                          : 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30'
+                }`}
+              >
+                {subData.status}
+              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color) text-xs">
@@ -260,12 +336,49 @@ export const SubscriptionScannerView: React.FC<
               </div>
             </div>
 
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between text-xs">
-              <span className="font-bold text-blue-600 dark:text-blue-400 uppercase">
-                Plan: {subData.planName}
-              </span>
-              <span className="font-mono font-black text-blue-600 dark:text-blue-400">
-                {subData.remainingDays} Days Remaining
+            {/* Dynamic Status / Plan Indicator Bar */}
+            <div
+              className={`p-3 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+                subData.status === 'Active'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+                  : subData.status === 'Expires Soon'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                    : subData.status === 'Expired'
+                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400'
+                      : subData.status === 'Suspended'
+                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                        : 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 uppercase truncate font-bold">
+                {subData.status === 'Active' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                ) : subData.status === 'Suspended' ? (
+                  <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0" />
+                ) : (
+                  <AlertTriangle
+                    className={`w-4 h-4 shrink-0 ${
+                      subData.status === 'Expired'
+                        ? 'text-rose-500'
+                        : subData.status === 'Expires Soon'
+                          ? 'text-amber-500'
+                          : 'text-slate-400'
+                    }`}
+                  />
+                )}
+                <span className="truncate">Plan: {subData.planName}</span>
+              </div>
+
+              <span className="font-mono font-black shrink-0">
+                {subData.status === 'Active'
+                  ? `${subData.remainingDays} Days Remaining`
+                  : subData.status === 'Expires Soon'
+                    ? `${subData.remainingDays} Days Left`
+                    : subData.status === 'Expired'
+                      ? `Expired (${subData.daysExpired === 0 ? '-1 day ago' : `-${subData.daysExpired} days ago`})`
+                      : subData.status === 'Suspended'
+                        ? 'Suspended'
+                        : 'No Subscription'}
               </span>
             </div>
           </div>

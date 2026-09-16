@@ -39,7 +39,7 @@ FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
--- Policy: Lock down manual updates and deletes completely to guarantee log integrity
+-- Policy: Lock down manual updates and deletes completely
 DROP POLICY IF EXISTS "Prevent manual updates on audit logs" ON public.audit_logs;
 CREATE POLICY "Prevent manual updates on audit logs"
 ON public.audit_logs
@@ -54,11 +54,11 @@ FOR DELETE
 TO authenticated
 USING (false);
 
--- Clear any previously overloaded signatures to prevent ambiguity errors [1.1.2]
+-- Clear previously overloaded signatures to prevent ambiguity
 DROP FUNCTION IF EXISTS public.log_audit_entry(uuid, text, text, text, text, text);
 DROP FUNCTION IF EXISTS public.log_audit_entry(uuid, text, text, text, text);
 
--- Helper function to write system/auth events easily from backend/client RPCs
+-- Helper function to write system/auth events easily
 CREATE OR REPLACE FUNCTION public.log_audit_entry(
     p_user_id UUID,
     p_actor_username TEXT,
@@ -90,7 +90,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Seed some default mock actions to populate the interface cleanly
+-- Seed default mock actions
 INSERT INTO public.audit_logs (actor_username, action, details, created_at)
 VALUES 
   ('System', 'CRON_JOB_EXECUTED', 'Automated Daily database backup snapshot generated successfully.', now() - INTERVAL '4 hours'),
@@ -103,9 +103,19 @@ ON CONFLICT DO NOTHING;
 -- Enable pg_cron extension if not already active
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Schedule the 1-year rotation cleanup job to run daily at midnight Manila time
+-- Safely unschedule existing job to allow clean overwrite
+DO $$
+BEGIN
+    PERFORM cron.unschedule(jobid) 
+    FROM cron.job 
+    WHERE jobname = 'daily-audit-logs-cleanup';
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+-- Schedule the 1-year rotation cleanup job
 SELECT cron.schedule(
     'daily-audit-logs-cleanup',
-    '0 0 * * *', -- Daily at 00:00 (Midnight)
+    '0 16 * * *',
     'DELETE FROM public.audit_logs WHERE created_at < (now() - INTERVAL ''1 year'');'
 );

@@ -22,9 +22,6 @@ ALTER TABLE public.database_backups ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow admins to read backups" ON public.database_backups;
 DROP POLICY IF EXISTS "Allow admins to delete backups" ON public.database_backups;
 
--- Clean up older functions
-DROP FUNCTION IF EXISTS public.is_admin();
-
 -- 3. RLS policies checking profiles role OR explicitly matching the superadmin email claim
 CREATE POLICY "Allow admins to read backups" 
 ON public.database_backups 
@@ -75,7 +72,6 @@ BEGIN
 
     -- Loop through all tables saved inside the JSON backup file
     FOR table_to_restore IN SELECT jsonb_object_keys(backup_payload) LOOP
-        -- FIX: Add 'WHERE true' to satisfy Supabase's safe-update rules (prevents "DELETE requires a WHERE clause")
         EXECUTE format('DELETE FROM %I WHERE true', table_to_restore);
         
         -- Extract the stored records
@@ -105,7 +101,6 @@ DECLARE
     payload_size BIGINT;
 BEGIN
     -- Security Guard: Restrict web-client execution to authorized admins and the superadmin email only
-    -- Allow background workers/cron (where current_setting('request.jwt.claims', true) is missing or empty) to execute automatically
     IF NULLIF(current_setting('request.jwt.claims', true), '') IS NOT NULL THEN
         IF NOT EXISTS (
             SELECT 1 FROM public.profiles 
@@ -122,28 +117,20 @@ BEGIN
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
           AND table_type = 'BASE TABLE'
-          -- Exclude the backup table itself to avoid recursion
           AND table_name != 'database_backups'
-          -- Exclude PostGIS system tables if present
           AND table_name != 'spatial_ref_sys'
     LOOP
         BEGIN
-            -- Dynamically fetch table contents as a JSON array
             EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM %I t', r.table_name) 
             INTO table_json;
             
-            -- Store table data inside the master payload using the table name as the key
             backup_payload := jsonb_set(backup_payload, ARRAY[r.table_name], table_json, true);
         EXCEPTION WHEN OTHERS THEN
-            -- Log warnings but do not halt the process if a single table has an lock/read issue
             RAISE WARNING 'Failed to backup table %: %', r.table_name, SQLERRM;
         END;
     END LOOP;
 
-    -- Generate a clean filename indicating the creation date in Manila time
     backup_filename := 'backup_' || to_char(now() AT TIME ZONE 'Asia/Manila', 'YYYY_MM_DD_HH24MISS') || '.json';
-    
-    -- Calculate payload size in bytes
     payload_size := octet_length(backup_payload::text);
 
     -- Enforcement Rule 1: Rotate manual backups if saving manual and count >= 5
@@ -159,7 +146,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- Enforcement Rule 2: Rotate automated backups if saving auto and count >= 7 (keeps up to 7 files)
+    -- Enforcement Rule 2: Rotate automated backups if saving auto and count >= 7
     IF backup_type = 'auto' THEN
         WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'auto') >= 7 LOOP
             DELETE FROM public.database_backups 
@@ -172,7 +159,6 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- Insert the new backup
     INSERT INTO public.database_backups (filename, backup_data, notes, type, size_bytes)
     VALUES (
         backup_filename, 
@@ -182,7 +168,6 @@ BEGIN
         payload_size
     );
 
-    -- Clean up any lingering auto backups older than 7 days
     DELETE FROM public.database_backups 
     WHERE type = 'auto' 
       AND created_at < ((timezone('Asia/Manila', now())::date - INTERVAL '7 days' + INTERVAL '8 hours') AT TIME ZONE 'Asia/Manila');
@@ -190,11 +175,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 6. Create the Archive function to set backups to archived and enforce rotation limits (Max 3)
+-- 6. Create the Archive function
 CREATE OR REPLACE FUNCTION public.archive_database_backup(target_backup_id UUID)
 RETURNS void AS $$
 BEGIN
-    -- Ensure only admins have clearance
     IF NOT EXISTS (
         SELECT 1 FROM public.profiles 
         WHERE profiles.id = auth.uid() 
@@ -203,12 +187,10 @@ BEGIN
         RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to archive backups.';
     END IF;
 
-    -- Update target backup type to archived
     UPDATE public.database_backups 
     SET type = 'archived' 
     WHERE id = target_backup_id;
 
-    -- Enforcement Rule 3: Limit archived backups to max 3 (delete oldest archived if exceeded)
     WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'archived') > 3 LOOP
         DELETE FROM public.database_backups 
         WHERE id = (
@@ -221,11 +203,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. Create the Unarchive function to set backups back to manual and enforce manual limits (Max 5)
+-- 7. Create the Unarchive function
 CREATE OR REPLACE FUNCTION public.unarchive_database_backup(target_backup_id UUID)
 RETURNS void AS $$
 BEGIN
-    -- Ensure only admins have clearance
     IF NOT EXISTS (
         SELECT 1 FROM public.profiles 
         WHERE profiles.id = auth.uid() 
@@ -234,12 +215,10 @@ BEGIN
         RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to unarchive backups.';
     END IF;
 
-    -- Update target backup type back to manual
     UPDATE public.database_backups 
     SET type = 'manual' 
     WHERE id = target_backup_id;
 
-    -- Enforce manual rotation limits (Max 5)
     WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'manual') > 5 LOOP
         DELETE FROM public.database_backups 
         WHERE id = (
@@ -252,14 +231,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 8. Create the secure password verification function to bypass frontend JWT/client header overrides
+-- 8. Create password verification function
 CREATE OR REPLACE FUNCTION public.verify_user_password(entered_password TEXT)
 RETURNS boolean AS $$
 DECLARE
     stored_hash TEXT;
     is_valid boolean := false;
 BEGIN
-    -- Get password hash for currently authenticated user
     SELECT encrypted_password INTO stored_hash 
     FROM auth.users 
     WHERE id = auth.uid();
@@ -268,7 +246,6 @@ BEGIN
         RETURN false;
     END IF;
 
-    -- Verify hash using pgcrypto extension's crypt function
     BEGIN
         is_valid := (stored_hash = extensions.crypt(entered_password, stored_hash));
     EXCEPTION WHEN OTHERS THEN
@@ -283,13 +260,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- 10. Safely unschedule any existing backup cron tasks to avoid duplicate schedules
-SELECT cron.unschedule(jobid) 
-FROM cron.job 
-WHERE jobname = 'daily-database-backup';
+DO $$
+BEGIN
+    PERFORM cron.unschedule(jobid) 
+    FROM cron.job 
+    WHERE jobname = 'daily-database-backup';
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
 
--- 11. Schedule the job to run every 24 hours (daily at midnight Manila time)
+-- 11. Schedule the job to run daily at midnight Manila time (16:00 UTC)
 SELECT cron.schedule(
     'daily-database-backup',
-    '0 0 * * *', -- Daily at 00:00 (Midnight)
+    '0 16 * * *',
     'SELECT public.generate_database_backup(''Scheduled automated backup'', ''auto'');'
 );

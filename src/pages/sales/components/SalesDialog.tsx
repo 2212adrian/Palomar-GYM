@@ -400,8 +400,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const handleCompleteSale = async () => {
     if (isSubmittingRef.current || isSuccess) return;
 
-    if (isLocked) {
-      toast.error(getLockReason('process sales transactions'));
+    if (isLocked || !isSessionOpen) {
+      toast.error(
+        'Cannot process sale: Cash drawer session is closed. Please open a cash session first in Cash Management.'
+      );
       return;
     }
 
@@ -411,12 +413,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
 
     if (paymentMethod === 'Cash') {
-      if (!isSessionOpen) {
-        toast.error(
-          'Cannot accept Cash: No active cash drawer session is open. Please open a cash session first in Cash Management.'
-        );
-        return;
-      }
       const received = Number(amountReceived);
       if (isNaN(received) || received < totalPayable) {
         toast.error('Insufficient cash received.');
@@ -962,17 +958,28 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             <div className="pt-3">
               <Button
                 onClick={handleCompleteSale}
-                disabled={cart.length === 0 || isSubmitting || isLocked}
-                title={isLocked ? getLockReason('process sales transactions') : undefined}
+                disabled={
+                  cart.length === 0 ||
+                  isSubmitting ||
+                  isLocked ||
+                  !isSessionOpen
+                }
+                title={
+                  isLocked || !isSessionOpen
+                    ? getLockReason('process sales transactions')
+                    : undefined
+                }
                 className={`py-3.5 w-full font-bold text-xs uppercase tracking-wider ${
-                  isSubmitting || isLocked
+                  isSubmitting || isLocked || !isSessionOpen
                     ? 'opacity-50 cursor-not-allowed pointer-events-none'
                     : 'cursor-pointer'
                 }`}
               >
                 {isSubmitting
                   ? 'PROCESSING TRANSACTION...'
-                  : 'COMPLETE TRANSACTION'}
+                  : isLocked || !isSessionOpen
+                    ? 'SESSION CLOSED (LOCKED)'
+                    : 'COMPLETE TRANSACTION'}
               </Button>
             </div>
           </motion.div>

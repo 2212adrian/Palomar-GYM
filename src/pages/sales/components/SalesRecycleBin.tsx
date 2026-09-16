@@ -525,8 +525,8 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
               Daily Recycle Bin
             </h3>
             {countdown && (
-              <span className="text-[10px] font-mono font-black text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md animate-pulse whitespace-nowrap shrink-0">
-                Purge in: {countdown}
+              <span className="text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                Shift Active
               </span>
             )}
           </div>
@@ -542,12 +542,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
         {/* Scrollable Content Body */}
         <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-3 min-h-0">
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
             <span>
-              <strong>Caution:</strong> Restorable items are kept for up to 24
-              hours. Transactions older than 24 hours are locked and will be
-              permanently deleted at 12:00 AM Manila Time.
+              <strong>Please note:</strong> Sales removed during this shift can
+              be restored here while the cash drawer is still open. Once the
+              cash session is ended and closed, all removed items will be
+              permanently cleared.
             </span>
           </div>
 

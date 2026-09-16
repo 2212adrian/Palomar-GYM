@@ -1,4 +1,7 @@
+// src/pages/dashboard/components/RevenueAnalyticsTab.tsx
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
 import {
   BarChart,
   Bar,
@@ -30,6 +33,12 @@ import {
   Calendar,
   Users,
   Frown,
+  Wallet,
+  ExternalLink,
+  Banknote,
+  Coins,
+  Smartphone,
+  User,
 } from 'lucide-react';
 import type {
   DashboardTab,
@@ -42,7 +51,11 @@ import type {
   SubscriptionPlanBreakdown,
 } from '../types';
 import { formatPHP } from '../dashboardService';
-import { ReportsExportModal } from './ReportsExportModal';
+import {
+  ReportsExportModal,
+  type ReportCategoryType,
+} from './ReportsExportModal';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 
 interface RevenueAnalyticsTabProps {
   metrics: DashboardMetrics;
@@ -58,14 +71,13 @@ interface RevenueAnalyticsTabProps {
 }
 
 /**
- * Empty state placeholder displaying a big frowning face
- * when no statistics or graph datapoints are available.
+ * Empty state placeholder when no statistics or graph datapoints are available.
  */
 const EmptyChartPlaceholder: React.FC<{
   title: string;
   description: string;
   className?: string;
-}> = ({ title, description, className = 'h-[260px] sm:h-[300px]' }) => (
+}> = ({ title, description, className = 'h-65 sm:h-75' }) => (
   <div
     className={`w-full flex flex-col items-center justify-center text-center p-6 sm:p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-[#1e232d]/30 select-none ${className}`}
   >
@@ -93,10 +105,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   timeRange,
   onTimeRangeChange,
 }) => {
+  const navigate = useNavigate();
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [selectedReportType, setSelectedReportType] = useState<
-    'bir' | 'sales' | 'attendance' | 'inventory' | 'subscriptions'
-  >('bir');
+  const [selectedReportType, setSelectedReportType] =
+    useState<ReportCategoryType>('bir');
   const [salesChartView, setSalesChartView] = useState<'pie' | 'bar'>('pie');
   const [logbookViewMode, setLogbookViewMode] = useState<
     'traffic' | 'subscriptions'
@@ -104,6 +116,15 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   const [subscriptionChartView, setSubscriptionChartView] = useState<
     'timeline' | 'distribution'
   >('timeline');
+
+  // Real-time Cash Session Store
+  const {
+    activeSession,
+    isSessionOpen,
+    currentDrawerCash,
+    metrics: cashMetrics,
+    transactions: cashTransactions,
+  } = useCashSessionStore();
 
   const PIE_COLORS = [
     '#123c73',
@@ -117,9 +138,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
   const pieProductData = useMemo(() => {
     const soldOnly = topProducts.filter((p) => (p.total_sold || 0) > 0);
-    if (soldOnly.length === 0) {
-      return [];
-    }
+    if (soldOnly.length === 0) return [];
     return soldOnly.slice(0, 6).map((p) => ({
       name: p.product_name,
       value: p.total_sold,
@@ -153,7 +172,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
     }
   }, [timeRange]);
 
-  // ─── Data Availability Checks ───
   const hasCombinedData = useMemo(() => {
     return (
       revenueTimeline.length > 0 &&
@@ -261,7 +279,28 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             )}
           </button>
 
-          {/* TAB 4: REPORTS & BIR */}
+          {/* TAB 4: LIVE CASH MANAGEMENT */}
+          <button
+            id="tab-btn-cash"
+            onClick={() => onTabChange('cash')}
+            className={`flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-t-xl text-xs font-bold transition-all select-none border-t border-x shrink-0 relative cursor-pointer ${
+              activeTab === 'cash'
+                ? 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-blue-400 border-slate-200 dark:border-slate-800 border-b-transparent shadow-2xs font-extrabold'
+                : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/40 dark:hover:bg-slate-800/40'
+            }`}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            <span className="sm:hidden">Cash</span>
+            <span className="hidden sm:inline">Cash Flow</span>
+            {isSessionOpen && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+            {activeTab === 'cash' && (
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#123c73] dark:bg-blue-400 rounded-t-sm" />
+            )}
+          </button>
+
+          {/* TAB 5: REPORTS & BIR */}
           <button
             id="tab-btn-reports"
             onClick={() => onTabChange('reports')}
@@ -309,9 +348,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             ========================================================= */}
         {activeTab === 'combined' && (
           <div className="space-y-6">
-            {/* Top 3 Revenue Split Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
-              {/* Total Combined */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   {rangeLabel} - Total Combined
@@ -337,7 +374,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </div>
               </div>
 
-              {/* Product POS Sales */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   {rangeLabel} - SALES
@@ -350,7 +386,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </p>
               </div>
 
-              {/* Passes & Subscriptions */}
               <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   {rangeLabel} - Logbook
@@ -364,7 +399,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               </div>
             </div>
 
-            {/* Dual Stream Chart Area */}
             <div className="space-y-3 pt-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
@@ -395,15 +429,14 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 )}
               </div>
 
-              {/* Chart OR Empty Placeholder */}
               {!hasCombinedData ? (
                 <EmptyChartPlaceholder
                   title="No Revenue Activity Recorded"
                   description={`There are no sales transactions or membership entries logged for ${rangeLabel.toLowerCase()}. Check back once activity is recorded.`}
-                  className="h-[240px] sm:h-[300px] lg:h-[320px]"
+                  className="h-60 sm:h-75 lg:h-80"
                 />
               ) : (
-                <div className="h-[240px] sm:h-[300px] lg:h-[320px] w-full pt-2">
+                <div className="h-60 sm:h-75 lg:h-80 w-full pt-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={revenueTimeline}
@@ -528,7 +561,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </p>
               </div>
 
-              {/* Chart Format Toggle: Pie Chart vs Bar Chart */}
               {hasSalesData && (
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
                   <button
@@ -563,14 +595,13 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               <EmptyChartPlaceholder
                 title="No Product Sales Yet"
                 description={`No products have been sold or logged for ${rangeLabel.toLowerCase()}. When POS sales occur, ranking breakdowns will appear here.`}
-                className="h-[300px] sm:h-[340px]"
+                className="h-75 sm:h-85"
               />
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Product Visual Chart (Pie or Bar) */}
                 <div className="lg:col-span-2 space-y-3">
                   {salesChartView === 'pie' ? (
-                    <div className="h-[280px] sm:h-[320px] w-full flex items-center justify-center p-2">
+                    <div className="h-70 sm:h-80 w-full flex items-center justify-center p-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -621,7 +652,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <div className="h-[280px] sm:h-[320px] w-full">
+                    <div className="h-70 sm:h-80 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={topProducts.slice(0, 5)}
@@ -688,7 +719,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   )}
                 </div>
 
-                {/* Top Seller Ranked List */}
                 <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 bg-slate-50/50 dark:bg-[#1e232d]/40 flex flex-col justify-between">
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 mb-3 font-heading flex items-center gap-1.5">
@@ -747,11 +777,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
         )}
 
         {/* =========================================================
-            TAB 3: LOGBOOK & PEAK TIMES + SUBSCRIPTION BREAKDOWN
+            TAB 3: LOGBOOK & PEAK TIMES + SUBSCRIPTIONS
             ========================================================= */}
         {activeTab === 'logbook' && (
           <div className="space-y-6">
-            {/* Header & Sub-View Switcher Tab Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
               <div>
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase font-heading">
@@ -767,7 +796,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </p>
               </div>
 
-              {/* Option Tab Buttons */}
               <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0 self-start sm:self-auto">
                 <button
                   type="button"
@@ -798,7 +826,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               </div>
             </div>
 
-            {/* VIEW 1: HOURLY FOOT TRAFFIC & PEAK TIMES */}
             {logbookViewMode === 'traffic' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -817,10 +844,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   <EmptyChartPlaceholder
                     title="No Foot Traffic Recorded"
                     description={`No member or guest check-ins recorded for ${rangeLabel.toLowerCase()}. Turnstile or counter logs will plot peak hours here.`}
-                    className="h-[260px] sm:h-[300px]"
+                    className="h-65 sm:h-75"
                   />
                 ) : (
-                  <div className="h-[260px] sm:h-[300px] w-full">
+                  <div className="h-65 sm:h-75 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={attendanceHourly}
@@ -864,7 +891,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           dataKey="members"
                           stackId="a"
                           fill="#123c73"
-                          radius={[0, 0, 0, 0]}
                           name="members"
                         />
                         <Bar
@@ -881,12 +907,9 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               </div>
             )}
 
-            {/* VIEW 2: MONTHLY VS YEARLY SUBSCRIPTION BREAKDOWN CHART & STATS */}
             {logbookViewMode === 'subscriptions' && (
               <div className="space-y-6">
-                {/* Metric Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                  {/* Total Subscribers */}
                   <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -908,7 +931,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     </p>
                   </div>
 
-                  {/* Monthly Subscribers */}
                   <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
@@ -928,12 +950,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2">
-                      {subscriptionBreakdown?.activeMonthlyCount || 0} currently
-                      active contracts
+                      {subscriptionBreakdown?.activeMonthlyCount || 0} active
+                      contracts
                     </p>
                   </div>
 
-                  {/* Yearly Subscribers */}
                   <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
@@ -953,12 +974,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2">
-                      {subscriptionBreakdown?.activeYearlyCount || 0} currently
-                      active contracts
+                      {subscriptionBreakdown?.activeYearlyCount || 0} active
+                      contracts
                     </p>
                   </div>
 
-                  {/* Active Contract Pool */}
                   <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
@@ -982,7 +1002,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   </div>
                 </div>
 
-                {/* Sub-Chart View Switcher: Bar Timeline vs Donut Distribution */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                   <div>
                     <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase font-heading">
@@ -1024,12 +1043,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   )}
                 </div>
 
-                {/* Render Selected Chart Format OR Empty Placeholder */}
                 {!hasSubscriptionData ? (
                   <EmptyChartPlaceholder
                     title="No Subscription Data"
                     description={`No monthly or yearly membership acquisitions were recorded for ${rangeLabel.toLowerCase()}.`}
-                    className="h-[260px] sm:h-[300px]"
+                    className="h-65 sm:h-75"
                   />
                 ) : subscriptionChartView === 'timeline' ? (
                   <div className="space-y-2">
@@ -1048,7 +1066,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="h-[260px] sm:h-[300px] w-full">
+                    <div className="h-65 sm:h-75 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={subscriptionBreakdown?.timeline || []}
@@ -1090,7 +1108,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           <Bar
                             dataKey="monthly"
                             fill="#123c73"
-                            radius={[0, 0, 0, 0]}
                             name="monthly"
                           />
                           <Bar
@@ -1105,7 +1122,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                    <div className="h-[260px] sm:h-[280px] w-full flex items-center justify-center">
+                    <div className="h-65 sm:h-70 w-full flex items-center justify-center">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -1115,14 +1132,12 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                                 value: subscriptionBreakdown?.monthlyCount || 1,
                                 revenue:
                                   subscriptionBreakdown?.monthlyRevenue || 0,
-                                color: '#123c73',
                               },
                               {
                                 name: 'Yearly Membership',
                                 value: subscriptionBreakdown?.yearlyCount || 1,
                                 revenue:
                                   subscriptionBreakdown?.yearlyRevenue || 0,
-                                color: '#10b981',
                               },
                             ]}
                             cx="50%"
@@ -1154,7 +1169,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </ResponsiveContainer>
                     </div>
 
-                    {/* Ratio Breakdown Highlights */}
                     <div className="space-y-3">
                       <div className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-[#1e232d]/40 flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1208,20 +1222,355 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
         )}
 
         {/* =========================================================
-            TAB 4: EXPORTABLE REPORTS & BIR COMPLIANCE HUB
+            TAB 4: LIVE CASH MANAGEMENT (EXACT REPLICA OF CASH PAGE)
+            ========================================================= */}
+        {activeTab === 'cash' && (
+          <div className="space-y-6">
+            {/* Header: EXACT banner style as Live Cash Management */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase font-heading tracking-tight">
+                    CASH FLOW & SESSION STATUS
+                  </h3>
+                  <span
+                    className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1.5 ${
+                      isSessionOpen
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isSessionOpen
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-rose-500'
+                      }`}
+                    />
+                    {isSessionOpen ? 'DRAWER OPEN' : 'SESSION CLOSED'}
+                  </span>
+                </div>
+
+                {isSessionOpen && activeSession ? (
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    Session{' '}
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                      {activeSession.session_number}
+                    </span>{' '}
+                    • Opened by {activeSession.opened_by_name} at{' '}
+                    {format(new Date(activeSession.opened_at), 'h:mm a')}
+                  </p>
+                ) : (
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    No cash session currently active. Money transactions require
+                    an open session.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate('/cash-management')}
+                className="bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer self-start sm:self-auto"
+              >
+                <span>Go to Cash Management</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* 5-Card Metrics: EXACT same cards as Live Cash Management */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3.5 font-body">
+              {/* 1. PHYSICAL DRAWER CASH (Hero) */}
+              <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs flex flex-col justify-between min-h-[105px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white/80">
+                    Physical Drawer Cash
+                  </span>
+                  <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
+                    <Wallet className="w-3.5 h-3.5 text-white" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-2xl sm:text-3xl font-heading font-black tracking-tight truncate">
+                    ₱
+                    {(
+                      currentDrawerCash ??
+                      cashMetrics.expectedDrawerCash ??
+                      0
+                    ).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
+                      IN REGISTER NOW
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. OPENING FLOAT */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between min-h-[105px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+                    Opening Float
+                  </span>
+                  <div className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
+                    <Banknote className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-base sm:text-xl font-heading font-black text-slate-900 dark:text-white truncate">
+                    ₱
+                    {cashMetrics.openingFloat.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                    Starting float
+                  </p>
+                </div>
+              </div>
+
+              {/* 3. COLLECTIONS */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between min-h-[105px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+                    Collections
+                  </span>
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                    <Coins className="w-3.5 h-3.5 text-emerald-500" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-base sm:text-xl font-heading font-black text-emerald-600 dark:text-emerald-400 truncate">
+                    ₱
+                    {(
+                      cashMetrics.cashSales + cashMetrics.cashLogbook
+                    ).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                    POS & Logbook Cash
+                  </p>
+                </div>
+              </div>
+
+              {/* 4. MANUAL IN / OUT */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between min-h-[105px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+                    Manual In / Out
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                      <ArrowDownRight className="w-3 h-3" />
+                    </div>
+                    <div className="w-5 h-5 rounded bg-rose-500/10 flex items-center justify-center text-rose-500">
+                      <ArrowUpRight className="w-3 h-3" />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      +₱{Math.round(cashMetrics.cashInTotal)}
+                    </span>
+                    <span className="text-slate-300 dark:text-slate-600">
+                      /
+                    </span>
+                    <span className="text-rose-600 dark:text-rose-400">
+                      -₱{Math.round(cashMetrics.cashOutTotal)}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                    Net:{' '}
+                    {cashMetrics.cashInTotal - cashMetrics.cashOutTotal >= 0
+                      ? '+'
+                      : '-'}
+                    ₱
+                    {Math.abs(
+                      cashMetrics.cashInTotal - cashMetrics.cashOutTotal
+                    ).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {/* 5. DIGITAL NON-DRAWER */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between min-h-[105px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+                    Digital Non-Drawer
+                  </span>
+                  <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <Smartphone className="w-3.5 h-3.5 text-blue-500" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-base sm:text-xl font-heading font-black text-blue-600 dark:text-blue-400 truncate">
+                    ₱
+                    {cashMetrics.totalDigitalCollections.toLocaleString(
+                      'en-US',
+                      {
+                        minimumFractionDigits: 2,
+                      }
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                    GCash / Maya
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* SESSION ACTIVITY LEDGER: EXACT replica of Cash page ledger style */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    SESSION ACTIVITY LEDGER
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Real-time log of physical cash inflows, outflows, and
+                    digital collections.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => navigate('/cash-management')}
+                  className="text-xs font-bold text-[#123c73] dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>View All Movements</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+                {cashTransactions.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    No activity records found in this session yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-neutral-900/60 text-slate-500 dark:text-slate-400 uppercase font-black tracking-wider text-[10px] border-b border-slate-200 dark:border-white/5">
+                        <tr>
+                          <th className="py-3 px-4">Time</th>
+                          <th className="py-3 px-4">Type</th>
+                          <th className="py-3 px-4">Activity Description</th>
+                          <th className="py-3 px-4">Staff / Source</th>
+                          <th className="py-3 px-4 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                        {cashTransactions.slice(0, 8).map((tx) => {
+                          const isOutflow = tx.type === 'cash_out';
+                          return (
+                            <tr
+                              key={tx.id}
+                              className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]"
+                            >
+                              <td className="py-3 px-4 font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                {format(new Date(tx.created_at), 'h:mm a')}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                    tx.source === 'pos'
+                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                      : tx.source === 'logbook' ||
+                                          tx.source === 'receipt'
+                                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                                        : isOutflow
+                                          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                          : tx.type === 'digital_in'
+                                            ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {tx.source === 'pos' && (
+                                    <ShoppingBag className="w-3 h-3" />
+                                  )}
+                                  {(tx.source === 'logbook' ||
+                                    tx.source === 'receipt') && (
+                                    <Users className="w-3 h-3" />
+                                  )}
+                                  {tx.source === 'manual' &&
+                                    tx.type === 'cash_in' && (
+                                      <ArrowDownRight className="w-3 h-3" />
+                                    )}
+                                  {tx.source === 'manual' &&
+                                    tx.type === 'cash_out' && (
+                                      <ArrowUpRight className="w-3 h-3" />
+                                    )}
+                                  {tx.source === 'manual' &&
+                                    tx.type === 'digital_in' && (
+                                      <Smartphone className="w-3 h-3" />
+                                    )}
+                                  {tx.displayType}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-slate-800 dark:text-slate-200">
+                                <span className="font-bold block">
+                                  {tx.reason}
+                                </span>
+                                {tx.reference_number && (
+                                  <span className="text-[10px] font-mono text-blue-500 font-normal">
+                                    Ref: {tx.reference_number}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                <div className="flex items-center gap-1">
+                                  <User className="w-3 h-3 text-slate-400" />
+                                  <span>{tx.performed_by_name}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                                <span
+                                  className={`font-mono font-bold text-sm ${
+                                    isOutflow
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : tx.type === 'digital_in'
+                                        ? 'text-blue-600 dark:text-blue-400'
+                                        : 'text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {isOutflow ? '-' : '+'}₱
+                                  {Number(tx.amount).toLocaleString('en-US', {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================================
+            TAB 5: EXPORTABLE REPORTS & BIR COMPLIANCE HUB
             ========================================================= */}
         {activeTab === 'reports' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase font-heading flex items-center gap-2">
-                  Official Reports & BIR Center
+                  Official Reports & Compliance Center
                   <span className="text-[10px] bg-blue-100 text-[#123c73] dark:bg-blue-900/60 dark:text-blue-300 px-2 py-0.5 rounded-full font-extrabold">
-                    BIR Ready
+                    Audit Ready
                   </span>
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Generate official sales journals, inventory logs, and
+                  Generate official sales journals, cash balancing logs, and
                   subscription reports for BIR compliance and internal audits.
                 </p>
               </div>
@@ -1240,7 +1589,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             </div>
 
             {/* Quick Report Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
               {/* 1. BIR REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
@@ -1254,8 +1603,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Official Sales & Receipts Journal
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    OR Numbers, Gross Sales, VAT-Exempt entries, and payment
-                    details for BIR book audit.
+                    OR Numbers, Gross Sales, and VAT-Exempt entries for BIR.
                   </p>
                 </div>
                 <button
@@ -1270,7 +1618,36 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </button>
               </div>
 
-              {/* 2. SALES REPORT */}
+              {/* 2. CASH SESSIONS REPORT */}
+              <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-amber-500 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded">
+                      Cash Management
+                    </span>
+                    <Wallet className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                    Cash Sessions & Reconciliations
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Daily opening floats, actual counted cash, and variance
+                    shortages or overages.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedReportType('cash');
+                    setIsExportModalOpen(true);
+                  }}
+                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-amber-600 hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Generate Cash Audit</span>
+                </button>
+              </div>
+
+              {/* 3. SALES REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1283,8 +1660,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     Product Movement & Retail Log
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    Itemized sales receipts, quantity sold, stock movements, and
-                    gross profit generation.
+                    Itemized sales receipts, quantity sold, and stock movements.
                   </p>
                 </div>
                 <button
@@ -1299,7 +1675,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </button>
               </div>
 
-              {/* 3. LOGBOOK REPORT */}
+              {/* 4. LOGBOOK REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1309,11 +1685,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     <Clock className="w-4 h-4 text-slate-400" />
                   </div>
                   <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                    Attendance & Member Utilization
+                    Attendance & Member Access
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    Daily check-in logs, walk-in admission fees, pass
-                    redemptions, and staff signatures.
+                    Daily check-in logs, walk-in admission fees, and front desk
+                    passes.
                   </p>
                 </div>
                 <button
