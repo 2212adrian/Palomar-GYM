@@ -1,4 +1,3 @@
-// src/pages/cash/CashManagementPage.tsx
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import {
@@ -20,13 +19,13 @@ import { useAuthStore } from '../../stores/authStore';
 import { openCashSession } from '../../lib/supabase/cashService';
 import { CashMetricsCards } from './components/CashMetricsCards';
 import { CashTransactionsTable } from './components/CashTransactionsTable';
-import { CashInModal } from './components/CashInModal';
-import { CashOutModal } from './components/CashOutModal';
-import { DigitalInModal } from './components/DigitalInModal';
-import { CloseSessionModal } from './components/CloseSessionModal';
-import { SessionDetailsModal } from './components/SessionDetailsModal';
+import { CashTransactionModal } from './components/CashTransactionModal';
+import {
+  CloseSessionModal,
+  SessionDetailsModal,
+} from './components/CashSessionModals';
 import { Button } from '../../components/ui/Button';
-import type { CashSession } from '../../types/cash';
+import type { CashSession, CashTransactionType } from '../../types/cash';
 
 const PRESET_FLOATS = [500, 1000, 2000, 3000, 5000];
 
@@ -50,15 +49,15 @@ export const CashManagementPage: React.FC = () => {
     subscribeRealtime,
   } = useCashSessionStore();
 
-  // Modal states
-  const [showCashIn, setShowCashIn] = useState(false);
-  const [showCashOut, setShowCashOut] = useState(false);
-  const [showDigitalIn, setShowDigitalIn] = useState(false);
+  // Unified modal state
+  const [activeTxType, setActiveTxType] = useState<CashTransactionType | null>(
+    null
+  );
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedHistorySession, setSelectedHistorySession] =
     useState<CashSession | null>(null);
 
-  // Start Session Form State (Admin)
+  // Opening float inputs
   const [openingFloatInput, setOpeningFloatInput] = useState('1000');
   const [openingNotes, setOpeningNotes] = useState('');
   const [isOpeningSession, setIsOpeningSession] = useState(false);
@@ -79,14 +78,17 @@ export const CashManagementPage: React.FC = () => {
 
     const floatVal = parseFloat(openingFloatInput);
     if (isNaN(floatVal) || floatVal < 0) {
-      toast.error('Please enter a valid opening float amount (0 or greater).');
+      toast.error('Please enter a valid opening float amount.');
       return;
     }
 
     try {
       setIsOpeningSession(true);
       const actorName =
-        profile?.username || user?.user_metadata?.full_name || user?.email || 'Admin';
+        profile?.username ||
+        user?.user_metadata?.full_name ||
+        user?.email ||
+        'Admin';
 
       await openCashSession({
         openingFloat: floatVal,
@@ -102,7 +104,7 @@ export const CashManagementPage: React.FC = () => {
       await loadActiveSession();
       await loadHistory();
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to open cash session.');
+      toast.error(err?.message || 'Failed to open cash session in Supabase.');
     } finally {
       setIsOpeningSession(false);
     }
@@ -136,7 +138,9 @@ export const CashManagementPage: React.FC = () => {
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    isSessionOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                    isSessionOpen
+                      ? 'bg-emerald-500 animate-pulse'
+                      : 'bg-rose-500'
                   }`}
                 />
                 {isSessionOpen ? 'DRAWER OPEN' : 'SESSION CLOSED'}
@@ -144,36 +148,41 @@ export const CashManagementPage: React.FC = () => {
             </div>
             {isSessionOpen && activeSession ? (
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Session <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{activeSession.session_number}</span> • Opened by {activeSession.opened_by_name} at{' '}
+                Session{' '}
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {activeSession.session_number}
+                </span>{' '}
+                • Opened by {activeSession.opened_by_name} at{' '}
                 {format(new Date(activeSession.opened_at), 'h:mm a')}
               </p>
             ) : (
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                No cash session currently active. Money transactions require an open session.
+                No cash session currently active. Money transactions require an
+                open session.
               </p>
             )}
           </div>
         </div>
 
-        {/* Action Buttons Bar */}
+        {/* Top Action Buttons */}
         {isSessionOpen && (
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setShowCashIn(true)}
+              onClick={() => setActiveTxType('cash_in')}
               className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
             >
               <ArrowDownRight className="w-4 h-4" />
               Cash In
             </button>
             <button
-              onClick={() => setShowCashOut(true)}
+              onClick={() => setActiveTxType('cash_out')}
               className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
             >
               <ArrowUpRight className="w-4 h-4" />
               Cash Out
             </button>
             <button
-              onClick={() => setShowDigitalIn(true)}
+              onClick={() => setActiveTxType('digital_in')}
               className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
             >
               <Smartphone className="w-4 h-4" />
@@ -192,23 +201,20 @@ export const CashManagementPage: React.FC = () => {
         )}
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Drawer Ledger */}
       {isSessionOpen ? (
         <div className="space-y-6">
-          {/* Top Metrics Cards */}
           <CashMetricsCards metrics={metrics} />
 
-          {/* Activity Ledger Table */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  SESSION ACTIVITY LEDGER
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Real-time log of physical cash inflows, outflows, and digital collections.
-                </p>
-              </div>
+            <div>
+              <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                SESSION ACTIVITY LEDGER
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Real-time log of physical cash inflows, outflows, and digital
+                collections.
+              </p>
             </div>
             <CashTransactionsTable
               transactions={transactions}
@@ -217,10 +223,9 @@ export const CashManagementPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        /* Closed Session State */
+        /* Closed State */
         <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8">
           {isAdmin ? (
-            /* Admin Start Session Form */
             <div className="max-w-xl mx-auto text-center space-y-6">
               <div className="w-16 h-16 rounded-3xl bg-[#1b365d]/10 dark:bg-[#bf0202]/15 text-[#1b365d] dark:text-[#bf0202] flex items-center justify-center mx-auto">
                 <Wallet className="w-8 h-8" />
@@ -231,12 +236,15 @@ export const CashManagementPage: React.FC = () => {
                   START NEW CASH SESSION
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-                  Start today's cash session by setting the physical opening float in the cash drawer.
-                  Staff will be able to process sales, attendance, and cash movements.
+                  Start today's cash session by setting the physical opening
+                  float in the cash drawer.
                 </p>
               </div>
 
-              <form onSubmit={handleStartSession} className="space-y-5 text-left">
+              <form
+                onSubmit={handleStartSession}
+                className="space-y-5 text-left"
+              >
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">
                     Opening Float Amount (₱) *
@@ -256,7 +264,6 @@ export const CashManagementPage: React.FC = () => {
                     />
                   </div>
 
-                  {/* Preset Float Pills */}
                   <div className="flex flex-wrap gap-2 mt-2.5">
                     {PRESET_FLOATS.map((preset) => (
                       <button
@@ -300,24 +307,24 @@ export const CashManagementPage: React.FC = () => {
               </form>
             </div>
           ) : (
-            /* Staff Awaiting Session State */
             <div className="max-w-md mx-auto text-center py-8 space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
                 <Lock className="w-7 h-7" />
               </div>
-              <h3 className="text-base font-heading font-black text-slate-900 dark:text-white">
+              <h3 className="text-base font-heading font-black">
                 CASH SESSION IS CURRENTLY CLOSED
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                An administrator must open today's cash drawer session with an initial opening float
-                before cash payments or manual movements can be accepted.
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                An administrator must open today's cash drawer session with an
+                initial opening float before cash payments or manual movements
+                can be accepted.
               </p>
             </div>
           )}
         </div>
       )}
 
-      {/* Historical Sessions Section */}
+      {/* Historical Sessions */}
       <div className="space-y-3 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -364,7 +371,10 @@ export const CashManagementPage: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
                           {s.closed_at
-                            ? format(new Date(s.closed_at), 'MMM d, yyyy h:mm a')
+                            ? format(
+                                new Date(s.closed_at),
+                                'MMM d, yyyy h:mm a'
+                              )
                             : 'In progress'}
                         </td>
                         <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
@@ -374,10 +384,17 @@ export const CashManagementPage: React.FC = () => {
                           {s.closed_by_name || '-'}
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                          ₱{Number(s.opening_float).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ₱
+                          {Number(s.opening_float).toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                          })}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          ₱{Number(s.closing_actual_cash || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ₱
+                          {Number(s.closing_actual_cash || 0).toLocaleString(
+                            'en-US',
+                            { minimumFractionDigits: 2 }
+                          )}
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span
@@ -390,12 +407,14 @@ export const CashManagementPage: React.FC = () => {
                             }`}
                           >
                             {disc === 0 && <CheckCircle2 className="w-3 h-3" />}
-                            {disc !== 0 && <AlertTriangle className="w-3 h-3" />}
+                            {disc !== 0 && (
+                              <AlertTriangle className="w-3 h-3" />
+                            )}
                             {disc === 0
                               ? 'BALANCED'
                               : disc > 0
-                                ? `+₱${disc.toFixed(2)}`
-                                : `-₱${Math.abs(disc).toFixed(2)}`}
+                                ? `+₱${disc.toFixed(2)} OVERAGE`
+                                : `-₱${Math.abs(disc).toFixed(2)} CASH DISCREPANCY`}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center">
@@ -417,39 +436,29 @@ export const CashManagementPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Modals */}
-      {isSessionOpen && activeSession && (
-        <>
-          <CashInModal
-            isOpen={showCashIn}
-            onClose={() => setShowCashIn(false)}
-            sessionId={activeSession.id}
-            onSuccess={refreshTransactions}
-          />
-          <CashOutModal
-            isOpen={showCashOut}
-            onClose={() => setShowCashOut(false)}
-            sessionId={activeSession.id}
-            currentDrawerCash={currentDrawerCash}
-            onSuccess={refreshTransactions}
-          />
-          <DigitalInModal
-            isOpen={showDigitalIn}
-            onClose={() => setShowDigitalIn(false)}
-            sessionId={activeSession.id}
-            onSuccess={refreshTransactions}
-          />
-          <CloseSessionModal
-            isOpen={showCloseModal}
-            onClose={() => setShowCloseModal(false)}
-            session={activeSession}
-            metrics={metrics}
-            onSuccess={async () => {
-              await loadActiveSession();
-              await loadHistory();
-            }}
-          />
-        </>
+      {/* Unified Modals */}
+      {isSessionOpen && activeSession && activeTxType && (
+        <CashTransactionModal
+          isOpen={Boolean(activeTxType)}
+          onClose={() => setActiveTxType(null)}
+          type={activeTxType}
+          sessionId={activeSession.id}
+          currentDrawerCash={currentDrawerCash}
+          onSuccess={refreshTransactions}
+        />
+      )}
+
+      {isSessionOpen && activeSession && showCloseModal && (
+        <CloseSessionModal
+          isOpen={showCloseModal}
+          onClose={() => setShowCloseModal(false)}
+          session={activeSession}
+          metrics={metrics}
+          onSuccess={async () => {
+            await loadActiveSession();
+            await loadHistory();
+          }}
+        />
       )}
 
       {selectedHistorySession && (

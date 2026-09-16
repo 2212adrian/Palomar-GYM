@@ -3,33 +3,43 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase/client';
 import {
   fetchActiveCashSession,
-  fetchSessionTransactions,
   fetchCashSessionHistory,
+  fetchSessionTransactions,
 } from '../lib/supabase/cashService';
 import type {
   CashSession,
-  CashTransaction,
   CashFlowMetrics,
 } from '../types/cash';
 
-interface CashSessionState {
+export interface UnifiedActivityItem {
+  id: string;
+  source: 'manual' | 'pos' | 'logbook' | 'receipt';
+  type: 'cash_in' | 'cash_out' | 'digital_in';
+  displayType: string;
+  reason: string;
+  reference_number?: string | null;
+  performed_by_name: string;
+  amount: number;
+  created_at: string;
+}
+
+interface CashSessionStoreState {
   activeSession: CashSession | null;
-  transactions: CashTransaction[];
+  transactions: UnifiedActivityItem[];
   history: CashSession[];
   metrics: CashFlowMetrics;
   isLoading: boolean;
   isSessionOpen: boolean;
   currentDrawerCash: number;
 
-  // Actions
   loadActiveSession: () => Promise<void>;
   loadHistory: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
-  recomputeMetrics: () => Promise<void>;
+  recalculateMetrics: () => Promise<void>;
   subscribeRealtime: () => () => void;
 }
 
-const DEFAULT_METRICS: CashFlowMetrics = {
+const INITIAL_METRICS: CashFlowMetrics = {
   openingFloat: 0,
   cashInTotal: 0,
   cashOutTotal: 0,
@@ -43,12 +53,16 @@ const DEFAULT_METRICS: CashFlowMetrics = {
   totalSessionCollections: 0,
 };
 
-export const useCashSessionStore = create<CashSessionState>((set, get) => ({
+let globalRealtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+let realtimeSubscriberCount = 0;
+let debounceRecalculateTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const useCashSessionStore = create<CashSessionStoreState>((set, get) => ({
   activeSession: null,
   transactions: [],
   history: [],
-  metrics: DEFAULT_METRICS,
-  isLoading: true,
+  metrics: INITIAL_METRICS,
+  isLoading: false,
   isSessionOpen: false,
   currentDrawerCash: 0,
 
@@ -56,24 +70,28 @@ export const useCashSessionStore = create<CashSessionState>((set, get) => ({
     try {
       set({ isLoading: true });
       const session = await fetchActiveCashSession();
-      if (session) {
-        set({
-          activeSession: session,
-          isSessionOpen: session.status === 'open',
-        });
-        await get().refreshTransactions();
-      } else {
+
+      if (!session) {
         set({
           activeSession: null,
           isSessionOpen: false,
           transactions: [],
-          metrics: DEFAULT_METRICS,
+          metrics: INITIAL_METRICS,
           currentDrawerCash: 0,
           isLoading: false,
         });
+        return;
       }
+
+      set({
+        activeSession: session,
+        isSessionOpen: true,
+      });
+
+      await get().recalculateMetrics();
     } catch (err) {
-      console.warn('Failed to load active cash session:', err);
+      console.error('Failed to load active session:', err);
+    } finally {
       set({ isLoading: false });
     }
   },
@@ -83,184 +101,343 @@ export const useCashSessionStore = create<CashSessionState>((set, get) => ({
       const history = await fetchCashSessionHistory(30);
       set({ history });
     } catch (err) {
-      console.warn('Failed to load cash session history:', err);
+      console.error('Failed to load session history:', err);
     }
   },
 
   refreshTransactions: async () => {
-    const { activeSession } = get();
-    if (!activeSession) return;
-
-    try {
-      const txs = await fetchSessionTransactions(activeSession.id);
-      set({ transactions: txs });
-      await get().recomputeMetrics();
-    } catch (err) {
-      console.warn('Failed to refresh cash transactions:', err);
-    } finally {
-      set({ isLoading: false });
-    }
+    await get().recalculateMetrics();
   },
 
-  recomputeMetrics: async () => {
-    const { activeSession, transactions } = get();
-    if (!activeSession) {
-      set({ metrics: DEFAULT_METRICS, currentDrawerCash: 0 });
+  recalculateMetrics: async () => {
+    const session = get().activeSession;
+    if (!session) {
+      set({ metrics: INITIAL_METRICS, currentDrawerCash: 0, transactions: [] });
       return;
     }
 
-    const openingFloat = Number(activeSession.opening_float) || 0;
-
-    // 1. Calculate manual cash movements from cash_transactions
-    let cashInTotal = 0;
-    let cashOutTotal = 0;
-    let digitalInTotal = 0;
-
-    for (const tx of transactions) {
-      const amt = Number(tx.amount) || 0;
-      if (tx.type === 'cash_in') cashInTotal += amt;
-      else if (tx.type === 'cash_out') cashOutTotal += amt;
-      else if (tx.type === 'digital_in') digitalInTotal += amt;
-    }
-
-    // 2. Fetch sales created during session window
-    let cashSales = 0;
-    let digitalSales = 0;
+    const openingFloat = Number(session.opening_float || 0);
+    const effectiveStart = session.opened_at;
 
     try {
-      const sessionStart = activeSession.opened_at;
-      const sessionEnd = activeSession.closed_at || new Date().toISOString();
+      // 1. Fetch Manual Drawer Movements (Cash In / Cash Out / Digital In)
+      let rawManualTxs: any[] = [];
+      try {
+        const { data: manualData, error: manualErr } = await supabase
+          .from('cash_transactions')
+          .select('*')
+          .or(`session_id.eq.${session.id},created_at.gte.${effectiveStart}`)
+          .order('created_at', { ascending: false });
 
-      const { data: salesData } = await supabase
+        if (!manualErr && manualData) {
+          rawManualTxs = manualData;
+        } else {
+          rawManualTxs = await fetchSessionTransactions(session.id);
+        }
+      } catch (manualQueryErr) {
+        console.warn('Error fetching manual cash transactions, retrying service:', manualQueryErr);
+        try {
+          rawManualTxs = await fetchSessionTransactions(session.id);
+        } catch (fallbackErr) {
+          console.error('Failed to load manual cash transactions:', fallbackErr);
+        }
+      }
+
+      let cashInTotal = 0;
+      let cashOutTotal = 0;
+      let digitalInTotal = 0;
+
+      const mappedManualTxs: UnifiedActivityItem[] = rawManualTxs.map((t: any) => {
+        const amt = Number(t.amount || 0);
+        const txType = String(t.type || '').trim().toLowerCase();
+
+        if (txType === 'cash_in') cashInTotal += amt;
+        else if (txType === 'cash_out') cashOutTotal += amt;
+        else if (txType === 'digital_in') digitalInTotal += amt;
+
+        return {
+          id: String(t.id),
+          source: 'manual',
+          type: (txType === 'cash_out' ? 'cash_out' : txType === 'digital_in' ? 'digital_in' : 'cash_in') as 'cash_in' | 'cash_out' | 'digital_in',
+          displayType:
+            txType === 'cash_in'
+              ? 'CASH IN'
+              : txType === 'cash_out'
+              ? 'CASH OUT'
+              : 'DIGITAL IN',
+          reason: t.reason || 'Drawer Movement',
+          reference_number: t.reference_number || null,
+          performed_by_name: t.performed_by_name || 'Staff',
+          amount: amt,
+          created_at: t.created_at,
+        };
+      });
+
+      // 2. Fetch POS Sales within Active Session Window
+      const { data: salesData, error: salesErr } = await supabase
         .from('sales')
-        .select('total_amount, payment_method, created_at, deleted_at')
-        .gte('created_at', sessionStart)
-        .lte('created_at', sessionEnd)
-        .is('deleted_at', null);
+        .select('id, total_amount, payment_method, product_name, items, receipt_no, reference_number, created_at, deleted_at')
+        .is('deleted_at', null)
+        .gte('created_at', effectiveStart);
 
-      if (salesData && Array.isArray(salesData)) {
-        for (const s of salesData) {
-          const amt = Number(s.total_amount) || 0;
-          const method = String(s.payment_method || '').toLowerCase();
-          if (method === 'cash') {
-            cashSales += amt;
-          } else {
-            digitalSales += amt;
-          }
-        }
+      if (salesErr) {
+        console.warn('Error fetching POS sales for cash session:', salesErr);
       }
-    } catch (err) {
-      console.warn('Could not query sales for cash session calculation:', err);
-    }
 
-    // 3. Fetch logbook attendance created during session window
-    let cashLogbook = 0;
-    let digitalLogbook = 0;
+      let cashSales = 0;
+      let digitalSales = 0;
 
-    try {
-      const sessionStart = activeSession.opened_at;
-      const sessionEnd = activeSession.closed_at || new Date().toISOString();
+      const mappedSalesTxs: UnifiedActivityItem[] = (salesData || []).map((s: any) => {
+        const amt = Number(s.total_amount || 0);
+        const method = String(s.payment_method || '').toLowerCase();
+        const isCash = method.includes('cash') && !method.includes('gcash');
 
-      const { data: attData } = await supabase
+        if (isCash) {
+          cashSales += amt;
+        } else {
+          digitalSales += amt;
+        }
+
+        const itemsDesc =
+          s.items && Array.isArray(s.items) && s.items.length > 0
+            ? s.items.map((i: any) => `${i.productName || i.product_name} (${i.quantity || 1}x)`).join(', ')
+            : s.product_name || 'Product Sale';
+
+        return {
+          id: String(s.id),
+          source: 'pos',
+          type: isCash ? 'cash_in' : 'digital_in',
+          displayType: isCash ? 'POS SALE' : 'POS DIGITAL',
+          reason: itemsDesc,
+          reference_number: s.reference_number || (s.receipt_no ? `Receipt: ${s.receipt_no}` : null),
+          performed_by_name: 'Cashier / POS',
+          amount: amt,
+          created_at: s.created_at,
+        };
+      });
+
+      // 3. Fetch Attendance Check-Ins within Active Session Window
+      const { data: attendanceData, error: attErr } = await supabase
         .from('attendance')
-        .select('entry_fee, payment_method, check_in_time, deleted_at')
-        .gte('check_in_time', sessionStart)
-        .lte('check_in_time', sessionEnd)
-        .is('deleted_at', null);
+        .select('id, customer_name, customer_type, plan_name, entry_fee, payment_method, gcash_ref_no, receipt_number, staff_name, check_in_time, created_at, deleted_at')
+        .is('deleted_at', null)
+        .or(`check_in_time.gte.${effectiveStart},created_at.gte.${effectiveStart}`);
 
-      if (attData && Array.isArray(attData)) {
-        for (const a of attData) {
-          const amt = Number(a.entry_fee) || 0;
-          const method = String(a.payment_method || '').toLowerCase();
-          if (method === 'cash') {
-            cashLogbook += amt;
-          } else {
-            digitalLogbook += amt;
-          }
-        }
+      if (attErr) {
+        console.error('Error fetching attendance for cash session:', attErr);
       }
-    } catch (err) {
-      console.warn('Could not query attendance for cash session calculation:', err);
+
+      let cashAttendance = 0;
+      let digitalAttendance = 0;
+
+      const mappedAttendanceTxs: UnifiedActivityItem[] = [];
+
+      (attendanceData || []).forEach((a: any) => {
+        const amt = Number(a.entry_fee || 0);
+
+        if (amt > 0) {
+          const rcptNo = String(a.receipt_number || '').trim().toLowerCase();
+          const custType = String(a.customer_type || '').trim().toLowerCase();
+          const planName = String(a.plan_name || '').trim().toLowerCase();
+
+          // Skip card transactions and records already handled by receipts table
+          if (
+            (rcptNo && receiptIdsSet.has(rcptNo)) ||
+            custType === 'card' ||
+            planName.includes('card')
+          ) {
+            return;
+          }
+
+          const method = String(a.payment_method || '').trim().toLowerCase();
+          const isCash = method.includes('cash') && !method.includes('gcash');
+
+          if (isCash) {
+            cashAttendance += amt;
+          } else {
+            digitalAttendance += amt;
+          }
+
+          mappedAttendanceTxs.push({
+            id: String(a.id),
+            source: 'logbook',
+            type: isCash ? 'cash_in' : 'digital_in',
+            displayType: isCash ? 'CHECK-IN (CASH)' : 'CHECK-IN (GCASH)',
+            reason: `${a.customer_name || 'Guest'} (${a.customer_type || 'Walk-In'} - ${a.plan_name || 'Pass'})`,
+            reference_number: a.gcash_ref_no || a.receipt_number || null,
+            performed_by_name: a.staff_name || 'Reception',
+            amount: amt,
+            created_at: a.check_in_time || a.created_at,
+          });
+        }
+      });
+
+      // 4. Fetch Subscriptions, Renewals, and Card Purchases from receipts
+      const { data: receiptsData, error: rcptErr } = await supabase
+        .from('receipts')
+        .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at')
+        .gte('created_at', effectiveStart);
+
+      if (rcptErr) {
+        console.warn('Error fetching receipts for cash session:', rcptErr);
+      }
+
+      const receiptIdsSet = new Set(
+        (receiptsData || []).map((r: any) => String(r.id || '').trim().toLowerCase())
+      );
+
+      let cashReceipts = 0;
+      let digitalReceipts = 0;
+
+      const mappedReceiptsTxs: UnifiedActivityItem[] = (receiptsData || []).map((r: any) => {
+        const amt = Number(r.amount || 0);
+        const method = String(r.payment_method || '').trim().toLowerCase();
+        const isCash = method.includes('cash') && !method.includes('gcash');
+
+        if (isCash) {
+          cashReceipts += amt;
+        } else {
+          digitalReceipts += amt;
+        }
+
+        const desc = String(r.item_description || '').toLowerCase();
+        const isCardFee = desc.includes('card');
+        const isRenewal = desc.includes('renewal');
+
+        let displayType = isCash ? 'MEMBERSHIP (CASH)' : 'MEMBERSHIP (DIGITAL)';
+        if (isCardFee) {
+          displayType = isCash ? 'CARD FEE (CASH)' : 'CARD FEE (DIGITAL)';
+        } else if (isRenewal) {
+          displayType = isCash ? 'RENEWAL (CASH)' : 'RENEWAL (DIGITAL)';
+        }
+
+        return {
+          id: `rcpt-${r.id}`,
+          source: 'receipt',
+          type: isCash ? 'cash_in' : 'digital_in',
+          displayType,
+          reason: `${r.customer_name || 'Member'} - ${r.item_description || 'Subscription Plan'}`,
+          reference_number: r.gcash_ref_no || null,
+          performed_by_name: 'Reception',
+          amount: amt,
+          created_at: r.created_at,
+        };
+      });
+
+      const totalCashLogbook = cashAttendance + cashReceipts;
+      const totalDigitalLogbook = digitalAttendance + digitalReceipts;
+
+      // 5. Calculate Metrics Totals
+      const totalCashCollections = cashSales + totalCashLogbook;
+      const netManualDrawer = cashInTotal - cashOutTotal;
+
+      const expectedDrawerCash =
+        openingFloat +
+        totalCashCollections +
+        netManualDrawer;
+
+      const totalDigitalCollections =
+        digitalSales + totalDigitalLogbook + digitalInTotal;
+
+      const totalSessionCollections =
+        totalCashCollections + totalDigitalCollections + cashInTotal;
+
+      const computedMetrics: CashFlowMetrics = {
+        openingFloat,
+        cashInTotal: Math.round(cashInTotal * 100) / 100,      
+        cashOutTotal: Math.round(cashOutTotal * 100) / 100,   
+        digitalInTotal,
+        cashSales: Math.round(cashSales * 100) / 100,
+        digitalSales: Math.round(digitalSales * 100) / 100,
+        cashLogbook: Math.round(totalCashLogbook * 100) / 100,
+        digitalLogbook: Math.round(totalDigitalLogbook * 100) / 100,
+        expectedDrawerCash: Math.round(expectedDrawerCash * 100) / 100,
+        totalDigitalCollections: Math.round(totalDigitalCollections * 100) / 100,
+        totalSessionCollections: Math.round(totalSessionCollections * 100) / 100,
+      };
+
+      // 6. Combine all activity items and sort newest first
+      const allUnifiedActivity = [
+        ...mappedManualTxs,
+        ...mappedSalesTxs,
+        ...mappedAttendanceTxs,
+        ...mappedReceiptsTxs,
+      ].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      set({
+        metrics: computedMetrics,
+        currentDrawerCash: computedMetrics.expectedDrawerCash,
+        transactions: allUnifiedActivity,
+      });
+    } catch (error) {
+      console.error('Error recalculating cash metrics:', error);
     }
-
-    // 4. Synthesize Final Metrics
-    const expectedDrawerCash = openingFloat + cashSales + cashLogbook + cashInTotal - cashOutTotal;
-    const totalDigitalCollections = digitalSales + digitalLogbook + digitalInTotal;
-    const totalSessionCollections = cashSales + cashLogbook + totalDigitalCollections;
-
-    const newMetrics: CashFlowMetrics = {
-      openingFloat,
-      cashInTotal,
-      cashOutTotal,
-      digitalInTotal,
-      cashSales,
-      digitalSales,
-      cashLogbook,
-      digitalLogbook,
-      expectedDrawerCash,
-      totalDigitalCollections,
-      totalSessionCollections,
-    };
-
-    set({
-      metrics: newMetrics,
-      currentDrawerCash: Math.max(0, expectedDrawerCash),
-    });
   },
 
   subscribeRealtime: () => {
-    // Initial fetch
-    get().loadActiveSession();
-    get().loadHistory();
+    realtimeSubscriberCount += 1;
 
-    const channel = supabase
-      .channel('cash-management-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cash_sessions' },
-        () => {
-          get().loadActiveSession();
-          get().loadHistory();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cash_transactions' },
-        () => {
-          get().refreshTransactions();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sales' },
-        () => {
-          get().recomputeMetrics();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance' },
-        () => {
-          get().recomputeMetrics();
-        }
-      )
-      .subscribe();
-
-    // Listen to window custom events from client sales/logbook mutations
-    const handleSalesUpdate = () => {
-      get().recomputeMetrics();
-    };
-    const handleLogbookUpdate = () => {
-      get().recomputeMetrics();
+    const triggerRecalculate = () => {
+      if (debounceRecalculateTimer) clearTimeout(debounceRecalculateTimer);
+      debounceRecalculateTimer = setTimeout(() => {
+        get().recalculateMetrics();
+      }, 75);
     };
 
-    window.addEventListener('sales-kpi-update', handleSalesUpdate);
-    window.addEventListener('logbook-kpi-update', handleLogbookUpdate);
+    if (!globalRealtimeChannel) {
+      const channelUniqueKey = `live_cash_sync_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const channel = supabase.channel(channelUniqueKey);
+
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cash_sessions' },
+          () => {
+            get().loadActiveSession();
+            get().loadHistory();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cash_transactions' },
+          () => {
+            triggerRecalculate();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'sales' },
+          () => {
+            triggerRecalculate();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'attendance' },
+          () => {
+            triggerRecalculate();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'receipts' },
+          () => {
+            triggerRecalculate();
+          }
+        );
+
+      channel.subscribe();
+      globalRealtimeChannel = channel;
+    }
 
     return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener('sales-kpi-update', handleSalesUpdate);
-      window.removeEventListener('logbook-kpi-update', handleLogbookUpdate);
+      realtimeSubscriberCount = Math.max(0, realtimeSubscriberCount - 1);
+      if (realtimeSubscriberCount === 0 && globalRealtimeChannel) {
+        supabase.removeChannel(globalRealtimeChannel);
+        globalRealtimeChannel = null;
+      }
     };
   },
 }));

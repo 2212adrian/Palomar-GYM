@@ -84,7 +84,6 @@ const isUUID = (str?: string | null): boolean => {
 
 /**
  * Generates a high-entropy cryptographically secure UUID token for membership cards.
- * Replaces human-guessable patterns for security.
  */
 export const generateCardTokenUuid = (): string => {
   if (
@@ -119,10 +118,6 @@ const writeAudit = async (
 
 /**
  * Computes effective subscription status dynamically.
- * - 'Voided' if voided
- * - 'Scheduled' if start_date is in the future
- * - 'Expired' if end_date is in the past
- * - 'Active' if start_date <= NOW <= end_date
  */
 export const getEffectiveSubscriptionStatus = (
   status: SubscriptionStatus | string,
@@ -277,14 +272,13 @@ export const memberService = {
     }
     const { data: previousData } = await findQuery.maybeSingle();
 
-    // Sanitize payload: database column is image_url
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
 
     if ('avatar_url' in payload) {
       if (!payload.image_url && payload.avatar_url) {
         payload.image_url = payload.avatar_url;
       }
-      delete payload.avatar_url; // Prevent PostgREST schema cache error
+      delete payload.avatar_url;
     }
     delete payload.id;
 
@@ -356,7 +350,6 @@ export const memberService = {
       throw new Error('Member profile not found.');
     }
 
-    // Check if member has an ongoing active subscription contract
     const { data: activeSubs } = await supabase
       .from('subscriptions')
       .select('id, plan_type, status, end_date')
@@ -571,13 +564,9 @@ export const subscriptionService = {
     let initialStatus: SubscriptionStatus;
 
     if (activeSub) {
-      // QUEUED / SCHEDULED RENEWAL:
-      // Current subscription remains active until its end_date.
-      // The new subscription starts exactly when the current subscription ends!
       start = new Date(activeSub.end_date);
-      initialStatus = 'Inactive'; // Will automatically become Active when start_date is reached
+      initialStatus = 'Inactive';
     } else {
-      // IMMEDIATE NEW SUBSCRIPTION:
       start = new Date();
       initialStatus = 'Active';
     }
@@ -585,7 +574,7 @@ export const subscriptionService = {
     const end = new Date(start.getTime());
     end.setDate(end.getDate() + durationDays);
 
-    // Insert a BRAND NEW subscription row so history and receipts remain 1-to-1 permanent
+    // Insert new subscription record
     const { data: insertedSub, error: subErr } = await supabase
       .from('subscriptions')
       .insert([
@@ -612,33 +601,46 @@ export const subscriptionService = {
       throw new Error(subErr.message);
     }
 
-    const receiptNo = insertedSub.receipt_number;
+    // Ensure a valid receipt ID is present
+    const receiptNo =
+      insertedSub.receipt_number ||
+      `REC-${Date.now().toString().slice(-8)}`;
+
+    if (!insertedSub.receipt_number) {
+      await supabase
+        .from('subscriptions')
+        .update({ receipt_number: receiptNo })
+        .eq('id', insertedSub.id);
+      insertedSub.receipt_number = receiptNo;
+    }
 
     await supabase
       .from('members')
       .update({ status: 'Active', updated_at: new Date().toISOString() })
       .eq('member_id', m.member_id);
 
-    // Insert official financial transaction into receipts table (Never overwrites past receipts)
-    if (receiptNo) {
-      await supabase.from('receipts').insert([
-        {
-          id: receiptNo,
-          member_id: m.member_id,
-          customer_name: m.full_name,
-          customer_type: 'New Membership',
-          amount: totalAmount,
-          base_price: basePrice,
-          gcash_fee: gcashFee,
-          card_fee: cardFee,
-          gcash_ref_no: gcashRefNo,
-          payment_method: paymentMethod,
-          payment_status: 'Paid',
-          item_description: activeSub
-            ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
-            : `Subscribed under ${planName}`,
-        },
-      ]);
+    // Insert official receipt into receipts table (tracked by Cash Management)
+    const { error: rcptInsertErr } = await supabase.from('receipts').insert([
+      {
+        id: receiptNo,
+        member_id: m.member_id,
+        customer_name: m.full_name,
+        customer_type: activeSub ? 'Membership Renewal' : 'New Membership',
+        amount: totalAmount,
+        base_price: basePrice,
+        gcash_fee: gcashFee,
+        card_fee: cardFee,
+        gcash_ref_no: gcashRefNo,
+        payment_method: paymentMethod,
+        payment_status: 'Paid',
+        item_description: activeSub
+          ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
+          : `Subscribed under ${planName}`,
+      },
+    ]);
+
+    if (rcptInsertErr) {
+      console.warn('Failed to insert receipt for subscription:', rcptInsertErr);
     }
 
     const auditActionText = activeSub
@@ -653,6 +655,8 @@ export const subscriptionService = {
       undefined,
       auditActionText
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
 
     return {
       ...insertedSub,
@@ -675,7 +679,7 @@ export const subscriptionService = {
 
     if (findErr || !target) throw new Error('Subscription record not found.');
 
-    // 1. Delete ONLY the single specific receipt linked to this voided subscription transaction
+    // 1. Delete linked receipt so cash drawer balance reconciles immediately
     if (target.receipt_number) {
       const { error: rcptErr } = await supabase
         .from('receipts')
@@ -696,7 +700,7 @@ export const subscriptionService = {
       }
     }
 
-    // 2. Mark target subscription as 'Voided'
+    // 2. Mark subscription as Voided
     const { error: voidErr } = await supabase
       .from('subscriptions')
       .update({
@@ -723,11 +727,13 @@ export const subscriptionService = {
       reason,
       `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}. Notes: ${notes || 'None'}.`
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
   },
 };
 
 // ==========================================
-// CARD SERVICE (EXCLUSIVELY USES CARDS TABLE)
+// CARD SERVICE (CARDS TABLE & CASH MANAGEMENT)
 // ==========================================
 export const cardService = {
   batchPurchase: async (
@@ -754,6 +760,54 @@ export const cardService = {
       throw new Error(error.message);
     }
 
+    // Fetch member names to create individual receipts for Cash Management ledger
+    const { data: membersList } = await supabase
+      .from('members')
+      .select('member_id, full_name')
+      .in('member_id', memberIds);
+
+    const memberMap = new Map(
+      (membersList || []).map((m: any) => [m.member_id, m.full_name])
+    );
+
+    const now = Date.now();
+    const receiptRows = memberIds.map((mId, idx) => {
+      const rcptId = `REC-CARD-${now.toString().slice(-6)}-${idx + 1}`;
+      return {
+        id: rcptId,
+        member_id: mId,
+        customer_name: memberMap.get(mId) || mId,
+        customer_type: 'Physical Card',
+        amount: feePerCard,
+        base_price: 0,
+        gcash_fee: 0,
+        card_fee: feePerCard,
+        gcash_ref_no: gcashRefNo || null,
+        payment_method: paymentMethod,
+        payment_status: 'Paid',
+        item_description: 'Physical Membership Card Fee',
+      };
+    });
+
+    if (receiptRows.length > 0) {
+      const { error: rcptErr } = await supabase
+        .from('receipts')
+        .insert(receiptRows);
+
+      if (rcptErr) {
+        console.warn('Could not insert batch receipts for cards:', rcptErr);
+      } else {
+        // Link receipt_number to each card record
+        for (const r of receiptRows) {
+          await supabase
+            .from('cards')
+            .update({ receipt_number: r.id })
+            .eq('member_id', r.member_id)
+            .eq('status', 'Active');
+        }
+      }
+    }
+
     await writeAudit(
       'CARDS_BATCH_PURCHASED',
       'Cards',
@@ -762,6 +816,8 @@ export const cardService = {
       undefined,
       `Batch purchased physical cards for ${data?.count || memberIds.length} members (₱${feePerCard * (data?.count || memberIds.length)} via ${paymentMethod}).`
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
 
     return data;
   },
@@ -854,7 +910,7 @@ export const cardService = {
     claimStatus: 'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED' = 'NOT_APPLICABLE',
     cardFeePaid: number = 0,
     receiptNo?: string,
-    forcedCardNumber?: string // <-- ADDED: Allows saving the exact printed UUID
+    forcedCardNumber?: string
   ): Promise<MemberCard | null> => {
     if (!memberId) throw new Error('Member ID is required to issue card.');
 
@@ -866,7 +922,6 @@ export const cardService = {
     const now = new Date();
     const nowIso = now.toISOString();
 
-    // Default 3 years validity from issue date
     let expiresIso = customExpireIso;
     if (!expiresIso) {
       const expDate = new Date(now);
@@ -874,10 +929,8 @@ export const cardService = {
       expiresIso = expDate.toISOString();
     }
 
-    // Use the assigned/printed UUID or generate a fresh one
     const cardNumber = forcedCardNumber || generateCardTokenUuid();
 
-    // Upsert into cards table (ensures 1 card per member restriction)
     const { data: cardRow, error: cardErr } = await supabase
       .from('cards')
       .upsert(
@@ -915,6 +968,8 @@ export const cardService = {
       undefined,
       `Assigned ${type} security token (${cardNumber}). Payment: ${paymentStatus}, Claim: ${claimStatus}.`
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
 
     return {
       id: cardRow.id,
@@ -968,10 +1023,36 @@ export const cardService = {
       expiresIso = expDate.toISOString();
     }
 
-    // Payload string strictly uses a cryptographically secure UUID token
     const newCardNumber = generateCardTokenUuid();
+    const finalReceiptNo =
+      receiptNo ||
+      (cardFeePaid > 0 ? `REC-CARD-${Date.now().toString().slice(-6)}` : null);
 
-    // Overwrites old card row in cards table
+    // If a replacement fee is charged, ensure it is recorded in the receipts table
+    if (cardFeePaid > 0 && finalReceiptNo) {
+      const { data: member } = await supabase
+        .from('members')
+        .select('full_name')
+        .eq('member_id', memberId)
+        .maybeSingle();
+
+      await supabase.from('receipts').insert([
+        {
+          id: finalReceiptNo,
+          member_id: memberId,
+          customer_name: member?.full_name || memberId,
+          customer_type: 'Existing Member',
+          amount: cardFeePaid,
+          base_price: 0,
+          gcash_fee: 0,
+          card_fee: cardFeePaid,
+          payment_method: 'Cash',
+          payment_status: 'Paid',
+          item_description: `Physical Card Replacement Fee (${reason || 'Replacement'})`,
+        },
+      ]);
+    }
+
     const { data: updated, error: cardErr } = await supabase
       .from('cards')
       .upsert(
@@ -984,7 +1065,7 @@ export const cardService = {
           payment_status: paymentStatus,
           claim_status: claimStatus,
           card_fee_paid: cardFeePaid,
-          receipt_number: receiptNo || existing?.receipt_number || null,
+          receipt_number: finalReceiptNo || existing?.receipt_number || null,
           claimed_at: claimStatus === 'CLAIMED' ? nowIso : null,
           claimed_by: claimStatus === 'CLAIMED' ? user : null,
           issued_at: nowIso,
@@ -1010,6 +1091,8 @@ export const cardService = {
       reason,
       `Reissued card version ${newVersion} (${newCardNumber}).`
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
 
     return {
       id: updated.id,
@@ -1116,7 +1199,7 @@ export const cardService = {
       receiptNo || `REC-CARD-${Date.now().toString().slice(-6)}`;
     const nowIso = new Date().toISOString();
 
-    // 2. Insert receipt
+    // 2. Insert receipt so Cash Management ledger and drawer record the transaction
     const { error: rErr } = await supabase.from('receipts').insert([
       {
         id: finalReceiptNo,
@@ -1199,6 +1282,8 @@ export const cardService = {
       undefined,
       `Paid physical card fee of ₱${amount.toFixed(2)} (${paymentMethod}). Receipt: ${finalReceiptNo}. Card ready for pickup.`
     );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
 
     return {
       id: cardRow.id,

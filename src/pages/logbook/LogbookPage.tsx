@@ -352,6 +352,42 @@ export const LogbookPage: React.FC = () => {
     return location.pathname.startsWith('/members') ? 'members' : 'logbook';
   }, [location.pathname]);
 
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [customerFilter, setCustomerFilter] = useState<
+    'All' | 'Walk-In' | 'Member' | 'Subs'
+  >('All');
+  const [paymentFilter, setPaymentFilter] = useState<
+    'All' | 'Cash' | 'GCash' | 'Card'
+  >('All');
+
+  const [visibleCount, setVisibleCount] = useState<number>(25);
+
+  // Reset timeline filters to today's default helper
+  const resetTimelineFilters = useCallback(() => {
+    const today = new Date();
+    const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
+    const todayIndex = getDay(today);
+
+    setCurrentWeekStart(todayWeekStart);
+    setSelectedDayIndex(todayIndex);
+    setLedgerSearch('');
+    setCustomerFilter('All');
+    setPaymentFilter('All');
+    setVisibleCount(25);
+  }, []);
+
+  // Always reset timeline filters whenever user exits or changes views/pages
+  useEffect(() => {
+    resetTimelineFilters();
+  }, [location.pathname, activePage, resetTimelineFilters]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      resetTimelineFilters();
+    };
+  }, [resetTimelineFilters]);
+
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchAttendanceFromSupabase = useCallback(
     async (isBackground: boolean = false) => {
@@ -561,14 +597,6 @@ export const LogbookPage: React.FC = () => {
     };
   }, [dateStr, fetchAttendanceFromSupabase]);
 
-  const [ledgerSearch, setLedgerSearch] = useState('');
-  const [customerFilter, setCustomerFilter] = useState<
-    'All' | 'Walk-In' | 'Member' | 'Subs'
-  >('All');
-  const [paymentFilter, setPaymentFilter] = useState<
-    'All' | 'Cash' | 'GCash' | 'Card'
-  >('All');
-
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
@@ -626,7 +654,6 @@ export const LogbookPage: React.FC = () => {
   }, [dayLogs, ledgerSearch, customerFilter, paymentFilter]);
 
   const totalItems = filteredLogs.length;
-  const [visibleCount, setVisibleCount] = useState<number>(25);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -747,7 +774,7 @@ export const LogbookPage: React.FC = () => {
     setVisibleCount(25);
   };
 
-  const handleTriggerCollectPayment = (log: LogRecord) => {
+  const handleTriggerCollectPayment = async (log: LogRecord) => {
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
         item.id === log.id ? { ...item, paymentStatus: 'Paid' as const } : item
@@ -758,6 +785,19 @@ export const LogbookPage: React.FC = () => {
       );
       return updated;
     });
+
+    try {
+      await supabase
+        .from('attendance')
+        .update({
+          payment_status: 'Paid',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', log.id);
+    } catch (dbErr) {
+      console.warn('Failed to update attendance payment status in DB:', dbErr);
+    }
+
     toast.success(`Payment logged for ${log.customerName}`);
     logAudit(
       'PAYMENT_COLLECTED',
@@ -766,7 +806,7 @@ export const LogbookPage: React.FC = () => {
     ).catch((e) => console.warn('Payment collect audit log failed:', e));
   };
 
-  const handleTriggerUndoPayment = (log: LogRecord) => {
+  const handleTriggerUndoPayment = async (log: LogRecord) => {
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
         item.id === log.id
@@ -779,6 +819,19 @@ export const LogbookPage: React.FC = () => {
       );
       return updated;
     });
+
+    try {
+      await supabase
+        .from('attendance')
+        .update({
+          payment_status: 'Unpaid',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', log.id);
+    } catch (dbErr) {
+      console.warn('Failed to update attendance payment status in DB:', dbErr);
+    }
+
     toast.info(`Undone payment. Set back to Unpaid.`);
     logAudit(
       'PAYMENT_UNDONE',

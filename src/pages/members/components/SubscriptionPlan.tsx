@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
+import { supabase } from '../../../lib/supabase/client';
 import {
   memberService,
   subscriptionService,
@@ -1685,6 +1686,26 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       const receiptNo =
         createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+
+      // Record standalone card purchase receipt if registering profile-only with card
+      if (selectedPlan === 'No Subscription' && addIdCard && liveCardFee > 0) {
+        await supabase.from('receipts').insert([
+          {
+            id: receiptNo,
+            member_id: targetMember.member_id,
+            customer_name: targetMember.full_name,
+            customer_type: 'Physical Card',
+            amount: liveCardFee,
+            base_price: 0,
+            gcash_fee: 0,
+            card_fee: liveCardFee,
+            gcash_ref_no: gcashReference.trim() || null,
+            payment_method: mappedPayment,
+            payment_status: 'Paid',
+            item_description: 'Physical Membership Card Fee',
+          },
+        ]);
+      }
 
       if (addIdCard) {
         await cardService.issue(

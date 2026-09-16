@@ -89,6 +89,12 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
     }
   }, [isSearchOpen]);
 
+  useEffect(() => {
+    if (!searchQuery && !searchInputRef.current?.matches(':focus')) {
+      setIsSearchOpen(false);
+    }
+  }, [searchQuery]);
+
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(
     null
   );
@@ -114,6 +120,10 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
       startOfDay(realWeekStart).getTime()
     );
   }, [currentWeekStart]);
+
+  const isSelectedDateToday = useMemo(() => {
+    return isToday(addDays(currentWeekStart, selectedDayIndex));
+  }, [currentWeekStart, selectedDayIndex]);
 
   const isTabSelectable = useCallback(
     (date: Date) => {
@@ -166,7 +176,16 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
 
     onWeekStartChange(currentWeek);
     onDayIndexChange(todayIndex);
-  }, [onWeekStartChange, onDayIndexChange]);
+    onSearchQueryChange('');
+    if (onFilterChange) onFilterChange('All');
+    if (onPaymentFilterChange) onPaymentFilterChange('All');
+  }, [
+    onWeekStartChange,
+    onDayIndexChange,
+    onSearchQueryChange,
+    onFilterChange,
+    onPaymentFilterChange,
+  ]);
 
   const handleNextWeek = () => {
     const nextWeek = addWeeks(currentWeekStart, 1);
@@ -300,7 +319,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
 
           {/* Right Controls: Today & Next Week */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {!isCurrentWeek && role === 'admin' && (
+            {(!isCurrentWeek || !isSelectedDateToday) && role === 'admin' && (
               <button
                 onClick={handleResetToCurrent}
                 className="px-2.5 py-2 sm:px-3 text-xs text-[#123c73] bg-[#123c73]/10 dark:text-red-300 dark:bg-red-950/40 border border-[#123c73]/20 dark:border-red-500/30 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-[#123c73]/20 dark:hover:bg-red-950/60 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"

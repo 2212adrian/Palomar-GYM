@@ -13,6 +13,7 @@ import {
   Settings,
   Loader2,
   Wallet,
+  Bell,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -124,7 +125,9 @@ const SidebarAvatar: React.FC<{
 
   return (
     <div
-      className={`w-full h-full rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading relative z-10 ${isMini ? 'text-[10px] font-black' : 'text-sm font-bold'}`}
+      className={`w-full h-full rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading relative z-10 ${
+        isMini ? 'text-[10px] font-black' : 'text-sm font-bold'
+      }`}
     >
       {fallbackChar}
     </div>
@@ -148,9 +151,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Real-time Notification Store
   const {
+    unreadBadgeCount,
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
+    toggleNotificationOpen,
+    markBadgeSeen,
     subscribeRealtime,
   } = useNotificationStore();
 
@@ -172,17 +178,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [todayLogbookTotal, setTodayLogbookTotal] = useState<number>(0);
 
   useEffect(() => {
-    // 1. Listen to broadcast events dispatched by Sales and Logbook components
     const handleSalesUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail && typeof customEvent.detail.revenue === 'number') {
+      if (
+        customEvent.detail &&
+        typeof customEvent.detail.revenue === 'number'
+      ) {
         setTodaySalesTotal(customEvent.detail.revenue);
       }
     };
 
     const handleLogbookUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail && typeof customEvent.detail.revenue === 'number') {
+      if (
+        customEvent.detail &&
+        typeof customEvent.detail.revenue === 'number'
+      ) {
         setTodayLogbookTotal(customEvent.detail.revenue);
       }
     };
@@ -190,7 +201,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener('sales-kpi-update', handleSalesUpdate);
     window.addEventListener('logbook-kpi-update', handleLogbookUpdate);
 
-    // 2. Hydrate from session storage cache if present
+    // Initial session hydration
     try {
       const todayStr = new Date().toISOString().split('T')[0];
       const cachedSales = sessionStorage.getItem(`sales_sanitized_${todayStr}`);
@@ -222,7 +233,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     } catch {}
 
-    // 3. Query Supabase directly for accurate live numbers
     const fetchTodayTotals = async () => {
       try {
         const now = new Date();
@@ -276,7 +286,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     fetchTodayTotals();
 
-    // 4. Real-time subscription to sales and attendance_logs
     const salesChannel = supabase
       .channel('sidebar-sales-sync')
       .on(
@@ -303,7 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
-  // Logout Inline Confirmation States
+  // Logout Confirmation States
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showMobileLogoutConfirm, setShowMobileLogoutConfirm] =
     useState<boolean>(false);
@@ -314,7 +323,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     null
   );
 
-  // Dynamic Settings Active State Check
   const isSettingsActive = useMemo(() => {
     const currentPath = location.pathname.toLowerCase();
     return (
@@ -329,22 +337,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return [
       {
-        name: 'DASHBOARD',
+        name: 'CASH MANAGEMENT',
         icon: (
-          <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
-        roles: ['admin'],
+        roles: ['admin', 'staff'],
+        path: '/cash-management',
+      },
+      {
+        name: 'SALES',
+        icon: (
+          <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+        ),
+        roles: ['admin', 'staff'],
+        notificationCount: isAdmin ? stockAlertsCount : undefined,
+        totalMoney: todaySalesTotal,
         children: [
           {
-            name: 'Revenue Summary',
-            path: '/dashboard',
-            description: 'Sales & Logbook real-time metrics',
+            name: 'Register Sale',
+            path: '/sales',
+            description: 'Point of Registry Sales',
+            moneyStat: todaySalesTotal,
           },
           {
-            name: 'Revenue Goals',
-            path: '/dashboard/goals',
-            description: 'Set custom goal limits (Day, Week, Month)',
-            badge: 'GOALS',
+            name: 'Product List',
+            path: '/sales/products',
+            description: 'Product Inventory & Barcode generation',
+            notificationCount: isAdmin ? stockAlertsCount : undefined,
+            notificationColor: 'amber',
+            roles: ['admin'],
           },
         ],
       },
@@ -381,27 +402,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ],
       },
       {
-        name: 'SALES',
+        name: 'DASHBOARD',
         icon: (
-          <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
-        roles: ['admin', 'staff'],
-        notificationCount: isAdmin ? stockAlertsCount : undefined,
-        totalMoney: todaySalesTotal,
+        roles: ['admin'],
         children: [
           {
-            name: 'Register Sale',
-            path: '/sales',
-            description: 'Point of Registry Sales',
-            moneyStat: todaySalesTotal,
+            name: 'Revenue Summary',
+            path: '/dashboard',
+            description: 'Sales & Logbook real-time metrics',
           },
           {
-            name: 'Product List',
-            path: '/sales/products',
-            description: 'Product Inventory & Barcode generation',
-            notificationCount: isAdmin ? stockAlertsCount : undefined,
-            notificationColor: 'amber',
-            roles: ['admin'],
+            name: 'Revenue Goals',
+            path: '/dashboard/goals',
+            description: 'Set custom goal limits (Day, Week, Month)',
+            badge: 'GOALS',
           },
         ],
       },
@@ -414,14 +430,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         notificationCount: isAdmin ? incidentUnreadCount : 0,
         path: '/reports',
       },
-      {
-        name: 'CASH MANAGEMENT',
-        icon: (
-          <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin', 'staff'],
-        path: '/cash-management',
-      },
     ];
   }, [
     location.pathname,
@@ -433,7 +441,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     todayLogbookTotal,
   ]);
 
-  // Role Filtering
   const allowedMenu = useMemo(() => {
     return navigationMenu
       .filter(
@@ -456,14 +463,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       );
   }, [navigationMenu, profile]);
 
-  // Helper for active child path matching
   const isPathActive = (childPath: string) => {
     const current = location.pathname.toLowerCase().replace(/\/$/, '');
     const target = childPath.toLowerCase().replace(/\/$/, '');
     return current === target;
   };
 
-  // Auto-expand accordion matching active route
   useEffect(() => {
     const activeParent = allowedMenu.find((item) =>
       item.children?.some((child) => isPathActive(child.path))
@@ -477,7 +482,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [location.pathname, allowedMenu]);
 
-  // Parent menu click handler
   const handleParentMenuClick = (item: MenuItem, isMobile = false) => {
     if (item.path && (!item.children || item.children.length === 0)) {
       navigate(item.path);
@@ -586,6 +590,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setShowMobileLogoutConfirm(false);
     if (mobileLogoutTimerRef.current)
       clearTimeout(mobileLogoutTimerRef.current);
+  };
+
+  const handleOpenMobileNotifications = () => {
+    setMobileOpen(false);
+    markBadgeSeen();
+    toggleNotificationOpen();
   };
 
   useEffect(() => {
@@ -757,7 +767,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
                     </div>
 
-                    {/* Collapsed Badge (Top-Right) */}
                     {collapsed &&
                       item.notificationCount !== undefined &&
                       item.notificationCount > 0 && (
@@ -766,7 +775,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </span>
                       )}
 
-                    {/* Expanded Badge (Right Side) */}
                     {!collapsed &&
                       item.notificationCount !== undefined &&
                       item.notificationCount > 0 && (
@@ -811,26 +819,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
 
-                  {/* Collapsed Parent Badge */}
                   {collapsed &&
                     item.notificationCount !== undefined &&
                     item.notificationCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20">
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[8.5px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] z-20 animate-pulse">
                         {formatBadgeCount(item.notificationCount)}
                       </span>
                     )}
 
                   {!collapsed && (
                     <div className="flex items-center gap-1.5">
-                      {!isExpanded && item.totalMoney !== undefined && (
+                      {item.totalMoney !== undefined && (
                         <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
-                          ₱{Number(item.totalMoney).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ₱
+                          {Number(item.totalMoney).toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       )}
-                      {!isExpanded &&
-                        item.notificationCount !== undefined &&
+                      {item.notificationCount !== undefined &&
                         item.notificationCount > 0 && (
-                          <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs">
+                          <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
                             {formatBadgeCount(item.notificationCount)}
                           </span>
                         )}
@@ -890,7 +899,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                       title="Today's Total Money"
                                     >
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                      ₱{Number(child.moneyStat).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      ₱
+                                      {Number(child.moneyStat).toLocaleString(
+                                        'en-US',
+                                        { minimumFractionDigits: 2 }
+                                      )}
                                     </span>
                                   )}
 
@@ -948,6 +961,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {collapsed ? (
             <div className="space-y-3 relative">
+              {/* Collapsed Notifications Trigger */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markBadgeSeen();
+                    toggleNotificationOpen();
+                  }}
+                  className="relative w-11 h-11 mx-auto flex items-center justify-center rounded-xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#161920] hover:bg-slate-100 dark:hover:bg-[#1e232d] text-slate-700 dark:text-slate-300 shadow-xs cursor-pointer transition-all active:scale-95"
+                  title="Notifications"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadBadgeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920]">
+                      {formatBadgeCount(unreadBadgeCount)}
+                    </span>
+                  )}
+                </button>
+              )}
+
               <Link
                 to="/settings"
                 className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
@@ -958,7 +991,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title="System Settings"
               >
                 <Settings
-                  className={`w-4 h-4 shrink-0 ${isSettingsActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                  className={`w-4 h-4 shrink-0 ${
+                    isSettingsActive
+                      ? 'text-white'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
                 />
               </Link>
 
@@ -1046,7 +1083,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   >
                     <Settings
-                      className={`w-4 h-4 shrink-0 ${isSettingsActive ? 'text-white' : 'text-slate-400'}`}
+                      className={`w-4 h-4 shrink-0 ${
+                        isSettingsActive ? 'text-white' : 'text-slate-400'
+                      }`}
                     />
                     <span>SETTINGS</span>
                   </Link>
@@ -1067,11 +1106,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── MOBILE DRAWER ─── */}
       <div
-        className={`fixed inset-0 z-[300] lg:hidden ${mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        className={`fixed inset-0 z-[300] lg:hidden ${
+          mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'
+        }`}
       >
         <div
           onClick={() => setMobileOpen(false)}
-          className={`absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${
+            mobileOpen ? 'opacity-100' : 'opacity-0'
+          }`}
         />
 
         <aside
@@ -1152,6 +1195,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Mobile Accordion Nav Stack */}
             <nav className="flex-1 min-h-0 overflow-y-auto space-y-3.5 p-5 pt-3">
+              {/* NOTIFICATION ITEM IN MOBILE DRAWER */}
+              {isAdmin && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenMobileNotifications}
+                    className="w-full h-[56px] px-4 rounded-[16px] flex items-center justify-between font-heading text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer bg-white text-slate-700 dark:bg-[#161920] dark:text-slate-200 border-slate-200/80 dark:border-white/5 shadow-xs hover:bg-slate-50 dark:hover:bg-[#1e232d]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-slate-400 dark:text-slate-400">
+                        <Bell className="w-5 h-5 shrink-0" />
+                      </span>
+                      <span className="font-bold">NOTIFICATIONS</span>
+                    </div>
+
+                    {unreadBadgeCount > 0 && (
+                      <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                        {formatBadgeCount(unreadBadgeCount)}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+
               {allowedMenu.map((item, idx) => {
                 const visibleChildren = item.children || [];
                 const isSingleItem = Boolean(
@@ -1221,20 +1288,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {!isMobileExpanded && item.totalMoney !== undefined && (
+                        {item.totalMoney !== undefined && (
                           <span className="text-[9.5px] font-mono font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 shadow-2xs">
-                            ₱{Number(item.totalMoney).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ₱
+                            {Number(item.totalMoney).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                            })}
                           </span>
                         )}
-                        {!isMobileExpanded &&
-                          item.notificationCount !== undefined &&
+                        {item.notificationCount !== undefined &&
                           item.notificationCount > 0 && (
-                            <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs">
+                            <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
                               {formatBadgeCount(item.notificationCount)}
                             </span>
                           )}
                         <ChevronDown
-                          className={`w-4 h-4 transition-transform duration-300 ${isMobileExpanded ? 'rotate-180 text-white' : 'opacity-60'}`}
+                          className={`w-4 h-4 transition-transform duration-300 ${
+                            isMobileExpanded
+                              ? 'rotate-180 text-white'
+                              : 'opacity-60'
+                          }`}
                         />
                       </div>
                     </button>
@@ -1288,7 +1361,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         title="Today's Total Money"
                                       >
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                        ₱{Number(child.moneyStat).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        ₱
+                                        {Number(child.moneyStat).toLocaleString(
+                                          'en-US',
+                                          { minimumFractionDigits: 2 }
+                                        )}
                                       </span>
                                     )}
 
@@ -1377,7 +1454,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   >
                     <Settings
-                      className={`w-4 h-4 ${isSettingsActive ? 'text-white' : 'text-slate-400'}`}
+                      className={`w-4 h-4 ${
+                        isSettingsActive ? 'text-white' : 'text-slate-400'
+                      }`}
                     />
                     <span>SETTINGS</span>
                   </Link>
@@ -1398,3 +1477,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+
+export default Sidebar;

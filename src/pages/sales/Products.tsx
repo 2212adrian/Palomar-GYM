@@ -572,6 +572,15 @@ export const Products: React.FC<ProductsProps> = ({
   };
 
   const handleBulkEditClick = () => {
+    if (selectedProductIds.length === 1) {
+      const singleProduct = products.find(
+        (p) => p.id === selectedProductIds[0]
+      );
+      if (singleProduct) {
+        handleEditClick(singleProduct);
+        return;
+      }
+    }
     setShowBulkEditModal(true);
   };
 

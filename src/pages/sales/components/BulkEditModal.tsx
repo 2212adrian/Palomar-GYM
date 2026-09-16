@@ -221,24 +221,37 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
       <td className="py-2.5 px-4 align-middle text-center">
         <button
           type="button"
-          onClick={() => {
-            const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
+          onClick={(e) => {
+            e.stopPropagation();
+            const nextStatus: 'Active' | 'Inactive' =
+              p.status === 'Active' ? 'Inactive' : 'Active';
             setEditedProducts((prev) =>
               prev.map((item) =>
                 item.id === p.id ? { ...item, status: nextStatus } : item
               )
             );
           }}
-          className={`p-1.5 border rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center ${
+          className={`relative z-10 px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1.5 select-none active:scale-95 ${
             p.status === 'Active'
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-              : 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
+              ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/25'
+              : 'bg-slate-500/15 text-slate-400 border-slate-500/30 hover:bg-slate-500/25'
           }`}
+          title={
+            p.status === 'Active'
+              ? 'Status: Visible (Click to Hide)'
+              : 'Status: Hidden (Click to Show)'
+          }
         >
           {p.status === 'Active' ? (
-            <Eye className="w-3.5 h-3.5" />
+            <>
+              <Eye className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Visible</span>
+            </>
           ) : (
-            <EyeOff className="w-3.5 h-3.5" />
+            <>
+              <EyeOff className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Hidden</span>
+            </>
           )}
         </button>
       </td>
@@ -1037,8 +1050,8 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                     <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
                       Low Alert
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-24 text-center">
-                      Cashier
+                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-28 text-center">
+                      Visibility
                     </th>
                     <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">
                       Reset

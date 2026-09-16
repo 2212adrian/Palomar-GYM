@@ -7,7 +7,7 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   format,
   startOfWeek,
@@ -38,6 +38,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { useAuthStore } from '../../stores/authStore';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { isSuperAdmin } from '../../constants/auth';
 
 // UI Helpers
@@ -260,6 +261,7 @@ const TransactionSkeleton: React.FC = () => {
 export const Sales: React.FC = () => {
   const { setActions } = useContext(HeaderActionsContext);
   const navigate = useNavigate();
+  const location = useLocation();
   const { subview } = useParams<{ subview: string }>();
 
   const activeView = useMemo<'register' | 'inventory'>(() => {
@@ -332,6 +334,30 @@ export const Sales: React.FC = () => {
   // Animation states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
+
+  // Reset timeline filters to today's default helper
+  const resetTimelineFilters = useCallback(() => {
+    const today = new Date();
+    const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
+    const todayIndex = getDay(today);
+
+    setCurrentWeekStart(todayWeekStart);
+    setSelectedDayIndex(todayIndex);
+    setLedgerSearch('');
+    setPaymentFilter('All');
+  }, []);
+
+  // Always reset timeline filters whenever user exits or changes views/pages
+  useEffect(() => {
+    resetTimelineFilters();
+  }, [location.pathname, activeView, resetTimelineFilters]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      resetTimelineFilters();
+    };
+  }, [resetTimelineFilters]);
 
   useEffect(() => {
     if (showLiveScanner) {
@@ -742,6 +768,9 @@ export const Sales: React.FC = () => {
           );
           return updated;
         });
+
+        // ─── Trigger instant Live Cash recalculation ───
+        useCashSessionStore.getState().recalculateMetrics();
       }
 
       toast.success('Sale successfully recorded!');
@@ -814,12 +843,16 @@ export const Sales: React.FC = () => {
       if (!stagedTx) return;
 
       try {
+        // Soft-delete so metrics recalculate and Recycle Bin can restore it
         const { error } = await supabase
           .from('sales')
-          .delete()
+          .update({ deleted_at: new Date().toISOString() })
           .eq('id', stagedTx.id);
 
         if (error) throw error;
+
+        // ─── Deduct from Live Cash immediately ───
+        useCashSessionStore.getState().recalculateMetrics();
 
         const itemsList =
           stagedTx.items
@@ -858,6 +891,7 @@ export const Sales: React.FC = () => {
           prev.filter((t) => String(t.id) !== String(id))
         );
         fetchProducts();
+        useCashSessionStore.getState().recalculateMetrics();
       }
     },
     [dateStr, fetchProducts]
@@ -889,6 +923,7 @@ export const Sales: React.FC = () => {
       prev.filter((t) => String(t.id) !== String(id))
     );
     toast.info('Sale transaction restored.');
+    useCashSessionStore.getState().recalculateMetrics();
   };
 
   const handleConfirmAll = () => {

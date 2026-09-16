@@ -15,12 +15,15 @@ import {
   Award,
   Clock,
   UserX,
-  ChevronRight,
   Package,
   AlertTriangle,
   PackageX,
   Bell,
   Wallet,
+  ArrowDownRight,
+  ArrowUpRight,
+  Smartphone,
+  ExternalLink,
 } from 'lucide-react';
 import {
   motion,
@@ -38,6 +41,8 @@ import {
 } from '../../stores/useNotificationStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { NotificationPopover } from './NotificationPopover';
+import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
+import type { CashTransactionType } from '../../types/cash';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -90,7 +95,7 @@ const SEGMENT_MAP: Record<string, string> = {
   'audit-logs': 'AUDIT LOGS',
 };
 
-// DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
+// Dynamic Banknote Icon with Popping / Explode Effect
 const DynamicBanknoteIcon: React.FC<{
   trend: 'increasing' | 'decreasing' | 'neutral';
 }> = ({ trend }) => {
@@ -218,7 +223,7 @@ const AnimatedKpiNumber: React.FC<{ value: number }> = ({ value }) => {
   return <motion.span>{rounded}</motion.span>;
 };
 
-// THEME-AWARE ANIMATED CURRENCY TICKER
+// Theme-Aware Animated Currency Ticker
 const AnimatedKpiCurrency: React.FC<{
   value: number;
   trend?: 'increasing' | 'decreasing' | 'neutral';
@@ -256,9 +261,23 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentTimeFull, setCurrentTimeFull] = useState('');
-  const [, setCurrentTimeShort] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
   const [timeOffset, setTimeOffset] = useState<number>(0);
+
+  // Cash Session State
+  const {
+    isSessionOpen,
+    currentDrawerCash,
+    activeSession,
+    loadActiveSession,
+    refreshTransactions,
+  } = useCashSessionStore();
+
+  const [isCashPopoverOpen, setIsCashPopoverOpen] = useState(false);
+  const [activeTxType, setActiveTxType] = useState<CashTransactionType | null>(
+    null
+  );
+  const cashContainerRef = useRef<HTMLDivElement>(null);
 
   // Logbook Telemetry
   const [logbookKpiData, setLogbookKpiData] = useState<LogbookKpiData>({
@@ -317,6 +336,10 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   } = useNotificationStore();
 
   useEffect(() => {
+    loadActiveSession();
+  }, [loadActiveSession]);
+
+  useEffect(() => {
     if (user?.email) {
       const unsubscribe = subscribeRealtime(user.email, profile?.role);
       return () => {
@@ -325,15 +348,17 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     }
   }, [user?.email, profile?.role, subscribeRealtime]);
 
-  // Close dropdowns on route changes
+  // Close popovers on route changes
   useEffect(() => {
     setIsKpiMobileOpen(false);
     setIsKpiHovered(false);
+    setIsCashPopoverOpen(false);
   }, [location.pathname]);
 
   const handleToggleNotifications = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsKpiMobileOpen(false);
+    setIsCashPopoverOpen(false);
     if (!isNotificationOpen) {
       markBadgeSeen();
     }
@@ -342,10 +367,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
   const handleToggleKpi = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsCashPopoverOpen(false);
     if (!isKpiMobileOpen && isNotificationOpen) {
       setNotificationOpen(false);
     }
     setIsKpiMobileOpen((prev) => !prev);
+  };
+
+  const handleToggleCashPopover = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsKpiMobileOpen(false);
+    if (isNotificationOpen) {
+      setNotificationOpen(false);
+    }
+    setIsCashPopoverOpen((prev) => !prev);
   };
 
   useEffect(() => {
@@ -382,66 +417,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     window.addEventListener('products-kpi-update', handleProductsKpiUpdate);
     window.addEventListener('members-kpi-update', handleMembersKpiUpdate);
 
-    // Initial hydration from session caches
-    try {
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      const cachedLogbook = sessionStorage.getItem(
-        `logbook_sanitized_${todayStr}`
-      );
-      if (cachedLogbook) {
-        const parsed = JSON.parse(cachedLogbook);
-        if (Array.isArray(parsed)) {
-          const revenue = parsed.reduce(
-            (acc: number, log: any) =>
-              log.paymentStatus === 'Paid'
-                ? acc + (Number(log.amountPaid) || 0)
-                : acc,
-            0
-          );
-          setLogbookKpiData({
-            checkins: parsed.length,
-            revenue,
-            newMembers: parsed.filter(
-              (l: any) =>
-                l.customerType === 'New Membership' || l.isSubscription
-            ).length,
-            revenueTrend: 'neutral',
-          });
-        }
-      }
-
-      const cachedSales = sessionStorage.getItem(`sales_sanitized_${todayStr}`);
-      if (cachedSales) {
-        const parsedSales = JSON.parse(cachedSales);
-        if (Array.isArray(parsedSales)) {
-          const revenue = parsedSales.reduce(
-            (acc: number, t: any) => acc + (Number(t.total_amount) || 0),
-            0
-          );
-          const itemsSold = parsedSales.reduce((acc: number, tx: any) => {
-            if (tx.items && Array.isArray(tx.items)) {
-              return (
-                acc +
-                tx.items.reduce(
-                  (sum: number, item: any) =>
-                    sum + (Number(item.quantity) || 0),
-                  0
-                )
-              );
-            }
-            return acc + (Number(tx.quantity) || 1);
-          }, 0);
-          setSalesKpiData({
-            revenue,
-            salesCount: parsedSales.length,
-            itemsSold,
-            revenueTrend: 'neutral',
-          });
-        }
-      }
-    } catch (e) {}
-
     return () => {
       window.removeEventListener('logbook-kpi-update', handleLogbookKpiUpdate);
       window.removeEventListener('sales-kpi-update', handleSalesKpiUpdate);
@@ -453,6 +428,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     };
   }, []);
 
+  // Click outside to dismiss popups
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (
@@ -461,6 +437,12 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       ) {
         setIsKpiMobileOpen(false);
         setIsKpiHovered(false);
+      }
+      if (
+        cashContainerRef.current &&
+        !cashContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsCashPopoverOpen(false);
       }
     };
 
@@ -496,9 +478,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           setTimeOffset(offset);
         }
       } catch (err) {
-        console.warn(
-          'Failed to sync clock telemetry with Supabase, falling back to system time.'
-        );
+        // Fallback to system time
       }
     };
     syncWithServer();
@@ -522,7 +502,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
         year: 'numeric',
       });
 
-      setCurrentTimeShort(timeStr);
       setCurrentTimeFull(`${dateStr} • ${timeStr}`);
     };
     updateTime();
@@ -535,18 +514,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const isMembersPath = location.pathname.startsWith('/members');
   const isProductsView = location.pathname === '/sales/products';
   const isPlansView = location.pathname.includes('/plans');
-  const salesView = isProductsView ? 'inventory' : 'register';
-
-  // Live Cash Management Session State
-  const { isSessionOpen, currentDrawerCash } = useCashSessionStore();
-
-  const handleToggleSalesView = () => {
-    if (salesView === 'register') {
-      navigate('/sales/products');
-    } else {
-      navigate('/sales');
-    }
-  };
+  const showKpiWidget =
+    isLogbookPath || isSalesPath || (isMembersPath && !isPlansView);
 
   const getSectionIcon = () => {
     const firstSegment =
@@ -638,72 +607,65 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     });
   };
 
-  const handleGoBackTrigger = () => {
-    window.dispatchEvent(new CustomEvent('settings-go-back'));
-  };
-
-  const showKpiWidget =
-    isLogbookPath || isSalesPath || (isMembersPath && !isPlansView);
-
   return (
-    <header className="h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-2.5 sm:px-4 md:px-6 z-40 select-none">
-      {/* 1. LEFT TITLE & TELEMETRY SECTION */}
+    <header className="h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-3 sm:px-4 md:px-6 z-40 select-none">
+      {/* 1. LEFT TITLE & DESKTOP TELEMETRY */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
         {subTab && (
           <button
             type="button"
-            onClick={handleGoBackTrigger}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent('settings-go-back'))
+            }
             aria-label="Go Back"
-            title="Go Back"
             className="lg:hidden h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95 shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
         )}
 
-        <div className="flex items-center font-heading text-[10px] sm:text-xs lg:text-sm tracking-[0.6px] sm:tracking-[1.2px] uppercase whitespace-nowrap overflow-hidden text-ellipsis shrink-0">
+        {/* BREADCRUMB TITLE */}
+        <div className="flex items-center font-heading text-[11px] sm:text-xs lg:text-sm tracking-[0.6px] sm:tracking-[1.2px] uppercase whitespace-nowrap overflow-hidden text-ellipsis shrink-0">
           {getSectionIcon()}
           <span className="truncate">{renderStyledBreadcrumbs()}</span>
         </div>
 
-        {/* TELEMETRY CAPSULE (Moved next to title to never collide with Drawer Closed) */}
+        {/* TELEMETRY CAPSULE - HIDDEN ON MOBILE PORTRAIT (`hidden md:flex`) */}
         {showKpiWidget && (
           <div
             ref={kpiContainerRef}
-            className="flex items-center justify-start z-30 pointer-events-auto shrink-0"
+            className="hidden md:flex items-center justify-start z-30 pointer-events-auto shrink-0"
           >
-          <div
-            className="relative"
-            onMouseEnter={() => {
-              if (window.matchMedia('(hover: hover)').matches) {
-                setIsKpiHovered(true);
-              }
-            }}
-            onMouseLeave={() => {
-              if (window.matchMedia('(hover: hover)').matches) {
-                setIsKpiHovered(false);
-              }
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleToggleKpi}
-              aria-label="Today's Revenue & Metrics"
-              className="flex items-center gap-1 sm:gap-2.5 md:gap-3 px-2 py-1 sm:px-4 sm:py-1.5 rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
+            <div
+              className="relative"
+              onMouseEnter={() => {
+                if (window.matchMedia('(hover: hover)').matches) {
+                  setIsKpiHovered(true);
+                }
+              }}
+              onMouseLeave={() => {
+                if (window.matchMedia('(hover: hover)').matches) {
+                  setIsKpiHovered(false);
+                }
+              }}
             >
-              {isMembersPath ? (
-                <>
-                  <div className="flex items-center gap-1 sm:gap-1.5 text-blue-600 dark:text-blue-400">
-                    <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500 shrink-0" />
-                    <span className="font-heading font-black text-[11px] sm:text-sm tracking-tight text-slate-900 dark:text-white">
-                      <AnimatedKpiNumber value={membersKpiData.total} />{' '}
-                      <span className="text-[9px] sm:text-[11px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
-                        Members
+              <button
+                type="button"
+                onClick={handleToggleKpi}
+                aria-label="Today's Metrics"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 shadow-xs hover:border-emerald-500/50 cursor-pointer active:scale-95 transition-all select-none backdrop-blur-md"
+              >
+                {isMembersPath ? (
+                  <>
+                    <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                      <Users className="w-4 h-4 text-blue-500 shrink-0" />
+                      <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-white">
+                        <AnimatedKpiNumber value={membersKpiData.total} />{' '}
+                        <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                          Members
+                        </span>
                       </span>
-                    </span>
-                  </div>
-
-                  <div className="hidden md:flex items-center gap-1.5">
+                    </div>
                     <span className="text-slate-300 dark:text-zinc-600 font-bold">
                       •
                     </span>
@@ -718,21 +680,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                         </span>
                       </span>
                     </div>
-                  </div>
-                </>
-              ) : isProductsView ? (
-                <>
-                  <div className="flex items-center gap-1 sm:gap-1.5 text-emerald-600 dark:text-emerald-400">
-                    <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 shrink-0" />
-                    <span className="font-heading font-black text-[11px] sm:text-sm tracking-tight text-slate-900 dark:text-white">
-                      <AnimatedKpiNumber value={productsKpiData.inStock} />{' '}
-                      <span className="text-[9px] sm:text-[11px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">
-                        In Stock
+                  </>
+                ) : isProductsView ? (
+                  <>
+                    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                      <Package className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-white">
+                        <AnimatedKpiNumber value={productsKpiData.inStock} />{' '}
+                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">
+                          In Stock
+                        </span>
                       </span>
-                    </span>
-                  </div>
-
-                  <div className="hidden md:flex items-center gap-1.5">
+                    </div>
                     <span className="text-slate-300 dark:text-zinc-600 font-bold">
                       •
                     </span>
@@ -745,21 +704,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                         </span>
                       </span>
                     </div>
-                  </div>
-                </>
-              ) : isSalesPath ? (
-                <>
-                  <div className="flex items-center gap-1 sm:gap-1.5">
-                    <DynamicBanknoteIcon trend={salesKpiData.revenueTrend} />
-                    <span className="font-heading font-black text-[11px] sm:text-sm tracking-tight">
-                      <AnimatedKpiCurrency
-                        value={salesKpiData.revenue}
-                        trend={salesKpiData.revenueTrend}
-                      />
-                    </span>
-                  </div>
-
-                  <div className="hidden md:flex items-center gap-1.5">
+                  </>
+                ) : isSalesPath ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <DynamicBanknoteIcon trend={salesKpiData.revenueTrend} />
+                      <span className="font-heading font-black text-sm tracking-tight">
+                        <AnimatedKpiCurrency
+                          value={salesKpiData.revenue}
+                          trend={salesKpiData.revenueTrend}
+                        />
+                      </span>
+                    </div>
                     <span className="text-slate-300 dark:text-zinc-600 font-bold">
                       •
                     </span>
@@ -772,21 +728,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                         </span>
                       </span>
                     </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-1 sm:gap-1.5">
-                    <DynamicBanknoteIcon trend={logbookKpiData.revenueTrend} />
-                    <span className="font-heading font-black text-[11px] sm:text-sm tracking-tight">
-                      <AnimatedKpiCurrency
-                        value={logbookKpiData.revenue}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <DynamicBanknoteIcon
                         trend={logbookKpiData.revenueTrend}
                       />
-                    </span>
-                  </div>
-
-                  <div className="hidden md:flex items-center gap-1.5">
+                      <span className="font-heading font-black text-sm tracking-tight">
+                        <AnimatedKpiCurrency
+                          value={logbookKpiData.revenue}
+                          trend={logbookKpiData.revenueTrend}
+                        />
+                      </span>
+                    </div>
                     <span className="text-slate-300 dark:text-zinc-600 font-bold">
                       •
                     </span>
@@ -799,308 +754,394 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                         </span>
                       </span>
                     </div>
-                  </div>
-                </>
-              )}
-            </button>
+                  </>
+                )}
+              </button>
 
-            {/* FLOATING TELEMETRY DROPDOWN */}
-            <AnimatePresence>
-              {(isKpiHovered || isKpiMobileOpen) && (
-                <div className="absolute top-[calc(100%+8px)] left-0 w-[calc(100vw-24px)] max-w-sm sm:w-96 sm:max-w-none z-50 pointer-events-auto">
-                  <motion.div
-                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 sm:p-4 backdrop-blur-xl select-none"
-                  >
-                    <div className="border-b border-slate-100 dark:border-slate-800 pb-2 mb-3 text-center sm:text-left">
-                      <span className="text-[9px] font-heading font-black tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
-                        {isMembersPath
-                          ? 'Member Directory Telemetry'
-                          : isProductsView
-                            ? 'Product Catalog Telemetry'
-                            : isSalesPath
-                              ? "Today's Sales Telemetry"
-                              : "Today's Telemetry Overview"}
-                      </span>
-                    </div>
+              {/* TELEMETRY DROPDOWN */}
+              <AnimatePresence>
+                {(isKpiHovered || isKpiMobileOpen) && (
+                  <div className="absolute top-[calc(100%+8px)] left-0 w-96 z-50 pointer-events-auto">
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                      transition={{ duration: 0.15 }}
+                      className="w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 backdrop-blur-xl select-none"
+                    >
+                      <div className="border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">
+                        <span className="text-[10px] font-heading font-black tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
+                          {isMembersPath
+                            ? 'Member Directory Telemetry'
+                            : isProductsView
+                              ? 'Product Catalog Telemetry'
+                              : isSalesPath
+                                ? "Today's Sales Telemetry"
+                                : "Today's Telemetry Overview"}
+                        </span>
+                      </div>
 
-                    {isMembersPath ? (
-                      <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Users className="w-4 h-4 text-blue-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            Total
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber value={membersKpiData.total} />
-                          </span>
+                      {isMembersPath ? (
+                        <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                          <div className="px-1 flex flex-col items-center">
+                            <Users className="w-4 h-4 text-blue-500 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              Total
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber value={membersKpiData.total} />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <Award className="w-4 h-4 text-emerald-500 mb-1" />
+                            <span className="text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold">
+                              Active
+                            </span>
+                            <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={membersKpiData.activeSubscriptions}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <Clock className="w-4 h-4 text-amber-500 mb-1" />
+                            <span className="text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold">
+                              Expiring
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={membersKpiData.expiringSoon}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <UserX className="w-4 h-4 text-rose-500 mb-1" />
+                            <span className="text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold">
+                              Locked
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={membersKpiData.suspendedMembers}
+                              />
+                            </span>
+                          </div>
                         </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Award className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold truncate max-w-full">
-                            Active
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={membersKpiData.activeSubscriptions}
-                            />
-                          </span>
+                      ) : isProductsView ? (
+                        <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                          <div className="px-1 flex flex-col items-center">
+                            <Layers className="w-4 h-4 text-blue-500 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              Catalog
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={productsKpiData.active}
+                              />
+                              /
+                              <AnimatedKpiNumber
+                                value={productsKpiData.total}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <Package className="w-4 h-4 text-emerald-500 mb-1" />
+                            <span className="text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold">
+                              In Stock
+                            </span>
+                            <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={productsKpiData.inStock}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <AlertTriangle className="w-4 h-4 text-amber-500 mb-1" />
+                            <span className="text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold">
+                              Low Stock
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={productsKpiData.lowStock}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <PackageX className="w-4 h-4 text-rose-500 mb-1" />
+                            <span className="text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold">
+                              No Stock
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={productsKpiData.outOfStock}
+                              />
+                            </span>
+                          </div>
                         </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Clock className="w-4 h-4 text-amber-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold truncate max-w-full">
-                            Expiring
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={membersKpiData.expiringSoon}
-                            />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <UserX className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold truncate max-w-full">
-                            Locked
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={membersKpiData.suspendedMembers}
-                            />
-                          </span>
-                        </div>
-                      </div>
-                    ) : isProductsView ? (
-                      <div className="grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Layers className="w-4 h-4 text-blue-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            Catalog
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber value={productsKpiData.active} />
-                            /
-                            <AnimatedKpiNumber value={productsKpiData.total} />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Package className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold truncate max-w-full">
-                            In Stock
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={productsKpiData.inStock}
-                            />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <AlertTriangle className="w-4 h-4 text-amber-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-amber-600 dark:text-amber-400 uppercase font-bold truncate max-w-full">
-                            Low Stock
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={productsKpiData.lowStock}
-                            />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <PackageX className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-rose-600 dark:text-rose-400 uppercase font-bold truncate max-w-full">
-                            No Stock
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={productsKpiData.outOfStock}
-                            />
-                          </span>
-                        </div>
-                      </div>
-                    ) : isSalesPath ? (
-                      <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            Sales
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={salesKpiData.salesCount}
-                            />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <DynamicBanknoteIcon
-                            trend={salesKpiData.revenueTrend}
-                          />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1 truncate max-w-full">
-                            Revenue
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiCurrency
-                              value={salesKpiData.revenue}
+                      ) : isSalesPath ? (
+                        <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                          <div className="px-1 flex flex-col items-center">
+                            <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              Sales
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={salesKpiData.salesCount}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <DynamicBanknoteIcon
                               trend={salesKpiData.revenueTrend}
                             />
-                          </span>
+                            <span className="text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1">
+                              Revenue
+                            </span>
+                            <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiCurrency
+                                value={salesKpiData.revenue}
+                                trend={salesKpiData.revenueTrend}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <Package className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              Items
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={salesKpiData.itemsSold}
+                              />
+                            </span>
+                          </div>
                         </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Package className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            Items
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber value={salesKpiData.itemsSold} />
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <Users className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            Check-ins
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={logbookKpiData.checkins}
-                            />
-                          </span>
-                        </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <DynamicBanknoteIcon
-                            trend={logbookKpiData.revenueTrend}
-                          />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1 truncate max-w-full">
-                            Revenue
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiCurrency
-                              value={logbookKpiData.revenue}
+                      ) : (
+                        <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800 text-center">
+                          <div className="px-1 flex flex-col items-center">
+                            <Users className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              Check-ins
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={logbookKpiData.checkins}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <DynamicBanknoteIcon
                               trend={logbookKpiData.revenueTrend}
                             />
-                          </span>
+                            <span className="text-[9px] font-heading text-emerald-600 dark:text-emerald-400 uppercase font-bold mt-1">
+                              Revenue
+                            </span>
+                            <span className="font-heading text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiCurrency
+                                value={logbookKpiData.revenue}
+                                trend={logbookKpiData.revenueTrend}
+                              />
+                            </span>
+                          </div>
+                          <div className="px-1 flex flex-col items-center">
+                            <UserPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mb-1" />
+                            <span className="text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold">
+                              New Subs
+                            </span>
+                            <span className="font-heading text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">
+                              <AnimatedKpiNumber
+                                value={logbookKpiData.newMembers}
+                              />
+                            </span>
+                          </div>
                         </div>
-                        <div className="px-1 flex flex-col items-center min-w-0">
-                          <UserPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mb-1 shrink-0" />
-                          <span className="text-[8px] sm:text-[9px] font-heading text-slate-500 dark:text-slate-400 uppercase font-bold truncate max-w-full">
-                            New Subs
-                          </span>
-                          <span className="font-heading text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                            <AnimatedKpiNumber
-                              value={logbookKpiData.newMembers}
-                            />
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                </div>
-              )}
-            </AnimatePresence>
+                      )}
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
 
-      {/* 2. RIGHT SECTION: ACTIONS & BELL */}
+      {/* 2. RIGHT SECTION: CASH PILL & CONTROLS */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
-        {isLogbookPath && isAdmin && (
-          <button
-            type="button"
-            onClick={() => navigate('/members/list')}
-            className="lg:hidden h-8 sm:h-9 px-2 sm:px-3 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1 select-none"
-            title="Slide to Member Directory"
-          >
-            <Users className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-            <span className="hidden sm:inline">MEMBERS</span>
-            <ChevronRight className="hidden sm:inline w-3 h-3 text-(--color-primary) shrink-0" />
-          </button>
-        )}
-
-        {isMembersPath && isAdmin && !isPlansView && (
-          <button
-            type="button"
-            onClick={() => navigate('/logbook')}
-            className="lg:hidden h-8 sm:h-9 px-2 sm:px-3 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1 select-none"
-            title="Slide to Logbook"
-          >
-            <ClipboardList className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-            <span className="hidden sm:inline">LOGBOOK</span>
-          </button>
-        )}
-
-        {isSalesPath && isAdmin && (
-          <button
-            type="button"
-            onClick={handleToggleSalesView}
-            className="lg:hidden h-8 sm:h-9 px-2 sm:px-3 border border-slate-200 dark:border-zinc-700/80 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-[10px] sm:text-[11px] font-heading font-black tracking-wider uppercase cursor-pointer transition-all duration-200 active:scale-95 shadow-xs flex items-center gap-1 select-none"
-            title={
-              salesView === 'register' ? 'Slide to Inventory' : 'Slide to Sales'
-            }
-          >
-            {salesView === 'register' ? (
-              <>
-                <Package className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-                <span className="hidden sm:inline">PRODUCTS</span>
-                <ChevronRight className="hidden sm:inline w-3 h-3 text-(--color-primary) shrink-0" />
-              </>
-            ) : (
-              <>
-                <ShoppingBag className="w-3.5 h-3.5 text-(--color-primary) shrink-0" />
-                <span className="hidden sm:inline">SALES</span>
-              </>
-            )}
-          </button>
-        )}
-
         {/* LIVE CASH DRAWER CAPSULE */}
-        <button
-          type="button"
-          onClick={() => navigate('/cash-management')}
-          className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none"
-          title="Cash Register Drawer Status (Click to open Cash Management)"
-        >
-          <Wallet
-            className={`w-3.5 h-3.5 ${
-              isSessionOpen ? 'text-emerald-500' : 'text-rose-500'
+        <div ref={cashContainerRef} className="relative">
+          <button
+            type="button"
+            onClick={handleToggleCashPopover}
+            className={`flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none ${
+              isSessionOpen
+                ? 'border-emerald-500/30 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30'
+                : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700'
             }`}
-          />
-          <div className="flex items-center gap-1">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isSessionOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+            title="Cash Register Drawer Status"
+          >
+            <Wallet
+              className={`w-3.5 h-3.5 ${
+                isSessionOpen
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-rose-500'
               }`}
             />
-            <span className="hidden sm:inline font-mono font-bold text-slate-800 dark:text-slate-200">
-              {isSessionOpen
-                ? `₱${currentDrawerCash.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                  })}`
-                : 'DRAWER CLOSED'}
-            </span>
-            <span className="sm:hidden font-mono font-bold text-slate-800 dark:text-slate-200">
-              {isSessionOpen ? `₱${currentDrawerCash.toFixed(0)}` : 'CLOSED'}
-            </span>
-          </div>
-        </button>
+            <div className="flex items-center gap-1.5 font-mono font-bold">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isSessionOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                }`}
+              />
+              <span
+                className={
+                  isSessionOpen
+                    ? 'text-emerald-700 dark:text-emerald-300 font-extrabold'
+                    : 'text-rose-600 dark:text-rose-400 text-[10px]'
+                }
+              >
+                {isSessionOpen
+                  ? `₱${currentDrawerCash.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}`
+                  : 'CLOSED'}
+              </span>
+            </div>
+          </button>
+
+          {/* QUICK CASH DRAWER ACTION CARD */}
+          <AnimatePresence>
+            {isCashPopoverOpen && (
+              <div className="absolute top-[calc(100%+8px)] right-0 w-[calc(100vw-24px)] max-w-xs sm:w-80 z-50 pointer-events-auto">
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 backdrop-blur-xl select-none space-y-3.5 text-left"
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <div className="flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4 text-emerald-500" />
+                      <span className="text-[11px] font-heading font-black tracking-wider uppercase text-slate-800 dark:text-white">
+                        PHYSICAL DRAWER CASH
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        isSessionOpen
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {isSessionOpen ? 'ACTIVE' : 'CLOSED'}
+                    </span>
+                  </div>
+
+                  {/* Cash Amount Box (Directly Revealed) */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60">
+                    <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-1">
+                      Live In-Drawer Balance
+                    </div>
+
+                    <div className="text-2xl font-mono font-black text-slate-900 dark:text-white transition-all">
+                      {isSessionOpen ? (
+                        `₱${currentDrawerCash.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                        })}`
+                      ) : (
+                        <span className="text-sm font-bold text-rose-500">
+                          SESSION IS CLOSED
+                        </span>
+                      )}
+                    </div>
+
+                    {isSessionOpen && activeSession && (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">
+                        Session #{activeSession.session_number} • Opener:{' '}
+                        {activeSession.opened_by_name}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Quick Action Buttons (Cash In, Cash Out, Digital In) */}
+                  {isSessionOpen ? (
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCashPopoverOpen(false);
+                          setActiveTxType('cash_in');
+                        }}
+                        className="flex flex-col items-center justify-center p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 active:scale-95 transition-all text-center cursor-pointer"
+                      >
+                        <ArrowDownRight className="w-4 h-4 mb-0.5 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-[10px] font-bold">Cash In</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCashPopoverOpen(false);
+                          setActiveTxType('cash_out');
+                        }}
+                        className="flex flex-col items-center justify-center p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-500/20 active:scale-95 transition-all text-center cursor-pointer"
+                      >
+                        <ArrowUpRight className="w-4 h-4 mb-0.5 text-rose-600 dark:text-rose-400" />
+                        <span className="text-[10px] font-bold">Cash Out</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCashPopoverOpen(false);
+                          setActiveTxType('digital_in');
+                        }}
+                        className="flex flex-col items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-500/20 active:scale-95 transition-all text-center cursor-pointer"
+                      >
+                        <Smartphone className="w-4 h-4 mb-0.5 text-blue-600 dark:text-blue-400" />
+                        <span className="text-[10px] font-bold">Digital</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 text-center py-1">
+                      Drawer is closed. Open a session in Cash Management to log
+                      transactions.
+                    </div>
+                  )}
+
+                  {/* Cash Management Full Page Shortcut */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCashPopoverOpen(false);
+                      navigate('/cash-management');
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Full Cash Management Ledger</span>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </button>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* TIME TELEMETRY (Desktop only) */}
         <div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
           {currentTimeFull}
         </div>
 
-        {/* NOTIFICATION BELL BUTTON */}
+        {/* NOTIFICATION BELL BUTTON - (Hidden on mobile portrait, shown on `hidden md:flex`) */}
         {isAdmin && (
-          <div className="relative">
+          <div className="relative hidden md:flex">
             <button
               type="button"
               id="btn-topbar-notifications"
               onClick={handleToggleNotifications}
               aria-label="Toggle notifications"
-              className={`relative h-8 sm:h-9 w-8 sm:w-9 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
+              className={`relative h-9 w-9 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
                 isNotificationOpen
                   ? 'bg-blue-600/10 border-blue-500 text-blue-600 dark:bg-red-500/20 dark:border-red-500 dark:text-red-400'
                   : unreadBadgeCount > 0
@@ -1109,7 +1150,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
               }`}
             >
               <Bell
-                className={`w-4 h-4 ${unreadBadgeCount > 0 ? 'animate-bounce' : ''}`}
+                className={`w-4 h-4 ${
+                  unreadBadgeCount > 0 ? 'animate-bounce' : ''
+                }`}
               />
 
               {unreadBadgeCount > 0 && (
@@ -1126,7 +1169,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           </div>
         )}
 
-        {/* MOBILE MENU */}
+        {/* MOBILE MENU TRIGGER */}
         <button
           onClick={onMenuClick}
           aria-label="Open Navigation Drawer"
@@ -1136,6 +1179,21 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           <Menu className="w-5 h-5" />
         </button>
       </div>
+
+      {/* QUICK CASH TRANSACTION MODAL TRIGGERED DIRECTLY FROM TOPBAR */}
+      {isSessionOpen && activeSession && activeTxType && (
+        <CashTransactionModal
+          isOpen={Boolean(activeTxType)}
+          onClose={() => setActiveTxType(null)}
+          type={activeTxType}
+          sessionId={activeSession.id}
+          currentDrawerCash={currentDrawerCash}
+          onSuccess={async () => {
+            await refreshTransactions();
+            await loadActiveSession();
+          }}
+        />
+      )}
     </header>
   );
 };

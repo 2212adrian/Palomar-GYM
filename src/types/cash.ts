@@ -18,7 +18,10 @@ export interface DenominationCounts {
   coin_025: number;
 }
 
-export const DENOMINATION_VALUES: Record<keyof DenominationCounts, { value: number; label: string; isBill: boolean }> = {
+export const DENOMINATION_VALUES: Record<
+  keyof DenominationCounts,
+  { value: number; label: string; isBill: boolean }
+> = {
   bill_1000: { value: 1000, label: '₱1,000 Bill', isBill: true },
   bill_500: { value: 500, label: '₱500 Bill', isBill: true },
   bill_200: { value: 200, label: '₱200 Bill', isBill: true },
@@ -46,7 +49,7 @@ export interface CashSession {
   closing_actual_cash: number | null;
   closing_expected_cash: number | null;
   discrepancy: number | null;
-  discrepancy_reason: string | null;
+  discrepancy_reason?: string | null;
   notes: string | null;
   denominations: Partial<DenominationCounts> | null;
   created_at: string;
@@ -57,7 +60,7 @@ export interface CashTransaction {
   id: string;
   session_id: string;
   type: CashTransactionType;
-  category: string;
+  category?: string;
   amount: number;
   reason: string;
   reference_number?: string | null;

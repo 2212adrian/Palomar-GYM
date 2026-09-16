@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
 
 import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
@@ -35,13 +36,31 @@ export const SystemLayout: React.FC = () => {
   const mainScrollRef = useRef<HTMLElement>(null);
   const logout = useAuthStore((state) => state.logout);
 
+  // ─── Global Live Cash Drawer Sync (Keeps Topbar wallet counter live on every page) ───
+  const loadActiveSession = useCashSessionStore(
+    (state) => state.loadActiveSession
+  );
+  const loadHistory = useCashSessionStore((state) => state.loadHistory);
+  const subscribeRealtime = useCashSessionStore(
+    (state) => state.subscribeRealtime
+  );
+
+  useEffect(() => {
+    loadActiveSession();
+    loadHistory();
+    const unsubscribe = subscribeRealtime();
+    return () => {
+      unsubscribe();
+    };
+  }, [loadActiveSession, loadHistory, subscribeRealtime]);
+
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutStarted, setLogoutStarted] = useState(false);
   const [logoutResting, setLogoutResting] = useState(false);
 
-  // Initialize slideOut as FALSE if dashboard intro was scheduled, so the curtain starts already covering the viewport
+  // Initialize slideOut as FALSE if dashboard intro was scheduled
   const [slideOut, setSlideOut] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('playDashboardIntro') !== 'true';
@@ -151,7 +170,6 @@ export const SystemLayout: React.FC = () => {
       setCurtainHidden(true);
     }
 
-    // Immediately request necessary camera & notification permissions when authenticated
     const hasPrompted = sessionStorage.getItem(
       'palomar_initial_permissions_prompted'
     );
