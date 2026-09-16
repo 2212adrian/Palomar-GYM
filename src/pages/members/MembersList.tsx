@@ -541,10 +541,9 @@ export const MembersList: React.FC<MembersListProps> = ({
       const isPast = !isNaN(endMs) && endMs < now;
 
       if (isPast) {
-        // Calculate days since expiration
         const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
 
-        // If more than 7 days have elapsed, transition to "No Subscription"
+        // Over 7 days passed since end date -> turns into "No Subscription"
         if (daysExpired > 7) {
           return {
             hasSub: false,
@@ -559,7 +558,7 @@ export const MembersList: React.FC<MembersListProps> = ({
           };
         }
 
-        // Within 7 days: Keep as "Expired"
+        // Within 0–7 days post-expiry: marked as Expired
         return {
           hasSub: false,
           canRenew: true,
@@ -709,11 +708,12 @@ export const MembersList: React.FC<MembersListProps> = ({
     getActiveCard,
   ]);
 
+  // FILTER & SORT MEMBERS: Non-subscription users at top priority -> lowest days -> longest days
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const now = Date.now();
 
-    return members.filter((m: Member) => {
+    const matched = members.filter((m: Member) => {
       const fullName = (m.full_name || '').toLowerCase();
       const memberId = (m.member_id || '').toLowerCase();
       const phone = (m.phone || '').toLowerCase();
@@ -771,6 +771,38 @@ export const MembersList: React.FC<MembersListProps> = ({
         default:
           return true;
       }
+    });
+
+    // Custom Hierarchy Sort:
+    // 1. Non-subscription users first (Profile only & Expired without active contract)
+    // 2. Subscribed users from shortest remaining days (1d, 2d, 3d...) to longest days (365d...)
+    return matched.sort((a, b) => {
+      const activeA = getActiveSubscription(a.member_id);
+      const activeB = getActiveSubscription(b.member_id);
+
+      const hasActiveA = activeA ? 1 : 0;
+      const hasActiveB = activeB ? 1 : 0;
+
+      // Group 0 (Non-subscription users) before Group 1 (Active subscribers)
+      if (hasActiveA !== hasActiveB) {
+        return hasActiveA - hasActiveB;
+      }
+
+      // If both are non-subscription users, sort by newest registered/created first
+      if (!activeA && !activeB) {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      }
+
+      // If both have active subscriptions: sort ascending by days remaining
+      const endA = new Date(activeA!.end_date).getTime();
+      const endB = new Date(activeB!.end_date).getTime();
+
+      const daysA = Math.ceil((endA - now) / (1000 * 60 * 60 * 24));
+      const daysB = Math.ceil((endB - now) / (1000 * 60 * 60 * 24));
+
+      return daysA - daysB;
     });
   }, [
     members,
@@ -921,7 +953,9 @@ export const MembersList: React.FC<MembersListProps> = ({
       sortable: true,
       sortValue: (item) => {
         const sub = getActiveSubscription(item.member_id);
-        return sub ? sub.plan_name : 'AAA_NO_SUB';
+        if (!sub) return -1;
+        const endMs = new Date(sub.end_date).getTime();
+        return Math.ceil((endMs - Date.now()) / (1000 * 60 * 60 * 24));
       },
       render: (item) => {
         const subInfo = getSubscriptionDetails(item.member_id);
@@ -1508,7 +1542,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                             setSearchQuery('');
                             setActiveChip('all');
                           }}
-                          className="px-3.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-blue-500/20"
+                          className="px-3.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border-blue-500/20"
                         >
                           Clear Filters
                         </button>

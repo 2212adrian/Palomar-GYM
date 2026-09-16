@@ -6,7 +6,6 @@ import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { useSessionLock } from '../../hooks/useSessionLock';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {
