@@ -51,6 +51,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase/client';
 import { ImageZoomModal } from './ImageZoomModal';
+import { useSessionLock } from '../../hooks/useSessionLock';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {
@@ -79,6 +80,7 @@ const getCameraErrorMessage = (err: any): string => {
 export const ScannerPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
+  const { isLocked, getLockReason } = useSessionLock();
 
   const qrRegionId = 'hybrid-qr-reader';
 
@@ -689,6 +691,11 @@ export const ScannerPage: React.FC = () => {
   const handlePlaceOrder = async () => {
     if (productCart.length === 0 || isSubmittingSale) return;
 
+    if (isLocked) {
+      toast.error(getLockReason('process product sales transactions'));
+      return;
+    }
+
     if (salePaymentMethod === 'Cash') {
       const received = Number(saleAmountReceived);
       if (isNaN(received) || received < cartTotalPayable) {
@@ -786,6 +793,11 @@ export const ScannerPage: React.FC = () => {
 
   const handleConfirmCheckIn = async () => {
     if (!scanResult?.member || isSubmittingCheckIn) return;
+
+    if (entryFee > 0 && isLocked) {
+      toast.error(getLockReason('collect entry fees or record paid check-ins'));
+      return;
+    }
 
     if (scanResult.member.alreadyCheckedInToday && !adminOverride) {
       toast.error('Duplicate attendance requires override confirmation.');
@@ -1632,9 +1644,20 @@ export const ScannerPage: React.FC = () => {
                           variant="primary"
                           onClick={handlePlaceOrder}
                           disabled={
-                            isSubmittingSale || productCart.length === 0
+                            isSubmittingSale ||
+                            productCart.length === 0 ||
+                            isLocked
                           }
-                          className="w-full py-3 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white"
+                          title={
+                            isLocked
+                              ? getLockReason('place product orders')
+                              : undefined
+                          }
+                          className={`w-full py-3 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white ${
+                            isLocked
+                              ? 'opacity-40 cursor-not-allowed pointer-events-none'
+                              : 'cursor-pointer disabled:opacity-40'
+                          }`}
                         >
                           <ShoppingBag className="w-4 h-4 shrink-0" />
                           <span className="whitespace-nowrap">
@@ -2021,7 +2044,13 @@ export const ScannerPage: React.FC = () => {
                             disabled={
                               isSubmittingCheckIn ||
                               isLockedByDuplicate ||
-                              isLockedByPayment
+                              isLockedByPayment ||
+                              (isLocked && entryFee > 0)
+                            }
+                            title={
+                              isLocked && entryFee > 0
+                                ? getLockReason('collect entry fees')
+                                : undefined
                             }
                             className="flex-1 py-2.5 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           >

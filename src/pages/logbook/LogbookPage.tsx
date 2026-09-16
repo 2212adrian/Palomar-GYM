@@ -53,6 +53,7 @@ import { HeaderActionsContext } from '../../routes';
 import { LogbookRecordAttendance } from './components/LogbookRecordAttendance';
 import { LogbookRecycleBin } from './components/LogbookRecycleBin';
 import { LogbookReportCompiler } from './components/LogbookReportCompiler';
+import { useSessionLock } from '../../hooks/useSessionLock';
 
 // Unified Official Receipt & TimelineCard
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
@@ -310,6 +311,7 @@ export const LogbookPage: React.FC = () => {
   const location = useLocation();
   const { setActions } = useContext(HeaderActionsContext);
   const { user, profile } = useAuthStore() as any;
+  const { isLocked, getLockReason } = useSessionLock();
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
@@ -1153,6 +1155,11 @@ export const LogbookPage: React.FC = () => {
   };
 
   const handleDeleteLog = async (log: LogRecord) => {
+    if (isLocked) {
+      toast.error(getLockReason('delete check-in records or alter revenue'));
+      return;
+    }
+
     if (!isLogDeletable(log)) {
       if (log.isSubscription || log.customerType === 'New Membership') {
         toast.error(
@@ -1242,11 +1249,16 @@ export const LogbookPage: React.FC = () => {
 
           <Button
             onClick={() => {
+              if (isLocked) return;
               setInitialSearchVal('');
               setIsCreateModalOpen(true);
             }}
             variant="primary"
-            className="hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
+            disabled={isLocked}
+            title={isLocked ? getLockReason('create a new check-in') : 'Create New Check-in'}
+            className={`hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
+              isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            }`}
           >
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
             <span>NEW CHECK-IN</span>
@@ -1281,11 +1293,16 @@ export const LogbookPage: React.FC = () => {
           )}
 
           <Button
-            onClick={() =>
-              window.dispatchEvent(new CustomEvent('trigger-member-wizard'))
-            }
+            onClick={() => {
+              if (isLocked) return;
+              window.dispatchEvent(new CustomEvent('trigger-member-wizard'));
+            }}
             variant="primary"
-            className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md cursor-pointer animate-fade-in whitespace-nowrap"
+            disabled={isLocked}
+            title={isLocked ? getLockReason('enroll new members or collect membership fees') : 'Enroll New Member'}
+            className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
+              isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            }`}
           >
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
             <span>ENROLL MEMBER</span>
@@ -1542,11 +1559,16 @@ export const LogbookPage: React.FC = () => {
                       ) : isSelectedDayToday ? (
                         <button
                           type="button"
+                          disabled={isLocked}
+                          title={isLocked ? getLockReason('record new check-in') : 'Record New Check-in'}
                           onClick={() => {
+                            if (isLocked) return;
                             setInitialSearchVal('');
                             setIsCreateModalOpen(true);
                           }}
-                          className="mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider cursor-pointer shadow-md hover:opacity-90 transition-all flex items-center gap-2 active:scale-95"
+                          className={`mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
+                            isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-90 active:scale-95'
+                          }`}
                         >
                           <Plus className="w-4 h-4" />
                           <span>RECORD NEW CHECK-IN</span>
@@ -1629,11 +1651,14 @@ export const LogbookPage: React.FC = () => {
                                   }}
                                   className="rounded-2xl transition-all overflow-hidden"
                                 >
-                                  <TimelineCard
+                                   <TimelineCard
                                     mode="attendance"
                                     data={log}
                                     canDelete={
                                       isLogDeletable(log) && !isDeleting
+                                    }
+                                    deleteDisabledReason={
+                                      isLocked ? getLockReason('delete check-in records') : undefined
                                     }
                                     onSelectReceipt={(rec) => {
                                       setSelectedReceiptLog(rec);
@@ -1694,14 +1719,19 @@ export const LogbookPage: React.FC = () => {
 
                     {/* ─── QUICK ACTION HORIZONTAL CHECK-IN BUTTON ─── */}
                     <motion.button
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
+                      whileHover={isLocked ? {} : { scale: 1.01 }}
+                      whileTap={isLocked ? {} : { scale: 0.98 }}
                       type="button"
+                      disabled={isLocked}
+                      title={isLocked ? getLockReason('create a new check-in') : 'Create New Check-in'}
                       onClick={() => {
+                        if (isLocked) return;
                         setInitialSearchVal('');
                         setIsCreateModalOpen(true);
                       }}
-                      className="w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
+                      className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
+                        isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
                     >
                       <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
                         <Plus className="w-4 h-4 text-white" />
@@ -1910,12 +1940,16 @@ export const LogbookPage: React.FC = () => {
 
               <button
                 type="button"
+                disabled={isLocked}
+                title={isLocked ? getLockReason('record new check-in') : 'Record New Check-In'}
                 onClick={() => {
+                  if (isLocked) return;
                   setInitialSearchVal('');
                   setIsCreateModalOpen(true);
                 }}
-                className="h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md cursor-pointer active:scale-95 transition-all"
-                title="Record New Check-In"
+                className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md transition-all ${
+                  isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95'
+                }`}
               >
                 <Plus className="w-4 h-4 shrink-0" />
                 <span>CHECK-IN</span>

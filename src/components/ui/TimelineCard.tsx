@@ -71,6 +71,7 @@ interface TimelineCardProps {
   mode: 'attendance' | 'sale';
   data: any;
   canDelete: boolean;
+  deleteDisabledReason?: string;
   onSelectReceipt: (data: any) => void;
   onTriggerDelete: (data: any) => void;
   onTriggerCollectPayment?: (data: any) => void;
@@ -217,6 +218,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   mode,
   data,
   canDelete,
+  deleteDisabledReason,
   onSelectReceipt,
   onTriggerDelete,
   onTriggerCollectPayment,
@@ -373,11 +375,19 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
         style={{ x }}
         drag="x"
         dragDirectionLock={true}
-        dragConstraints={{ left: -100, right: 100 }}
+        dragConstraints={{
+          left: deleteDisabledReason ? 0 : -100,
+          right: 100,
+        }}
         dragElastic={0.08}
         dragSnapToOrigin={true}
         dragTransition={{ bounceStiffness: 600, bounceDamping: 35 }}
-        onDragEnd={(e, info) => onDragEnd(e, info, data)}
+        onDragEnd={(e, info) => {
+          if (deleteDisabledReason && info.offset.x < -40) {
+            return;
+          }
+          onDragEnd(e, info, data);
+        }}
         className={containerClasses}
       >
         {/* ATTENDANCE CARD */}
@@ -514,15 +524,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>
 
-                  {canDelete && (
+                  {(canDelete || deleteDisabledReason) && (
                     <button
                       type="button"
+                      disabled={!!deleteDisabledReason}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onTriggerDelete(attendanceMeta.log);
+                        if (!deleteDisabledReason) {
+                          onTriggerDelete(attendanceMeta.log);
+                        }
                       }}
-                      className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0"
-                      title="Remove this check-in"
+                      className={`p-1.5 rounded-lg transition-all border shrink-0 ${
+                        deleteDisabledReason
+                          ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
+                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
+                      }`}
+                      title={deleteDisabledReason || 'Remove this check-in'}
                     >
                       <Trash2 className="w-4 h-4 stroke-[2]" />
                     </button>
@@ -643,15 +660,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>
 
-                  {canDelete && (
+                  {(canDelete || deleteDisabledReason) && (
                     <button
                       type="button"
+                      disabled={!!deleteDisabledReason}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onTriggerDelete(saleMeta.tx);
+                        if (!deleteDisabledReason) {
+                          onTriggerDelete(saleMeta.tx);
+                        }
                       }}
-                      className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0"
-                      title="Remove this sale"
+                      className={`p-1.5 rounded-lg transition-all border shrink-0 ${
+                        deleteDisabledReason
+                          ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
+                          : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-300 hover:border-rose-400 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
+                      }`}
+                      title={deleteDisabledReason || 'Remove this sale'}
                     >
                       <Trash2 className="w-4 h-4 stroke-[2]" />
                     </button>

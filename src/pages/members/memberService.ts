@@ -1,6 +1,7 @@
 // src/pages/members/memberService.ts
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { assertActiveCashSession } from '../../hooks/useSessionLock';
 
 import type {
   Member,
@@ -507,6 +508,8 @@ export const subscriptionService = {
       gcashRefNo?: string;
     }
   ): Promise<Subscription> => {
+    await assertActiveCashSession('create or renew subscriptions');
+
     if (!memberId) {
       throw new Error('Member ID is missing or invalid.');
     }
@@ -671,6 +674,8 @@ export const subscriptionService = {
     notes: string,
     user: string
   ): Promise<void> => {
+    await assertActiveCashSession('void subscriptions and revoke revenue');
+
     const { data: target, error: findErr } = await supabase
       .from('subscriptions')
       .select('*')
@@ -743,6 +748,8 @@ export const cardService = {
     gcashRefNo?: string,
     user: string = 'Admin Staff'
   ): Promise<{ success: boolean; count: number }> => {
+    await assertActiveCashSession('batch purchase membership cards');
+
     if (!memberIds || memberIds.length === 0) {
       throw new Error('No members selected for batch card purchase.');
     }
@@ -914,6 +921,10 @@ export const cardService = {
   ): Promise<MemberCard | null> => {
     if (!memberId) throw new Error('Member ID is required to issue card.');
 
+    if (cardFeePaid > 0) {
+      await assertActiveCashSession('issue paid membership cards');
+    }
+
     if (type === 'None') {
       await supabase.from('cards').delete().eq('member_id', memberId);
       return null;
@@ -1003,6 +1014,10 @@ export const cardService = {
     cardFeePaid: number = 0,
     receiptNo?: string
   ): Promise<MemberCard> => {
+    if (cardFeePaid > 0) {
+      await assertActiveCashSession('reissue cards with replacement fee');
+    }
+
     if (!memberId)
       throw new Error('Member ID is required for card replacement.');
 
@@ -1184,6 +1199,8 @@ export const cardService = {
     receiptNo?: string,
     gcashRefNo?: string
   ): Promise<MemberCard> => {
+    await assertActiveCashSession('process membership card payments');
+
     if (!memberId) throw new Error('Member ID is required.');
 
     // 1. Fetch member details

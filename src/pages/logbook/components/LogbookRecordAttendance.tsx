@@ -33,6 +33,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useSessionLock } from '../../../hooks/useSessionLock';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { createPortal } from 'react-dom';
@@ -241,6 +242,7 @@ export const LogbookRecordAttendance: React.FC<
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
   const { isSessionOpen } = useCashSessionStore();
+  const { isLocked, getLockReason } = useSessionLock();
   const isSubmittingRef = useRef(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -957,6 +959,11 @@ export const LogbookRecordAttendance: React.FC<
 
   const handleCompleteCheckIn = async () => {
     if (isSubmittingRef.current || isSuccess || !selectedClient) return;
+
+    if (derivedBilling.totalDue > 0 && isLocked) {
+      toast.error(getLockReason('record paid check-in transactions'));
+      return;
+    }
 
     if (derivedBilling.totalDue > 0 && paymentMethod === 'Cash' && !isSessionOpen) {
       toast.error(
@@ -1942,9 +1949,21 @@ export const LogbookRecordAttendance: React.FC<
                         variant="primary"
                         onClick={handleCompleteCheckIn}
                         disabled={
-                          !isFormValid || isSubmitting || isLockedByDuplicate
+                          !isFormValid ||
+                          isSubmitting ||
+                          isLockedByDuplicate ||
+                          (isLocked && derivedBilling.totalDue > 0)
                         }
-                        className="w-full py-3.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+                        title={
+                          isLocked && derivedBilling.totalDue > 0
+                            ? getLockReason('collect entry fees')
+                            : undefined
+                        }
+                        className={`w-full py-3.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 disabled:opacity-50 ${
+                          isLocked && derivedBilling.totalDue > 0
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'cursor-pointer'
+                        }`}
                       >
                         {isSubmitting
                           ? 'RECORDING CHECK-IN...'

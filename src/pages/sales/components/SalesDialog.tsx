@@ -17,6 +17,7 @@ import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useSessionLock } from '../../../hooks/useSessionLock';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
 interface SalesDialogProps {
@@ -59,6 +60,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   // Cash Session State
   const { isSessionOpen } = useCashSessionStore();
+  const { isLocked, getLockReason } = useSessionLock();
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
@@ -397,6 +399,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   const handleCompleteSale = async () => {
     if (isSubmittingRef.current || isSuccess) return;
+
+    if (isLocked) {
+      toast.error(getLockReason('process sales transactions'));
+      return;
+    }
 
     if (cart.length === 0) {
       toast.error('Your shopping cart is empty.');
@@ -955,8 +962,13 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             <div className="pt-3">
               <Button
                 onClick={handleCompleteSale}
-                disabled={cart.length === 0 || isSubmitting}
-                className={`py-3.5 w-full font-bold text-xs uppercase tracking-wider ${isSubmitting ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                disabled={cart.length === 0 || isSubmitting || isLocked}
+                title={isLocked ? getLockReason('process sales transactions') : undefined}
+                className={`py-3.5 w-full font-bold text-xs uppercase tracking-wider ${
+                  isSubmitting || isLocked
+                    ? 'opacity-50 cursor-not-allowed pointer-events-none'
+                    : 'cursor-pointer'
+                }`}
               >
                 {isSubmitting
                   ? 'PROCESSING TRANSACTION...'
