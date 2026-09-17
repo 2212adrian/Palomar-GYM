@@ -1,7 +1,9 @@
-//src/pages/system/DatabaseBackup.tsx
+// src/pages/system/DatabaseBackup.tsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { clearAppCaches } from '../../lib/cacheUtils';
+import { useBackupSafetyStore } from '../../stores/useBackupSafetyStore';
 import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -20,11 +22,21 @@ import {
   PlusCircle,
   Lock,
   ArrowLeftRight,
+  Undo2,
+  ShieldCheck,
 } from 'lucide-react';
 
+interface BackupItem {
+  id: string;
+  filename: string;
+  notes: string;
+  type: 'manual' | 'auto' | 'archived' | 'safety';
+  size_bytes: number;
+  created_at: string;
+}
+
 export const DatabaseBackup: React.FC = () => {
-  const [backups, setBackups] = useState<any[]>([]);
-  // Initializing to true prevents layout flashing before query fires
+  const [backups, setBackups] = useState<BackupItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
@@ -36,43 +48,108 @@ export const DatabaseBackup: React.FC = () => {
 
   // Restore Modal State
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState<boolean>(false);
-  const [restoreTarget, setRestoreTarget] = useState<any | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<BackupItem | null>(null);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(3);
-
-  // Password Verification State
   const [verifyPassword, setVerifyPassword] = useState<string>('');
 
-  // Post-Restore Verification State
-  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  // Global Safety Store state hook
+  const safetyBackup = useBackupSafetyStore((s) => s?.safetyBackup ?? null);
+  const isVerifying = useBackupSafetyStore((s) => s?.isVerifying ?? false);
+  const revertRestoration = useBackupSafetyStore((s) => s?.revertRestoration);
+  const commitRestoration = useBackupSafetyStore((s) => s?.commitRestoration);
+  const fetchSafetyBackup = useBackupSafetyStore((s) => s?.fetchSafetyBackup);
 
-  // Dropdown ref to auto-close menu on outside click
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch backups from Supabase on load
   const fetchBackups = async () => {
     try {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('database_backups')
-        .select('id, filename, notes, type, size_bytes, created_at')
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setBackups(data || []);
+      setBackups((data as BackupItem[]) || []);
+      return data as BackupItem[];
     } catch (err: any) {
-      console.warn('Failed to retrieve backups list:', err.message);
+      console.warn(
+        'Failed to retrieve backups from table:',
+        err?.message || err
+      );
       toast.error('Failed to load backup history.');
+      return [];
     } finally {
       setIsLoading(false);
     }
   };
 
+  const checkAndTriggerDailyAutoBackup = async (currentList: BackupItem[]) => {
+    try {
+      const todayDateStr = new Date().toISOString().slice(0, 10);
+      const hasAutoToday = currentList.some(
+        (b) => b.type === 'auto' && b.created_at.slice(0, 10) === todayDateStr
+      );
+
+      if (hasAutoToday) return;
+
+      const autoBackups = currentList
+        .filter((b) => b.type === 'auto')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+      if (autoBackups.length >= 7) {
+        const toRemove = autoBackups.slice(0, autoBackups.length - 6);
+        const filenamesToRemove = toRemove.map((b) => b.filename);
+        const idsToRemove = toRemove.map((b) => b.id);
+
+        await supabase.storage.from('backups').remove(filenamesToRemove);
+        await supabase.from('database_backups').delete().in('id', idsToRemove);
+      }
+
+      const { data: dumpPayload, error: dumpErr } = await supabase.rpc(
+        'export_database_dump'
+      );
+      if (dumpErr || !dumpPayload) return;
+
+      const timestamp = Date.now();
+      const filename = `auto_${timestamp}.json`;
+      const jsonBlob = new Blob([JSON.stringify(dumpPayload, null, 2)], {
+        type: 'application/json',
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from('backups')
+        .upload(filename, jsonBlob, { contentType: 'application/json' });
+      if (uploadError) return;
+
+      await supabase.from('database_backups').insert({
+        filename,
+        notes: 'Daily Automated Backup',
+        type: 'auto',
+        size_bytes: jsonBlob.size,
+      });
+
+      fetchBackups();
+    } catch (err) {
+      console.error('Silent auto-backup error:', err);
+    }
+  };
+
   useEffect(() => {
-    fetchBackups();
+    fetchBackups().then((loaded) => {
+      if (loaded && loaded.length >= 0) {
+        checkAndTriggerDailyAutoBackup(loaded);
+      }
+    });
+    if (fetchSafetyBackup) {
+      fetchSafetyBackup();
+    }
   }, []);
 
-  // Manage countdown timer for Safety Restore confirmation
   useEffect(() => {
     if (!isRestoreModalOpen) return;
     setCountdown(3);
@@ -89,7 +166,6 @@ export const DatabaseBackup: React.FC = () => {
     return () => clearInterval(timer);
   }, [isRestoreModalOpen]);
 
-  // Handle clicking outside of open dropdown to close it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -103,104 +179,173 @@ export const DatabaseBackup: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Trigger manual system backup point with custom notes
   const handleCreateBackup = async () => {
     try {
       setIsCreating(true);
       const customNoteText = backupNotes.trim() || 'Manual recovery point';
-      const { error } = await supabase.rpc('generate_database_backup', {
-        custom_notes: customNoteText,
-        backup_type: 'manual',
+
+      const manualFiles = backups
+        .filter((b) => b.type === 'manual')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+      if (manualFiles.length >= 5) {
+        const toDelete = manualFiles.slice(0, manualFiles.length - 4);
+        await supabase.storage
+          .from('backups')
+          .remove(toDelete.map((b) => b.filename));
+        await supabase
+          .from('database_backups')
+          .delete()
+          .in(
+            'id',
+            toDelete.map((b) => b.id)
+          );
+      }
+
+      const { data: dumpPayload, error: dumpError } = await supabase.rpc(
+        'export_database_dump'
+      );
+      if (dumpError) throw dumpError;
+
+      const timestamp = Date.now();
+      const filename = `manual_${timestamp}.json`;
+      const jsonBlob = new Blob([JSON.stringify(dumpPayload, null, 2)], {
+        type: 'application/json',
       });
 
-      if (error) throw error;
+      const { error: uploadError } = await supabase.storage
+        .from('backups')
+        .upload(filename, jsonBlob, { contentType: 'application/json' });
+      if (uploadError) throw uploadError;
 
-      // ─── AUDIT LOG: Backup Created ──────────────────────────────────────────
+      const { error: insertError } = await supabase
+        .from('database_backups')
+        .insert({
+          filename,
+          notes: customNoteText,
+          type: 'manual',
+          size_bytes: jsonBlob.size,
+        });
+      if (insertError) throw insertError;
+
       await logAudit(
         'DATABASE_BACKUP_CREATED',
-        `Created manual database backup checkpoint. Notes: "${customNoteText}".`
+        `Created manual database backup checkpoint: "${customNoteText}".`
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
-      toast.success('A new system backup has been successfully saved.');
+      toast.success('Backup saved to storage successfully.');
       setIsCreateModalOpen(false);
       setBackupNotes('');
       fetchBackups();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to trigger backup.');
+      toast.error(err?.message || 'Failed to trigger backup.');
     } finally {
       setIsCreating(false);
     }
   };
 
-  // Archive backup RPC trigger (Max 3)
   const handleArchiveBackup = async (backupId: string) => {
     try {
-      const { error } = await supabase.rpc('archive_database_backup', {
-        target_backup_id: backupId,
-      });
+      const targetBackup = backups.find((b) => b.id === backupId);
+      if (!targetBackup) throw new Error('Backup not found.');
+
+      const archivedFiles = backups
+        .filter((b) => b.type === 'archived')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+      if (archivedFiles.length >= 3) {
+        const toDelete = archivedFiles.slice(0, archivedFiles.length - 2);
+        await supabase.storage
+          .from('backups')
+          .remove(toDelete.map((b) => b.filename));
+        await supabase
+          .from('database_backups')
+          .delete()
+          .in(
+            'id',
+            toDelete.map((b) => b.id)
+          );
+      }
+
+      const { error } = await supabase
+        .from('database_backups')
+        .update({ type: 'archived' })
+        .eq('id', backupId);
 
       if (error) throw error;
 
-      const targetBackup = backups.find((b) => b.id === backupId);
-      const backupLabel = targetBackup
-        ? targetBackup.notes || targetBackup.filename
-        : 'Backup';
-
-      // ─── AUDIT LOG: Backup Archived ─────────────────────────────────────────
       await logAudit(
         'DATABASE_BACKUP_ARCHIVED',
-        `Archived database backup point: "${backupLabel}".`,
-        backupId
+        `Archived database backup: "${targetBackup.notes || targetBackup.filename}".`,
+        targetBackup.id
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
-      toast.success('Backup successfully archived (Rotation Limit: Max 3).');
+      toast.success('Backup successfully archived.');
       setActiveDropdownId(null);
       fetchBackups();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to archive backup.');
+      toast.error(err?.message || 'Failed to archive backup.');
     }
   };
 
-  // Unarchive backup RPC trigger (Enforces manual max 5 limit)
   const handleUnarchiveBackup = async (backupId: string) => {
     try {
-      const { error } = await supabase.rpc('unarchive_database_backup', {
-        target_backup_id: backupId,
-      });
+      const targetBackup = backups.find((b) => b.id === backupId);
+      if (!targetBackup) throw new Error('Backup not found.');
+
+      const manualFiles = backups
+        .filter((b) => b.type === 'manual')
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+      if (manualFiles.length >= 5) {
+        const toDelete = manualFiles.slice(0, manualFiles.length - 4);
+        await supabase.storage
+          .from('backups')
+          .remove(toDelete.map((b) => b.filename));
+        await supabase
+          .from('database_backups')
+          .delete()
+          .in(
+            'id',
+            toDelete.map((b) => b.id)
+          );
+      }
+
+      const { error } = await supabase
+        .from('database_backups')
+        .update({ type: 'manual' })
+        .eq('id', backupId);
 
       if (error) throw error;
 
-      const targetBackup = backups.find((b) => b.id === backupId);
-      const backupLabel = targetBackup
-        ? targetBackup.notes || targetBackup.filename
-        : 'Backup';
-
-      // ─── AUDIT LOG: Backup Unarchived ───────────────────────────────────────
       await logAudit(
         'DATABASE_BACKUP_UNARCHIVED',
-        `Returned archived backup back to manual listings: "${backupLabel}".`,
-        backupId
+        `Returned backup to manual listings: "${targetBackup.notes || targetBackup.filename}".`,
+        targetBackup.id
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
-      toast.success(
-        'Backup successfully unarchived (Returned to manual list).'
-      );
+      toast.success('Backup unarchived.');
       setActiveDropdownId(null);
       fetchBackups();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to unarchive backup.');
+      toast.error(err?.message || 'Failed to unarchive backup.');
     }
   };
 
-  const handleRestoreClick = (backup: any) => {
+  const handleRestoreClick = (backup: BackupItem) => {
     setRestoreTarget(backup);
     setIsRestoreModalOpen(true);
   };
 
-  // Perform actual system restore via database SQL function
   const handleConfirmRestore = async () => {
     if (!restoreTarget) return;
 
@@ -212,171 +357,119 @@ export const DatabaseBackup: React.FC = () => {
     try {
       setIsRestoring(true);
 
-      // 1. Password Verification via secure database-level RPC (Prevents client session/headers corruption)
       const { data: isValidPassword, error: authError } = await supabase.rpc(
         'verify_user_password',
-        {
-          entered_password: verifyPassword,
-        }
+        { entered_password: verifyPassword }
       );
 
       if (authError || !isValidPassword) {
         throw new Error('Authorization failed. Incorrect password.');
       }
 
-      // 2. Erase any existing auto-safety backup first (Enforcing: There should only be one safety file)
-      await supabase
-        .from('database_backups')
-        .delete()
-        .eq('notes', 'Pre-Restore Backup (Auto-Safety)');
-
-      // 3. Automatic Pre-Restore Safety Backup
-      toast.info('Generating Pre-Restore Safety Backup...');
-      const { error: safetyError } = await supabase.rpc(
-        'generate_database_backup',
-        {
-          custom_notes: 'Pre-Restore Backup (Auto-Safety)',
-          backup_type: 'manual',
-        }
-      );
-
-      if (safetyError) {
-        throw new Error(`Auto-Safety backup failed: ${safetyError.message}`);
+      const existingSafety = backups.find((b) => b.type === 'safety');
+      if (existingSafety) {
+        await supabase.storage
+          .from('backups')
+          .remove([existingSafety.filename]);
+        await supabase
+          .from('database_backups')
+          .delete()
+          .eq('id', existingSafety.id);
       }
 
-      // 4. Rollback Overwrite Restoration
+      toast.info('Generating Pre-Restore Safety Backup...');
+      const { data: currentDump, error: dumpErr } = await supabase.rpc(
+        'export_database_dump'
+      );
+      if (dumpErr) throw dumpErr;
+
+      const safetyFilename = `safety_${Date.now()}.json`;
+      const safetyBlob = new Blob([JSON.stringify(currentDump, null, 2)], {
+        type: 'application/json',
+      });
+
+      await supabase.storage
+        .from('backups')
+        .upload(safetyFilename, safetyBlob, {
+          contentType: 'application/json',
+        });
+
+      await supabase.from('database_backups').insert({
+        filename: safetyFilename,
+        notes: 'Pre-Restore Backup (Auto-Safety)',
+        type: 'safety',
+        size_bytes: safetyBlob.size,
+      });
+
+      toast.info('Downloading backup file...');
+      const { data: fileBlob, error: downloadError } = await supabase.storage
+        .from('backups')
+        .download(restoreTarget.filename);
+
+      if (downloadError || !fileBlob) {
+        throw new Error(
+          `Failed to download backup file: ${downloadError?.message}`
+        );
+      }
+
+      const backupJson = JSON.parse(await fileBlob.text());
+
       toast.info('Restoring database snapshot...');
       const { error: restoreError } = await supabase.rpc(
-        'restore_database_backup',
-        {
-          target_backup_id: restoreTarget.id,
-        }
+        'restore_database_from_payload',
+        { backup_payload: backupJson }
       );
-
       if (restoreError) throw restoreError;
 
-      const targetBackupLabel = restoreTarget.notes || restoreTarget.filename;
+      // Invalidate app runtime caches
+      clearAppCaches();
 
-      // ─── AUDIT LOG: Restoration Initiated ────────────────────────────────────
+      const targetBackupLabel = restoreTarget.notes || restoreTarget.filename;
       await logAudit(
         'DATABASE_RESTORE_INITIATED',
-        `Initiated rollback restoration to checkpoint: "${targetBackupLabel}". Awaiting commit confirmation.`,
+        `Initiated rollback restoration to checkpoint: "${targetBackupLabel}".`,
         restoreTarget.id
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       toast.success(
-        'System temporarily restored. Please verify the integrity of the data.'
+        'System restored. Please verify the integrity of the records.'
       );
       setIsRestoreModalOpen(false);
       setRestoreTarget(null);
       setVerifyPassword('');
-      fetchBackups();
+
+      if (fetchSafetyBackup) await fetchSafetyBackup();
+      await fetchBackups();
     } catch (err: any) {
-      toast.error(err.message || 'Database restoration process failed.');
+      toast.error(err?.message || 'Database restoration process failed.');
     } finally {
       setIsRestoring(false);
-    }
-  };
-
-  // Revert Restoration (Restores Pre-Restore backup, then deletes it)
-  const handleRevertRestoration = async (safetyBackupId: string) => {
-    try {
-      setIsVerifying(true);
-      toast.info('Reverting database back to original state...');
-
-      const { error: restoreError } = await supabase.rpc(
-        'restore_database_backup',
-        {
-          target_backup_id: safetyBackupId,
-        }
-      );
-
-      if (restoreError) throw restoreError;
-
-      // Delete the safety backup post rollback
-      await supabase.from('database_backups').delete().eq('id', safetyBackupId);
-
-      // ─── AUDIT LOG: Restoration Reverted ─────────────────────────────────────
-      await logAudit(
-        'DATABASE_RESTORE_REVERTED',
-        'Reverted the recent database restoration. All modified files returned to original state.'
-      );
-      // ──────────────────────────────────────────────────────────────────────────
-
-      toast.success('System successfully rolled back to your original state.');
-      fetchBackups();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to revert restoration.');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  // Commit Restoration (Keeps changes, deletes Pre-Restore backup)
-  const handleCommitRestoration = async (safetyBackupId: string) => {
-    try {
-      setIsVerifying(true);
-
-      const { error } = await supabase
-        .from('database_backups')
-        .delete()
-        .eq('id', safetyBackupId);
-      if (error) throw error;
-
-      // ─── AUDIT LOG: Restoration Committed ────────────────────────────────────
-      await logAudit(
-        'DATABASE_RESTORE_COMMITTED',
-        'Committed restoration checkpoint modifications. Verification process complete.'
-      );
-      // ──────────────────────────────────────────────────────────────────────────
-
-      toast.success('Changes successfully committed. Safety snapshot cleared.');
-      fetchBackups();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to commit system files.');
-    } finally {
-      setIsRestoring(false);
-      setIsVerifying(false);
     }
   };
 
   const formatSize = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
-    if (bytes < 1024) {
-      return `${bytes} B`;
-    } else if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    } else {
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    }
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Look for any existing auto-safety backup point
-  const safetyBackupPoint = backups.find(
-    (b) => b.notes === 'Pre-Restore Backup (Auto-Safety)'
-  );
+  const safetyBackupPoint =
+    safetyBackup || backups.find((b) => b.type === 'safety');
 
-  // Filter backups based on active select state
   const filteredBackups = backups.filter((b) => {
-    // Hide safety backup from the general list to avoid cluttering human view
-    if (b.notes === 'Pre-Restore Backup (Auto-Safety)') return false;
-
+    if (b.type === 'safety') return false;
     if (selectedTypeFilter === 'all') return true;
     return b.type === selectedTypeFilter;
   });
 
-  // Calculate dynamic stats for KPI widget displays
-  const manualBackupsCount = backups.filter(
-    (b) => b.type === 'manual' && b.notes !== 'Pre-Restore Backup (Auto-Safety)'
-  ).length;
+  const manualBackupsCount = backups.filter((b) => b.type === 'manual').length;
   const autoBackupsCount = backups.filter((b) => b.type === 'auto').length;
   const archivedBackupsCount = backups.filter(
     (b) => b.type === 'archived'
   ).length;
   const totalFilteredCount = filteredBackups.length;
 
-  // Build the configuration for the three KPI widgets dynamically depending on selectedTypeFilter
   const kpiConfig = useMemo(() => {
     switch (selectedTypeFilter) {
       case 'auto':
@@ -385,24 +478,31 @@ export const DatabaseBackup: React.FC = () => {
             title: 'AUTOMATED DAILY FILES',
             value: `${autoBackupsCount} / 7`,
             subtext: 'Active daily rotation slots',
-            colorClass: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+            colorClass:
+              'bg-blue-500/10 text-blue-600 dark:text-blue-500 border-blue-500/20',
             icon: (
-              <RefreshCw className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+              <RefreshCw className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             ),
           },
           kpi2: {
             title: 'ROTATION PERIOD',
             value: '7 DAY CYCLE',
             subtext: 'One snapshot saved daily',
-            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-            icon: <Calendar className="w-6 h-6 text-slate-400" />,
+            colorClass:
+              'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+            icon: (
+              <Calendar className="w-6 h-6 text-slate-600 dark:text-slate-400" />
+            ),
           },
           kpi3: {
             title: 'RETENTION POLICY',
             value: 'AUTO-DELETE',
             subtext: 'Oldest rotated out at limit',
-            colorClass: 'bg-blue-500/10 text-blue-550 border-blue-500/20',
-            icon: <CheckCircle2 className="w-6 h-6 text-blue-400" />,
+            colorClass:
+              'bg-blue-500/10 text-blue-600 dark:text-blue-500 border-blue-500/20',
+            icon: (
+              <CheckCircle2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            ),
           },
         };
       case 'manual':
@@ -412,23 +512,30 @@ export const DatabaseBackup: React.FC = () => {
             value: `${manualBackupsCount} / 5`,
             subtext: 'Active custom-saved checkpoints',
             colorClass:
-              'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />,
+              'bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20',
+            icon: (
+              <PlusCircle className="w-6 h-6 text-emerald-600 dark:text-emerald-500" />
+            ),
           },
           kpi2: {
             title: 'MANUAL ROTATION',
             value: 'LIMIT: 5 FILES',
             subtext: 'Oldest deleted if exceeded',
-            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-            icon: <RefreshCw className="w-6 h-6 text-slate-400" />,
+            colorClass:
+              'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+            icon: (
+              <RefreshCw className="w-6 h-6 text-slate-600 dark:text-slate-400" />
+            ),
           },
           kpi3: {
             title: 'RETENTION POLICY',
             value: 'PERMANENT',
             subtext: 'Exempt from auto daily rotation',
             colorClass:
-              'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-            icon: <Lock className="w-6 h-6 text-emerald-400" />,
+              'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+            icon: (
+              <Lock className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            ),
           },
         };
       case 'archived':
@@ -437,25 +544,33 @@ export const DatabaseBackup: React.FC = () => {
             title: 'ARCHIVED SNAPSHOTS',
             value: `${archivedBackupsCount} / 3`,
             subtext: 'Checkpoints saved indefinitely',
-            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-            icon: <Archive className="w-6 h-6 text-amber-500" />,
+            colorClass:
+              'bg-amber-500/10 text-amber-600 dark:text-amber-500 border-amber-500/20',
+            icon: (
+              <Archive className="w-6 h-6 text-amber-600 dark:text-amber-500" />
+            ),
           },
           kpi2: {
             title: 'ARCHIVE LIMIT',
             value: 'LIMIT: 3 FILES',
             subtext: 'Oldest deleted if exceeded',
-            colorClass: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-            icon: <RefreshCw className="w-6 h-6 text-slate-400" />,
+            colorClass:
+              'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+            icon: (
+              <RefreshCw className="w-6 h-6 text-slate-600 dark:text-slate-400" />
+            ),
           },
           kpi3: {
             title: 'RETENTION POLICY',
             value: 'LOCK PRESERVED',
             subtext: 'Bypasses automatic rotation',
-            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-            icon: <Lock className="w-6 h-6 text-amber-500" />,
+            colorClass:
+              'bg-amber-500/10 text-amber-600 dark:text-amber-500 border-amber-500/20',
+            icon: (
+              <Lock className="w-6 h-6 text-amber-600 dark:text-amber-500" />
+            ),
           },
         };
-      case 'all':
       default:
         return {
           kpi1: {
@@ -463,23 +578,30 @@ export const DatabaseBackup: React.FC = () => {
             value: `${totalFilteredCount} ACTIVE`,
             subtext: 'Across all categories',
             colorClass:
-              'bg-slate-500/10 text-(--color-primary-light) border-slate-500/20',
-            icon: <Database className="w-6 h-6 text-(--color-primary-light)" />,
+              'bg-slate-500/10 text-(--color-primary) dark:text-(--color-primary-light) border-slate-500/20',
+            icon: (
+              <Database className="w-6 h-6 text-(--color-primary) dark:text-(--color-primary-light)" />
+            ),
           },
           kpi2: {
             title: 'MANUAL CHECKPOINTS',
             value: `${manualBackupsCount} / 5`,
             subtext: 'Manual storage usage',
             colorClass:
-              'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-            icon: <PlusCircle className="w-6 h-6 text-emerald-500" />,
+              'bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20',
+            icon: (
+              <PlusCircle className="w-6 h-6 text-emerald-600 dark:text-emerald-500" />
+            ),
           },
           kpi3: {
             title: 'ARCHIVED SNAPSHOTS',
             value: `${archivedBackupsCount} / 3`,
             subtext: 'Archived storage usage',
-            colorClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-            icon: <Archive className="w-6 h-6 text-amber-500" />,
+            colorClass:
+              'bg-amber-500/10 text-amber-600 dark:text-amber-500 border-amber-500/20',
+            icon: (
+              <Archive className="w-6 h-6 text-amber-600 dark:text-amber-500" />
+            ),
           },
         };
     }
@@ -491,8 +613,7 @@ export const DatabaseBackup: React.FC = () => {
     totalFilteredCount,
   ]);
 
-  // Main UI Column definitions
-  const columns: Column<any>[] = [
+  const columns: Column<BackupItem>[] = [
     {
       key: 'filename',
       header: 'BACKUP INFORMATION',
@@ -515,32 +636,34 @@ export const DatabaseBackup: React.FC = () => {
             <div
               className={`p-2.5 rounded-xl border shrink-0 ${
                 b.type === 'archived'
-                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-500'
                   : b.type === 'manual'
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                    : 'bg-(--color-primary)/10 border-(--color-primary)/10 text-(--color-primary-light)'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-(--color-primary)/10 border-(--color-primary)/20 text-(--color-primary) dark:text-(--color-primary-light)'
               }`}
             >
-              <Database className="w-5.5 h-5.5" />
+              <Database className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
             </div>
-            <div className="space-y-1">
-              <span className="text-sm font-semibold text-(--color-text) block tracking-wide">
+            <div className="space-y-1 min-w-0">
+              <span className="text-sm font-semibold text-(--color-text) block tracking-wide truncate">
                 Backup from {dateStr}
               </span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 font-medium">
-                  Today at {timeStr} (PHT)
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  {timeStr}
                 </span>
                 {b.notes && (
                   <>
-                    <span className="text-slate-600 font-bold">•</span>
-                    <span className="text-xs text-(--color-text) opacity-85 italic font-medium max-w-sm truncate">
+                    <span className="text-slate-400 dark:text-slate-600 font-bold">
+                      •
+                    </span>
+                    <span className="text-xs text-slate-600 dark:text-(--color-text) dark:opacity-85 italic font-medium max-w-[180px] sm:max-w-xs md:max-w-sm truncate">
                       "{b.notes}"
                     </span>
                   </>
                 )}
                 {b.type === 'manual' && (
-                  <span className="px-1.5 py-0.5 bg-emerald-500/10 text-[9px] text-emerald-400 border border-emerald-500/20 rounded-md font-bold tracking-wider uppercase scale-90">
+                  <span className="px-1.5 py-0.5 bg-emerald-500/10 text-[9px] text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 rounded-md font-bold tracking-wider uppercase scale-90">
                     Manual
                   </span>
                 )}
@@ -557,7 +680,7 @@ export const DatabaseBackup: React.FC = () => {
       render: (b) => {
         if (b.type === 'archived') {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-[10px] text-amber-500 border border-amber-500/20 rounded-full font-bold tracking-wider uppercase">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-full font-bold tracking-wider uppercase whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
               ARCHIVED
             </span>
@@ -565,15 +688,15 @@ export const DatabaseBackup: React.FC = () => {
         }
         if (b.type === 'manual') {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[10px] text-emerald-400 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" />
               MANUAL
             </span>
           );
         }
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[10px] text-blue-500 dark:text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-wider uppercase">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-wider uppercase whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400" />
             AUTO
           </span>
         );
@@ -589,20 +712,18 @@ export const DatabaseBackup: React.FC = () => {
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-        let friendlyAge = '';
-        if (diffMins <= 5) {
-          friendlyAge = 'Just now';
-        } else if (diffMins < 60) {
+        let friendlyAge = 'Just now';
+        if (diffMins >= 1 && diffMins < 60) {
           friendlyAge = `${diffMins} mins ago`;
-        } else if (diffHours < 24) {
+        } else if (diffHours >= 1 && diffHours < 24) {
           friendlyAge = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-        } else {
+        } else if (diffDays >= 1) {
           friendlyAge = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
         }
 
         return (
-          <div className="flex items-center gap-1.5 text-(--color-text) opacity-85 font-medium">
-            <Calendar className="w-4 h-4 opacity-70" />
+          <div className="flex items-center gap-1.5 text-slate-600 dark:text-(--color-text) dark:opacity-85 font-medium whitespace-nowrap">
+            <Calendar className="w-4 h-4 text-slate-400 dark:opacity-70" />
             <span className="text-xs">{friendlyAge}</span>
           </div>
         );
@@ -613,7 +734,7 @@ export const DatabaseBackup: React.FC = () => {
       header: 'SIZE',
       sortable: true,
       render: (b) => (
-        <span className="text-xs text-(--color-text) font-mono font-medium opacity-85">
+        <span className="text-xs text-slate-700 dark:text-(--color-text) font-mono font-medium dark:opacity-85 whitespace-nowrap">
           {formatSize(b.size_bytes)}
         </span>
       ),
@@ -624,29 +745,27 @@ export const DatabaseBackup: React.FC = () => {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (b) => (
-        <div className="flex items-center justify-end gap-3.5 relative">
+        <div className="flex items-center justify-end gap-2 sm:gap-3.5 relative">
           <button
             disabled={!!safetyBackupPoint}
             onClick={() => handleRestoreClick(b)}
-            className="px-3.5 py-1.5 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary-light) hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-(--color-primary)/20 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 sm:px-3.5 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary) dark:text-(--color-primary-light) hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-(--color-primary)/20 disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
           >
             RESTORE
           </button>
 
-          {/* 3-Dots Dropdown Trigger with Title & Label Attributes to satisfy Axe Diagnostics */}
           <div className="relative">
             <button
               onClick={() =>
                 setActiveDropdownId(activeDropdownId === b.id ? null : b.id)
               }
-              className="p-1.5 text-slate-400 hover:text-(--color-text) rounded-lg hover:bg-(--bg-input) transition-colors cursor-pointer"
+              className="p-1.5 text-slate-500 hover:text-(--color-text) rounded-lg hover:bg-(--bg-input) transition-colors cursor-pointer"
               title="Backup Options"
               aria-label="Toggle backup options menu"
             >
               <MoreVertical className="w-4.5 h-4.5" />
             </button>
 
-            {/* Floating Dropdown Dialog (Removed Delete button option per requirements) */}
             {activeDropdownId === b.id && (
               <div
                 ref={dropdownRef}
@@ -655,7 +774,7 @@ export const DatabaseBackup: React.FC = () => {
                 {b.type !== 'archived' ? (
                   <button
                     onClick={() => handleArchiveBackup(b.id)}
-                    className="w-full px-3.5 py-2 hover:bg-(--bg-input) text-(--color-text) opacity-85 hover:opacity-100 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                    className="w-full px-3.5 py-2 hover:bg-(--bg-input) text-slate-700 dark:text-(--color-text) dark:opacity-85 hover:opacity-100 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
                     <Archive className="w-4 h-4 text-amber-500" />
                     Archive Backup
@@ -663,9 +782,9 @@ export const DatabaseBackup: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => handleUnarchiveBackup(b.id)}
-                    className="w-full px-3.5 py-2 hover:bg-(--bg-input) text-(--color-text) opacity-85 hover:opacity-100 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+                    className="w-full px-3.5 py-2 hover:bg-(--bg-input) text-slate-700 dark:text-(--color-text) dark:opacity-85 hover:opacity-100 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <Archive className="w-4 h-4 text-emerald-455 rotate-180" />
+                    <Archive className="w-4 h-4 text-emerald-500 dark:text-emerald-400 rotate-180" />
                     Unarchive Backup
                   </button>
                 )}
@@ -678,62 +797,63 @@ export const DatabaseBackup: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 font-body min-h-screen text-(--color-text) rounded-3xl">
-      {/* ⚠️ POST-RESTORE SYSTEM VERIFICATION FLOATING PORTAL CARD */}
+    <div className="space-y-6 sm:space-y-8 font-body min-h-screen text-(--color-text) rounded-3xl">
+      {/* POST-RESTORE SYSTEM VERIFICATION CARD */}
       {safetyBackupPoint && (
-        <div className="p-5 bg-amber-500/5 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-up shadow-lg">
+        <div className="p-4 sm:p-5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-up shadow-lg">
           <div className="flex items-start gap-3.5">
-            <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 border border-amber-500/20 shrink-0">
-              <ArrowLeftRight className="w-6 h-6 animate-pulse" />
+            <div className="p-3 bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-500 border border-amber-500/20 shrink-0">
+              <ArrowLeftRight className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-heading tracking-wide text-amber-500 uppercase">
-                Backup Restored Successfully
+              <h4 className="text-sm font-heading tracking-wide text-amber-700 dark:text-amber-500 uppercase">
+                Backup Restored (Review Phase)
               </h4>
-              <p className="text-xs text-slate-400 font-semibold leading-relaxed">
-                Your backup has been restored. Please take a few moments to
-                check your members, payments, schedules, and other records to
-                make sure everything looks correct.
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold leading-relaxed">
+                Your backup has been restored. Please verify your records before
+                finalizing or reverting changes.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-            {/* Revert Rollback Action */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 w-full md:w-auto">
             <button
               disabled={isVerifying}
-              onClick={() => handleRevertRestoration(safetyBackupPoint.id)}
-              className="px-4 py-2 border border-red-500/30 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-50"
+              onClick={() => revertRestoration && revertRestoration()}
+              className="w-full sm:w-auto px-4 py-2 border border-red-500/30 bg-red-500/10 hover:bg-red-600 text-red-600 dark:text-red-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-50 text-center flex items-center justify-center gap-1.5"
             >
-              {isVerifying ? 'Reverting...' : 'Revert Changes'}
+              <Undo2 className="w-3.5 h-3.5" />
+              <span>{isVerifying ? 'Reverting...' : 'Revert Changes'}</span>
             </button>
-            {/* Commit All Good Action */}
             <button
               disabled={isVerifying}
-              onClick={() => handleCommitRestoration(safetyBackupPoint.id)}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-50"
+              onClick={async () => {
+                if (commitRestoration) await commitRestoration();
+                fetchBackups();
+              }}
+              className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-50 text-center flex items-center justify-center gap-1.5 shadow-sm"
             >
-              {isVerifying ? 'Saving...' : 'Confirm Changes'}
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>{isVerifying ? 'Saving...' : 'Confirm Changes'}</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Page Header */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
             SYSTEM BACKUPS
           </h2>
-          <p className="text-sm text-slate-400 mt-1 font-medium">
-            Create and manage backups to protect your system data, settings, and
-            accounts.
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 font-medium">
+            Create and manage backups stored in dedicated object storage.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-500/10"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             SAVE TODAY'S BACKUP
@@ -741,15 +861,14 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* Dynamic KPI Info Widgets - Hidden on mobile viewports */}
-      <div className="hidden md:grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* KPI 1 */}
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
+      {/* Dynamic KPI Widgets */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi1.colorClass}`}>
             {kpiConfig.kpi1.icon}
           </div>
-          <div className="space-y-1.5 flex-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               {kpiConfig.kpi1.title}
             </span>
             {isLoading ? (
@@ -762,20 +881,19 @@ export const DatabaseBackup: React.FC = () => {
             {isLoading ? (
               <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
             ) : (
-              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mt-0.5 animate-fade-in truncate">
                 {kpiConfig.kpi1.subtext}
               </span>
             )}
           </div>
         </div>
 
-        {/* KPI 2 */}
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
+        <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi2.colorClass}`}>
             {kpiConfig.kpi2.icon}
           </div>
-          <div className="space-y-1.5 flex-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               {kpiConfig.kpi2.title}
             </span>
             {isLoading ? (
@@ -788,20 +906,19 @@ export const DatabaseBackup: React.FC = () => {
             {isLoading ? (
               <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
             ) : (
-              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mt-0.5 animate-fade-in truncate">
                 {kpiConfig.kpi2.subtext}
               </span>
             )}
           </div>
         </div>
 
-        {/* KPI 3 */}
-        <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4">
+        <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl flex items-center gap-4 sm:col-span-2 lg:col-span-1">
           <div className={`p-3 rounded-xl border ${kpiConfig.kpi3.colorClass}`}>
             {kpiConfig.kpi3.icon}
           </div>
-          <div className="space-y-1.5 flex-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
               {kpiConfig.kpi3.title}
             </span>
             {isLoading ? (
@@ -814,7 +931,7 @@ export const DatabaseBackup: React.FC = () => {
             {isLoading ? (
               <div className="h-3 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse mt-1" />
             ) : (
-              <span className="text-[10px] font-bold text-slate-500 block mt-0.5 animate-fade-in">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mt-0.5 animate-fade-in truncate">
                 {kpiConfig.kpi3.subtext}
               </span>
             )}
@@ -822,28 +939,27 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter Options & Search Block */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-4 rounded-2xl border border-(--border-color)">
-        <div className="relative flex-1 max-w-md">
+      {/* Filter and Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-(--bg-card) p-3 sm:p-4 rounded-2xl border border-(--border-color)">
+        <div className="relative w-full sm:max-w-md">
           <input
             type="text"
             placeholder="Search backups..."
-            className="w-full pl-10 pr-4 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-sm text-(--color-text) outline-none focus:border-slate-400 transition-all font-medium"
+            className="w-full pl-10 pr-4 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-sm text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-slate-400 transition-all font-medium"
           />
-          <Database className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Database className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Filter:
           </span>
-          {/* Accessible Select elements with titles to address edge warnings */}
           <select
             value={selectedTypeFilter}
             onChange={(e) => setSelectedTypeFilter(e.target.value)}
             title="Filter backups by type"
             aria-label="Filter backups by type"
-            className="px-3.5 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all"
+            className="flex-1 sm:flex-none px-3.5 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) font-semibold outline-none focus:border-slate-400 transition-all cursor-pointer"
           >
             <option value="all">All Types</option>
             <option value="manual">Manual Backups</option>
@@ -853,40 +969,37 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Table Interface with responsive scroll settings */}
+      {/* Main Table */}
       <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
-        <Table<any>
+        <Table<BackupItem>
           data={filteredBackups}
           columns={columns}
-          searchKeys={['filename']}
+          searchKeys={['filename', 'notes']}
           searchPlaceholder="Search saved backups history..."
           defaultSortKey="created_at"
           defaultSortDirection="desc"
           itemsPerPage={useResponsiveItemsPerPage()}
           loading={isLoading}
-          loadingLabel="Accessing system backup files..."
+          loadingLabel="Loading backup records..."
         />
       </div>
 
-      {/* Reassuring Amber Warning Box */}
-      <div className="flex items-start gap-4 p-5 bg-amber-500/5 border border-amber-500/20 rounded-2xl text-xs text-amber-500 leading-normal max-w-full">
-        <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
-        <div className="space-y-1.5 text-left">
-          <p className="font-heading tracking-wider uppercase text-xs">
+      {/* Warning Box */}
+      <div className="flex items-start gap-3 sm:gap-4 p-4 sm:p-5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/20 rounded-2xl text-xs text-amber-700 dark:text-amber-500 leading-normal max-w-full">
+        <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500" />
+        <div className="space-y-1 text-left">
+          <p className="font-heading tracking-wider uppercase text-xs text-amber-800 dark:text-amber-400 font-bold">
             Automated & Manual Backups Retention Rules
           </p>
-          <p className="text-[11px] font-semibold text-slate-400 opacity-90 leading-relaxed">
-            The system automatically saves a snapshot daily and keeps up to 7
-            automated recovery files (one for each of the last 7 days). You can
-            save up to 5 manual backups and archive up to 3 checkpoints to
-            preserve them indefinitely. Exceeding these limits will
-            automatically rotate out the oldest file in that respective
-            category.
+          <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 opacity-90 leading-relaxed">
+            The system keeps up to 7 automated recovery snapshots, up to 5
+            manual backups, and up to 3 archived checkpoints stored safely in
+            dedicated bucket storage.
           </p>
         </div>
       </div>
 
-      {/* Dialog: Save Manual Backup with Custom Notes */}
+      {/* Modal: Create Backup */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => {
@@ -896,15 +1009,14 @@ export const DatabaseBackup: React.FC = () => {
         title="Save Today's Backup Point"
       >
         <div className="space-y-4 font-body text-left">
-          <p className="text-xs text-slate-400 leading-normal font-semibold">
-            Specify a custom note below so you can identify why this backup was
-            created (e.g., "Before changing Boxing subscription rates").
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal font-medium">
+            Specify a custom note below to identify why this backup was created.
           </p>
 
           <div className="grid gap-1.5 pt-1">
             <label
               htmlFor="notesInput"
-              className="text-xs font-bold uppercase tracking-wider text-slate-300"
+              className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
             >
               Backup Notes (Optional)
             </label>
@@ -915,13 +1027,14 @@ export const DatabaseBackup: React.FC = () => {
               placeholder="Write a custom description..."
               value={backupNotes}
               onChange={(e) => setBackupNotes(e.target.value)}
-              className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
+              className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
             />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
             <Button
               variant="secondary"
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center"
               onClick={() => {
                 setIsCreateModalOpen(false);
                 setBackupNotes('');
@@ -933,7 +1046,7 @@ export const DatabaseBackup: React.FC = () => {
               onClick={handleCreateBackup}
               loading={isCreating}
               loadingLabel="SAVING SNAPSHOT..."
-              className="bg-emerald-600 text-white hover:bg-emerald-700 font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer border-emerald-600"
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center !bg-emerald-600 text-white hover:!bg-emerald-700 font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer !border-emerald-600"
             >
               Create Recovery Point
             </Button>
@@ -941,7 +1054,7 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Real Restore Confirmation Portal */}
+      {/* Modal: Restore Backup */}
       <Modal
         isOpen={isRestoreModalOpen}
         onClose={() => {
@@ -955,44 +1068,51 @@ export const DatabaseBackup: React.FC = () => {
       >
         {restoreTarget && (
           <div className="space-y-4 font-body text-left">
-            {/* Red alert card featuring warning description and exclamation mark icon */}
-            <div className="p-4 bg-red-500/5 border border-red-500/20 text-red-500 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
-              <ShieldAlert className="w-8 h-8 shrink-0 text-red-500 mt-0.5" />
+            <div className="p-4 bg-red-500/10 dark:bg-red-500/5 border border-red-500/30 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
+              <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8 shrink-0 text-red-600 dark:text-red-500 mt-0.5" />
               <div className="space-y-1">
-                <span className="block font-heading tracking-wider uppercase text-[10px]">
+                <span className="block font-heading tracking-wider uppercase text-[10px] text-red-700 dark:text-red-400 font-extrabold">
                   CRITICAL RESTORE WARNING
                 </span>
-                <span className="block text-slate-300 font-semibold leading-relaxed">
-                  Restoring this backup will replace all current data. This
-                  action cannot be undone.
+                <span className="block text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                  Restoring this backup will replace all current data. You will
+                  be given a review period to verify or revert your changes
+                  before they become permanent.
                 </span>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs text-slate-300 leading-normal font-semibold">
-                This process will restore the database to its exact state on:
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal font-semibold">
+                This process will restore the database to its state on:
               </p>
-              <strong className="block text-xs text-(--color-text) font-extrabold bg-(--bg-page) p-3 rounded-lg border border-(--border-color)">
+              <strong className="block text-xs text-(--color-text) font-bold bg-(--bg-page) p-3 rounded-lg border border-(--border-color)">
                 {new Date(restoreTarget.created_at).toLocaleDateString(
                   'en-US',
-                  { month: 'long', day: 'numeric', year: 'numeric' }
+                  {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  }
                 )}{' '}
                 at{' '}
                 {new Date(restoreTarget.created_at).toLocaleTimeString(
                   'en-US',
-                  { hour: 'numeric', minute: '2-digit', hour12: true }
+                  {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  }
                 )}
               </strong>
             </div>
 
-            {/* Password input verification card */}
             <div className="grid gap-1.5 pt-1">
               <label
                 htmlFor="verifyPasswordInput"
-                className="text-xs font-bold uppercase tracking-wider text-(--color-text) flex items-center gap-1.5"
+                className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
               >
-                <Lock className="w-3.5 h-3.5 text-red-500" />
+                <Lock className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
                 Confirm Admin Password
               </label>
               <input
@@ -1002,14 +1122,15 @@ export const DatabaseBackup: React.FC = () => {
                 placeholder="Enter your password to authorize rollback..."
                 value={verifyPassword}
                 onChange={(e) => setVerifyPassword(e.target.value)}
-                className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-red-500 transition-all font-medium disabled:opacity-50"
+                className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-medium disabled:opacity-50"
               />
             </div>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
               <Button
                 variant="secondary"
                 disabled={isRestoring}
+                className="w-full sm:w-auto !py-2.5 !px-5 justify-center text-xs font-heading tracking-wider"
                 onClick={() => {
                   setIsRestoreModalOpen(false);
                   setRestoreTarget(null);
@@ -1019,16 +1140,17 @@ export const DatabaseBackup: React.FC = () => {
                 Cancel
               </Button>
               <Button
+                variant="danger"
                 onClick={handleConfirmRestore}
                 loading={isRestoring}
                 disabled={
                   countdown > 0 || isRestoring || !verifyPassword.trim()
                 }
                 loadingLabel="RESTORING SYSTEM..."
-                className={`text-white font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer ${
+                className={`w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors ${
                   countdown > 0 || !verifyPassword.trim()
-                    ? 'bg-slate-800 cursor-not-allowed border-slate-800 text-slate-500'
-                    : 'bg-red-600 hover:bg-red-700 border-red-600'
+                    ? '!bg-slate-200 !border-slate-300 !text-slate-500 dark:!bg-zinc-800 dark:!border-zinc-700 dark:!text-zinc-400 cursor-not-allowed'
+                    : '!bg-red-600 hover:!bg-red-700 !border-red-600 !text-white cursor-pointer'
                 }`}
               >
                 {isRestoring
@@ -1044,3 +1166,5 @@ export const DatabaseBackup: React.FC = () => {
     </div>
   );
 };
+
+export default DatabaseBackup;

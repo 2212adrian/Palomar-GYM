@@ -47,7 +47,6 @@ interface ChildItem {
   path: string;
   roles?: ('admin' | 'staff')[];
   badge?: string;
-  revenueBadge?: string;
   notificationCount?: number;
   notificationColor?: 'red' | 'amber';
   description?: string;
@@ -59,7 +58,6 @@ interface MenuItem {
   icon: React.ReactNode;
   roles?: ('admin' | 'staff')[];
   path?: string;
-  revenueBadge?: string;
   notificationCount?: number;
   children?: ChildItem[];
 }
@@ -217,14 +215,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
         roles: ['admin', 'staff'],
-        revenueBadge: '₱710.00',
         notificationCount: isAdmin ? stockAlertsCount : undefined,
         children: [
           {
             name: 'Register Sale',
             path: '/sales',
             description: 'Point of Registry Sales',
-            revenueBadge: '₱710.00',
           },
           {
             name: 'Product List',
@@ -244,7 +240,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
         ),
         roles: ['admin', 'staff'],
-        revenueBadge: '₱0.00',
         notificationCount: isAdmin ? expiringSubsCount : undefined,
         children: [
           {
@@ -646,21 +641,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
                     </div>
 
-                    {!collapsed && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {item.revenueBadge && (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight shrink-0">
-                            {item.revenueBadge}
+                    {!collapsed &&
+                      item.notificationCount !== undefined &&
+                      item.notificationCount > 0 && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                            {formatBadgeCount(item.notificationCount)}
                           </span>
-                        )}
-                        {item.notificationCount !== undefined &&
-                          item.notificationCount > 0 && (
-                            <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
-                              {formatBadgeCount(item.notificationCount)}
-                            </span>
-                          )}
-                      </div>
-                    )}
+                        </div>
+                      )}
                   </Link>
                 ) : (
                   <div
@@ -705,12 +694,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                       {!collapsed && (
                         <div className="flex items-center gap-2 shrink-0">
-                          {item.revenueBadge && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight shrink-0">
-                              {item.revenueBadge}
-                            </span>
-                          )}
-
                           {item.notificationCount !== undefined &&
                             item.notificationCount > 0 && (
                               <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
@@ -773,13 +756,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     </div>
 
                                     <div className="flex items-center gap-1.5 shrink-0">
-                                      {child.revenueBadge && (
-                                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight flex items-center gap-1">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
-                                          {child.revenueBadge}
-                                        </span>
-                                      )}
-
                                       {child.notificationCount !== undefined &&
                                         child.notificationCount > 0 && (
                                           <span
@@ -1133,19 +1109,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span className="font-bold">{item.name}</span>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {item.revenueBadge && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight">
-                              {item.revenueBadge}
-                            </span>
-                          )}
-                          {item.notificationCount !== undefined &&
-                            item.notificationCount > 0 && (
+                        {item.notificationCount !== undefined &&
+                          item.notificationCount > 0 && (
+                            <div className="flex items-center gap-2">
                               <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 animate-pulse">
                                 {formatBadgeCount(item.notificationCount)}
                               </span>
-                            )}
-                        </div>
+                            </div>
+                          )}
                       </Link>
                     ) : (
                       <div
@@ -1177,12 +1148,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {item.revenueBadge && (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight">
-                                {item.revenueBadge}
-                              </span>
-                            )}
-
                             {item.notificationCount !== undefined &&
                               item.notificationCount > 0 && (
                                 <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs animate-pulse">
@@ -1243,13 +1208,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                       </div>
 
                                       <div className="flex items-center gap-1.5 shrink-0">
-                                        {child.revenueBadge && (
-                                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-black tracking-tight flex items-center gap-1">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
-                                            {child.revenueBadge}
-                                          </span>
-                                        )}
-
                                         {child.notificationCount !==
                                           undefined &&
                                           child.notificationCount > 0 && (

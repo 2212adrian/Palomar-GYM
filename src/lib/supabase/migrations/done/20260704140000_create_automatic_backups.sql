@@ -1,237 +1,278 @@
--- Migration: Automatic 7-Day Rotating Database Backup & Recovery System
+-- ==============================================================================
+-- Migration: Unified System Telemetry, Table Registry & Bucket Storage Container
 -- Timestamp: 20260704140000
+-- Description:
+--   1. Creates public.database_backups table as the single source of truth (registry).
+--   2. Configures private 'backups' storage bucket as the file container.
+--   3. Sets up strict Row-Level Security (RLS) on both table and storage bucket.
+--   4. Installs system telemetry RPCs (DB size, bucket size, table statistics).
+--   5. Installs Export & Restore RPCs (safely isolating database_backups registry).
+--   6. Installs password verification helper for sensitive restore operations.
+--   7. Cleans up obsolete/dummy cron jobs and grants explicit permissions.
+-- ==============================================================================
 
--- 1. Create the table to store metadata, JSON backup payloads, and user/system notes
+-- ==============================================================================
+-- 0. EXTENSIONS & PRE-CLEANUP
+-- ==============================================================================
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
+-- Drop obsolete functions to ensure clean replacements
+DROP FUNCTION IF EXISTS public.register_database_backup(text, text, text, bigint);
+DROP FUNCTION IF EXISTS public.archive_database_backup(uuid);
+DROP FUNCTION IF EXISTS public.unarchive_database_backup(uuid);
+DROP FUNCTION IF EXISTS public.generate_database_backup(text, text);
+DROP FUNCTION IF EXISTS public.restore_database_backup(uuid);
+DROP FUNCTION IF EXISTS public.export_database_dump();
+DROP FUNCTION IF EXISTS public.restore_database_from_payload(jsonb);
+DROP FUNCTION IF EXISTS public.trigger_scheduled_storage_backup();
+DROP FUNCTION IF EXISTS public.get_database_size_bytes();
+DROP FUNCTION IF EXISTS public.get_storage_size_bytes();
+DROP FUNCTION IF EXISTS public.get_table_registry_stats();
+DROP FUNCTION IF EXISTS public.verify_user_password(text);
+
+-- ==============================================================================
+-- 1. DATABASE BACKUPS REGISTRY TABLE & RLS
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.database_backups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     filename TEXT NOT NULL UNIQUE,
-    backup_data JSONB NOT NULL,
-    notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+    notes TEXT DEFAULT '',
+    type TEXT NOT NULL CHECK (type IN ('manual', 'auto', 'archived', 'safety')),
+    size_bytes BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Defensive fallback: If the table already existed previously, force-add the notes, type, and size columns safely
-ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS type VARCHAR DEFAULT 'manual' CHECK (type IN ('manual', 'auto', 'archived'));
-ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS size_bytes BIGINT DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_database_backups_type ON public.database_backups(type);
+CREATE INDEX IF NOT EXISTS idx_database_backups_created_at ON public.database_backups(created_at DESC);
 
--- Enable Row Level Security (RLS)
 ALTER TABLE public.database_backups ENABLE ROW LEVEL SECURITY;
 
--- 2. Drop existing dependent policies FIRST to clear dependencies safely
-DROP POLICY IF EXISTS "Allow admins to read backups" ON public.database_backups;
-DROP POLICY IF EXISTS "Allow admins to delete backups" ON public.database_backups;
+DROP POLICY IF EXISTS "Allow admins to read backup records" ON public.database_backups;
+DROP POLICY IF EXISTS "Allow admins to insert backup records" ON public.database_backups;
+DROP POLICY IF EXISTS "Allow admins to update backup records" ON public.database_backups;
+DROP POLICY IF EXISTS "Allow admins to delete backup records" ON public.database_backups;
 
--- 3. RLS policies checking profiles role OR explicitly matching the superadmin email claim
-CREATE POLICY "Allow admins to read backups" 
-ON public.database_backups 
-FOR SELECT 
-TO authenticated
+CREATE POLICY "Allow admins to read backup records"
+ON public.database_backups FOR SELECT TO authenticated
 USING (
-    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
-    OR LOWER(auth.jwt() ->> 'email') = 'wolf.palomar@gmail.com'
+  LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+  OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
 );
 
-CREATE POLICY "Allow admins to delete backups" 
-ON public.database_backups 
-FOR DELETE 
-TO authenticated
-USING (
-    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
-    OR LOWER(auth.jwt() ->> 'email') = 'wolf.palomar@gmail.com'
+CREATE POLICY "Allow admins to insert backup records"
+ON public.database_backups FOR INSERT TO authenticated
+WITH CHECK (
+  LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+  OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
 );
 
--- 4. Create the secure database restoration function (runs with elevated database privileges)
-CREATE OR REPLACE FUNCTION public.restore_database_backup(target_backup_id UUID)
-RETURNS void AS $$
-DECLARE
-    table_rows JSONB;
-    backup_payload JSONB;
-    table_to_restore TEXT;
+CREATE POLICY "Allow admins to update backup records"
+ON public.database_backups FOR UPDATE TO authenticated
+USING (
+  LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+  OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+);
+
+CREATE POLICY "Allow admins to delete backup records"
+ON public.database_backups FOR DELETE TO authenticated
+USING (
+  LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+  OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+);
+
+-- ==============================================================================
+-- 2. PRIVATE STORAGE BUCKET CONTAINER & STORAGE RLS
+-- ==============================================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('backups', 'backups', false, 104857600, ARRAY['application/json'])
+ON CONFLICT (id) DO UPDATE SET
+  public = false,
+  file_size_limit = 104857600,
+  allowed_mime_types = ARRAY['application/json'];
+
+DROP POLICY IF EXISTS "Allow admins to read backup files" ON storage.objects;
+DROP POLICY IF EXISTS "Allow admins to upload backup files" ON storage.objects;
+DROP POLICY IF EXISTS "Allow admins to update backup files" ON storage.objects;
+DROP POLICY IF EXISTS "Allow admins to delete backup files" ON storage.objects;
+
+CREATE POLICY "Allow admins to read backup files"
+ON storage.objects FOR SELECT TO authenticated
+USING (
+  bucket_id = 'backups' AND (
+    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+    OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+  )
+);
+
+CREATE POLICY "Allow admins to upload backup files"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (
+  bucket_id = 'backups' AND (
+    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+    OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+  )
+);
+
+CREATE POLICY "Allow admins to update backup files"
+ON storage.objects FOR UPDATE TO authenticated
+USING (
+  bucket_id = 'backups' AND (
+    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+    OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+  )
+);
+
+CREATE POLICY "Allow admins to delete backup files"
+ON storage.objects FOR DELETE TO authenticated
+USING (
+  bucket_id = 'backups' AND (
+    LOWER((SELECT role::text FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'superadmin')
+    OR LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+  )
+);
+
+-- ==============================================================================
+-- 3. SYSTEM TELEMETRY RPC FUNCTIONS
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.get_database_size_bytes()
+RETURNS bigint AS $$
 BEGIN
-    -- Security Guard: Restrict execution to authorized admins and the superadmin email only
-    IF NOT EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE profiles.id = auth.uid() 
-          AND LOWER(profiles.role::text) IN ('admin', 'superadmin')
-    ) AND LOWER(COALESCE(auth.jwt() ->> 'email', '')) != 'wolf.palomar@gmail.com' THEN
-        RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to restore system backups.';
-    END IF;
-
-    -- Retrieve the master backup payload
-    SELECT backup_data INTO backup_payload 
-    FROM public.database_backups 
-    WHERE id = target_backup_id;
-
-    IF backup_payload IS NULL THEN
-        RAISE EXCEPTION 'Target backup point not found.';
-    END IF;
-
-    -- Set local session_replication_role to 'replica' to bypass all constraint triggers and system triggers.
-    EXECUTE 'SET LOCAL session_replication_role = ''replica''';
-
-    -- Loop through all tables saved inside the JSON backup file
-    FOR table_to_restore IN SELECT jsonb_object_keys(backup_payload) LOOP
-        EXECUTE format('DELETE FROM %I WHERE true', table_to_restore);
-        
-        -- Extract the stored records
-        table_rows := backup_payload->table_to_restore;
-        
-        -- Populate tables with the backup records
-        IF jsonb_array_length(table_rows) > 0 THEN
-            EXECUTE format(
-                'INSERT INTO %I SELECT * FROM jsonb_populate_recordset(NULL::%I, %L)', 
-                table_to_restore, 
-                table_to_restore, 
-                table_rows
-            );
-        END IF;
-    END LOOP;
+  RETURN pg_database_size(current_database());
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Create/Update the dynamic backup generator function to accept optional notes & types
-CREATE OR REPLACE FUNCTION public.generate_database_backup(custom_notes TEXT DEFAULT NULL, backup_type TEXT DEFAULT 'manual')
-RETURNS void AS $$
+CREATE OR REPLACE FUNCTION public.get_storage_size_bytes()
+RETURNS bigint AS $$
+BEGIN
+  RETURN COALESCE(SUM((metadata->>'size')::bigint), 0)
+  FROM storage.objects;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.get_table_registry_stats()
+RETURNS TABLE(
+  table_name text,
+  record_count bigint,
+  size_bytes bigint
+) AS $$
+DECLARE
+  t_name text;
+  r_count bigint;
+  s_bytes bigint;
+BEGIN
+  FOR t_name IN 
+    VALUES 
+      ('profiles'), 
+      ('rates_config'), 
+      ('audit_logs'), 
+      ('gym_profile'), 
+      ('incident_reports'), 
+      ('products'), 
+      ('sales')
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = t_name
+    ) THEN
+      EXECUTE format('SELECT count(*) FROM %I', t_name) INTO r_count;
+      s_bytes := pg_total_relation_size(quote_ident(t_name));
+      table_name := t_name;
+      record_count := r_count;
+      size_bytes := s_bytes;
+      RETURN NEXT;
+    END IF;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==============================================================================
+-- 4. EXPORT & RESTORE RPC FUNCTIONS
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.export_database_dump()
+RETURNS jsonb AS $$
 DECLARE
     r RECORD;
     table_json JSONB;
     backup_payload JSONB := '{}'::jsonb;
-    backup_filename TEXT;
-    payload_size BIGINT;
 BEGIN
-    -- Security Guard: Restrict web-client execution to authorized admins and the superadmin email only
     IF NULLIF(current_setting('request.jwt.claims', true), '') IS NOT NULL THEN
         IF NOT EXISTS (
             SELECT 1 FROM public.profiles 
             WHERE profiles.id = auth.uid() 
               AND LOWER(profiles.role::text) IN ('admin', 'superadmin')
         ) AND LOWER(COALESCE(auth.jwt() ->> 'email', '')) != 'wolf.palomar@gmail.com' THEN
-            RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to generate database backups.';
+            RAISE EXCEPTION 'Access Denied: You do not have administrative clearance.';
         END IF;
     END IF;
 
-    -- Loop through all user-defined public tables, ignoring system/metadata tables
     FOR r IN 
         SELECT table_name 
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
           AND table_type = 'BASE TABLE'
-          AND table_name != 'database_backups'
-          AND table_name != 'spatial_ref_sys'
+          AND table_name NOT IN ('spatial_ref_sys', 'database_backups')
     LOOP
         BEGIN
             EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM %I t', r.table_name) 
             INTO table_json;
-            
             backup_payload := jsonb_set(backup_payload, ARRAY[r.table_name], table_json, true);
         EXCEPTION WHEN OTHERS THEN
             RAISE WARNING 'Failed to backup table %: %', r.table_name, SQLERRM;
         END;
     END LOOP;
 
-    backup_filename := 'backup_' || to_char(now() AT TIME ZONE 'Asia/Manila', 'YYYY_MM_DD_HH24MISS') || '.json';
-    payload_size := octet_length(backup_payload::text);
-
-    -- Enforcement Rule 1: Rotate manual backups if saving manual and count >= 5
-    IF backup_type = 'manual' THEN
-        WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'manual') >= 5 LOOP
-            DELETE FROM public.database_backups 
-            WHERE id = (
-                SELECT id FROM public.database_backups 
-                WHERE type = 'manual' 
-                ORDER BY created_at ASC 
-                LIMIT 1
-            );
-        END LOOP;
-    END IF;
-
-    -- Enforcement Rule 2: Rotate automated backups if saving auto and count >= 7
-    IF backup_type = 'auto' THEN
-        WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'auto') >= 7 LOOP
-            DELETE FROM public.database_backups 
-            WHERE id = (
-                SELECT id FROM public.database_backups 
-                WHERE type = 'auto' 
-                ORDER BY created_at ASC 
-                LIMIT 1
-            );
-        END LOOP;
-    END IF;
-
-    INSERT INTO public.database_backups (filename, backup_data, notes, type, size_bytes)
-    VALUES (
-        backup_filename, 
-        backup_payload, 
-        COALESCE(custom_notes, 'Manual recovery point'), 
-        backup_type,
-        payload_size
-    );
-
-    DELETE FROM public.database_backups 
-    WHERE type = 'auto' 
-      AND created_at < ((timezone('Asia/Manila', now())::date - INTERVAL '7 days' + INTERVAL '8 hours') AT TIME ZONE 'Asia/Manila');
-
+    RETURN backup_payload;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 6. Create the Archive function
-CREATE OR REPLACE FUNCTION public.archive_database_backup(target_backup_id UUID)
+CREATE OR REPLACE FUNCTION public.restore_database_from_payload(backup_payload JSONB)
 RETURNS void AS $$
+DECLARE
+    table_rows JSONB;
+    table_to_restore TEXT;
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM public.profiles 
         WHERE profiles.id = auth.uid() 
           AND LOWER(profiles.role::text) IN ('admin', 'superadmin')
     ) AND LOWER(COALESCE(auth.jwt() ->> 'email', '')) != 'wolf.palomar@gmail.com' THEN
-        RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to archive backups.';
+        RAISE EXCEPTION 'Access Denied: Administrative clearance required for restoration.';
     END IF;
 
-    UPDATE public.database_backups 
-    SET type = 'archived' 
-    WHERE id = target_backup_id;
+    IF backup_payload IS NULL OR backup_payload = '{}'::jsonb THEN
+        RAISE EXCEPTION 'Invalid or empty backup payload provided.';
+    END IF;
 
-    WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'archived') > 3 LOOP
-        DELETE FROM public.database_backups 
-        WHERE id = (
-            SELECT id FROM public.database_backups 
-            WHERE type = 'archived' 
-            ORDER BY created_at ASC 
-            LIMIT 1
-        );
+    EXECUTE 'SET LOCAL session_replication_role = ''replica''';
+
+    FOR table_to_restore IN SELECT jsonb_object_keys(backup_payload) LOOP
+        -- Safeguard: Never drop or overwrite the registry table
+        IF table_to_restore != 'database_backups' AND EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = table_to_restore
+        ) THEN
+            EXECUTE format('DELETE FROM %I WHERE true', table_to_restore);
+            table_rows := backup_payload->table_to_restore;
+            
+            IF jsonb_array_length(table_rows) > 0 THEN
+                EXECUTE format(
+                    'INSERT INTO %I SELECT * FROM jsonb_populate_recordset(NULL::%I, %L)', 
+                    table_to_restore, 
+                    table_to_restore, 
+                    table_rows
+                );
+            END IF;
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. Create the Unarchive function
-CREATE OR REPLACE FUNCTION public.unarchive_database_backup(target_backup_id UUID)
-RETURNS void AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE profiles.id = auth.uid() 
-          AND LOWER(profiles.role::text) IN ('admin', 'superadmin')
-    ) AND LOWER(COALESCE(auth.jwt() ->> 'email', '')) != 'wolf.palomar@gmail.com' THEN
-        RAISE EXCEPTION 'Access Denied: You do not have administrative clearance to unarchive backups.';
-    END IF;
-
-    UPDATE public.database_backups 
-    SET type = 'manual' 
-    WHERE id = target_backup_id;
-
-    WHILE (SELECT count(*) FROM public.database_backups WHERE type = 'manual') > 5 LOOP
-        DELETE FROM public.database_backups 
-        WHERE id = (
-            SELECT id FROM public.database_backups 
-            WHERE type = 'manual' 
-            ORDER BY created_at ASC 
-            LIMIT 1
-        );
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 8. Create password verification function
+-- ==============================================================================
+-- 5. PASSWORD VERIFICATION HELPER
+-- ==============================================================================
 CREATE OR REPLACE FUNCTION public.verify_user_password(entered_password TEXT)
 RETURNS boolean AS $$
 DECLARE
@@ -256,10 +297,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 9. Enable pg_cron extension if not already active
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-
--- 10. Safely unschedule any existing backup cron tasks to avoid duplicate schedules
+-- ==============================================================================
+-- 6. CLEAN UP OBSOLETE CRON JOBS
+-- ==============================================================================
 DO $$
 BEGIN
     PERFORM cron.unschedule(jobid) 
@@ -269,9 +309,15 @@ EXCEPTION WHEN OTHERS THEN
     NULL;
 END $$;
 
--- 11. Schedule the job to run daily at midnight Manila time (16:00 UTC)
-SELECT cron.schedule(
-    'daily-database-backup',
-    '0 16 * * *',
-    'SELECT public.generate_database_backup(''Scheduled automated backup'', ''auto'');'
-);
+-- ==============================================================================
+-- 7. EXECUTION PERMISSIONS
+-- ==============================================================================
+GRANT ALL ON TABLE public.database_backups TO authenticated, service_role;
+
+GRANT EXECUTE ON FUNCTION public.get_database_size_bytes() TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_storage_size_bytes() TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_table_registry_stats() TO anon, authenticated, service_role;
+
+GRANT EXECUTE ON FUNCTION public.export_database_dump() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.restore_database_from_payload(jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.verify_user_password(text) TO authenticated;

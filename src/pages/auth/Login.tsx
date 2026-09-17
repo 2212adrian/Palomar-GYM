@@ -279,19 +279,15 @@ export const Login: React.FC = () => {
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
-  // ─── CAPTCHA MODAL ON-DEMAND STATES ─────────────────────────────────────────
+  // ─── CAPTCHA ON-DEMAND (ACTIVATES ONLY AFTER 5 FAILED ATTEMPTS) ──────────────
   const [failedAttempts, setFailedAttempts] = useState<number>(
     getStoredFailedAttempts
   );
   const [isCaptchaModalOpen, setIsCaptchaModalOpen] = useState<boolean>(false);
-  const [pendingCaptchaAction, setPendingCaptchaAction] = useState<
-    | { type: 'login'; data: LoginFormValues }
-    | { type: 'recovery'; email: string }
-    | { type: '2fa' }
-    | null
-  >(null);
+  const [pendingCaptchaAction, setPendingCaptchaAction] =
+    useState<LoginFormValues | null>(null);
 
-  // Check 1-hour expiration period periodically
+  // Periodic check to verify 1-hour expiration
   useEffect(() => {
     const checkExpiry = () => {
       const current = getStoredFailedAttempts();
@@ -870,18 +866,22 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── LOGIN SUBMIT (Intercepted by Captcha Modal) ────────────────────────────
+  // ─── LOGIN SUBMIT (CHALLENGED ONLY IF >= 5 FAILED ATTEMPTS) ──────────────────
   const onLoginSubmit = async (data: LoginFormValues) => {
     if (isSubmittingRef.current || isPreview) return;
-    setPendingCaptchaAction({ type: 'login', data });
-    setIsCaptchaModalOpen(true);
+
+    const currentFailures = getStoredFailedAttempts();
+    if (currentFailures >= MAX_FAILED_ATTEMPTS_THRESHOLD) {
+      setPendingCaptchaAction(data);
+      setIsCaptchaModalOpen(true);
+      return;
+    }
+
+    // Direct login attempt without captcha
+    await executeLogin(data);
   };
 
-  // ─── METHOD 1: LOGIN VERIFIED -> AUTO-DISPATCH 2FA OTP (0 EXTRA CAPTCHAS) ────
-  const executeLoginWithCaptcha = async (
-    data: LoginFormValues,
-    token: string
-  ) => {
+  const executeLogin = async (data: LoginFormValues, captchaToken?: string) => {
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setShakeEmail(false);
@@ -895,16 +895,20 @@ export const Login: React.FC = () => {
       sessionStorage.setItem('outroActive', 'true');
       sessionStorage.setItem('playDashboardIntro', 'true');
 
+      const loginOptions: { captchaToken?: string } = {};
+      if (captchaToken) {
+        loginOptions.captchaToken = captchaToken;
+      }
+
       const { error = null } = await supabase.auth.signInWithPassword({
         email: finalEmail,
         password: data.password,
-        options: {
-          captchaToken: token,
-        },
+        options: loginOptions,
       });
 
       if (error) throw error;
 
+      // Reset failed attempts on success
       resetFailedAttempts();
       setFailedAttempts(0);
 
@@ -956,7 +960,6 @@ export const Login: React.FC = () => {
         setLoginStarted(false);
         setLoginResting(false);
 
-        // Sign out temporary session so unverified access cannot proceed
         await supabase.auth.signOut();
 
         const calculatedRoute =
@@ -964,7 +967,7 @@ export const Login: React.FC = () => {
         const expiresAt = Date.now() + 10 * 60 * 1000;
         const cooldownUntil = Date.now() + 60 * 1000;
 
-        // ─── METHOD 1 AUTO-DISPATCH: Send OTP directly in background ───
+        // Auto-dispatch OTP directly without any Captcha
         let autoDispatched = false;
         try {
           const { error: otpError } = await supabase.auth.signInWithOtp({
@@ -1060,10 +1063,16 @@ export const Login: React.FC = () => {
       const updatedAttempts = recordFailedAttempt();
       setFailedAttempts(updatedAttempts);
 
-      toast.error(
-        err.message ||
-          'Invalid username, email, or password. Please verify captcha and try again.'
-      );
+      if (updatedAttempts >= MAX_FAILED_ATTEMPTS_THRESHOLD) {
+        toast.error(
+          'Multiple failed attempts detected. CAPTCHA verification is now required.'
+        );
+      } else {
+        toast.error(
+          err.message ||
+            'Invalid username, email, or password. Please try again.'
+        );
+      }
 
       setLoginValue('password', '');
       triggerShake(setShakePassword);
@@ -1225,7 +1234,7 @@ export const Login: React.FC = () => {
     }
   };
 
-  // Direct resend: dispatches directly without modal unless challenged
+  // Direct OTP resend without Captcha
   const handleResend2FACode = async () => {
     if (twoFactorResendCooldown > 0 || isResending2FA || isResendingRef.current)
       return;
@@ -1239,16 +1248,6 @@ export const Login: React.FC = () => {
       });
 
       if (error) {
-        // Fallback to modal only if Supabase bot challenge strictly flags the request
-        if (
-          error.message?.toLowerCase().includes('captcha') ||
-          error.message?.toLowerCase().includes('security check')
-        ) {
-          setPendingCaptchaAction({ type: '2fa' });
-          setIsCaptchaModalOpen(true);
-          return;
-        }
-
         const match = error.message?.match(/after\s+(\d+)\s+seconds/i);
         if (match) {
           setTwoFactorResendCooldown(parseInt(match[1], 10));
@@ -1292,42 +1291,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  const execute2FADispatchWithCaptcha = async (token: string) => {
-    isResendingRef.current = true;
-    setIsResending2FA(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: twoFactorEmail,
-        options: {
-          shouldCreateUser: false,
-          captchaToken: token,
-        },
-      });
-
-      if (error) throw error;
-
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-      const cooldownUntil = Date.now() + 60 * 1000;
-
-      setIsOtpDispatched(true);
-      setTwoFactorResendCooldown(60);
-      setTwoFactorExpiresAt(expiresAt);
-      setTimeRemainingSeconds(600);
-      setTwoFactorCode(['', '', '', '', '', '']);
-      toast.success(
-        `Verification code dispatched to ${maskEmail(twoFactorEmail)}`
-      );
-      setTimeout(() => {
-        twoFactorInputRefs.current[0]?.focus();
-      }, 50);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to dispatch verification code.');
-    } finally {
-      isResendingRef.current = false;
-      setIsResending2FA(false);
-    }
-  };
-
   const handleCancel2FA = async () => {
     await supabase.auth.signOut();
     sessionStorage.removeItem('palomar_2fa_pending');
@@ -1352,20 +1315,19 @@ export const Login: React.FC = () => {
 
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
+  // Recovery email dispatch without Captcha
   const onRecoverySubmit = async (data: RecoveryFormValues) => {
     if (isPreview || isRecoverySubmitting) return;
-    setPendingCaptchaAction({ type: 'recovery', email: data.email });
-    setIsCaptchaModalOpen(true);
+    await requestResetLink(data.email);
   };
 
-  const requestResetLinkWithCaptcha = async (email: string, token: string) => {
+  const requestResetLink = async (email: string) => {
     setRecoveryError(null);
     setIsRecoverySubmitting(true);
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/forgot-password`,
-        captchaToken: token,
       });
       if (error) throw error;
 
@@ -1387,17 +1349,11 @@ export const Login: React.FC = () => {
   // ─── GENERAL CAPTCHA MODAL HANDLER ──────────────────────────────────────────
   const handleCaptchaVerified = async (token: string) => {
     setIsCaptchaModalOpen(false);
-    if (!pendingCaptchaAction) return;
-
-    if (pendingCaptchaAction.type === 'login') {
-      await executeLoginWithCaptcha(pendingCaptchaAction.data, token);
-    } else if (pendingCaptchaAction.type === 'recovery') {
-      await requestResetLinkWithCaptcha(pendingCaptchaAction.email, token);
-    } else if (pendingCaptchaAction.type === '2fa') {
-      await execute2FADispatchWithCaptcha(token);
+    if (pendingCaptchaAction) {
+      const dataToSubmit = pendingCaptchaAction;
+      setPendingCaptchaAction(null);
+      await executeLogin(dataToSubmit, token);
     }
-
-    setPendingCaptchaAction(null);
   };
 
   // ─── RECOVERY CODE DIGIT HANDLERS (6 DIGITS) ────────────────────────────────
@@ -1916,11 +1872,7 @@ export const Login: React.FC = () => {
                   type="button"
                   onClick={() => {
                     if (recoveryEmail) {
-                      setPendingCaptchaAction({
-                        type: 'recovery',
-                        email: recoveryEmail,
-                      });
-                      setIsCaptchaModalOpen(true);
+                      requestResetLink(recoveryEmail);
                     }
                   }}
                   disabled={isRecoverySubmitting}
@@ -1988,7 +1940,6 @@ export const Login: React.FC = () => {
           Two-step email verification is enabled.
         </p>
 
-        {/* ─── PHASE 1: FALLBACK IF AUTO-DISPATCH FAILED ─── */}
         {!isOtpDispatched ? (
           <div className="space-y-4 my-4 animate-slide-up">
             <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
@@ -2019,7 +1970,6 @@ export const Login: React.FC = () => {
             </button>
           </div>
         ) : (
-          /* ─── PHASE 2: CODE DISPATCHED (ENTER 6 DIGITS & VERIFY) ─── */
           <div className="animate-slide-up">
             <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 mb-2 leading-snug">
               A 6-digit verification code has been dispatched to{' '}
@@ -2549,7 +2499,7 @@ export const Login: React.FC = () => {
         </div>
       )}
 
-      {/* ─── ON-DEMAND SECURITY CAPTCHA MODAL ─── */}
+      {/* ─── ON-DEMAND SECURITY CAPTCHA MODAL (APPEARS AFTER 5 FAILED ATTEMPTS) ─── */}
       <SecurityCaptchaModal
         isOpen={isCaptchaModalOpen}
         onClose={() => {

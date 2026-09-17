@@ -16,6 +16,7 @@ import { Navbar } from './Navbar';
 import { TabLoader } from '../ui/TabLoader';
 import { CashFloatModal } from '../../pages/cash/components/CashFloatModal';
 import { ScannerPage } from '../../pages/scanner/ScannerPage';
+import { BackupSafetyBanner } from '../ui/BackupSafetyBanner';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 
 interface TabLoadingContextType {
@@ -208,95 +209,98 @@ export const SystemLayout: React.FC = () => {
 
   return (
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
-      {/* 
-        Outer Shell:
-        Uses a muted backdrop (`bg-slate-100/90 dark:bg-[#0b0e14]`) 
-        so navigation & main workspace layers pop against it.
-      */}
-      <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-row transition-colors duration-500 font-sans">
-        {/* TAB LOADING OVERLAY */}
-        <TabLoader isVisible={isTabLoading} />
+      <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
+        {/* GLOBAL PERSISTENT RESTORATION VERIFICATION BANNER */}
+        <BackupSafetyBanner />
 
-        {/* CASH FLOAT MODAL */}
-        <CashFloatModal />
+        {/* WORKSPACE & APPLICATION BODY */}
+        <div className="relative flex-1 flex flex-row min-h-0 overflow-hidden">
+          {/* TAB LOADING OVERLAY */}
+          <TabLoader isVisible={isTabLoading} />
 
-        {/* GLOBAL SMART SCANNER MODAL OVERLAY */}
-        <ScannerPage />
+          {/* CASH FLOAT MODAL */}
+          <CashFloatModal />
 
-        {/* SIDEBAR (Wrapper ensures an explicit boundary shadow cast to the right) */}
-        <aside className="relative z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
-          <Sidebar
-            collapsed={desktopCollapsed}
-            setCollapsed={setDesktopCollapsed}
-            mobileOpen={mobileDrawerOpen}
-            setMobileOpen={setMobileDrawerOpen}
-            onLogout={handleLogout}
-          />
-        </aside>
+          {/* GLOBAL SMART SCANNER MODAL OVERLAY */}
+          <ScannerPage />
 
-        {/* RIGHT CONTAINER VIEWPORT */}
-        <div
-          className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative bg-[var(--bg-page,#f8fafc)] dark:bg-[#0d1117]"
-          style={{ transform: 'translate3d(0, 0, 0)' }}
-        >
-          {/* Topbar: Distinct bottom border and slight depth shadow */}
-          <div className="relative z-20 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.04)] dark:shadow-none bg-white/95 dark:bg-[#111620]/95 backdrop-blur-md">
-            <Topbar onMenuClick={() => setMobileDrawerOpen((prev) => !prev)} />
-          </div>
+          {/* SIDEBAR */}
+          <aside className="relative z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
+            <Sidebar
+              collapsed={desktopCollapsed}
+              setCollapsed={setDesktopCollapsed}
+              mobileOpen={mobileDrawerOpen}
+              setMobileOpen={setMobileDrawerOpen}
+              onLogout={handleLogout}
+            />
+          </aside>
 
-          {/* Scrollable Main Content Pane */}
-          <div className="flex-1 relative min-w-0 h-full flex flex-col min-h-0">
-            {/* Soft subtle scroll fade gradient at the top edge */}
-            <div className="pointer-events-none absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-slate-200/30 dark:from-black/20 to-transparent z-10" />
-
-            <main
-              ref={mainScrollRef}
-              className={`flex-1 pt-4 sm:pt-6 pb-6 sm:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
-                isTabLoading
-                  ? 'opacity-0 pointer-events-none'
-                  : 'opacity-100 transition-opacity duration-300'
-              }`}
-            >
-              <div className="max-w-[1600px] w-full mx-auto h-full flex flex-col min-h-0">
-                <Outlet />
-              </div>
-            </main>
-          </div>
-        </div>
-
-        {/* MOBILE BOTTOM NAVIGATION */}
-        <Navbar />
-
-        {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
-        {!curtainHidden && (
+          {/* RIGHT CONTAINER VIEWPORT */}
           <div
-            className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
-              isLoggingOut
-                ? logoutStarted
-                  ? 'translate-x-0 scale-x-[-1]'
-                  : '-translate-x-[250%] scale-x-[-1]'
-                : slideOut
-                  ? 'translate-x-[250%] scale-x-100'
-                  : 'translate-x-0 scale-x-100'
-            }`}
+            className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative bg-[var(--bg-page,#f8fafc)] dark:bg-[#0d1117]"
+            style={{ transform: 'translate3d(0, 0, 0)' }}
           >
-            <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-              <div
-                className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  (isLoggingOut ? logoutResting : !slideOut)
-                    ? 'scale-x-100'
-                    : 'scale-x-[2.5] sm:scale-x-[8]'
+            {/* Topbar */}
+            <div className="relative z-20 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.04)] dark:shadow-none bg-white/95 dark:bg-[#111620]/95 backdrop-blur-md">
+              <Topbar
+                onMenuClick={() => setMobileDrawerOpen((prev) => !prev)}
+              />
+            </div>
+
+            {/* Scrollable Main Content Pane */}
+            <div className="flex-1 relative min-w-0 h-full flex flex-col min-h-0">
+              {/* Subtle top edge scroll fade */}
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-slate-200/30 dark:from-black/20 to-transparent z-10" />
+
+              <main
+                ref={mainScrollRef}
+                className={`flex-1 pt-6 sm:pt-8 md:pt-10 pb-6 sm:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
+                  isTabLoading
+                    ? 'opacity-0 pointer-events-none'
+                    : 'opacity-100 transition-opacity duration-300'
                 }`}
               >
-                <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
-                <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#7a0000] opacity-90" />
-                <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#295c9a] dark:bg-[#a60303]" />
-                <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_10px_rgba(83,156,255,0.8)] sm:shadow-[0_0_20px_rgba(83,156,255,0.8)] dark:shadow-[0_0_10px_rgba(230,0,0,0.8)] dark:sm:shadow-[0_0_20px_rgba(230,0,0,0.8)]" />
-                <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)] dark:sm:shadow-[0_0_25px_rgba(255,100,100,1)]" />
-              </div>
+                <div className="max-w-[1600px] w-full mx-auto h-full flex flex-col min-h-0">
+                  <Outlet />
+                </div>
+              </main>
             </div>
           </div>
-        )}
+
+          {/* MOBILE BOTTOM NAVIGATION */}
+          <Navbar />
+
+          {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
+          {!curtainHidden && (
+            <div
+              className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+                isLoggingOut
+                  ? logoutStarted
+                    ? 'translate-x-0 scale-x-[-1]'
+                    : '-translate-x-[250%] scale-x-[-1]'
+                  : slideOut
+                    ? 'translate-x-[250%] scale-x-100'
+                    : 'translate-x-0 scale-x-100'
+              }`}
+            >
+              <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
+                <div
+                  className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    (isLoggingOut ? logoutResting : !slideOut)
+                      ? 'scale-x-100'
+                      : 'scale-x-[2.5] sm:scale-x-[8]'
+                  }`}
+                >
+                  <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
+                  <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#7a0000] opacity-90" />
+                  <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#295c9a] dark:bg-[#a60303]" />
+                  <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_10px_rgba(83,156,255,0.8)] sm:shadow-[0_0_20px_rgba(83,156,255,0.8)] dark:shadow-[0_0_10px_rgba(230,0,0,0.8)] dark:sm:shadow-[0_0_20px_rgba(230,0,0,0.8)]" />
+                  <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)] dark:sm:shadow-[0_0_25px_rgba(255,100,100,1)]" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </TabLoadingContext.Provider>
   );
