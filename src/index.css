@@ -199,6 +199,21 @@ button {
     opacity 1.2s cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+/* If using clip-path on the left panel or wrapper */
+.auth-split-container.is-logging-in .auth-left {
+  flex: 0 0 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  transition: all 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Or if your slant uses clip-path: polygon(...) */
+.auth-split-container.is-logging-in .auth-right {
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 1.2s cubic-bezier(0.77, 0, 0.175, 1);
+}
+
 /* ==========================================================
    DYNAMIC NEON GLOWING DIVIDER SYSTEM (TWO STATIC LINES)
    ========================================================== */

@@ -311,9 +311,9 @@ export const Login: React.FC = () => {
     }
     return false;
   });
+
+  // Controls the sweep animation across the carousel
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [, setLoginStarted] = useState<boolean>(false);
-  const [, setLoginResting] = useState<boolean>(false);
 
   // Horizontal Flip state (Login <-> Forgot Password)
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
@@ -327,7 +327,7 @@ export const Login: React.FC = () => {
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
-  // ─── GREETING MODAL STATE (AUTO-EXPIRES AFTER 5S & CLICKABLE OUTSIDE) ───────
+  // ─── GREETING MODAL STATE ───────────────────────────────────────────────────
   const [showGreetingModal, setShowGreetingModal] = useState<boolean>(false);
   const [isGreetingClosing, setIsGreetingClosing] = useState<boolean>(false);
   const [greetingTargetRoute, setGreetingTargetRoute] =
@@ -344,6 +344,7 @@ export const Login: React.FC = () => {
       greetingTimerRef.current = null;
     }
     setIsGreetingClosing(true);
+
     setTimeout(() => {
       setShowGreetingModal(false);
       setIsGreetingClosing(false);
@@ -355,6 +356,10 @@ export const Login: React.FC = () => {
 
   const triggerGreetingAndNavigate = useCallback(
     (targetRoute: string, userName: string, userRole?: string) => {
+      // 1. Trigger the tilted plain color expansion over the carousel
+      setIsLoggingIn(true);
+
+      // 2. Open the greeting modal simultaneously on top
       setGreetingUser({ name: userName, role: userRole });
       setGreetingTargetRoute(targetRoute);
       setIsGreetingClosing(false);
@@ -365,7 +370,7 @@ export const Login: React.FC = () => {
       }
       greetingTimerRef.current = setTimeout(() => {
         closeGreetingAndProceed();
-      }, 3000);
+      }, 4000);
     },
     [closeGreetingAndProceed]
   );
@@ -379,7 +384,7 @@ export const Login: React.FC = () => {
     };
   }, []);
 
-  // ─── CAPTCHA ON-DEMAND (ACTIVATES ONLY AFTER 5 FAILED ATTEMPTS) ──────────────
+  // ─── CAPTCHA ON-DEMAND ──────────────────────────────────────────────────────
   const [failedAttempts, setFailedAttempts] = useState<number>(
     getStoredFailedAttempts
   );
@@ -652,8 +657,6 @@ export const Login: React.FC = () => {
     sessionStorage.removeItem('outroActive');
     sessionStorage.removeItem('playDashboardIntro');
     setIsLoggingIn(false);
-    setLoginStarted(false);
-    setLoginResting(false);
   }, []);
 
   useEffect(() => {
@@ -663,12 +666,11 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // ─── AUTH REDIRECTION & GOOGLE OAUTH COMPLETION INTERCEPTOR ─────────────────
+  // ─── AUTH REDIRECTION & ROUTING ─────────────────────────────────────────────
   useEffect(() => {
     if (isPreview) return;
-    const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
 
-    if (initialized && user && !isLoggingIn && !isOutroActive && !is2FAMode) {
+    if (initialized && user && !isLoggingIn && !is2FAMode) {
       const userProfile = (useAuthStore.getState() as any).profile;
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
@@ -695,11 +697,11 @@ export const Login: React.FC = () => {
     initialized,
     user,
     navigate,
-    isLoggingIn,
     location.state,
     isPreview,
     is2FAMode,
     showGreetingModal,
+    isLoggingIn,
     triggerGreetingAndNavigate,
   ]);
 
@@ -946,7 +948,7 @@ export const Login: React.FC = () => {
     setRecoveryError(null);
   };
 
-  // ─── GOOGLE OAUTH LOGIN (REDIRECTS TO /login FOR SEAMLESS SESSION RESOLUTION) ─
+  // ─── GOOGLE OAUTH LOGIN ───────────────────────────────────────────────────────
   const handleGoogleLogin = async () => {
     if (isPreview) return;
     if (!watchAgreement) {
@@ -958,9 +960,6 @@ export const Login: React.FC = () => {
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
-
-      // Redirect back to /login so the public auth route receives the session
-      // safely without ProtectedRoute prematurely redirecting to /register
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
         : buildAppUrl('/login');
@@ -1021,9 +1020,6 @@ export const Login: React.FC = () => {
         ? data.usernameOrEmail.trim().toLowerCase()
         : `${data.usernameOrEmail.trim().toLowerCase()}@palomargym.noemail`;
 
-      sessionStorage.setItem('outroActive', 'true');
-      sessionStorage.setItem('playDashboardIntro', 'true');
-
       const loginOptions: { captchaToken?: string } = {};
       if (captchaToken) {
         loginOptions.captchaToken = captchaToken;
@@ -1056,12 +1052,6 @@ export const Login: React.FC = () => {
         data.usernameOrEmail;
 
       if (userStatus === 'inactive') {
-        sessionStorage.removeItem('outroActive');
-        sessionStorage.removeItem('playDashboardIntro');
-        setIsLoggingIn(false);
-        setLoginStarted(false);
-        setLoginResting(false);
-
         await logAudit(
           'USER_LOGIN_FAILED',
           `Deactivated user "${targetName}" attempted to log in.`,
@@ -1082,12 +1072,6 @@ export const Login: React.FC = () => {
         !finalEmail.endsWith('@palomargym.noemail');
 
       if (is2FAEnabled) {
-        sessionStorage.removeItem('outroActive');
-        sessionStorage.removeItem('playDashboardIntro');
-        setIsLoggingIn(false);
-        setLoginStarted(false);
-        setLoginResting(false);
-
         await supabase.auth.signOut();
 
         const calculatedRoute =
@@ -1156,15 +1140,10 @@ export const Login: React.FC = () => {
 
       const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
 
-      // Trigger the Greeting Modal before navigating
+      // ── TRIGGER SLANTED DIVIDER EXPANSION & GREETINGS MODAL ──
       triggerGreetingAndNavigate(calculatedRoute, targetName, dbProfile?.role);
     } catch (err: any) {
-      sessionStorage.removeItem('outroActive');
-      sessionStorage.removeItem('playDashboardIntro');
       setIsLoggingIn(false);
-      setLoginStarted(false);
-      setLoginResting(false);
-
       const updatedAttempts = recordFailedAttempt();
       setFailedAttempts(updatedAttempts);
 
@@ -1187,7 +1166,7 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── TWO-FACTOR EMAIL VERIFICATION HELPERS & ACTIONS (6 DIGITS) ───
+  // ─── TWO-FACTOR HELPERS ───
   const maskEmail = (emailStr: string) => {
     if (!emailStr.includes('@')) return emailStr;
     const [local, domain] = emailStr.split('@');
@@ -1386,8 +1365,6 @@ export const Login: React.FC = () => {
     setTwoFactorEmail('');
     setTwoFactorTargetName('');
     setTwoFactorAttempts(0);
-    sessionStorage.removeItem('outroActive');
-    sessionStorage.removeItem('playDashboardIntro');
   };
 
   const onInvalidLoginSubmit = () => {
@@ -1678,7 +1655,7 @@ export const Login: React.FC = () => {
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoggingIn}
           className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
@@ -1702,7 +1679,7 @@ export const Login: React.FC = () => {
         <button
           type="button"
           onClick={handleGoogleLogin}
-          disabled={isGoogleSubmitting}
+          disabled={isGoogleSubmitting || isLoggingIn}
           className="w-full py-2.5 px-4 bg-white/80 dark:bg-[#161920]/80 border border-slate-200/80 dark:border-white/10 hover:bg-white dark:hover:bg-white/10 text-slate-800 dark:text-white font-heading font-bold text-[11px] tracking-wider uppercase rounded-xl backdrop-blur-md transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 select-none pointer-events-auto"
         >
           <img
@@ -2156,55 +2133,11 @@ export const Login: React.FC = () => {
     </div>
   );
 
-  const isOutroActive =
-    typeof window !== 'undefined' &&
-    sessionStorage.getItem('outroActive') === 'true';
-
-  if (
-    !isPreview &&
-    (!initialized ||
-      (user &&
-        !isLoggingIn &&
-        !isOutroActive &&
-        !is2FAMode &&
-        !showGreetingModal))
-  ) {
-    return (
-      <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/10 dark:bg-red-600/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
-
-        <div className="relative z-10 flex flex-col items-center max-w-sm px-6 text-center space-y-5 animate-fade-in">
-          <img
-            src={activeLogo}
-            alt="Wolf Palomar Logo"
-            className="h-16 sm:h-20 object-contain drop-shadow-xl animate-pulse"
-          />
-
-          <div className="flex flex-col items-center space-y-3 pt-2">
-            <div className="relative flex items-center justify-center">
-              <div className="w-9 h-9 rounded-full border-2 border-blue-600/20 dark:border-red-600/20 border-t-blue-600 dark:border-t-red-600 animate-spin" />
-              <ShieldAlert className="w-4 h-4 text-blue-600 dark:text-red-500 absolute" />
-            </div>
-
-            <div className="space-y-1">
-              <h2 className="text-xs font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
-                {user ? 'Redirecting to System...' : 'Checking Credentials...'}
-              </h2>
-              <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500 tracking-wider uppercase">
-                Verifying active session
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const { salutation, period, message, formattedTime, formattedDate } =
     getLocalTimeGreeting();
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-page,#0c0e12)] bg-slate-900 dark:bg-[#0c0e12] font-sans text-[var(--color-text)] font-body">
+    <div className="relative w-full h-screen overflow-hidden bg-slate-100 dark:bg-[#0c0e12] font-sans text-slate-900 dark:text-slate-100 font-body">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -2307,32 +2240,38 @@ export const Login: React.FC = () => {
             </span>
           </button>
 
-          {/* ─── MAIN SPLIT CONTAINER ─── */}
+          {/* ─── MAIN SPLIT CONTAINER (SWEEPS ACROSS ON isLoggingIn) ─── */}
           <div
-            className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${isPreview ? 'pointer-events-none' : ''}`}
+            className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${
+              isLoggingIn ? 'is-logging-in' : ''
+            } ${isPreview ? 'pointer-events-none' : ''}`}
           >
-            {/* LEFT COLUMN / LOGIN */}
+            {/* LEFT COLUMN / LOGIN (SWEEPS AND EXPANDS OVER THE CAROUSEL) */}
             <div
-              className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-700 ease-out ${
+              className={`auth-left h-full flex flex-col items-center justify-center relative px-5 mr-5 sm:px-0 transition-all duration-[1200ms] ease-[cubic-bezier(0.77,0,0.175,1)] will-change-transform ${
                 isLoggingIn
-                  ? 'opacity-0 scale-95 translate-y-2 pointer-events-none filter blur-[1px]'
+                  ? 'w-full flex-1 z-30'
                   : isFlipped
                     ? 'opacity-0 pointer-events-none'
                     : 'opacity-100 pointer-events-auto'
               }`}
               style={{
                 transformStyle: 'flat',
-                transform: isLoggingIn
-                  ? 'scale(0.95) translateY(8px)'
-                  : isFlipped
-                    ? 'translateX(-100%) scale(0.95)'
-                    : 'translateX(0) scale(1)',
+                transform: isFlipped
+                  ? 'translateX(-100%) scale(0.95)'
+                  : 'translateX(0) scale(1)',
               }}
             >
               <div className="absolute top-0 left-0 w-full h-full rotate-0 inset-0 z-0 pointer-events-none opacity-[0.12] dark:opacity-[0.08] dark:invert sm:-top-20 sm:-left-12 sm:w-[110%] sm:h-[120%] sm:rotate-7" />
 
               {!isMobile ? (
-                <div className="w-[420px] max-w-full relative z-10">
+                <div
+                  className={`w-[420px] max-w-full relative z-10 transition-all duration-700 ease-out ${
+                    isLoggingIn
+                      ? 'opacity-0 scale-95 pointer-events-none'
+                      : 'opacity-100 scale-100'
+                  }`}
+                >
                   <Card
                     isLoggingIn={isLoggingIn}
                     className="w-full h-auto shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#12151c]/90 backdrop-blur-2xl rounded-4xl relative z-10 overflow-hidden"
@@ -2345,7 +2284,13 @@ export const Login: React.FC = () => {
                   </Card>
                 </div>
               ) : (
-                <div className="w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none">
+                <div
+                  className={`w-full max-w-md mx-auto relative z-10 py-6 my-auto max-h-screen overflow-y-auto overflow-x-hidden scrollbar-none transition-all duration-700 ease-out ${
+                    isLoggingIn
+                      ? 'opacity-0 scale-95 pointer-events-none'
+                      : 'opacity-100 scale-100'
+                  }`}
+                >
                   {is2FAMode ? render2FAVerificationForm() : renderLoginForm()}
                 </div>
               )}
@@ -2353,9 +2298,9 @@ export const Login: React.FC = () => {
 
             {/* RIGHT PANEL (Carousel & Gym Details) */}
             <div
-              className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-700 ${
-                isLoggingIn ? 'opacity-90' : 'opacity-100'
-              } ${isFlipped ? 'carousel-flipped' : ''}`}
+              className={`auth-right h-full relative overflow-hidden hidden lg:block -ml-[2px] pl-[2px] select-none transition-all duration-[1200ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+                isFlipped ? 'carousel-flipped' : ''
+              }`}
               style={{
                 transformStyle: 'flat',
                 transform: isFlipped ? 'translateX(-43vw)' : 'translateX(0)',
@@ -2389,8 +2334,8 @@ export const Login: React.FC = () => {
               <div
                 className={`carousel-content relative z-3 h-full flex flex-col justify-center px-24 w-162.5 shrink-0 select-none transition-all duration-700 ease-out ${
                   isLoggingIn
-                    ? 'opacity-0 scale-95 translate-y-3 filter blur-[1px]'
-                    : 'opacity-100'
+                    ? 'opacity-0 translate-x-8 filter blur-[2px]'
+                    : 'opacity-100 translate-x-0'
                 }`}
               >
                 <h2 className="text-7xl font-heading leading-[0.9] uppercase text-white mb-6 h-32 tracking-wider drop-shadow-md">
@@ -2574,7 +2519,7 @@ export const Login: React.FC = () => {
         theme={theme}
       />
 
-      {/* ─── COOL GREETING MODAL (PORTAL TO BODY, 5S AUTO-CLOSE, CLICK OUTSIDE TO CLOSE) ─── */}
+      {/* ─── GREETING MODAL ─── */}
       {showGreetingModal &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -2658,17 +2603,17 @@ export const Login: React.FC = () => {
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 font-body font-medium">
-                    Auto-redirecting in 5s • Click anywhere outside to continue
+                    Auto-redirecting in 4s • Click anywhere outside to continue
                   </p>
                 </div>
               </div>
 
-              {/* 5-Second Animated Progress Bar */}
+              {/* 4-Second Animated Progress Bar */}
               <div className="w-full h-1 bg-slate-200 dark:bg-white/10 overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700"
                   style={{
-                    animation: 'greetingProgress 5s linear forwards',
+                    animation: 'greetingProgress 4s linear forwards',
                   }}
                 />
               </div>

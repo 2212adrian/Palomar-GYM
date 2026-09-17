@@ -86,7 +86,7 @@ const RootEntry: React.FC = () => {
     }
   }
 
-  return <Navigate to="/register" replace />;
+  return <Navigate to="/login" replace />;
 };
 
 /**
