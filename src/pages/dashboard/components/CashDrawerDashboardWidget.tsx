@@ -15,15 +15,14 @@ import {
 } from 'lucide-react';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import { CashTransactionModal } from '../../cash/components/CashTransactionModal';
 import type { CashTransactionType } from '../../../types/cash';
 
 export const CashDrawerDashboardWidget: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile } = useAuthStore();
-  const isAdmin =
-    profile?.role === 'admin' ||
-    user?.email?.toLowerCase() === 'wolf.palomar@gmail.com';
+  const isAdmin = profile?.role === 'admin' || isSuperAdmin(user?.email);
 
   const {
     activeSession,

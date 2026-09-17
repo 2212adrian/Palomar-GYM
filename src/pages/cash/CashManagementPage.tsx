@@ -19,6 +19,7 @@ import {
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
 import { openCashSession } from '../../lib/supabase/cashService';
 import { CashMetricsCards } from './components/CashMetricsCards';
 import { CashTransactionsTable } from './components/CashTransactionsTable';
@@ -36,9 +37,7 @@ const SESSIONS_PER_PAGE = 5;
 
 export const CashManagementPage: React.FC = () => {
   const { user, profile } = useAuthStore();
-  const isAdmin =
-    profile?.role === 'admin' ||
-    user?.email?.toLowerCase() === 'wolf.palomar@gmail.com';
+  const isAdmin = profile?.role === 'admin' || isSuperAdmin(user?.email);
 
   const {
     activeSession,

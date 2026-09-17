@@ -17,6 +17,7 @@ import { supabase } from './lib/supabase/client';
 
 import { promptInitialPermissionsOnLogin } from './lib/permissions';
 import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
+import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import pkg from '../package.json';
 
 export const App: React.FC = () => {
@@ -321,6 +322,9 @@ export const App: React.FC = () => {
         pauseOnHover
         theme="dark"
       />
+
+      {/* Post-Update Release Notes ("What's New") */}
+      <WhatsNewModal />
 
       {/* Exit Confirmation Modal */}
       <Modal

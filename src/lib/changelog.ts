@@ -18,6 +18,36 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '0.26.1',
+    date: '2026-09-17',
+    summary:
+      'Superadmin ownership transfer, a quieter cash drawer workflow, and in-app release notes.',
+    sections: [
+      {
+        type: 'Added',
+        items: [
+          'Superadmin ownership transfer: confirm the new owner by username, re-enter your own password, then wait for the 3-second safety countdown before confirming.',
+          "A \"What's New\" release notes dialog shown once an update has actually been installed and the new version is running.",
+          'Administrator-visible Superadmin identity lookup, so an ownership change takes effect immediately without waiting for a redeploy.',
+        ],
+      },
+      {
+        type: 'Changed',
+        items: [
+          'The Superadmin account is now hidden from ordinary administrators in User Management.',
+          'The Enter Cash Float prompt no longer reappears after a cash session has been ended.',
+        ],
+      },
+      {
+        type: 'Fixed',
+        items: [
+          'Corrected Superadmin detection in User Management, which previously evaluated the helper function itself as a truthy value.',
+          'Ownership transfer promotes the incoming account before handing over the role, avoiding a profile-update guard rejection.',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.24.7',
     date: '2026-09-10',
     summary: 'Security hardening, Android APK installation stability, and unified agreements.',

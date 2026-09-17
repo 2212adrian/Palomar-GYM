@@ -10,7 +10,12 @@ import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { AvatarImage, compressImage } from './PersonalAccount';
-import { isSuperAdmin } from '../../constants/auth';
+import { SUPERADMIN_EMAIL } from '../../constants/auth';
+import { buildAppUrl } from '../../lib/appUrl';
+import {
+  fetchSuperAdminEmail,
+  transferSuperAdminOwnership,
+} from '../../lib/supabase/superadminService';
 import {
   Loader2,
   Trash2,
@@ -21,6 +26,8 @@ import {
   ShieldCheck,
   Camera,
   User,
+  Crown,
+  Clock,
 } from 'lucide-react';
 
 interface DraftChange {
@@ -28,10 +35,52 @@ interface DraftChange {
   status?: 'active' | 'inactive';
 }
 
+/**
+ * Deliberate safety delay: the ownership transfer Confirm button stays disabled
+ * for this many seconds after the dialog opens, so a transfer can never be
+ * completed by a stray double-click or an accidental tap.
+ */
+const TRANSFER_COUNTDOWN_SECONDS = 3;
+
 export const UserManagement: React.FC = () => {
   const { user, profile } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
-  const isAdmin = userRole === 'admin' || isSuperAdmin;
+
+  // ─── Superadmin identity resolution ─────────────────────────────────────
+  // The database (public.system_config) holds the authoritative Superadmin
+  // address. VITE_SUPERADMIN_EMAIL is only a build-time fallback: Vite inlines
+  // it into the bundle, so it goes stale the moment ownership is transferred.
+  const [superAdminEmail, setSuperAdminEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSuperAdminEmail()
+      .then((email) => {
+        if (!cancelled && email) setSuperAdminEmail(email);
+      })
+      .catch(() => {
+        // Non-admins and offline sessions simply keep the build-time fallback.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const effectiveSuperAdminEmail = superAdminEmail ?? SUPERADMIN_EMAIL;
+
+  // True when the signed-in account is the one that currently owns the role.
+  //
+  // Deliberately compared ONLY against effectiveSuperAdminEmail, which resolves
+  // to the live database value whenever the lookup succeeded. It must NOT also
+  // require isSuperAdmin() (the build-time constant) to agree: after a transfer
+  // that constant is stale, so an AND here would hide every Superadmin control
+  // from the new owner until the next deployment.
+  const viewerEmail = (user?.email || '').trim().toLowerCase();
+  const viewerIsSuperAdmin = Boolean(
+    viewerEmail && viewerEmail === effectiveSuperAdminEmail
+  );
+
+  const isAdmin = userRole === 'admin' || viewerIsSuperAdmin;
 
   // Profiles list directories state
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -72,6 +121,106 @@ export const UserManagement: React.FC = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deleteTargetUser, setDeleteTargetUser] = useState<any | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+
+  // ─── Ownership Transfer Modal ───
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferUsername, setTransferUsername] = useState('');
+  const [transferPassword, setTransferPassword] = useState('');
+  const [transferCountdown, setTransferCountdown] = useState(
+    TRANSFER_COUNTDOWN_SECONDS
+  );
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  // Re-arm the safety countdown every time the dialog is opened.
+  useEffect(() => {
+    if (!isTransferModalOpen) return;
+
+    setTransferCountdown(TRANSFER_COUNTDOWN_SECONDS);
+
+    const timer = setInterval(() => {
+      setTransferCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isTransferModalOpen]);
+
+  const openTransferModal = () => {
+    setTransferUsername('');
+    setTransferPassword('');
+    setTransferCountdown(TRANSFER_COUNTDOWN_SECONDS);
+    setIsTransferModalOpen(true);
+  };
+
+  const closeTransferModal = () => {
+    if (isTransferring) return; // Never abandon a transfer mid-flight
+    setIsTransferModalOpen(false);
+    setTransferPassword('');
+    setTransferUsername('');
+  };
+
+  const canConfirmTransfer =
+    transferCountdown === 0 &&
+    transferUsername.trim().length > 0 &&
+    transferPassword.length > 0 &&
+    !isTransferring;
+
+  const handleConfirmTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const targetUsername = transferUsername.trim();
+
+    if (!targetUsername) {
+      toast.error(
+        'Enter the username of the account that should own the system.'
+      );
+      return;
+    }
+
+    if (!transferPassword) {
+      toast.error('Enter your own password to confirm this transfer.');
+      return;
+    }
+
+    try {
+      setIsTransferring(true);
+
+      // The password is verified inside Postgres by the RPC, not here.
+      const newOwnerEmail = await transferSuperAdminOwnership({
+        targetUsername,
+        confirmPassword: transferPassword,
+      });
+
+      // Reflect the change immediately. The database is now authoritative, so
+      // the UI must not keep trusting the build-time VITE_SUPERADMIN_EMAIL.
+      setSuperAdminEmail(newOwnerEmail);
+      setIsTransferModalOpen(false);
+      setTransferPassword('');
+      setTransferUsername('');
+
+      toast.success(
+        `Superadmin ownership transferred to "${targetUsername}". They are now the system owner.`,
+        { autoClose: 8000 }
+      );
+
+      fetchUsers();
+    } catch (err: any) {
+      const message: string = err?.message || 'Failed to transfer ownership.';
+
+      if (message.toLowerCase().includes('incorrect password')) {
+        toast.error('Incorrect password. Ownership transfer aborted.');
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setIsTransferring(false);
+    }
+  };
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -254,7 +403,7 @@ export const UserManagement: React.FC = () => {
           type: 'signup',
           email: finalEmail,
           options: {
-            emailRedirectTo: `${window.location.origin}/confirm-signup`,
+            emailRedirectTo: buildAppUrl('/confirm-signup'),
           },
         });
 
@@ -452,7 +601,7 @@ export const UserManagement: React.FC = () => {
     try {
       setIsSendingReset(targetUser.id);
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+        redirectTo: buildAppUrl('/forgot-password'),
       });
 
       if (error) throw error;
@@ -496,7 +645,12 @@ export const UserManagement: React.FC = () => {
     e.preventDefault();
     if (!editTargetUser) return;
 
-    if (isSuperAdmin(editTargetUser.email)) {
+    // Resolve the target's live address exactly as the directory does: the
+    // session's own email is authoritative for the signed-in account.
+    const targetEmail =
+      editTargetUser.id === user?.id ? user?.email : editTargetUser.email;
+
+    if (isSuperAdminRow(targetEmail)) {
       toast.error(
         'Superadmin credentials are permanently locked and must be configured in Personal Account.'
       );
@@ -637,7 +791,7 @@ export const UserManagement: React.FC = () => {
       return;
     }
 
-    if (targetRole === 'admin' && !isSuperAdmin) {
+    if (targetRole === 'admin' && !viewerIsSuperAdmin) {
       toast.error(
         'Administrator account statuses can only be modified by the Superadmin.'
       );
@@ -704,7 +858,20 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  const systemUsers = [...usersList];
+  // Does a directory row belong to the account that currently owns Superadmin?
+  const isSuperAdminRow = (rowEmail?: string | null) =>
+    Boolean(
+      rowEmail && rowEmail.trim().toLowerCase() === effectiveSuperAdminEmail
+    );
+
+  // The Superadmin account is deliberately invisible to ordinary administrators.
+  // Only the Superadmin themselves sees their own row in the directory.
+  const systemUsers = usersList.filter((u) => {
+    if (viewerIsSuperAdmin) return true;
+    const rowEmail = u.id === user?.id ? user?.email : u.email;
+    return !isSuperAdminRow(rowEmail);
+  });
+
   const currentUserIncluded = systemUsers.some((u) => u.id === user?.id);
   if (!currentUserIncluded && profile) {
     systemUsers.unshift({
@@ -781,7 +948,7 @@ export const UserManagement: React.FC = () => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
 
-        if (isSuperAdmin(displayEmail)) {
+        if (isSuperAdminRow(displayEmail)) {
           return (
             <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
               superadmin
@@ -920,9 +1087,9 @@ export const UserManagement: React.FC = () => {
           );
         }
 
-        const isTargetSuperAdmin = isSuperAdmin(u.email);
+        const isTargetSuperAdmin = isSuperAdminRow(u.email);
         const isProtectedAdmin =
-          u.role === 'admin' && u.status === 'active' && !isSuperAdmin;
+          u.role === 'admin' && u.status === 'active' && !viewerIsSuperAdmin;
         const isLocalAccount = u.email?.endsWith('@palomargym.noemail');
 
         return (
@@ -1029,12 +1196,25 @@ export const UserManagement: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer self-start sm:self-auto"
-        >
-          + Pre-Register User
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {viewerIsSuperAdmin && (
+            <button
+              onClick={openTransferModal}
+              title="Transfer Superadmin ownership to another account"
+              className="px-4 py-2.5 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Crown className="w-3.5 h-3.5" />
+              Transfer Ownership
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+          >
+            + Pre-Register User
+          </button>
+        </div>
       </div>
 
       {/* Table Container */}
@@ -1253,6 +1433,109 @@ export const UserManagement: React.FC = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ─── Transfer Superadmin Ownership Modal ─── */}
+      <Modal
+        isOpen={isTransferModalOpen}
+        onClose={closeTransferModal}
+        title="Transfer Ownership"
+        className="max-w-md text-left p-6"
+      >
+        <form onSubmit={handleConfirmTransfer} className="space-y-4 font-body">
+          {/* Consequence warning */}
+          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+            <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                This hands over full system ownership
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                The account you name becomes the Superadmin. You lose Superadmin
+                privileges immediately and can only regain them if the new owner
+                transfers it back to you.
+              </p>
+            </div>
+          </div>
+
+          {/* New owner username */}
+          <div className="field-wrap">
+            <input
+              type="text"
+              id="transferUsername"
+              placeholder=" "
+              value={transferUsername}
+              onChange={(e) => setTransferUsername(e.target.value)}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              className="field-input text-xs"
+            />
+            <label htmlFor="transferUsername" className="field-label text-xs">
+              New Owner Username
+            </label>
+          </div>
+
+          {/* Re-authentication */}
+          <div className="field-wrap">
+            <input
+              type="password"
+              id="transferPassword"
+              placeholder=" "
+              value={transferPassword}
+              onChange={(e) => setTransferPassword(e.target.value)}
+              autoComplete="current-password"
+              className="field-input text-xs"
+            />
+            <label htmlFor="transferPassword" className="field-label text-xs">
+              Your Password (to confirm it&apos;s you)
+            </label>
+          </div>
+
+          {/* Safety countdown */}
+          {transferCountdown > 0 && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                Review the details above. Confirming unlocks in{' '}
+                <strong className="font-mono text-(--color-text)">
+                  {transferCountdown}s
+                </strong>
+              </span>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={closeTransferModal}
+              disabled={isTransferring}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+
+            <button
+              type="submit"
+              disabled={!canConfirmTransfer}
+              className={`flex-1 py-3.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 ${
+                canConfirmTransfer
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer'
+                  : 'bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 font-heading text-xs tracking-wider uppercase cursor-not-allowed'
+              }`}
+            >
+              {isTransferring ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : transferCountdown > 0 ? (
+                `Wait ${transferCountdown}s`
+              ) : (
+                'Confirm Transfer'
+              )}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* Pre-Register Modal */}

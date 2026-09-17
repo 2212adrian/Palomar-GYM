@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { buildAppUrl } from '../../lib/appUrl';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import {
@@ -354,7 +355,7 @@ export const PersonalAccount: React.FC = () => {
     try {
       setIsSendingResetEmail(true);
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+        redirectTo: buildAppUrl('/forgot-password'),
       });
 
       if (error) throw error;

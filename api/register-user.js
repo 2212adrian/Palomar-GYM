@@ -1,7 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
+const CANONICAL_APP_URL = 'https://dev-wolfpalomar.vercel.app';
+
+const resolveAppUrl = (req) => {
+  const configured = String(process.env.VITE_APP_URL || process.env.APP_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (configured) return configured;
+
+  const origin = req?.headers?.origin || '';
+  if (origin && !origin.includes('-projects.vercel.app')) {
+    return origin.replace(/\/+$/, '');
+  }
+
+  return CANONICAL_APP_URL;
+};
+
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -24,12 +40,14 @@ export default async function handler(req, res) {
       typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const { email, username, password, full_name, role, auth_method } = body;
 
+    const appUrl = resolveAppUrl(req);
+
     // 1. Email Invitation Method
     if (auth_method === 'email') {
       const { data, error } = await supabase.auth.admin.inviteUserByEmail(
         email.trim().toLowerCase(),
         {
-          redirectTo: `${process.env.VITE_APP_URL || 'http://localhost:9999'}/forgot-password`,
+          redirectTo: `${appUrl}/confirm-signup`,
           data: {
             full_name: full_name.trim(),
             role: role,

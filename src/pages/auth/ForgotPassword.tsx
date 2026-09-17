@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
+import { buildAppUrl } from '../../lib/appUrl';
 
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -236,7 +237,7 @@ export const ForgotPassword: React.FC = () => {
     try {
       setIsSubmitting(true);
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+        redirectTo: buildAppUrl('/forgot-password'),
       });
 
       if (error) throw error;

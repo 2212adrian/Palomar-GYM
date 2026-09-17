@@ -1,7 +1,29 @@
 import { createClient } from '@supabase/supabase-js';
 
+const CANONICAL_APP_URL = 'https://dev-wolfpalomar.vercel.app';
+
+/**
+ * Resolves the target app URL:
+ * 1. Prioritizes VITE_APP_URL or APP_URL environment variables.
+ * 2. If called from a valid non-preview origin (e.g. dev-wolfpalomar.vercel.app), uses that.
+ * 3. Falls back to CANONICAL_APP_URL.
+ */
+const resolveAppUrl = (req) => {
+  const configured = String(process.env.VITE_APP_URL || process.env.APP_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (configured) return configured;
+
+  const origin = req?.headers?.origin || '';
+  if (origin && !origin.includes('-projects.vercel.app')) {
+    return origin.replace(/\/+$/, '');
+  }
+
+  return CANONICAL_APP_URL;
+};
+
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -20,8 +42,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Vercel auto-parses the body if the Content-Type is application/json.
-    // We add a fallback in case it arrives as a raw string.
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const { action, email, otp, new_password } = body;
@@ -44,18 +64,21 @@ export default async function handler(req, res) {
     );
 
     if (!targetUser) {
-      return res
-        .status(404)
-        .json({
-          error:
-            '[ERR_404] NOT_FOUND: This email is not registered on Wolf OS.',
-        });
+      return res.status(404).json({
+        error: '[ERR_404] NOT_FOUND: This email is not registered on Wolf OS.',
+      });
     }
 
     // --- ACTION A: SEND OTP VIA SUPABASE SMTP ---
     if (action === 'send-otp') {
-      const { error: resetError } =
-        await supabase.auth.resetPasswordForEmail(email);
+      const appUrl = resolveAppUrl(req);
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo: `${appUrl}/forgot-password`,
+        }
+      );
 
       if (resetError) {
         return res
@@ -71,17 +94,15 @@ export default async function handler(req, res) {
     // --- ACTION B: VERIFY OTP AND CHANGE PASSWORD ---
     if (action === 'verify-otp') {
       if (!otp || !new_password) {
-        return res
-          .status(400)
-          .json({
-            error:
-              '[ERR_400] REQUEST_INVALID: Email, OTP, and new password required.',
-          });
+        return res.status(400).json({
+          error:
+            '[ERR_400] REQUEST_INVALID: Email, OTP, and new password required.',
+        });
       }
 
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token: otp,
+        email: email.trim().toLowerCase(),
+        token: otp.trim(),
         type: 'recovery',
       });
 

@@ -33,11 +33,42 @@ export const CashFloatModal: React.FC = () => {
     ? `palomar_cash_float_seen_${user.id}`
     : 'palomar_cash_float_seen';
 
-  // Check if previously dismissed or interacted with during this login
-  const hasAlreadySeen = useMemo(() => {
+  // Check if previously dismissed or interacted with during this login.
+  // Held in state (not a memo) so it can be refreshed the moment we record it.
+  const [hasAlreadySeen, setHasAlreadySeen] = useState(() => {
     if (typeof window === 'undefined') return true;
     return sessionStorage.getItem(sessionPromptKey) === 'true';
+  });
+
+  // Re-read whenever the signed-in user changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setHasAlreadySeen(sessionStorage.getItem(sessionPromptKey) === 'true');
   }, [sessionPromptKey]);
+
+  // Record the prompt as seen for the remainder of this login session.
+  const markPromptSeen = () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(sessionPromptKey, 'true');
+    }
+    setHasAlreadySeen(true);
+  };
+
+  // A drawer that is already open -- however it was opened -- means the float has
+  // been entered for this shift. Crucially this also covers the Cash Management
+  // page, which opens sessions directly without touching the modal.
+  //
+  // Marking it here is what stops the prompt from re-appearing when the session
+  // is later ENDED: isSessionOpen flips back to false, but the marker persists.
+  useEffect(() => {
+    if (!isSessionOpen) return;
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(sessionPromptKey, 'true');
+    }
+    setHasAlreadySeen(true);
+    setIsDismissed(true);
+  }, [isSessionOpen, sessionPromptKey]);
 
   // Previous shift counted cash (leftover change fund from last session)
   const lastCountedCash = useMemo(() => {
@@ -59,7 +90,7 @@ export const CashFloatModal: React.FC = () => {
 
   // Handle "Just checking in" (dismiss modal for this login session)
   const handleJustCheckingIn = () => {
-    sessionStorage.setItem(sessionPromptKey, 'true');
+    markPromptSeen();
     setIsDismissed(true);
   };
 
@@ -89,7 +120,7 @@ export const CashFloatModal: React.FC = () => {
       });
 
       // Mark as seen so it doesn't show again
-      sessionStorage.setItem(sessionPromptKey, 'true');
+      markPromptSeen();
       setIsDismissed(true);
 
       toast.success(

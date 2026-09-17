@@ -31,6 +31,7 @@ import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 // Capacitor core import
 import { Capacitor } from '@capacitor/core';
+import { buildAppUrl } from '../../lib/appUrl';
 import { Browser } from '@capacitor/browser';
 
 // Reusable UI Components from src/components/ui/
@@ -839,7 +840,7 @@ export const Login: React.FC = () => {
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
-        : `${window.location.origin}/dashboard`;
+        : buildAppUrl('/dashboard');
 
       if (isNative) {
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -1327,7 +1328,7 @@ export const Login: React.FC = () => {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+        redirectTo: buildAppUrl('/forgot-password'),
       });
       if (error) throw error;
 

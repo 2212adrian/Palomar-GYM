@@ -2,6 +2,20 @@
 
 All notable changes to the Wolf Palomar Gym Terminal are documented in this file.
 
+## [0.26.1] - 2026-09-17
+### Added
+- Superadmin ownership transfer: name the new owner by username, re-enter your own password, then wait for the 3-second safety countdown before the confirm button unlocks.
+- "What's New" release notes dialog that appears once an update has actually been installed and the new version is running.
+- Administrator-visible Superadmin identity lookup, so an ownership change applies immediately without waiting for a redeploy.
+
+### Changed
+- The Superadmin account is now hidden from ordinary administrators in User Management.
+- The Enter Cash Float prompt no longer reappears after a cash session has been ended.
+
+### Fixed
+- Corrected Superadmin detection in User Management, which previously evaluated the helper function itself as a truthy value.
+- Ownership transfer promotes the incoming account before handing over the role, avoiding a profile-update guard rejection.
+
 ## [0.24.7] - 2026-09-10
 ### Fixed
 - Enforce 6-digit verification codes across all 2FA authentication and password recovery dispatch flows.

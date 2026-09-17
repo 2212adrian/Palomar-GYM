@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { Capacitor } from '@capacitor/core';
+import { buildAppUrl } from '../lib/appUrl';
 import { Browser } from '@capacitor/browser';
 import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
@@ -303,7 +304,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
-        : `${window.location.origin}/dashboard`;
+        : buildAppUrl('/dashboard');
 
       if (isNative) {
         const { data, error } = await supabase.auth.signInWithOAuth({

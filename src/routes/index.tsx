@@ -32,14 +32,9 @@ import { LogbookPage } from '../pages/logbook/LogbookPage';
 // Import Cash Management Page
 import { CashManagementPage } from '../pages/cash/CashManagementPage';
 
-/**
- * Detects if the current environment is an installed Capacitor application
- * or an installed Progressive Web App (PWA) running in standalone mode.
- */
 export const isAppOrPWA = (): boolean => {
   if (typeof window === 'undefined') return false;
 
-  // 1. Capacitor Native Platform check
   const isCapacitor =
     Capacitor.isNativePlatform() ||
     Boolean(
@@ -50,7 +45,6 @@ export const isAppOrPWA = (): boolean => {
       )?.Capacitor?.isNativePlatform?.()
     );
 
-  // 2. PWA Standalone Mode check (Desktop / Android Chrome & iOS Safari standalone)
   const isPWA =
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as unknown as { standalone?: boolean }).standalone ===
@@ -61,10 +55,37 @@ export const isAppOrPWA = (): boolean => {
 };
 
 /**
- * Default entry resolver for the root `/` path.
- * Public users land on the Pre-Registration portal by default.
+ * Smart entry resolver for the root `/` path:
+ * 1. Checks if the incoming URL contains Supabase auth tokens or hash parameters.
+ *    If Supabase redirects to "/" instead of the specific path, this intercepts
+ *    the hash and routes the user to the correct setup page.
+ * 2. Otherwise, public visitors continue to "/register".
  */
 const RootEntry: React.FC = () => {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash;
+    const search = window.location.search;
+
+    // Detect Supabase Password Recovery callback
+    if (hash.includes('type=recovery')) {
+      return <Navigate to={`/forgot-password${hash}`} replace />;
+    }
+
+    // Detect Supabase Sign-up or Invite confirmation callback
+    if (
+      hash.includes('type=signup') ||
+      hash.includes('type=invite') ||
+      hash.includes('type=email_change')
+    ) {
+      return <Navigate to={`/confirm-signup${hash}`} replace />;
+    }
+
+    // Detect PKCE auth code exchange
+    if (search.includes('code=')) {
+      return <Navigate to={`/confirm-signup${search}`} replace />;
+    }
+  }
+
   return <Navigate to="/register" replace />;
 };
 
@@ -147,14 +168,12 @@ const HeaderLayout: React.FC = () => {
   const [actions, setActions] = useState<React.ReactNode>(null);
   const [prevPath, setPrevPath] = useState(location.pathname);
 
-  // Synchronously reset actions during render phase when switching sections, BEFORE child useEffects execute
   if (prevPath !== location.pathname) {
     setPrevPath(location.pathname);
     const getBaseSegment = (p: string) => '/' + p.split('/').filter(Boolean)[0];
     const oldBase = getBaseSegment(prevPath);
     const newBase = getBaseSegment(location.pathname);
 
-    // Treat logbook and members as the same continuous section to preserve sliding header actions
     const isLogbookOrMember = (seg: string) =>
       seg === '/logbook' || seg === '/members';
 
@@ -200,10 +219,10 @@ const HeaderLayout: React.FC = () => {
 };
 
 const router = createBrowserRouter([
-  // Public Default Route: Dynamically routes based on App/PWA vs Web Browser
+  // Public Default Route: Checks for Supabase verification tokens first, then defaults to /register
   { path: '/', element: <RootEntry /> },
 
-  // Explicit Registration Routes (Always accessible directly if needed)
+  // Explicit Registration Routes
   { path: '/register', element: <OnlineRegistrationPage /> },
   { path: '/register-online', element: <OnlineRegistrationPage /> },
 
@@ -215,13 +234,13 @@ const router = createBrowserRouter([
 
   // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {
-    element: <ProtectedRoute />, // Standard session guard check
+    element: <ProtectedRoute />,
     children: [
       {
         element: <SystemLayout />,
         children: [
           {
-            element: <HeaderLayout />, // Consolidated dynamic page headers
+            element: <HeaderLayout />,
             children: [
               // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
               {
@@ -263,7 +282,6 @@ const router = createBrowserRouter([
                   { path: '/sales', element: <Sales /> },
                   { path: '/sales/:subview', element: <Sales /> },
                   { path: '/logbook', element: <LogbookPage /> },
-                  // Scanner is a global modal overlay; redirect any direct /scanner hits to /dashboard
                   {
                     path: '/scanner',
                     element: <Navigate to="/dashboard" replace />,
@@ -293,7 +311,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Fallback Route: Dynamic redirect based on environment
+  // Fallback Route: Redirect unknown paths
   { path: '*', element: <FallbackEntry /> },
 ]);
 
