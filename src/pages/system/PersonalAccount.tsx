@@ -15,6 +15,8 @@ import {
   ShieldAlert,
   Lock,
   Info,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 
@@ -167,10 +169,16 @@ export const PersonalAccount: React.FC = () => {
   const { user, profile, checkSession } = useAuthStore();
   const [username, setUsername] = useState(profile?.username || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Password fields state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isToggling2FA, setIsToggling2FA] = useState(false);
@@ -284,8 +292,9 @@ export const PersonalAccount: React.FC = () => {
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentPassword) {
-      toast.error('Please enter your current password to confirm changes.');
+
+    if (!user?.email) {
+      toast.error('No email address detected on this session.');
       return;
     }
     if (!newPassword || !confirmPassword) {
@@ -303,11 +312,16 @@ export const PersonalAccount: React.FC = () => {
 
     try {
       setIsUpdatingPassword(true);
+
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
+        current_password: currentPassword,
       });
 
-      if (error) throw error;
+      if (error) {
+        toast.error(error.message || 'Failed to update password');
+        return;
+      }
 
       // ─── AUDIT LOG: Manual Password Update ───────────────────────────────────
       await logAudit(
@@ -320,6 +334,9 @@ export const PersonalAccount: React.FC = () => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       toast.success('Password updated successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to update password');
@@ -708,23 +725,7 @@ export const PersonalAccount: React.FC = () => {
 
             <form onSubmit={handleUpdatePassword} className="space-y-4">
               <div className="grid gap-4">
-                <div className="grid gap-1.5">
-                  <label
-                    htmlFor="current-password"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-450"
-                  >
-                    Current Password
-                  </label>
-                  <input
-                    id="current-password"
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                    placeholder="Enter your current password"
-                  />
-                </div>
-
+                {/* New Password Field */}
                 <div className="grid gap-1.5">
                   <label
                     htmlFor="new-password"
@@ -732,16 +733,36 @@ export const PersonalAccount: React.FC = () => {
                   >
                     New Password
                   </label>
-                  <input
-                    id="new-password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                    placeholder="Minimum 6 characters"
-                  />
+                  <div className="relative">
+                    <input
+                      id="new-password"
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                      placeholder="Minimum 6 characters"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer p-1 focus:outline-none"
+                      tabIndex={-1}
+                      aria-label={
+                        showNewPassword ? 'Hide password' : 'Show password'
+                      }
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
+                {/* Confirm New Password Field */}
                 <div className="grid gap-1.5">
                   <label
                     htmlFor="confirm-password"
@@ -749,24 +770,40 @@ export const PersonalAccount: React.FC = () => {
                   >
                     Confirm New Password
                   </label>
-                  <input
-                    id="confirm-password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
-                    placeholder="Re-type new password"
-                  />
+                  <div className="relative">
+                    <input
+                      id="confirm-password"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                      placeholder="Re-type new password"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer p-1 focus:outline-none"
+                      tabIndex={-1}
+                      aria-label={
+                        showConfirmPassword ? 'Hide password' : 'Show password'
+                      }
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <button
                 type="submit"
                 disabled={
-                  isUpdatingPassword ||
-                  !currentPassword ||
-                  !newPassword ||
-                  !confirmPassword
+                  isUpdatingPassword || !newPassword || !confirmPassword
                 }
                 className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
               >

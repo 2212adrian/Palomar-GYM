@@ -161,7 +161,7 @@ export const Dashboard: React.FC = () => {
   const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
 
   return (
-    <div className="min-h-screen bg-[#f0f4f8] dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 transition-colors duration-300">
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 transition-colors duration-300">
       {/* Container with responsive bottom padding to clear mobile navigation bars */}
       <div className="p-3.5 sm:p-5 lg:p-7 pb-28 sm:pb-20 lg:pb-12 space-y-4 sm:space-y-6 max-w-7xl mx-auto select-none">
         {/* ─── HEADER / GREETING BAR ─── */}
