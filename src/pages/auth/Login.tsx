@@ -1,5 +1,12 @@
 // src/pages/auth/Login.tsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,8 +27,11 @@ import {
   Download,
   Clock,
   ArrowLeft,
+  ArrowRight,
   RefreshCw,
   Send,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
@@ -82,10 +92,10 @@ const APP_VERSION = pkg.version;
 // ─── Captcha & Brute-Force Constants ──────────────────────────────────────────
 const HCAPTCHA_SITE_KEY =
   (import.meta as any).env?.VITE_HCAPTCHA_SITE_KEY ||
-  '10000000-ffff-ffff-ffff-000000000001'; // Default test key
+  '10000000-ffff-ffff-ffff-000000000001';
 const FAILED_ATTEMPTS_STORAGE_KEY = 'palomar_login_failed_attempts';
 const MAX_FAILED_ATTEMPTS_THRESHOLD = 5;
-const FAILED_ATTEMPTS_TTL_MS = 60 * 60 * 1000; // 1 hour (3600000 ms)
+const FAILED_ATTEMPTS_TTL_MS = 60 * 60 * 1000;
 
 interface FailedAttemptsRecord {
   count: number;
@@ -166,6 +176,43 @@ function getInitialTheme(): 'dark' | 'light' {
     ? 'dark'
     : 'light';
 }
+
+// ─── Local-Time Greeting Computation ─────────────────────────────────────────
+const getLocalTimeGreeting = () => {
+  const now = new Date();
+  const hour = now.getHours();
+
+  let salutation = 'Good evening';
+  let period: 'morning' | 'afternoon' | 'evening' = 'evening';
+  let message =
+    'Review daily milestones, track revenues, and supervise evening gym operations.';
+
+  if (hour >= 5 && hour < 12) {
+    salutation = 'Good morning';
+    period = 'morning';
+    message =
+      'Kickstart the day strong and keep Wolf Palomar operating at peak performance.';
+  } else if (hour >= 12 && hour < 18) {
+    salutation = 'Good afternoon';
+    period = 'afternoon';
+    message =
+      'Keep the momentum high and power through ongoing floor training and check-ins.';
+  }
+
+  const formattedTime = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(now);
+
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  }).format(now);
+
+  return { salutation, period, message, formattedTime, formattedDate };
+};
 
 // ─── Memoized Typewriter Component ──────────────────────────────────────────
 const TypewriterText: React.FC<{ phrases: string[] }> = React.memo(
@@ -265,8 +312,8 @@ export const Login: React.FC = () => {
     return false;
   });
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [loginStarted, setLoginStarted] = useState<boolean>(false);
-  const [loginResting, setLoginResting] = useState<boolean>(false);
+  const [, setLoginStarted] = useState<boolean>(false);
+  const [, setLoginResting] = useState<boolean>(false);
 
   // Horizontal Flip state (Login <-> Forgot Password)
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
@@ -280,6 +327,58 @@ export const Login: React.FC = () => {
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
+  // ─── GREETING MODAL STATE (AUTO-EXPIRES AFTER 5S & CLICKABLE OUTSIDE) ───────
+  const [showGreetingModal, setShowGreetingModal] = useState<boolean>(false);
+  const [isGreetingClosing, setIsGreetingClosing] = useState<boolean>(false);
+  const [greetingTargetRoute, setGreetingTargetRoute] =
+    useState<string>('/dashboard');
+  const [greetingUser, setGreetingUser] = useState<{
+    name: string;
+    role?: string;
+  } | null>(null);
+  const greetingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeGreetingAndProceed = useCallback(() => {
+    if (greetingTimerRef.current) {
+      clearTimeout(greetingTimerRef.current);
+      greetingTimerRef.current = null;
+    }
+    setIsGreetingClosing(true);
+    setTimeout(() => {
+      setShowGreetingModal(false);
+      setIsGreetingClosing(false);
+      sessionStorage.setItem('palomar_greeting_shown', 'true');
+      sessionStorage.removeItem('outroActive');
+      navigate(greetingTargetRoute, { replace: true });
+    }, 280);
+  }, [greetingTargetRoute, navigate]);
+
+  const triggerGreetingAndNavigate = useCallback(
+    (targetRoute: string, userName: string, userRole?: string) => {
+      setGreetingUser({ name: userName, role: userRole });
+      setGreetingTargetRoute(targetRoute);
+      setIsGreetingClosing(false);
+      setShowGreetingModal(true);
+
+      if (greetingTimerRef.current) {
+        clearTimeout(greetingTimerRef.current);
+      }
+      greetingTimerRef.current = setTimeout(() => {
+        closeGreetingAndProceed();
+      }, 3000);
+    },
+    [closeGreetingAndProceed]
+  );
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (greetingTimerRef.current) {
+        clearTimeout(greetingTimerRef.current);
+      }
+    };
+  }, []);
+
   // ─── CAPTCHA ON-DEMAND (ACTIVATES ONLY AFTER 5 FAILED ATTEMPTS) ──────────────
   const [failedAttempts, setFailedAttempts] = useState<number>(
     getStoredFailedAttempts
@@ -288,7 +387,6 @@ export const Login: React.FC = () => {
   const [pendingCaptchaAction, setPendingCaptchaAction] =
     useState<LoginFormValues | null>(null);
 
-  // Periodic check to verify 1-hour expiration
   useEffect(() => {
     const checkExpiry = () => {
       const current = getStoredFailedAttempts();
@@ -329,7 +427,9 @@ export const Login: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isDownloadOpen) {
+        if (showGreetingModal) {
+          closeGreetingAndProceed();
+        } else if (isDownloadOpen) {
           setIsDownloadOpen(false);
         } else if (isFlipped) {
           setIsFlipped(false);
@@ -338,7 +438,7 @@ export const Login: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDownloadOpen, isFlipped]);
+  }, [isDownloadOpen, isFlipped, showGreetingModal, closeGreetingAndProceed]);
 
   useEffect(() => {
     const loadBranding = async () => {
@@ -563,17 +663,33 @@ export const Login: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Protected auto-navigation for already authenticated visits
+  // ─── AUTH REDIRECTION & GOOGLE OAUTH COMPLETION INTERCEPTOR ─────────────────
   useEffect(() => {
     if (isPreview) return;
     const isOutroActive = sessionStorage.getItem('outroActive') === 'true';
+
     if (initialized && user && !isLoggingIn && !isOutroActive && !is2FAMode) {
       const userProfile = (useAuthStore.getState() as any).profile;
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
       const targetRoute =
         userProfile?.role === 'staff' ? '/sales' : safeFromPath;
-      navigate(targetRoute, { replace: true });
+
+      const alreadyGreeted =
+        sessionStorage.getItem('palomar_greeting_shown') === 'true';
+
+      if (!alreadyGreeted && !showGreetingModal) {
+        const displayName =
+          userProfile?.username ||
+          user?.user_metadata?.full_name ||
+          user?.user_metadata?.name ||
+          user?.email?.split('@')[0] ||
+          'Team Member';
+
+        triggerGreetingAndNavigate(targetRoute, displayName, userProfile?.role);
+      } else if (alreadyGreeted && !showGreetingModal) {
+        navigate(targetRoute, { replace: true });
+      }
     }
   }, [
     initialized,
@@ -583,6 +699,8 @@ export const Login: React.FC = () => {
     location.state,
     isPreview,
     is2FAMode,
+    showGreetingModal,
+    triggerGreetingAndNavigate,
   ]);
 
   // 2FA Cooldown Timer Effect
@@ -684,6 +802,7 @@ export const Login: React.FC = () => {
 
     if (hasLoggedOut) {
       sessionStorage.removeItem('loginIntroPlayed');
+      sessionStorage.removeItem('palomar_greeting_shown');
       navigate(location.pathname, { replace: true, state: {} });
       return;
     }
@@ -708,7 +827,7 @@ export const Login: React.FC = () => {
     if (!isAssetPreloaded || isLoggingIn) return;
     const interval = setInterval(() => {
       setActiveSlide((p) => (p + 1) % activeCarouselImages.length);
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [gymConfig, activeCarouselImages.length, isAssetPreloaded, isLoggingIn]);
 
@@ -827,6 +946,7 @@ export const Login: React.FC = () => {
     setRecoveryError(null);
   };
 
+  // ─── GOOGLE OAUTH LOGIN (REDIRECTS TO /login FOR SEAMLESS SESSION RESOLUTION) ─
   const handleGoogleLogin = async () => {
     if (isPreview) return;
     if (!watchAgreement) {
@@ -838,9 +958,12 @@ export const Login: React.FC = () => {
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
+
+      // Redirect back to /login so the public auth route receives the session
+      // safely without ProtectedRoute prematurely redirecting to /register
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
-        : buildAppUrl('/dashboard');
+        : buildAppUrl('/login');
 
       if (isNative) {
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -857,7 +980,13 @@ export const Login: React.FC = () => {
       } else {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo },
+          options: {
+            redirectTo,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
+          },
         });
         if (error) throw error;
       }
@@ -867,7 +996,7 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── LOGIN SUBMIT (CHALLENGED ONLY IF >= 5 FAILED ATTEMPTS) ──────────────────
+  // ─── LOGIN SUBMIT ────────────────────────────────────────────────────────────
   const onLoginSubmit = async (data: LoginFormValues) => {
     if (isSubmittingRef.current || isPreview) return;
 
@@ -878,7 +1007,6 @@ export const Login: React.FC = () => {
       return;
     }
 
-    // Direct login attempt without captcha
     await executeLogin(data);
   };
 
@@ -909,7 +1037,6 @@ export const Login: React.FC = () => {
 
       if (error) throw error;
 
-      // Reset failed attempts on success
       resetFailedAttempts();
       setFailedAttempts(0);
 
@@ -948,7 +1075,7 @@ export const Login: React.FC = () => {
         return;
       }
 
-      // Check if 2-step verification after login is enabled
+      // Check if 2-step verification is enabled
       const is2FAEnabled =
         (dbProfile?.email_verification_enabled === true ||
           loggedInUser?.user_metadata?.email_verification_enabled === true) &&
@@ -968,20 +1095,15 @@ export const Login: React.FC = () => {
         const expiresAt = Date.now() + 10 * 60 * 1000;
         const cooldownUntil = Date.now() + 60 * 1000;
 
-        // Auto-dispatch OTP directly without any Captcha
         let autoDispatched = false;
         try {
           const { error: otpError } = await supabase.auth.signInWithOtp({
             email: finalEmail,
-            options: {
-              shouldCreateUser: false,
-            },
+            options: { shouldCreateUser: false },
           });
-          if (!otpError) {
-            autoDispatched = true;
-          }
+          if (!otpError) autoDispatched = true;
         } catch {
-          // Handled gracefully below
+          // Handled gracefully
         }
 
         sessionStorage.setItem(
@@ -1024,36 +1146,18 @@ export const Login: React.FC = () => {
         return;
       }
 
-      setIsLoggingIn(true);
-      setLoginStarted(false);
-      setLoginResting(false);
-
-      setTimeout(() => {
-        setLoginStarted(true);
-      }, 20);
-
-      setTimeout(() => {
-        setLoginResting(true);
-      }, 1100);
-
       await logAudit(
         'USER_LOGIN',
         `User "${targetName}" logged in successfully.`,
         loggedInUser?.id ?? undefined
       );
 
-      toast.success(`Welcome back, ${targetName}!`, {
-        toastId: 'login-success-toast',
-      });
-
       await checkSession();
 
-      setTimeout(() => {
-        sessionStorage.removeItem('outroActive');
-        const userProfile = (useAuthStore.getState() as any).profile;
-        const targetRoute = userProfile?.role === 'staff' ? '/sales' : safeFrom;
-        navigate(targetRoute, { replace: true });
-      }, 1500);
+      const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
+
+      // Trigger the Greeting Modal before navigating
+      triggerGreetingAndNavigate(calculatedRoute, targetName, dbProfile?.role);
     } catch (err: any) {
       sessionStorage.removeItem('outroActive');
       sessionStorage.removeItem('playDashboardIntro');
@@ -1181,33 +1285,15 @@ export const Login: React.FC = () => {
         twoFactorUserId || undefined
       );
 
-      toast.success(
-        `Verification complete. Welcome back, ${twoFactorTargetName}!`,
-        { toastId: 'login-success-toast' }
-      );
-
       sessionStorage.removeItem('palomar_2fa_pending');
-      sessionStorage.setItem('outroActive', 'true');
-      sessionStorage.setItem('playDashboardIntro', 'true');
-
-      setIsLoggingIn(true);
-      setLoginStarted(false);
-      setLoginResting(false);
-
-      setTimeout(() => {
-        setLoginStarted(true);
-      }, 20);
-
-      setTimeout(() => {
-        setLoginResting(true);
-      }, 1100);
-
       await checkSession();
 
-      setTimeout(() => {
-        sessionStorage.removeItem('outroActive');
-        navigate(twoFactorTargetRoute, { replace: true });
-      }, 1500);
+      // Launch the greeting modal upon 2FA success
+      triggerGreetingAndNavigate(
+        twoFactorTargetRoute,
+        twoFactorTargetName,
+        'staff'
+      );
     } catch (err: any) {
       triggerShake(setShake2FA);
       setTwoFactorAttempts((prev) => {
@@ -1235,7 +1321,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  // Direct OTP resend without Captcha
   const handleResend2FACode = async () => {
     if (twoFactorResendCooldown > 0 || isResending2FA || isResendingRef.current)
       return;
@@ -1316,7 +1401,6 @@ export const Login: React.FC = () => {
 
   const onInvalidRecoverySubmit = () => triggerShake(setShakeRecovery);
 
-  // Recovery email dispatch without Captcha
   const onRecoverySubmit = async (data: RecoveryFormValues) => {
     if (isPreview || isRecoverySubmitting) return;
     await requestResetLink(data.email);
@@ -1347,7 +1431,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── GENERAL CAPTCHA MODAL HANDLER ──────────────────────────────────────────
   const handleCaptchaVerified = async (token: string) => {
     setIsCaptchaModalOpen(false);
     if (pendingCaptchaAction) {
@@ -1357,7 +1440,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  // ─── RECOVERY CODE DIGIT HANDLERS (6 DIGITS) ────────────────────────────────
   const handleRecoveryDigitChange = (index: number, val: string) => {
     const cleaned = val.replace(/\D/g, '');
     if (!cleaned) {
@@ -1761,7 +1843,6 @@ export const Login: React.FC = () => {
                 </div>
               )}
 
-              {/* Recovery Code Inputs (6 digits) */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider text-center">
                   Verification Code (6 digits)
@@ -1790,7 +1871,6 @@ export const Login: React.FC = () => {
                 </div>
               </div>
 
-              {/* New Password & Confirm Password */}
               <div className="space-y-2">
                 <Input
                   type={showRecoveryPassword ? 'text' : 'password'}
@@ -1988,7 +2068,6 @@ export const Login: React.FC = () => {
               </p>
             )}
 
-            {/* OTP Inputs (6 digits) */}
             <div
               className={`flex justify-center items-center gap-1.5 sm:gap-2 my-4 ${
                 shake2FA ? 'animate-shake' : ''
@@ -2014,7 +2093,6 @@ export const Login: React.FC = () => {
               ))}
             </div>
 
-            {/* Expiry & Resend Actions */}
             <div className="flex items-center justify-between text-xs px-2 mb-5 font-medium text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -2043,7 +2121,6 @@ export const Login: React.FC = () => {
               </button>
             </div>
 
-            {/* Verification Submit Button */}
             <button
               type="button"
               onClick={() => verify2FACode()}
@@ -2065,7 +2142,6 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        {/* Back to password login */}
         <div className="mt-4 pt-4 border-t border-slate-200/80 dark:border-white/10">
           <button
             type="button"
@@ -2086,7 +2162,12 @@ export const Login: React.FC = () => {
 
   if (
     !isPreview &&
-    (!initialized || (user && !isLoggingIn && !isOutroActive && !is2FAMode))
+    (!initialized ||
+      (user &&
+        !isLoggingIn &&
+        !isOutroActive &&
+        !is2FAMode &&
+        !showGreetingModal))
   ) {
     return (
       <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0c0e12] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 select-none overflow-hidden">
@@ -2119,6 +2200,9 @@ export const Login: React.FC = () => {
     );
   }
 
+  const { salutation, period, message, formattedTime, formattedDate } =
+    getLocalTimeGreeting();
+
   return (
     <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-page,#0c0e12)] bg-slate-900 dark:bg-[#0c0e12] font-sans text-[var(--color-text)] font-body">
       <style
@@ -2135,6 +2219,10 @@ export const Login: React.FC = () => {
         @keyframes liquidFloat2 {
           0%, 100% { transform: translate(0px, 0px) scale(1); }
           50% { transform: translate(-35px, 25px) scale(1.18); }
+        }
+        @keyframes greetingProgress {
+          from { width: 100%; }
+          to   { width: 0%;   }
         }
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .animate-liquid-1 { animation: liquidFloat1 16s ease-in-out infinite; }
@@ -2358,7 +2446,6 @@ export const Login: React.FC = () => {
               <div className="auth-divider-line auth-line-left pointer-events-none" />
               <div className="auth-divider-line auth-line-right pointer-events-none" />
 
-              {/* System Copyright Footers */}
               <div
                 className={`absolute bottom-3 sm:bottom-4 left-8 sm:left-12 z-10 pointer-events-auto select-none transition-all duration-700 ease-out ${
                   isFlipped && !isLoggingIn
@@ -2475,32 +2562,7 @@ export const Login: React.FC = () => {
         </div>
       </div>
 
-      {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
-      {isLoggingIn && (
-        <div
-          className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
-            loginStarted
-              ? 'translate-x-0 scale-x-[-1]'
-              : '-translate-x-[250%] scale-x-[-1]'
-          }`}
-        >
-          <div className="relative w-full h-full bg-[var(--bg-page,#f0f4f8)] bg-slate-100 dark:bg-[#0c0e12]">
-            <div
-              className={`absolute top-0 right-full -translate-x-4 sm:-translate-x-10 h-full origin-right transition-transform duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                loginResting ? 'scale-x-100' : 'scale-x-[2.5] sm:scale-x-[8]'
-              }`}
-            >
-              <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
-              <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#7a0000] opacity-90" />
-              <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#295c9a] dark:bg-[#a60303]" />
-              <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_10px_rgba(83,156,255,0.8)] sm:shadow-[0_0_20px_rgba(83,156,255,0.8)] dark:shadow-[0_0_10px_rgba(230,0,0,0.8)] dark:sm:shadow-[0_0_20px_rgba(230,0,0,0.8)]" />
-              <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)] dark:sm:shadow-[0_0_25px_rgba(255,100,100,1)]" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── ON-DEMAND SECURITY CAPTCHA MODAL (APPEARS AFTER 5 FAILED ATTEMPTS) ─── */}
+      {/* ─── ON-DEMAND SECURITY CAPTCHA MODAL ─── */}
       <SecurityCaptchaModal
         isOpen={isCaptchaModalOpen}
         onClose={() => {
@@ -2512,7 +2574,110 @@ export const Login: React.FC = () => {
         theme={theme}
       />
 
-      {/* MODALS */}
+      {/* ─── COOL GREETING MODAL (PORTAL TO BODY, 5S AUTO-CLOSE, CLICK OUTSIDE TO CLOSE) ─── */}
+      {showGreetingModal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            onClick={closeGreetingAndProceed}
+            className={`fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/70 dark:bg-black/80 backdrop-blur-md select-none cursor-pointer ${
+              isGreetingClosing
+                ? 'animate-[backdropFadeOut_0.25s_ease-out_forwards]'
+                : 'animate-[backdropFadeIn_0.3s_ease-out_forwards]'
+            }`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`relative w-full max-w-md bg-white/95 dark:bg-[#12151c]/95 border border-slate-200/90 dark:border-white/15 rounded-3xl shadow-2xl backdrop-blur-2xl overflow-hidden cursor-default transition-all ${
+                isGreetingClosing ? 'animate-pop-out' : 'animate-pop-in'
+              }`}
+            >
+              {/* Top ambient glow */}
+              <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-500/15 dark:from-red-600/20 to-transparent pointer-events-none" />
+
+              {/* Dismiss button */}
+              <button
+                type="button"
+                onClick={closeGreetingAndProceed}
+                className="absolute top-3.5 right-3.5 z-20 p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 transition-all cursor-pointer"
+                aria-label="Close and enter dashboard"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="p-6 sm:p-7 relative z-10 space-y-5 text-center">
+                {/* Dynamic Icon Badge */}
+                <div className="flex justify-center">
+                  <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-red-950/50 dark:to-neutral-900 border border-blue-500/20 dark:border-red-600/30 shadow-inner">
+                    {period === 'morning' ? (
+                      <Sun className="w-8 h-8 text-amber-500 dark:text-amber-400 animate-spin-slow" />
+                    ) : period === 'afternoon' ? (
+                      <Sun className="w-8 h-8 text-blue-500 dark:text-orange-400" />
+                    ) : (
+                      <Moon className="w-8 h-8 text-indigo-500 dark:text-red-400" />
+                    )}
+                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Salutation and Name */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-heading font-black tracking-[3px] uppercase text-blue-600 dark:text-red-500">
+                    WOLF PALOMAR GYM
+                  </span>
+                  <h3 className="text-2xl sm:text-3xl font-heading font-black tracking-wide text-slate-900 dark:text-white uppercase leading-tight">
+                    {salutation}, <br />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-500 dark:via-rose-500 dark:to-red-600">
+                      {greetingUser?.name || 'Commander'}
+                    </span>
+                  </h3>
+                </div>
+
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed max-w-sm mx-auto">
+                  {message}
+                </p>
+
+                {/* Local Date & Time Badge */}
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-[11px] font-mono font-medium">
+                  <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
+                  <span>
+                    {formattedDate} • {formattedTime}
+                  </span>
+                </div>
+
+                {/* Action Button */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={closeGreetingAndProceed}
+                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg hover:shadow-blue-500/25 dark:hover:shadow-red-600/30 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>ENTER SYSTEM</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 font-body font-medium">
+                    Auto-redirecting in 5s • Click anywhere outside to continue
+                  </p>
+                </div>
+              </div>
+
+              {/* 5-Second Animated Progress Bar */}
+              <div className="w-full h-1 bg-slate-200 dark:bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700"
+                  style={{
+                    animation: 'greetingProgress 5s linear forwards',
+                  }}
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* EXIT & RECOVERY MODALS */}
       <Modal
         isOpen={showExitConfirm}
         onClose={() => setShowExitConfirm(false)}
