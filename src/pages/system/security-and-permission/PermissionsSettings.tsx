@@ -27,6 +27,8 @@ import {
   requestCameraPermission,
   requestNotificationPermission,
   requestLocationPermission,
+  getCurrentCoordinates,
+  sendNotification,
   type PermissionState,
 } from '../../../lib/permissions';
 
@@ -97,7 +99,7 @@ export const PermissionsSettings: React.FC = () => {
     setChecking(true);
     try {
       const cam = await getCameraPermissionStatus();
-      const notif = getNotificationPermissionStatus();
+      const notif = await getNotificationPermissionStatus();
       const loc = await getLocationPermissionStatus();
       setCameraStatus(cam);
       setNotificationStatus(notif);
@@ -123,7 +125,7 @@ export const PermissionsSettings: React.FC = () => {
       fetchCameras();
     } else if (status === 'denied') {
       toast.error(
-        'Camera permission was blocked by the browser. Check your site permissions.'
+        'Camera permission was blocked. Please check your app/browser permissions.'
       );
     }
   };
@@ -132,16 +134,14 @@ export const PermissionsSettings: React.FC = () => {
     const status = await requestNotificationPermission();
     setNotificationStatus(status);
     if (status === 'granted') {
-      toast.success('Push notification permission enabled successfully!');
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Palomar Gym Management', {
-          body: 'Notifications are active and verified.',
-          icon: '/favicon.ico',
-        });
-      }
+      toast.success('Notification permission enabled successfully!');
+      await sendNotification(
+        'Palomar Gym Management',
+        'Notifications are active and verified.'
+      );
     } else if (status === 'denied') {
       toast.error(
-        'Push notification permission was blocked. Check your browser settings.'
+        'Notification permission was blocked. Check your system or browser settings.'
       );
     }
   };
@@ -151,46 +151,41 @@ export const PermissionsSettings: React.FC = () => {
     setLocationStatus(status);
     if (status === 'granted') {
       toast.success('Location permission enabled successfully!');
-      handleTestLocation();
+      await handleTestLocation();
     } else if (status === 'denied') {
       toast.error(
-        'Location permission was denied. Please allow location access in your browser settings.'
+        'Location permission was denied. Please allow location access in your device settings.'
       );
     }
   };
 
-  const handleTestLocation = () => {
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
-
+  const handleTestLocation = async () => {
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setIsLocating(false);
-        setLocationStatus('granted');
-        setTestedCoords({
-          lat: Number(pos.coords.latitude.toFixed(6)),
-          lng: Number(pos.coords.longitude.toFixed(6)),
-          accuracy: Math.round(pos.coords.accuracy || 0),
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        toast.success(
-          `GPS Acquired: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)} (±${Math.round(pos.coords.accuracy)}m)`
+    try {
+      const coords = await getCurrentCoordinates();
+      setLocationStatus('granted');
+      setTestedCoords({
+        lat: coords.latitude,
+        lng: coords.longitude,
+        accuracy: coords.accuracy,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      toast.success(
+        `GPS Acquired: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)} (±${coords.accuracy}m)`
+      );
+    } catch (err: any) {
+      console.warn('Location test error:', err);
+      if (err.code === 1 || err.message?.toLowerCase().includes('denied')) {
+        setLocationStatus('denied');
+        toast.error('Location permission was denied in device settings.');
+      } else {
+        toast.error(
+          'Location error: ' + (err.message || 'Position unavailable')
         );
-      },
-      (err) => {
-        setIsLocating(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          setLocationStatus('denied');
-          toast.error('Location permission was denied by browser settings.');
-        } else {
-          toast.error('Location error: ' + (err.message || 'Position unavailable'));
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+      }
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const stopCameraPreview = () => {
@@ -282,19 +277,19 @@ export const PermissionsSettings: React.FC = () => {
     handleCameraChange(cameras[nextIndex].id);
   };
 
-  const handleSendTestNotification = () => {
-    if (!('Notification' in window)) {
-      toast.error('Notifications not supported in this environment.');
+  const handleSendTestNotification = async () => {
+    if (notificationStatus !== 'granted') {
+      toast.warning('Please enable notification permissions first.');
       return;
     }
-    if (Notification.permission === 'granted') {
-      new Notification('Palomar Gym System Alert', {
-        body: 'System notification verification successful. Real-time alerts are operational.',
-        icon: '/favicon.ico',
-      });
+    try {
+      await sendNotification(
+        'Palomar Gym System Alert',
+        'System notification verification successful. Real-time alerts are operational.'
+      );
       toast.success('Test notification triggered.');
-    } else {
-      toast.warning('Please enable notification permissions first.');
+    } catch (err: any) {
+      toast.error('Failed to trigger notification: ' + (err.message || err));
     }
   };
 
@@ -311,7 +306,7 @@ export const PermissionsSettings: React.FC = () => {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-heading font-black tracking-wider uppercase bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
             <XCircle className="w-3.5 h-3.5" />
-            Blocked by Browser
+            Blocked / Denied
           </span>
         );
       case 'unsupported':
@@ -342,8 +337,8 @@ export const PermissionsSettings: React.FC = () => {
               Hardware & Device Permissions
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-              Manage browser hardware access for camera (QR scanning, member
-              photos) and push notifications.
+              Manage system and hardware access for camera (QR scanning, member
+              photos), location (GPS check-ins), and push notifications.
             </p>
           </div>
 
@@ -425,13 +420,11 @@ export const PermissionsSettings: React.FC = () => {
                 <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 space-y-1.5">
                   <p className="font-bold flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
-                    Camera is Blocked in Browser
+                    Camera is Blocked
                   </p>
                   <p className="text-[11px] opacity-90 leading-normal">
-                    To turn it back on, click the{' '}
-                    <strong>Site Settings / Lock icon</strong> in your browser's
-                    address bar, change <strong>Camera</strong> to{' '}
-                    <em>"Allow"</em>, then click Re-check.
+                    To enable camera access, check your app/browser permission
+                    settings, allow <strong>Camera</strong>, then tap Re-check.
                   </p>
                 </div>
               )}
@@ -527,7 +520,8 @@ export const PermissionsSettings: React.FC = () => {
                   Location (GPS) Access
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Required for perimeter geofence validation, facility check-in verification, and terminal security.
+                  Required for perimeter geofence validation, facility check-in
+                  verification, and terminal security.
                 </p>
               </div>
 
@@ -539,7 +533,9 @@ export const PermissionsSettings: React.FC = () => {
                       <Crosshair className="w-3.5 h-3.5 text-blue-500" />
                       Current Device Coordinates
                     </span>
-                    <span className="font-mono text-[10px] opacity-75">{testedCoords.timestamp}</span>
+                    <span className="font-mono text-[10px] opacity-75">
+                      {testedCoords.timestamp}
+                    </span>
                   </div>
                   <p className="text-xs font-mono font-bold tracking-tight">
                     {testedCoords.lat}, {testedCoords.lng}
@@ -557,10 +553,8 @@ export const PermissionsSettings: React.FC = () => {
                     Location Access is Denied
                   </p>
                   <p className="text-[11px] opacity-90 leading-normal">
-                    To enable location, click the{' '}
-                    <strong>Site Settings / Lock icon</strong> in your browser's
-                    address bar, set <strong>Location</strong> to{' '}
-                    <em>"Allow"</em>, then test again.
+                    To enable location, check your device/browser App Settings
+                    and allow <strong>Location</strong>, then test again.
                   </p>
                 </div>
               )}
@@ -582,8 +576,12 @@ export const PermissionsSettings: React.FC = () => {
                   disabled={isLocating}
                   className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
                 >
-                  <Navigation className={`w-4 h-4 text-blue-500 ${isLocating ? 'animate-spin' : ''}`} />
-                  <span>{isLocating ? 'Acquiring GPS...' : 'Test Device GPS'}</span>
+                  <Navigation
+                    className={`w-4 h-4 text-blue-500 ${isLocating ? 'animate-spin' : ''}`}
+                  />
+                  <span>
+                    {isLocating ? 'Acquiring GPS...' : 'Test Device GPS'}
+                  </span>
                 </button>
               )}
             </div>
@@ -604,8 +602,8 @@ export const PermissionsSettings: React.FC = () => {
                   Push Notifications
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Receive instant browser alerts for incident reports, low stock
-                  items, and expiring member subscriptions.
+                  Receive instant alerts for incident reports, low stock items,
+                  and expiring member subscriptions.
                 </p>
               </div>
 
@@ -616,9 +614,8 @@ export const PermissionsSettings: React.FC = () => {
                     Notifications Blocked
                   </p>
                   <p className="text-[11px] opacity-90 leading-normal">
-                    To receive alert notifications, click the{' '}
-                    <strong>Site Settings / Lock icon</strong> in the address
-                    bar and switch <strong>Notifications</strong> to{' '}
+                    To receive alert notifications, open your device/browser App
+                    Settings and switch <strong>Notifications</strong> to{' '}
                     <em>"Allow"</em>.
                   </p>
                 </div>
@@ -648,18 +645,18 @@ export const PermissionsSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Browser Guidance Note */}
+        {/* Device Guidance Note */}
         <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-3">
           <Smartphone className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-heading font-bold uppercase text-slate-900 dark:text-white">
-              Browser Security & Permissions Behavior
+              Device & Security Permissions Behavior
             </p>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-              Once a permission is explicitly blocked or allowed in your
-              browser, web standards require modifying it through the browser
-              address bar icon or system device settings. The status shown above
-              automatically reflects your live browser permissions state.
+              Once a hardware permission is denied by the user, operating system
+              security policies prevent prompts from reopening automatically.
+              You can re-enable access anytime via the browser address bar icon
+              or your device's <em>App Info &gt; Permissions</em> settings.
             </p>
           </div>
         </div>

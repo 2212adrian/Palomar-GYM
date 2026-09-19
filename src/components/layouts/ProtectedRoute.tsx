@@ -1,4 +1,4 @@
-//src/components/layouts/ProtectedRoute.tsx
+// src/components/layouts/ProtectedRoute.tsx
 import React, { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
@@ -16,27 +16,19 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
 }) => {
   const { user, profile, loading, initialized } = useAuthStore() as any;
-  const {
-    config,
-    fetchConfig,
-    checkResult,
-    runVerification,
-    temporaryOverride,
-  } = useSecurityStore();
+  const { config, fetchConfig, checkResult, runVerification } =
+    useSecurityStore();
   const location = useLocation();
 
   const isSuperAdminUser = isSuperAdmin(user?.email);
   const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
 
-  // Load security configuration and evaluate terminal access
   useEffect(() => {
     if (user?.id && initialized && !loading) {
       fetchConfig().then((cfg) => {
         if (
           (cfg.location_restriction_enabled || cfg.wifi_restriction_enabled) &&
-          cfg.enforce_on_roles.includes(effectiveRole) &&
-          !(cfg.bypass_superadmin && isSuperAdminUser) &&
-          !temporaryOverride
+          !isSuperAdminUser
         ) {
           runVerification(effectiveRole, user?.email);
         }
@@ -48,7 +40,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     loading,
     effectiveRole,
     isSuperAdminUser,
-    temporaryOverride,
     fetchConfig,
     runVerification,
   ]);
@@ -61,7 +52,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Redirect to login if user is not authenticated, preserving hash parameters
   if (!user) {
     const redirectTarget = `/login${location.search}${location.hash}`;
     return <Navigate to={redirectTarget} state={{ from: location }} replace />;
@@ -71,7 +61,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     ? 'active'
     : profile?.status || user?.user_metadata?.status;
 
-  // Guard: Intercept and display suspension notice to deactivated users
   if (userStatus === 'inactive') {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-white dark:bg-[#0f1012] p-4 text-center font-body select-none">
@@ -103,17 +92,19 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Facility Geofence & Wi-Fi Access Control Check
   const hasActiveSecurityRestrictions =
-    (config.location_restriction_enabled || config.wifi_restriction_enabled) &&
-    config.enforce_on_roles.includes(effectiveRole);
+    config.location_restriction_enabled || config.wifi_restriction_enabled;
 
   const canBypass =
-    temporaryOverride ||
-    (config.bypass_superadmin && isSuperAdminUser) ||
+    isSuperAdminUser ||
     (location.pathname.startsWith('/settings') && effectiveRole === 'admin');
 
-  if (hasActiveSecurityRestrictions && !canBypass && checkResult && !checkResult.allowed) {
+  if (
+    hasActiveSecurityRestrictions &&
+    !canBypass &&
+    checkResult &&
+    !checkResult.allowed
+  ) {
     return (
       <SecurityAccessBlocker
         checkResult={checkResult}
@@ -124,7 +115,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Verify role authorizations on custom restricted nodes
   if (allowedRoles) {
     if (!effectiveRole || !allowedRoles.includes(effectiveRole)) {
       const targetFallback =

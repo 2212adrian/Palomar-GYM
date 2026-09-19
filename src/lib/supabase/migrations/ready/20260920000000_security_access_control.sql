@@ -1,9 +1,6 @@
 -- ============================================================================
 -- Migration: 20260920000000_security_access_control.sql
--- Description: Security & Permissions Configuration
---   Stores location geofencing (latitude, longitude, radius) and physical
---   Wi-Fi access control settings inside public.system_config.
---   Provides secure RPC endpoints and RLS policies for reading/updating.
+-- Description: Security & Permissions Configuration + Supabase Realtime
 -- ============================================================================
 
 BEGIN;
@@ -25,10 +22,8 @@ VALUES (
 ON CONFLICT (key) DO NOTHING;
 
 -- 3. RLS policies on public.system_config
--- Enable RLS if not already enabled
 ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
--- Allow authenticated users to read non-sensitive configuration keys (all except superadmin_email)
 DROP POLICY IF EXISTS "allow_authenticated_read_public_config" ON public.system_config;
 CREATE POLICY "allow_authenticated_read_public_config"
   ON public.system_config
@@ -36,7 +31,6 @@ CREATE POLICY "allow_authenticated_read_public_config"
   TO authenticated
   USING (key <> 'superadmin_email');
 
--- Allow admins or superadmins to update security configuration
 DROP POLICY IF EXISTS "allow_admin_update_security_config" ON public.system_config;
 CREATE POLICY "allow_admin_update_security_config"
   ON public.system_config
@@ -51,7 +45,6 @@ CREATE POLICY "allow_admin_update_security_config"
     AND key = 'security_access_control'
   );
 
--- Allow admins or superadmins to insert security configuration
 DROP POLICY IF EXISTS "allow_admin_insert_security_config" ON public.system_config;
 CREATE POLICY "allow_admin_insert_security_config"
   ON public.system_config
@@ -63,7 +56,6 @@ CREATE POLICY "allow_admin_insert_security_config"
   );
 
 -- 4. Helper Function: get_security_access_config()
--- Reads security configuration JSON. SECURITY DEFINER so authenticated users can read safely.
 CREATE OR REPLACE FUNCTION public.get_security_access_config()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -92,7 +84,6 @@ REVOKE ALL ON FUNCTION public.get_security_access_config() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_security_access_config() TO authenticated;
 
 -- 5. Helper Function: update_security_access_config(p_config jsonb)
--- Updates security configuration JSON. Verifies caller is admin or superadmin.
 CREATE OR REPLACE FUNCTION public.update_security_access_config(p_config jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -110,7 +101,6 @@ BEGIN
 
   v_caller_id := auth.uid();
   SELECT email INTO v_caller_email FROM auth.users WHERE id = v_caller_id;
-
   v_val := p_config::text;
 
   INSERT INTO public.system_config (key, value, updated_at)
@@ -119,7 +109,6 @@ BEGIN
     SET value = EXCLUDED.value,
         updated_at = now();
 
-  -- Audit log entry
   BEGIN
     PERFORM public.log_audit_entry(
       v_caller_id,
@@ -129,7 +118,6 @@ BEGIN
       'Security and access control configuration updated.'
     );
   EXCEPTION WHEN OTHERS THEN
-    -- Ignore audit log failure to not block settings update
   END;
 
   RETURN p_config;
@@ -138,5 +126,20 @@ $$;
 
 REVOKE ALL ON FUNCTION public.update_security_access_config(jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_security_access_config(jsonb) TO authenticated;
+
+-- 6. Enable Realtime broadcast on system_config
+ALTER TABLE public.system_config REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'system_config'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.system_config;
+  END IF;
+END $$;
 
 COMMIT;

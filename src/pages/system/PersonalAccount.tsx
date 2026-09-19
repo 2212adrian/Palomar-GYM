@@ -20,6 +20,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
+import { Button } from '../../components/ui/Button';
 
 // Exported to be reused across other user settings components
 export const AvatarImage: React.FC<{
@@ -169,13 +170,18 @@ export const compressImage = (
 export const PersonalAccount: React.FC = () => {
   const { user, profile, checkSession } = useAuthStore();
   const [username, setUsername] = useState(profile?.username || '');
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Username change confirmation modal state
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [verifyPassword, setVerifyPassword] = useState('');
 
   // Password fields state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [, setShowCurrentPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
@@ -185,6 +191,12 @@ export const PersonalAccount: React.FC = () => {
   const [isToggling2FA, setIsToggling2FA] = useState(false);
   const [show2FAInfoModal, setShow2FAInfoModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (profile?.username) {
+      setUsername(profile.username);
+    }
+  }, [profile?.username]);
 
   const is2FAEnabled =
     profile?.email_verification_enabled ??
@@ -205,13 +217,11 @@ export const PersonalAccount: React.FC = () => {
     try {
       setIsToggling2FA(true);
 
-      // 1. Persist to Supabase Auth user metadata
       const { error: authError } = await supabase.auth.updateUser({
         data: { email_verification_enabled: nextState },
       });
       if (authError) throw authError;
 
-      // 2. Persist to public.profiles table
       if (user?.id) {
         const { error: dbError } = await supabase
           .from('profiles')
@@ -222,14 +232,12 @@ export const PersonalAccount: React.FC = () => {
         }
       }
 
-      // 3. Log Audit trail
       await logAudit(
         '2FA_SETTING_CHANGED',
         `User ${nextState ? 'enabled' : 'disabled'} 6-digit email verification after login.`,
         user?.id ?? undefined
       );
 
-      // 4. Synchronize active state
       await checkSession();
 
       toast.success(
@@ -251,39 +259,133 @@ export const PersonalAccount: React.FC = () => {
     return user.user_metadata.avatar_url;
   };
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const verifyCurrentPassword = async (password: string): Promise<boolean> => {
+    try {
+      const { data: isValidPassword, error: authError } = await supabase.rpc(
+        'verify_user_password',
+        { entered_password: password }
+      );
+      if (!authError && typeof isValidPassword === 'boolean') {
+        return isValidPassword;
+      }
+    } catch {
+      // Fall through to authentication check
+    }
+
+    if (user?.email) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password,
+      });
+      return !signInError;
+    }
+
+    return false;
+  };
+
+  const handleInitiateUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
+    const cleanUsername = username.trim();
+
+    if (!cleanUsername) {
       toast.error('Username cannot be empty');
+      return;
+    }
+
+    if (
+      cleanUsername.toLowerCase() === (profile?.username || '').toLowerCase()
+    ) {
+      toast.info('No changes made to username.');
+      return;
+    }
+
+    try {
+      setIsCheckingUsername(true);
+
+      const { data: existingUser, error: checkError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .ilike('username', cleanUsername)
+        .neq('id', user?.id || '')
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingUser) {
+        toast.error(
+          `The username "${cleanUsername}" is already taken. Please choose another.`
+        );
+        return;
+      }
+
+      setVerifyPassword('');
+      setIsConfirmModalOpen(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to check username availability.');
+    } finally {
+      setIsCheckingUsername(false);
+    }
+  };
+
+  const handleConfirmUpdateProfile = async () => {
+    if (!verifyPassword.trim()) {
+      toast.error('Please enter your password to authorize this action.');
+      return;
+    }
+
+    const cleanUsername = username.trim();
+    if (!cleanUsername) {
+      toast.error('Username cannot be empty.');
       return;
     }
 
     try {
       setIsUpdatingProfile(true);
+
+      const isValid = await verifyCurrentPassword(verifyPassword);
+      if (!isValid) {
+        toast.error('Authorization failed. Incorrect password.');
+        return;
+      }
+
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', cleanUsername)
+        .neq('id', user?.id || '')
+        .maybeSingle();
+
+      if (existingUser) {
+        toast.error(
+          `The username "${cleanUsername}" is already taken. Please choose another.`
+        );
+        setIsConfirmModalOpen(false);
+        return;
+      }
+
       const oldUsername = profile?.username || '';
-      const newUsername = username.trim();
 
       const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: newUsername },
+        data: { full_name: cleanUsername },
       });
       if (authError) throw authError;
 
       const { error: dbError } = await supabase
         .from('profiles')
-        .update({ username: newUsername })
+        .update({ username: cleanUsername })
         .eq('id', user?.id);
       if (dbError) throw dbError;
 
-      // ─── AUDIT LOG: Display Username Updated ─────────────────────────────────
       await logAudit(
         'PROFILE_UPDATED',
-        `User updated display username from "${oldUsername}" to "${newUsername}".`,
+        `User updated display username from "${oldUsername}" to "${cleanUsername}".`,
         user?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       await checkSession();
       toast.success('Username updated successfully');
+      setIsConfirmModalOpen(false);
+      setVerifyPassword('');
     } catch (err: any) {
       toast.error(err.message || 'Failed to update username');
     } finally {
@@ -296,6 +398,10 @@ export const PersonalAccount: React.FC = () => {
 
     if (!user?.email) {
       toast.error('No email address detected on this session.');
+      return;
+    }
+    if (!currentPassword) {
+      toast.error('Please enter your current password.');
       return;
     }
     if (!newPassword || !confirmPassword) {
@@ -314,23 +420,39 @@ export const PersonalAccount: React.FC = () => {
     try {
       setIsUpdatingPassword(true);
 
+      // 1. Verify current password before updating
+      const isCurrentValid = await verifyCurrentPassword(currentPassword);
+      if (!isCurrentValid) {
+        toast.error('Incorrect current password.');
+        return;
+      }
+
+      // 2. Submit new password
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
         current_password: currentPassword,
       });
 
       if (error) {
-        toast.error(error.message || 'Failed to update password');
+        const errorMsg = error.message?.toLowerCase() || '';
+        if (
+          errorMsg.includes('current password') ||
+          errorMsg.includes('reauthentication') ||
+          errorMsg.includes('invalid')
+        ) {
+          toast.error('Incorrect current password.');
+        } else {
+          toast.error(error.message || 'Failed to update password');
+        }
         return;
       }
 
-      // ─── AUDIT LOG: Manual Password Update ───────────────────────────────────
+      // AUDIT LOG
       await logAudit(
         'USER_PASSWORD_UPDATED',
         'User manually updated their account password.',
         user?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       setCurrentPassword('');
       setNewPassword('');
@@ -340,12 +462,11 @@ export const PersonalAccount: React.FC = () => {
       setShowConfirmPassword(false);
       toast.success('Password updated successfully');
     } catch (err: any) {
-      toast.error(err.message || 'Failed to update password');
+      toast.error('Incorrect current password.');
     } finally {
       setIsUpdatingPassword(false);
     }
   };
-
   const handleSendResetEmail = async () => {
     if (!user?.email) {
       toast.error('No email address detected on this session.');
@@ -360,13 +481,11 @@ export const PersonalAccount: React.FC = () => {
 
       if (error) throw error;
 
-      // ─── AUDIT LOG: Recovery Reset Email Dispatched ──────────────────────────
       await logAudit(
         'PASSWORD_RESET_REQUESTED',
         `User requested a password reset email dispatched to "${user.email}".`,
         user?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       toast.success(
         `A password reset link has been dispatched to ${user.email}`
@@ -475,13 +594,11 @@ export const PersonalAccount: React.FC = () => {
         }
       }
 
-      // ─── AUDIT LOG: Avatar Photo Uploaded ────────────────────────────────────
       await logAudit(
         'USER_AVATAR_UPDATED',
         'User successfully updated their account profile photo.',
         user?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       await checkSession();
       toast.success('Profile avatar updated successfully!');
@@ -528,13 +645,11 @@ export const PersonalAccount: React.FC = () => {
         }
       }
 
-      // ─── AUDIT LOG: Avatar Photo Removed ─────────────────────────────────────
       await logAudit(
         'USER_AVATAR_REMOVED',
         'User removed their account profile photo.',
         user?.id ?? undefined
       );
-      // ──────────────────────────────────────────────────────────────────────────
 
       await checkSession();
       toast.success('Profile picture removed');
@@ -629,7 +744,7 @@ export const PersonalAccount: React.FC = () => {
 
             {/* Display Username Form */}
             <form
-              onSubmit={handleUpdateProfile}
+              onSubmit={handleInitiateUpdateProfile}
               className="space-y-4 pt-5 border-t border-(--border-color)"
             >
               <div className="grid gap-1.5">
@@ -651,8 +766,8 @@ export const PersonalAccount: React.FC = () => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  disabled={isSuperAdmin(user?.email)}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={isSuperAdmin(user?.email) || isCheckingUsername}
+                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all disabled:opacity-60 disabled:cursor-not-allowed font-medium"
                   placeholder="Enter username"
                   required
                 />
@@ -667,14 +782,17 @@ export const PersonalAccount: React.FC = () => {
                 <button
                   type="submit"
                   disabled={
-                    isUpdatingProfile || username.trim() === profile?.username
+                    isCheckingUsername ||
+                    isUpdatingProfile ||
+                    !username.trim() ||
+                    username.trim() === profile?.username
                   }
                   className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
                 >
-                  {isUpdatingProfile ? (
+                  {isCheckingUsername ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
-                      Saving changes...
+                      Checking availability...
                     </>
                   ) : (
                     'Save Username'
@@ -726,6 +844,45 @@ export const PersonalAccount: React.FC = () => {
 
             <form onSubmit={handleUpdatePassword} className="space-y-4">
               <div className="grid gap-4">
+                {/* Current Password Field */}
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="current-password"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-450"
+                  >
+                    Current Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="current-password"
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
+                      placeholder="Enter current password"
+                      autoComplete="current-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer p-1 focus:outline-none"
+                      tabIndex={-1}
+                      aria-label={
+                        showCurrentPassword
+                          ? 'Hide current password'
+                          : 'Show current password'
+                      }
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 {/* New Password Field */}
                 <div className="grid gap-1.5">
                   <label
@@ -804,7 +961,10 @@ export const PersonalAccount: React.FC = () => {
               <button
                 type="submit"
                 disabled={
-                  isUpdatingPassword || !newPassword || !confirmPassword
+                  isUpdatingPassword ||
+                  !currentPassword ||
+                  !newPassword ||
+                  !confirmPassword
                 }
                 className="w-full flex items-center justify-center px-5 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
               >
@@ -837,7 +997,6 @@ export const PersonalAccount: React.FC = () => {
                 </button>
               </div>
 
-              {/* Toggle Switch */}
               <button
                 type="button"
                 role="switch"
@@ -871,7 +1030,6 @@ export const PersonalAccount: React.FC = () => {
               </button>
             </div>
 
-            {/* Explanation ONLY shown when enabled */}
             {is2FAEnabled && (
               <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5 animate-fade-in">
                 <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
@@ -902,6 +1060,100 @@ export const PersonalAccount: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal: Password Verification for Username Change */}
+      <Modal
+        isOpen={isConfirmModalOpen}
+        onClose={() => {
+          if (!isUpdatingProfile) {
+            setIsConfirmModalOpen(false);
+            setVerifyPassword('');
+          }
+        }}
+        title="Confirm Username Change"
+      >
+        <div className="space-y-4 font-body text-left">
+          <div className="p-4 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
+            <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8 shrink-0 text-amber-600 dark:text-amber-500 mt-0.5" />
+            <div className="space-y-1">
+              <span className="block font-heading tracking-wider uppercase text-[10px] text-amber-700 dark:text-amber-400 font-extrabold">
+                SECURITY VERIFICATION REQUIRED
+              </span>
+              <span className="block text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                Updating your account username modifies your system display
+                identity. Please enter your account password to authorize this
+                update.
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal font-semibold">
+              You are updating your display username:
+            </p>
+            <div className="flex items-center gap-2.5 text-xs text-(--color-text) font-bold bg-(--bg-page) p-3 rounded-lg border border-(--border-color)">
+              <span className="text-slate-400 line-through">
+                {profile?.username || 'Current'}
+              </span>
+              <span className="text-slate-400 font-bold">→</span>
+              <span className="text-(--color-primary) dark:text-(--color-primary-light) font-semibold tracking-wide">
+                {username.trim()}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 pt-1">
+            <label
+              htmlFor="verifyUsernamePasswordInput"
+              className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />
+              Confirm Account Password
+            </label>
+            <input
+              id="verifyUsernamePasswordInput"
+              type="password"
+              disabled={isUpdatingProfile}
+              placeholder="Enter your password to authorize change..."
+              value={verifyPassword}
+              onChange={(e) => setVerifyPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === 'Enter' &&
+                  verifyPassword.trim() &&
+                  !isUpdatingProfile
+                ) {
+                  handleConfirmUpdateProfile();
+                }
+              }}
+              className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-(--color-primary)/20 focus:border-(--color-primary) transition-all font-medium disabled:opacity-50"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              disabled={isUpdatingProfile}
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center text-xs font-heading tracking-wider"
+              onClick={() => {
+                setIsConfirmModalOpen(false);
+                setVerifyPassword('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmUpdateProfile}
+              loading={isUpdatingProfile}
+              disabled={isUpdatingProfile || !verifyPassword.trim()}
+              loadingLabel="SAVING USERNAME..."
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors bg-(--color-primary) hover:opacity-95 text-white cursor-pointer border-(--color-primary)"
+            >
+              Confirm & Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* 2FA Info Modal */}
       <Modal

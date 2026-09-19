@@ -310,7 +310,7 @@ export const LogbookPage: React.FC = () => {
   const { setActions } = useContext(HeaderActionsContext);
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
-  const { activeSession, isSessionOpen, isInitializing, history, loadHistory } =
+  const { activeSession, isSessionOpen, history, loadHistory } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
@@ -1340,73 +1340,67 @@ export const LogbookPage: React.FC = () => {
 
     if (activePage === 'logbook') {
       setActions(
-        <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in select-none">
-          {/* ─── RELOCATED LOGBOOK TELEMETRY CAPSULE ─── */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 select-none shadow-xs">
-            <>
-              <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in select-none">
+          {/* ─── REDESIGNED TABLET TELEMETRY CAPSULE ─── */}
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
                 <DynamicBanknoteIcon trend={revenueTrend} />
-                <span className="font-heading font-black text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white">
-                  <AnimatedCurrency
-                    value={activeRevenue}
-                    trend={revenueTrend}
-                  />
-                </span>
               </div>
-              <span className="text-slate-300 dark:text-zinc-600 font-bold">
-                •
+              <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
+                <AnimatedCurrency value={activeRevenue} trend={revenueTrend} />
               </span>
-              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="font-heading font-bold text-xs">
-                  <AnimatedNumber value={activeCheckinsCount} />{' '}
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">
-                    Check-ins
-                  </span>
+            </div>
+
+            <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
+
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
+              <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="font-heading font-bold text-xs tracking-wide">
+                <AnimatedNumber value={activeCheckinsCount} />
+                <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
+                  {activeCheckinsCount === 1 ? 'check-in' : 'check-ins'}
                 </span>
-              </div>
-            </>
+              </span>
+            </div>
           </div>
 
           {role === 'admin' && (
-            <>
-              {/* LOGBOOK RECYCLE BIN */}
-              <Button
-                onClick={() => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Recycle Bin is unavailable while the cash session is closed.'
-                    );
-                    return;
-                  }
-                  if (stagedDeletionsRef.current.length > 0) {
-                    stagedDeletionsRef.current.forEach((log) =>
-                      handleConfirmDelete(String(log.id))
-                    );
-                  }
-                  setIsRecycleBinOpen(true);
-                }}
-                disabled={!isSessionOpen}
-                title={
-                  !isSessionOpen
-                    ? 'Recycle Bin is locked: Cash session is closed'
-                    : 'Recycle Bin'
+            <button
+              type="button"
+              onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Recycle Bin is unavailable while the cash session is closed.'
+                  );
+                  return;
                 }
-                variant="secondary"
-                className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
-                  !isSessionOpen
-                    ? 'opacity-50 cursor-not-allowed'
-                    : 'cursor-pointer'
-                }`}
-              >
-                <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
-                <span>RECYCLE BIN</span>
-              </Button>
-            </>
+                if (stagedDeletionsRef.current.length > 0) {
+                  stagedDeletionsRef.current.forEach((log) =>
+                    handleConfirmDelete(String(log.id))
+                  );
+                }
+                setIsRecycleBinOpen(true);
+              }}
+              disabled={!isSessionOpen}
+              title={
+                !isSessionOpen
+                  ? 'Recycle Bin is locked: Cash session is closed'
+                  : 'Recycle Bin'
+              }
+              className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
+                !isSessionOpen
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer active:scale-95'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>RECYCLE BIN</span>
+            </button>
           )}
 
-          {/* NEW CHECK-IN BUTTON */}
-          <Button
+          <button
+            type="button"
             onClick={() => {
               if (!isSessionOpen) {
                 toast.warning(
@@ -1421,18 +1415,17 @@ export const LogbookPage: React.FC = () => {
               setInitialSearchVal('');
               setIsCreateModalOpen(true);
             }}
-            variant="primary"
             disabled={isActionLocked}
             title={isActionLocked ? actionLockReason : 'Create New Check-in'}
-            className={`hidden md:flex py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white text-xs font-heading font-black tracking-wider uppercase flex items-center gap-2 shadow-sm transition-all border border-white/10 ${
               isActionLocked
                 ? 'opacity-50 cursor-not-allowed'
-                : 'cursor-pointer'
+                : 'cursor-pointer hover:shadow-md active:scale-95'
             }`}
           >
-            <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
+            <Plus className="w-4 h-4 shrink-0" />
             <span>NEW CHECK-IN</span>
-          </Button>
+          </button>
         </div>
       );
     } else if (activePage === 'members') {

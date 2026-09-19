@@ -1270,7 +1270,7 @@ export const LogbookRecordAttendance: React.FC<
           >
             <Loader2 className="w-8 h-8 text-(--color-primary) animate-spin" />
             <p className="text-xs font-bold uppercase tracking-wider text-(--color-text)/60">
-              Fetching pricing rates from Supabase...
+              Fetching pricing rates from the Database...
             </p>
           </motion.div>
         ) : !isSuccess ? (

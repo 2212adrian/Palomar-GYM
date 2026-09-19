@@ -147,7 +147,10 @@ export const App: React.FC = () => {
         );
       };
 
-      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        handleControllerChange
+      );
     }
 
     // 2. Periodic release check against Supabase app_releases
@@ -159,9 +162,12 @@ export const App: React.FC = () => {
           toast.info(
             ({ closeToast }) => (
               <div className="flex flex-col gap-1.5 text-xs">
-                <span className="font-bold">New update available (v{remote.version})</span>
+                <span className="font-bold">
+                  New update available (v{remote.version})
+                </span>
                 <span className="text-[11px] text-slate-300">
-                  Your web app is running v{pkg.version}. A newer build (v{remote.version}) is ready.
+                  Your web app is running v{pkg.version}. A newer build (v
+                  {remote.version}) is ready.
                 </span>
                 <button
                   type="button"
@@ -307,8 +313,6 @@ export const App: React.FC = () => {
 
   return (
     <>
-      <AppRoutes />
-
       {/* Toast Notification Layer */}
       <ToastContainer
         position="top-right"

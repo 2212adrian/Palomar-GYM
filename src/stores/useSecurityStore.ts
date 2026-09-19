@@ -7,6 +7,7 @@ import {
   fetchSecurityAccessConfig,
   saveSecurityAccessConfig,
   evaluateTerminalSecurityAccess,
+  subscribeToSecurityConfig,
 } from '../lib/securityAccessService';
 
 interface SecurityStoreState {
@@ -16,16 +17,19 @@ interface SecurityStoreState {
   isChecking: boolean;
   lastCheckedAt: number | null;
   checkResult: SecurityAccessCheckResult | null;
-  temporaryOverride: boolean;
+  lastRole: string | null;
+  lastEmail: string | null;
 
   fetchConfig: () => Promise<SecurityAccessConfig>;
   updateConfig: (newConfig: SecurityAccessConfig) => Promise<SecurityAccessConfig>;
   runVerification: (
-    userRole: string,
+    userRole?: string,
     userEmail?: string | null
   ) => Promise<SecurityAccessCheckResult>;
-  setTemporaryOverride: (val: boolean) => void;
+  subscribeRealtime: () => () => void;
 }
+
+let activeRealtimeUnsubscribe: (() => void) | null = null;
 
 export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
   config: DEFAULT_SECURITY_CONFIG,
@@ -34,13 +38,19 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
   isChecking: false,
   lastCheckedAt: null,
   checkResult: null,
-  temporaryOverride: false,
+  lastRole: null,
+  lastEmail: null,
 
   fetchConfig: async () => {
     set({ loading: true });
     try {
       const cfg = await fetchSecurityAccessConfig();
       set({ config: cfg, loading: false });
+
+      if (!activeRealtimeUnsubscribe) {
+        get().subscribeRealtime();
+      }
+
       return cfg;
     } catch {
       set({ loading: false });
@@ -53,6 +63,28 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     try {
       const saved = await saveSecurityAccessConfig(newConfig);
       set({ config: saved, isSaving: false });
+
+      // Immediate local state update
+      if (
+        !saved.location_restriction_enabled &&
+        !saved.wifi_restriction_enabled &&
+        !saved.ip_restriction_enabled
+      ) {
+        set({
+          checkResult: {
+            allowed: true,
+            locationPassed: true,
+            wifiPassed: true,
+            ipPassed: true,
+            errors: [],
+          },
+          isChecking: false,
+        });
+      } else {
+        const { lastRole, lastEmail } = get();
+        get().runVerification(lastRole || 'anonymous', lastEmail);
+      }
+
       return saved;
     } catch (err) {
       set({ isSaving: false });
@@ -60,11 +92,15 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     }
   },
 
-  runVerification: async (userRole: string, userEmail?: string | null) => {
-    set({ isChecking: true });
+  runVerification: async (userRole: string = 'anonymous', userEmail?: string | null) => {
+    set({
+      isChecking: true,
+      lastRole: userRole,
+      lastEmail: userEmail ?? null,
+    });
+
     try {
       let cfg = get().config;
-      // If config was not yet loaded, load it
       if (get().loading) {
         cfg = await get().fetchConfig();
       }
@@ -81,6 +117,7 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
         allowed: false,
         locationPassed: false,
         wifiPassed: false,
+        ipPassed: false,
         errors: [err.message || 'Security verification failed.'],
       };
       set({
@@ -92,5 +129,43 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     }
   },
 
-  setTemporaryOverride: (val: boolean) => set({ temporaryOverride: val }),
+  subscribeRealtime: () => {
+    if (activeRealtimeUnsubscribe) {
+      activeRealtimeUnsubscribe();
+      activeRealtimeUnsubscribe = null;
+    }
+
+    activeRealtimeUnsubscribe = subscribeToSecurityConfig((updatedConfig) => {
+      set({ config: updatedConfig });
+
+      // INSTANT REAL-TIME MODAL DISMISSAL
+      if (
+        !updatedConfig.location_restriction_enabled &&
+        !updatedConfig.wifi_restriction_enabled &&
+        !updatedConfig.ip_restriction_enabled
+      ) {
+        set({
+          checkResult: {
+            allowed: true,
+            locationPassed: true,
+            wifiPassed: true,
+            ipPassed: true,
+            errors: [],
+          },
+          isChecking: false,
+        });
+        return;
+      }
+
+      const roleToVerify = get().lastRole || 'anonymous';
+      get().runVerification(roleToVerify, get().lastEmail);
+    });
+
+    return () => {
+      if (activeRealtimeUnsubscribe) {
+        activeRealtimeUnsubscribe();
+        activeRealtimeUnsubscribe = null;
+      }
+    };
+  },
 }));

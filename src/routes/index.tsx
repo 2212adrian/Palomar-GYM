@@ -1,5 +1,5 @@
 // src/routes/index.tsx
-import React, { useState, createContext } from 'react';
+import React, { useState, useEffect, createContext } from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -15,6 +15,11 @@ import { IncidentReports } from '../pages/reports/IncidentReports';
 import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
 import { DownloadPage } from '../pages/download/DownloadPage';
+
+// Security Access Guard and Stores
+import { SecurityAccessBlocker } from '../components/security/SecurityAccessBlocker';
+import { useSecurityStore } from '../stores/useSecurityStore';
+import { useAuthStore } from '../stores/authStore';
 
 // Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
@@ -59,7 +64,7 @@ export const isAppOrPWA = (): boolean => {
  * 1. Checks if the incoming URL contains Supabase auth tokens or hash parameters.
  *    If Supabase redirects to "/" instead of the specific path, this intercepts
  *    the hash and routes the user to the correct setup page.
- * 2. Otherwise, public visitors continue to "/register".
+ * 2. Otherwise, defaults to "/login".
  */
 const RootEntry: React.FC = () => {
   if (typeof window !== 'undefined') {
@@ -95,6 +100,56 @@ const RootEntry: React.FC = () => {
  */
 const FallbackEntry: React.FC = () => {
   return <Navigate to="/register" replace />;
+};
+
+/**
+ * Security Guard for the /login page:
+ * - When Wi-Fi / location restrictions are active, unauthorized terminals and anonymous
+ *   users outside the facility cannot access the staff login form.
+ * - Subscribes to Supabase Realtime so that when an admin turns off the restriction,
+ *   the blocker disappears in real-time without reloading the page.
+ */
+const LoginRouteGuard: React.FC = () => {
+  const { user } = useAuthStore();
+  const {
+    config,
+    fetchConfig,
+    checkResult,
+    runVerification,
+    subscribeRealtime,
+  } = useSecurityStore();
+
+  useEffect(() => {
+    // Keep a live realtime connection open on /login
+    const unsubscribe = subscribeRealtime();
+
+    fetchConfig().then((cfg) => {
+      if (cfg.location_restriction_enabled || cfg.wifi_restriction_enabled) {
+        runVerification('anonymous', user?.email);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [fetchConfig, runVerification, subscribeRealtime, user?.email]);
+
+  const hasActiveRestrictions =
+    config.location_restriction_enabled || config.wifi_restriction_enabled;
+
+  // If restrictions are active and this terminal is not authorized, render the blocker modal
+  if (hasActiveRestrictions && checkResult && !checkResult.allowed) {
+    return (
+      <SecurityAccessBlocker
+        checkResult={checkResult}
+        onRetry={async () => {
+          await runVerification('anonymous', user?.email);
+        }}
+      />
+    );
+  }
+
+  return <Login />;
 };
 
 // Shared context for dynamic header buttons
@@ -193,41 +248,51 @@ const HeaderLayout: React.FC = () => {
 
   return (
     <HeaderActionsContext.Provider value={{ setActions }}>
-      <div className="space-y-6 h-full flex flex-col min-h-0 pt-2 md:pt-4 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
+      <div className="space-y-4 sm:space-y-6 min-h-full flex flex-col min-w-0 pt-1 md:pt-2 relative animate-fade-in text-[var(--color-text,#0f172a)] dark:text-slate-100">
         {headerInfo && (
-          <div className="hidden md:block shrink-0">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+          <div className="hidden md:block shrink-0 pb-1">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200/60 dark:border-zinc-800/80 pb-4">
+              {/* Left Column: Title & Breadcrumbs */}
+              <div className="min-w-0 max-w-2xl">
+                <span className="text-[11px] font-heading font-bold tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase block">
                   {headerInfo.subtitle}
                 </span>
-                <h1 className="text-2xl sm:text-3xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-1">
+                <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white mt-0.5 truncate">
                   {headerInfo.title}
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
                   {headerInfo.description}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">{actions}</div>
+
+              {/* Right Column: Tablet & Desktop Control Toolbar */}
+              {actions && (
+                <div className="flex items-center gap-2.5 shrink-0 flex-wrap md:self-end">
+                  {actions}
+                </div>
+              )}
             </div>
           </div>
         )}
-        <Outlet />
+
+        <div className="flex-1 min-w-0 min-h-0">
+          <Outlet />
+        </div>
       </div>
     </HeaderActionsContext.Provider>
   );
 };
 
 const router = createBrowserRouter([
-  // Public Default Route: Checks for Supabase verification tokens first, then defaults to /register
+  // Public Default Route: Checks for Supabase verification tokens first, then defaults to /login
   { path: '/', element: <RootEntry /> },
 
-  // Explicit Registration Routes
+  // Explicit Public Member Pre-Registration Routes (ALWAYS OPEN WORLDWIDE)
   { path: '/register', element: <OnlineRegistrationPage /> },
   { path: '/register-online', element: <OnlineRegistrationPage /> },
 
-  // Staff / Admin Authentication Routes
-  { path: '/login', element: <Login /> },
+  // Staff / Admin Authentication Routes (Guarded by LoginRouteGuard)
+  { path: '/login', element: <LoginRouteGuard /> },
   { path: '/download', element: <DownloadPage standalone={true} /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/confirm-signup', element: <ConfirmSignUp /> },

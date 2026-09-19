@@ -526,139 +526,143 @@ export const CashManagementPage: React.FC = () => {
       {/* CASH SESSIONS HISTORY (5 rows per page with pagination) - Admin Only */}
       {isAdmin && (
         <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-500" />
-            <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
-              CASH SESSIONS HISTORY
-            </h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-slate-500" />
+              <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                CASH SESSIONS HISTORY
+              </h3>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">
+              {history.length} recorded
+            </span>
           </div>
-          <span className="text-xs text-slate-400 font-mono">
-            {history.length} recorded
-          </span>
-        </div>
 
-        {/* Desktop & Tablet View: Reusable Table Component (5 rows per page) */}
-        <div className="hidden md:block">
-          <Table<CashSession>
-            data={history}
-            columns={historyColumns}
-            itemsPerPage={SESSIONS_PER_PAGE}
-            searchKeys={[
-              'session_number',
-              'opened_by_name',
-              'closed_by_name',
-              'notes',
-            ]}
-            searchPlaceholder="Search session # or staff..."
-            defaultSortKey="closed_at"
-            defaultSortDirection="desc"
-          />
-        </div>
+          {/* Desktop & Tablet View: Reusable Table Component (5 rows per page) */}
+          <div className="hidden md:block">
+            <Table<CashSession>
+              data={history}
+              columns={historyColumns}
+              itemsPerPage={SESSIONS_PER_PAGE}
+              searchKeys={[
+                'session_number',
+                'opened_by_name',
+                'closed_by_name',
+                'notes',
+              ]}
+              searchPlaceholder="Search session # or staff..."
+              defaultSortKey="closed_at"
+              defaultSortDirection="desc"
+            />
+          </div>
 
-        {/* Mobile View: 5 cards per page with clean page controls */}
-        <div className="md:hidden space-y-3">
-          <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
-            {history.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                No historical cash sessions recorded yet.
-              </div>
-            ) : (
-              paginatedMobileHistory.map((s) => {
-                const disc = Number(s.discrepancy || 0);
-                return (
-                  <div
-                    key={s.id}
-                    className="p-3.5 space-y-2.5 active:bg-slate-50 dark:active:bg-neutral-900/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
-                        {s.session_number}
-                      </span>
-                      <span
-                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          disc === 0
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+          {/* Mobile View: 5 cards per page with clean page controls */}
+          <div className="md:hidden space-y-3">
+            <div className="bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-2xl divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
+              {history.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  No historical cash sessions recorded yet.
+                </div>
+              ) : (
+                paginatedMobileHistory.map((s) => {
+                  const disc = Number(s.discrepancy || 0);
+                  return (
+                    <div
+                      key={s.id}
+                      className="p-3.5 space-y-2.5 active:bg-slate-50 dark:active:bg-neutral-900/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                          {s.session_number}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            disc === 0
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                              : disc > 0
+                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {disc === 0 && (
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                          )}
+                          {disc !== 0 && (
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                          )}
+                          {disc === 0
+                            ? 'BALANCED'
                             : disc > 0
-                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                        }`}
-                      >
-                        {disc === 0 && <CheckCircle2 className="w-2.5 h-2.5" />}
-                        {disc !== 0 && (
-                          <AlertTriangle className="w-2.5 h-2.5" />
-                        )}
-                        {disc === 0
-                          ? 'BALANCED'
-                          : disc > 0
-                            ? `+₱${disc.toFixed(0)} OVER`
-                            : `-₱${Math.abs(disc).toFixed(0)} SHORT`}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/70 dark:bg-neutral-900/40 p-2.5 rounded-xl">
-                      <div>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">
-                          Float In
-                        </p>
-                        <p className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                          ₱{Number(s.opening_float || 0).toFixed(2)}
-                        </p>
+                              ? `+₱${disc.toFixed(0)} OVER`
+                              : `-₱${Math.abs(disc).toFixed(0)} SHORT`}
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">
-                          Counted Out
-                        </p>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white">
-                          ₱{Number(s.closing_actual_cash || 0).toFixed(2)}
-                        </p>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/70 dark:bg-neutral-900/40 p-2.5 rounded-xl">
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">
+                            Float In
+                          </p>
+                          <p className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                            ₱{Number(s.opening_float || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">
+                            Counted Out
+                          </p>
+                          <p className="font-mono font-bold text-slate-900 dark:text-white">
+                            ₱{Number(s.closing_actual_cash || 0).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate">
+                          Closed:{' '}
+                          {s.closed_at
+                            ? format(new Date(s.closed_at), 'MMM d, h:mm a')
+                            : 'In progress'}
+                        </span>
+                        <button
+                          onClick={() => setSelectedHistorySession(s)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 active:scale-95 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          Details
+                        </button>
                       </div>
                     </div>
+                  );
+                })
+              )}
+            </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                      <span className="truncate">
-                        Closed:{' '}
-                        {s.closed_at
-                          ? format(new Date(s.closed_at), 'MMM d, h:mm a')
-                          : 'In progress'}
-                      </span>
-                      <button
-                        onClick={() => setSelectedHistorySession(s)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 active:scale-95 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Eye className="w-3 h-3" />
-                        Details
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+            {/* Mobile Pagination Footer Controls */}
+            {history.length > SESSIONS_PER_PAGE && (
+              <div className="flex items-center justify-between px-1 py-1 text-xs">
+                <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                  Page {mobileHistoryPage} of {totalMobilePages} (
+                  {history.length} total)
+                </span>
 
-          {/* Mobile Pagination Footer Controls */}
-          {history.length > SESSIONS_PER_PAGE && (
-            <div className="flex items-center justify-between px-1 py-1 text-xs">
-              <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                Page {mobileHistoryPage} of {totalMobilePages} ({history.length}{' '}
-                total)
-              </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMobileHistoryPage((prev) => Math.max(prev - 1, 1))
+                    }
+                    disabled={mobileHistoryPage === 1}
+                    className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
 
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMobileHistoryPage((prev) => Math.max(prev - 1, 1))
-                  }
-                  disabled={mobileHistoryPage === 1}
-                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-
-                {Array.from({ length: totalMobilePages }, (_, i) => i + 1).map(
-                  (p) => (
+                  {Array.from(
+                    { length: totalMobilePages },
+                    (_, i) => i + 1
+                  ).map((p) => (
                     <button
                       key={p}
                       type="button"
@@ -671,27 +675,26 @@ export const CashManagementPage: React.FC = () => {
                     >
                       {p}
                     </button>
-                  )
-                )}
+                  ))}
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMobileHistoryPage((prev) =>
-                      Math.min(prev + 1, totalMobilePages)
-                    )
-                  }
-                  disabled={mobileHistoryPage === totalMobilePages}
-                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMobileHistoryPage((prev) =>
+                        Math.min(prev + 1, totalMobilePages)
+                      )
+                    }
+                    disabled={mobileHistoryPage === totalMobilePages}
+                    className="p-2 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
       )}
 
       {/* Unified Modals */}

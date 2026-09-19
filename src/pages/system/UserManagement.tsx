@@ -27,6 +27,7 @@ import {
   User,
   Crown,
   Clock,
+  Mail,
 } from 'lucide-react';
 
 interface DraftChange {
@@ -46,9 +47,6 @@ export const UserManagement: React.FC = () => {
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
 
   // ─── Superadmin identity resolution ─────────────────────────────────────
-  // The database (public.system_config) holds the authoritative Superadmin
-  // address. VITE_SUPERADMIN_EMAIL is only a build-time fallback: Vite inlines
-  // it into the bundle, so it goes stale the moment ownership is transferred.
   const [superAdminEmail, setSuperAdminEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,13 +65,6 @@ export const UserManagement: React.FC = () => {
 
   const effectiveSuperAdminEmail = superAdminEmail ?? SUPERADMIN_EMAIL;
 
-  // True when the signed-in account is the one that currently owns the role.
-  //
-  // Deliberately compared ONLY against effectiveSuperAdminEmail, which resolves
-  // to the live database value whenever the lookup succeeded. It must NOT also
-  // require isSuperAdmin() (the build-time constant) to agree: after a transfer
-  // that constant is stale, so an AND here would hide every Superadmin control
-  // from the new owner until the next deployment.
   const viewerEmail = (user?.email || '').trim().toLowerCase();
   const viewerIsSuperAdmin = Boolean(
     viewerEmail && viewerEmail === effectiveSuperAdminEmail
@@ -101,13 +92,10 @@ export const UserManagement: React.FC = () => {
   const [drafts, setDrafts] = useState<Record<string, DraftChange>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Invitation Modal fields
+  // Invitation Modal fields (Email only)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
-  const [authMethod, setAuthMethod] = useState<'email' | 'username'>('email');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserLoginName, setNewUserLoginName] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'staff'>('staff');
   const [newUserAvatar, setNewUserAvatar] = useState<File | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -127,7 +115,6 @@ export const UserManagement: React.FC = () => {
   );
   const [isTransferring, setIsTransferring] = useState(false);
 
-  // Re-arm the safety countdown every time the dialog is opened.
   useEffect(() => {
     if (!isTransferModalOpen) return;
 
@@ -154,7 +141,7 @@ export const UserManagement: React.FC = () => {
   };
 
   const closeTransferModal = () => {
-    if (isTransferring) return; // Never abandon a transfer mid-flight
+    if (isTransferring) return;
     setIsTransferModalOpen(false);
     setTransferPassword('');
     setTransferUsername('');
@@ -186,14 +173,11 @@ export const UserManagement: React.FC = () => {
     try {
       setIsTransferring(true);
 
-      // The password is verified inside Postgres by the RPC, not here.
       const newOwnerEmail = await transferSuperAdminOwnership({
         targetUsername,
         confirmPassword: transferPassword,
       });
 
-      // Reflect the change immediately. The database is now authoritative, so
-      // the UI must not keep trusting the build-time VITE_SUPERADMIN_EMAIL.
       setSuperAdminEmail(newOwnerEmail);
       setIsTransferModalOpen(false);
       setTransferPassword('');
@@ -240,7 +224,6 @@ export const UserManagement: React.FC = () => {
     if (!isAdmin) return;
     fetchUsers();
 
-    // Auto-activate user upon entering admin page if profile is pending
     if (user?.id && profile?.status === 'pending') {
       supabase
         .from('profiles')
@@ -359,44 +342,40 @@ export const UserManagement: React.FC = () => {
 
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim()) {
+    const cleanName = newUserName.trim();
+    const cleanEmail = newUserEmail.trim().toLowerCase();
+
+    if (!cleanName) {
       toast.error('User name / Display identity is required.');
       return;
     }
 
-    let finalEmail = '';
-    let finalPassword = '';
-
-    if (authMethod === 'email') {
-      if (!newUserEmail.trim()) {
-        toast.error('Working email address is required.');
-        return;
-      }
-      finalEmail = newUserEmail.trim().toLowerCase();
-      finalPassword =
-        Math.random().toString(36).slice(-10) +
-        'A1!' +
-        Date.now().toString().slice(-4);
-    } else {
-      if (!newUserLoginName.trim()) {
-        toast.error('Login username is required.');
-        return;
-      }
-      if (newUserPassword.length < 6) {
-        toast.error('Manual password must be at least 6 characters.');
-        return;
-      }
-      finalEmail = `${newUserLoginName.trim().toLowerCase()}@palomargym.noemail`;
-      finalPassword = newUserPassword;
+    if (!cleanEmail) {
+      toast.error('A valid email address is required.');
+      return;
     }
+
+    // Strict validation: Reject .noemail and invalid email addresses
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail) || cleanEmail.endsWith('.noemail')) {
+      toast.error(
+        'A valid, standard email address is required. Non-email or local username-only accounts are not permitted.'
+      );
+      return;
+    }
+
+    const temporaryPassword =
+      Math.random().toString(36).slice(-10) +
+      'A1!' +
+      Date.now().toString().slice(-4);
 
     try {
       setIsCreatingUser(true);
 
       const { data, error } = await supabase.rpc('admin_register_user', {
-        new_email: finalEmail,
-        new_password: finalPassword,
-        new_name: newUserName.trim(),
+        new_email: cleanEmail,
+        new_password: temporaryPassword,
+        new_name: cleanName,
         new_role: newUserRole,
       });
 
@@ -406,34 +385,30 @@ export const UserManagement: React.FC = () => {
 
       await logAudit(
         'USER_PRE_REGISTERED',
-        `Pre-registered new user account "${finalEmail}" with role "${newUserRole}".`,
+        `Pre-registered new user account "${cleanEmail}" with role "${newUserRole}".`,
         registeredUserId
       );
 
-      if (authMethod === 'email') {
-        const { error: resendError } = await supabase.auth.resend({
-          type: 'signup',
-          email: finalEmail,
-          options: {
-            emailRedirectTo: buildAppUrl('/confirm-signup'),
-          },
-        });
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: buildAppUrl('/confirm-signup'),
+        },
+      });
 
-        if (resendError) {
-          console.warn(
-            'SMTP confirmation dispatch bypassed:',
-            resendError.message
-          );
-          toast.info(
-            `Account registered, but verification email could not be sent: ${resendError.message}`
-          );
-        } else {
-          toast.success(
-            `Pre-registration successful! Verification email has been sent to ${finalEmail}`
-          );
-        }
+      if (resendError) {
+        console.warn(
+          'SMTP confirmation dispatch bypassed:',
+          resendError.message
+        );
+        toast.info(
+          `Account registered, but verification email could not be sent: ${resendError.message}`
+        );
       } else {
-        toast.success(`Account for ${newUserName} successfully registered!`);
+        toast.success(
+          `Pre-registration successful! Verification email has been sent to ${cleanEmail}`
+        );
       }
 
       if (newUserAvatar && registeredUserId) {
@@ -466,8 +441,6 @@ export const UserManagement: React.FC = () => {
       setIsCreateModalOpen(false);
       setNewUserName('');
       setNewUserEmail('');
-      setNewUserLoginName('');
-      setNewUserPassword('');
       setNewUserRole('staff');
       setNewUserAvatar(null);
 
@@ -478,11 +451,7 @@ export const UserManagement: React.FC = () => {
         errMsg.includes('users_email_partial_key') ||
         errMsg.includes('duplicate key value')
       ) {
-        toast.error(
-          authMethod === 'email'
-            ? 'This email address is already registered in the system.'
-            : 'This username is already taken. Please choose a different one.'
-        );
+        toast.error('This email address is already registered in the system.');
       } else {
         toast.error(err.message || 'Failed to pre-register system user.');
       }
@@ -555,8 +524,8 @@ export const UserManagement: React.FC = () => {
   const handleSendResetPassword = async (targetUser: any) => {
     const email = targetUser.email;
     if (!email || email.endsWith('@palomargym.noemail')) {
-      toast.info(
-        `"${targetUser.username}" is a local username-only account. Password can be reset directly by updating credentials.`
+      toast.warn(
+        `"${targetUser.username}" has no valid external email address registered.`
       );
       return;
     }
@@ -608,8 +577,6 @@ export const UserManagement: React.FC = () => {
     e.preventDefault();
     if (!editTargetUser) return;
 
-    // Resolve the target's live address exactly as the directory does: the
-    // session's own email is authoritative for the signed-in account.
     const targetEmail =
       editTargetUser.id === user?.id ? user?.email : editTargetUser.email;
 
@@ -650,7 +617,6 @@ export const UserManagement: React.FC = () => {
 
         if (uploadError) throw uploadError;
 
-        // Clean up old avatar if exists
         if (editTargetUser.avatar_url) {
           const oldPath = editTargetUser.avatar_url.includes('/avatars/')
             ? editTargetUser.avatar_url.split('/avatars/').pop()
@@ -817,14 +783,11 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  // Does a directory row belong to the account that currently owns Superadmin?
   const isSuperAdminRow = (rowEmail?: string | null) =>
     Boolean(
       rowEmail && rowEmail.trim().toLowerCase() === effectiveSuperAdminEmail
     );
 
-  // The Superadmin account is deliberately invisible to ordinary administrators.
-  // Only the Superadmin themselves sees their own row in the directory.
   const systemUsers = usersList.filter((u) => {
     if (viewerIsSuperAdmin) return true;
     const rowEmail = u.id === user?.id ? user?.email : u.email;
@@ -850,8 +813,6 @@ export const UserManagement: React.FC = () => {
       sortable: true,
       render: (u) => {
         const isSelfUser = u.id === user?.id;
-        const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
-        const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
 
         return (
           <div className="font-bold text-(--color-text) flex items-center gap-3">
@@ -869,11 +830,6 @@ export const UserManagement: React.FC = () => {
                   </span>
                 )}
               </div>
-              {isLocalAccount && (
-                <span className="text-[9px] text-amber-500 font-mono tracking-tight font-semibold">
-                  Non-Email Account
-                </span>
-              )}
             </div>
           </div>
         );
@@ -886,16 +842,19 @@ export const UserManagement: React.FC = () => {
       render: (u) => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
-        const isLocalAccount = displayEmail.endsWith('@palomargym.noemail');
+        const isLegacyNoEmail = displayEmail.endsWith('@palomargym.noemail');
 
         return (
-          <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
-            {isLocalAccount ? (
-              <span className="text-slate-500 italic">{displayEmail}</span>
-            ) : (
-              displayEmail
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
+              {displayEmail}
+            </span>
+            {isLegacyNoEmail && (
+              <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
+                Legacy No-Email
+              </span>
             )}
-          </span>
+          </div>
         );
       },
     },
@@ -1049,7 +1008,8 @@ export const UserManagement: React.FC = () => {
         const isTargetSuperAdmin = isSuperAdminRow(u.email);
         const isProtectedAdmin =
           u.role === 'admin' && u.status === 'active' && !viewerIsSuperAdmin;
-        const isLocalAccount = u.email?.endsWith('@palomargym.noemail');
+        const isNoEmailAccount =
+          !u.email || u.email.endsWith('@palomargym.noemail');
 
         return (
           <div className="flex items-center justify-end gap-1.5">
@@ -1066,19 +1026,19 @@ export const UserManagement: React.FC = () => {
               </button>
             )}
 
-            {/* Action 2: Send Reset Password */}
+            {/* Action 2: Send Reset Password (Requires Email) */}
             <button
               type="button"
               onClick={() => handleSendResetPassword(u)}
-              disabled={isSendingReset === u.id || isLocalAccount}
+              disabled={isSendingReset === u.id || isNoEmailAccount}
               title={
-                isLocalAccount
-                  ? 'Local username account (cannot receive email)'
+                isNoEmailAccount
+                  ? 'Account has no valid email'
                   : `Send password reset email to ${u.email}`
               }
               aria-label={`Send password reset to ${u.username}`}
               className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all shadow-xs active:scale-95 ${
-                isLocalAccount
+                isNoEmailAccount
                   ? 'border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-transparent text-slate-400 dark:text-slate-600 opacity-40 cursor-not-allowed'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer disabled:opacity-50'
               }`}
@@ -1386,7 +1346,6 @@ export const UserManagement: React.FC = () => {
         className="max-w-md text-left p-6"
       >
         <form onSubmit={handleConfirmTransfer} className="space-y-4 font-body">
-          {/* Consequence warning */}
           <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
             <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="space-y-1">
@@ -1401,7 +1360,6 @@ export const UserManagement: React.FC = () => {
             </div>
           </div>
 
-          {/* New owner username */}
           <div className="field-wrap">
             <input
               type="text"
@@ -1419,7 +1377,6 @@ export const UserManagement: React.FC = () => {
             </label>
           </div>
 
-          {/* Re-authentication */}
           <div className="field-wrap">
             <input
               type="password"
@@ -1435,7 +1392,6 @@ export const UserManagement: React.FC = () => {
             </label>
           </div>
 
-          {/* Safety countdown */}
           {transferCountdown > 0 && (
             <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
               <Clock className="w-3.5 h-3.5 shrink-0" />
@@ -1448,7 +1404,6 @@ export const UserManagement: React.FC = () => {
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-3 pt-1">
             <Button
               type="button"
@@ -1481,7 +1436,7 @@ export const UserManagement: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Pre-Register Modal */}
+      {/* Pre-Register Modal (Strictly Requires Email) */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -1491,29 +1446,13 @@ export const UserManagement: React.FC = () => {
           onSubmit={handleCreateUserSubmit}
           className="text-left w-full space-y-4 font-body"
         >
-          <div className="flex bg-(--bg-card) p-1 rounded-xl border border-(--border-color)">
-            <button
-              type="button"
-              onClick={() => setAuthMethod('email')}
-              className={`flex-1 py-1.5 text-[10px] uppercase tracking-wider font-heading rounded-lg transition-all cursor-pointer ${
-                authMethod === 'email'
-                  ? 'bg-(--color-primary) text-white shadow-xs'
-                  : 'text-slate-400 hover:text-(--color-text)'
-              }`}
-            >
-              Email Invite
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthMethod('username')}
-              className={`flex-1 py-1.5 text-[10px] uppercase tracking-wider font-heading rounded-lg transition-all cursor-pointer ${
-                authMethod === 'username'
-                  ? 'bg-(--color-primary) text-white shadow-xs'
-                  : 'text-slate-400 hover:text-(--color-text)'
-              }`}
-            >
-              No Email
-            </button>
+          {/* Email Requirement Banner */}
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-400 font-medium">
+            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              All system user accounts require a valid email address. An
+              invitation will be dispatched for security onboarding.
+            </span>
           </div>
 
           <div className="field-wrap">
@@ -1531,60 +1470,20 @@ export const UserManagement: React.FC = () => {
             </label>
           </div>
 
-          {authMethod === 'email' ? (
-            <div className="field-wrap">
-              <input
-                type="email"
-                id="newUserEmail"
-                placeholder=" "
-                required
-                value={newUserEmail}
-                onChange={(e) => setNewUserEmail(e.target.value)}
-                className="field-input text-xs"
-              />
-              <label htmlFor="newUserEmail" className="field-label text-xs">
-                Email Address
-              </label>
-            </div>
-          ) : (
-            <>
-              <div className="field-wrap">
-                <input
-                  type="text"
-                  id="newUserLoginName"
-                  placeholder=" "
-                  required
-                  value={newUserLoginName}
-                  onChange={(e) => setNewUserLoginName(e.target.value)}
-                  className="field-input text-xs"
-                />
-                <label
-                  htmlFor="newUserLoginName"
-                  className="field-label text-xs"
-                >
-                  Login Username
-                </label>
-              </div>
-
-              <div className="field-wrap">
-                <input
-                  type="password"
-                  id="newUserPassword"
-                  placeholder=" "
-                  required
-                  value={newUserPassword}
-                  onChange={(e) => setNewUserPassword(e.target.value)}
-                  className="field-input text-xs pr-10"
-                />
-                <label
-                  htmlFor="newUserPassword"
-                  className="field-label text-xs"
-                >
-                  Login Password
-                </label>
-              </div>
-            </>
-          )}
+          <div className="field-wrap">
+            <input
+              type="email"
+              id="newUserEmail"
+              placeholder=" "
+              required
+              value={newUserEmail}
+              onChange={(e) => setNewUserEmail(e.target.value)}
+              className="field-input text-xs"
+            />
+            <label htmlFor="newUserEmail" className="field-label text-xs">
+              Email Address (Required)
+            </label>
+          </div>
 
           <div className="grid gap-1.5">
             <label
@@ -1659,15 +1558,6 @@ export const UserManagement: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-start gap-2 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[11px] text-blue-400 leading-normal">
-            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
-            <span>
-              {authMethod === 'email'
-                ? 'This generates a temporary entry and emails a magic link to the recipient so they can configure their own security password.'
-                : 'This configures a custom handle and manual login keys. The user will log in on-site using their unique username.'}
-            </span>
-          </div>
-
           <div className="flex gap-2 pt-2">
             <button
               type="button"
@@ -1678,8 +1568,10 @@ export const UserManagement: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={isCreatingUser}
-              className="flex-1 px-4 py-2.5 bg-(--color-primary) text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2"
+              disabled={
+                isCreatingUser || !newUserName.trim() || !newUserEmail.trim()
+              }
+              className="flex-1 px-4 py-2.5 bg-(--color-primary) text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isCreatingUser ? (
                 <>

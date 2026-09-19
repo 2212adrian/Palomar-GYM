@@ -2,17 +2,16 @@
 import React, { useState } from 'react';
 import {
   ShieldAlert,
+  Globe,
   MapPin,
   Wifi,
   RefreshCw,
   LogOut,
   AlertTriangle,
-  Lock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { useAuthStore } from '../../stores/authStore';
 import { useSecurityStore } from '../../stores/useSecurityStore';
-import { isSuperAdmin } from '../../constants/auth';
 import type { SecurityAccessCheckResult } from '../../lib/securityAccessService';
 
 interface SecurityAccessBlockerProps {
@@ -25,10 +24,8 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
   onRetry,
 }) => {
   const { user } = useAuthStore();
-  const { config, setTemporaryOverride } = useSecurityStore();
+  const { config } = useSecurityStore();
   const [retrying, setRetrying] = useState(false);
-
-  const isUserSuperAdmin = isSuperAdmin(user?.email);
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -65,50 +62,46 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
             Restricted Terminal Access
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-            This staff terminal is protected by facility access controls. You must
-            be physically on-site within the gym perimeter and connected to the
-            authorized network to access management operations.
+            This terminal is protected by facility access controls. You must
+            connect through the gym router's authorized network and meet active
+            security policies to access staff operations and authentication.
           </p>
         </div>
 
         {/* Diagnostic Status Cards */}
         <div className="space-y-3 text-left">
-          {/* Location Check Result */}
-          {config.location_restriction_enabled && (
+          {/* Strategy 1: Gym Router Public IP Check */}
+          {config.ip_restriction_enabled && (
             <div
               className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs ${
-                checkResult.locationPassed
+                checkResult.ipPassed
                   ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
                   : 'bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300'
               }`}
             >
               <div className="p-1.5 rounded-lg bg-white/50 dark:bg-black/30 shrink-0 mt-0.5">
-                <MapPin className="w-4 h-4 text-red-500" />
+                <Globe className="w-4 h-4 text-blue-500" />
               </div>
               <div className="space-y-0.5 flex-1">
                 <div className="flex items-center justify-between">
                   <span className="font-heading font-bold uppercase tracking-wider">
-                    Geofence Perimeter
+                    Gym Router IP Verification
                   </span>
                   <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-white dark:bg-black/50 border">
-                    {checkResult.locationPassed ? 'PASSED' : 'BLOCKED'}
+                    {checkResult.ipPassed ? 'PASSED' : 'BLOCKED'}
                   </span>
                 </div>
                 <p className="text-[11px] opacity-90 leading-tight">
-                  {checkResult.distanceMeters !== undefined ? (
-                    <>
-                      Distance to Gym: <strong>{checkResult.distanceMeters}m</strong>{' '}
-                      (Permitted: {config.geofence_radius_meters}m).
-                    </>
-                  ) : (
-                    'Location not verified. Device GPS permission may be denied.'
-                  )}
+                  Terminal IP:{' '}
+                  <strong className="font-mono">
+                    {checkResult.currentIP || 'Unknown'}
+                  </strong>
                 </p>
               </div>
             </div>
           )}
 
-          {/* Wi-Fi Check Result */}
+          {/* Wi-Fi Interface Check */}
           {config.wifi_restriction_enabled && (
             <div
               className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs ${
@@ -132,18 +125,53 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
                 <p className="text-[11px] opacity-90 leading-tight">
                   {checkResult.isWifi
                     ? `Connected via Wi-Fi${checkResult.activeSsid ? ` (${checkResult.activeSsid})` : ''}.`
-                    : 'Terminal is not connected to a local Wi-Fi interface.'}
+                    : 'Device is not connected to a physical local Wi-Fi network.'}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Specific Error Messages */}
+          {/* Location Geofence Check */}
+          {config.location_restriction_enabled && (
+            <div
+              className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs ${
+                checkResult.locationPassed
+                  ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300'
+              }`}
+            >
+              <div className="p-1.5 rounded-lg bg-white/50 dark:bg-black/30 shrink-0 mt-0.5">
+                <MapPin className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="space-y-0.5 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-heading font-bold uppercase tracking-wider">
+                    Geofence Perimeter
+                  </span>
+                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-white dark:bg-black/50 border">
+                    {checkResult.locationPassed ? 'PASSED' : 'BLOCKED'}
+                  </span>
+                </div>
+                <p className="text-[11px] opacity-90 leading-tight">
+                  {checkResult.distanceMeters !== undefined ? (
+                    <>
+                      Distance: <strong>{checkResult.distanceMeters}m</strong>{' '}
+                      (Max permitted: {config.geofence_radius_meters}m).
+                    </>
+                  ) : (
+                    'Location not verified.'
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error Details */}
           {checkResult.errors.length > 0 && (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] space-y-1">
               <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Action Required
+                Connection Requirement
               </div>
               <ul className="list-disc list-inside space-y-0.5 pl-1 opacity-90">
                 {checkResult.errors.map((err, idx) => (
@@ -162,30 +190,25 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
             disabled={retrying}
             className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
-            <span>{retrying ? 'Verifying Coordinates...' : 'Re-check Security Access'}</span>
+            <RefreshCw
+              className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`}
+            />
+            <span>
+              {retrying ? 'Verifying Network...' : 'Re-check Connection'}
+            </span>
           </button>
 
-          {/* Superadmin Emergency Override */}
-          {isUserSuperAdmin && (
+          {/* Only display sign out if user has an existing session */}
+          {user && (
             <button
               type="button"
-              onClick={() => setTemporaryOverride(true)}
-              className="w-full py-2.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-xl text-xs font-heading font-bold tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-2"
+              onClick={handleLogout}
+              className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-heading font-bold tracking-wider uppercase transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Superadmin Emergency Override</span>
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full py-2.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-heading font-bold tracking-wider uppercase transition-colors flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out & Return to Login</span>
-          </button>
         </div>
       </div>
     </div>

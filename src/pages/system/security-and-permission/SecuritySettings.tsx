@@ -5,18 +5,16 @@ import {
   MapPin,
   Wifi,
   Radio,
-  Sliders,
+  Globe,
   Plus,
   Trash2,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
   LocateFixed,
-  Lock,
   Save,
   Info,
   Server,
-  ShieldCheck,
   Crosshair,
   Navigation,
 } from 'lucide-react';
@@ -30,6 +28,7 @@ import {
   calculateDistanceMeters,
   getCurrentDevicePosition,
   getDeviceNetworkStatus,
+  getClientPublicIP,
 } from '../../../lib/securityAccessService';
 import { useSecurityStore } from '../../../stores/useSecurityStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -55,19 +54,25 @@ const DEVICE_PIN_ICON = L.divIcon({
 });
 
 export const SecuritySettings: React.FC = () => {
-  const { user, profile } = useAuthStore();
+  const { user } = useAuthStore();
   const { config, loading, isSaving, fetchConfig, updateConfig } =
     useSecurityStore();
 
   const isSuper = isSuperAdmin(user?.email);
   const isAdmin = isSuper;
 
-  // Local draft state
-  const [form, setForm] = useState<SecurityAccessConfig>(DEFAULT_SECURITY_CONFIG);
+  const [form, setForm] = useState<SecurityAccessConfig>(
+    DEFAULT_SECURITY_CONFIG
+  );
   const [isDirty, setIsDirty] = useState(false);
   const [isAcquiringGps, setIsAcquiringGps] = useState(false);
 
-  // Network & Live Location Diagnostics
+  // Strategy 1: Public IP detection state
+  const [detectedIP, setDetectedIP] = useState<string>('');
+  const [isDetectingIP, setIsDetectingIP] = useState(false);
+  const [manualIPInput, setManualIPInput] = useState('');
+
+  // Physical Wi-Fi network diagnostics
   const [networkInfo, setNetworkInfo] = useState<{
     connected: boolean;
     connectionType: string;
@@ -79,6 +84,7 @@ export const SecuritySettings: React.FC = () => {
     isWifi: true,
   });
 
+  // GPS testing state
   const [testingLocation, setTestingLocation] = useState(false);
   const [deviceCoords, setDeviceCoords] = useState<{
     lat: number;
@@ -88,32 +94,47 @@ export const SecuritySettings: React.FC = () => {
     withinGeofence?: boolean;
   } | null>(null);
 
-  // New Trusted Wi-Fi Network Modal / Input State
+  // Wi-Fi network modal state
   const [showAddNetwork, setShowAddNetwork] = useState(false);
   const [newSsid, setNewSsid] = useState('');
   const [newSubnet, setNewSubnet] = useState('');
   const [newNotes, setNewNotes] = useState('');
 
-  // Leaflet Map Refs
+  // Leaflet map refs
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const gymMarkerRef = useRef<L.Marker | null>(null);
   const deviceMarkerRef = useRef<L.Marker | null>(null);
   const geofenceCircleRef = useRef<L.Circle | null>(null);
 
-  // Initialize and sync config
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
 
   useEffect(() => {
-    if (config) {
+    if (config && !isDirty) {
       setForm(config);
-      setIsDirty(false);
     }
-  }, [config]);
+  }, [config, isDirty]);
 
-  // Check current network status on load
+  // Detect current client public IP
+  const detectIP = async () => {
+    setIsDetectingIP(true);
+    try {
+      const ip = await getClientPublicIP();
+      setDetectedIP(ip);
+    } catch {
+      setDetectedIP('Unavailable');
+    } finally {
+      setIsDetectingIP(false);
+    }
+  };
+
+  useEffect(() => {
+    detectIP();
+  }, []);
+
+  // Check network status on mount
   useEffect(() => {
     const checkNet = async () => {
       const net = await getDeviceNetworkStatus();
@@ -128,7 +149,7 @@ export const SecuritySettings: React.FC = () => {
     };
   }, []);
 
-  // Sync Dirty State to parent Settings.tsx floating action bar
+  // Sync dirty state to parent floating action bar
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('settings-dirty-state', {
@@ -137,7 +158,6 @@ export const SecuritySettings: React.FC = () => {
     );
   }, [isDirty, isSaving]);
 
-  // Listen for parent Settings.tsx trigger save/cancel events
   useEffect(() => {
     const handleTriggerSave = () => {
       if (isDirty && isAdmin) {
@@ -157,7 +177,7 @@ export const SecuritySettings: React.FC = () => {
     };
   }, [isDirty, form, config, isAdmin]);
 
-  // Initialize Leaflet Map
+  // Leaflet Map Initialization
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -177,13 +197,11 @@ export const SecuritySettings: React.FC = () => {
         maxZoom: 19,
       }).addTo(map);
 
-      // Marker for Gym Facility
       const marker = L.marker([initialLat, initialLng], {
         icon: GYM_PIN_ICON,
         draggable: isAdmin,
       }).addTo(map);
 
-      // Circle for Geofence
       const circle = L.circle([initialLat, initialLng], {
         radius: form.geofence_radius_meters || 150,
         color: '#bf0202',
@@ -222,7 +240,6 @@ export const SecuritySettings: React.FC = () => {
     }
 
     return () => {
-      // Map cleanup on unmount
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -233,7 +250,6 @@ export const SecuritySettings: React.FC = () => {
     };
   }, []);
 
-  // Update map pin and circle whenever coordinates or radius change
   useEffect(() => {
     if (
       mapInstanceRef.current &&
@@ -248,7 +264,6 @@ export const SecuritySettings: React.FC = () => {
     }
   }, [form.gym_latitude, form.gym_longitude, form.geofence_radius_meters]);
 
-  // Handle saving the full security configuration
   const handleSaveConfig = async () => {
     if (!isAdmin) {
       toast.error('Only administrators can modify security policy.');
@@ -258,14 +273,62 @@ export const SecuritySettings: React.FC = () => {
     try {
       await updateConfig(form);
       setIsDirty(false);
-      toast.success('Security & Access Control configuration saved!');
+      toast.success('Security configuration saved and applied in realtime!');
     } catch (err: any) {
       console.error('Error saving security policy:', err);
       toast.error(err.message || 'Failed to save security settings.');
     }
   };
 
-  // Locate Current Device via Geolocation
+  // Strategy 1: One-click Register Current Public IP
+  const handleRegisterCurrentIP = () => {
+    if (!detectedIP || detectedIP === 'Unavailable') {
+      toast.warning('Unable to register IP: No active IP detected.');
+      return;
+    }
+
+    if (form.allowed_public_ips.includes(detectedIP)) {
+      toast.info(`IP ${detectedIP} is already authorized.`);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      allowed_public_ips: [...prev.allowed_public_ips, detectedIP],
+    }));
+    setIsDirty(true);
+    toast.success(`Gym Router IP ${detectedIP} added to authorized list!`);
+  };
+
+  const handleAddManualIP = () => {
+    const clean = manualIPInput.trim();
+    if (!clean) return;
+
+    if (form.allowed_public_ips.includes(clean)) {
+      toast.info('IP is already in the list.');
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      allowed_public_ips: [...prev.allowed_public_ips, clean],
+    }));
+    setIsDirty(true);
+    setManualIPInput('');
+    toast.success(`Authorized IP ${clean} added.`);
+  };
+
+  const handleRemoveIP = (ipToRemove: string) => {
+    setForm((prev) => ({
+      ...prev,
+      allowed_public_ips: prev.allowed_public_ips.filter(
+        (ip) => ip !== ipToRemove
+      ),
+    }));
+    setIsDirty(true);
+    toast.info(`Removed IP ${ipToRemove}`);
+  };
+
   const handleLocateCurrentDevice = async () => {
     setTestingLocation(true);
     try {
@@ -300,9 +363,13 @@ export const SecuritySettings: React.FC = () => {
       }
 
       if (isInside) {
-        toast.success(`Within geofence! Distance: ${dist}m (Max: ${form.geofence_radius_meters}m)`);
+        toast.success(
+          `Within geofence! Distance: ${dist}m (Max: ${form.geofence_radius_meters}m)`
+        );
       } else {
-        toast.warning(`Outside geofence! Distance: ${dist}m (Max: ${form.geofence_radius_meters}m)`);
+        toast.warning(
+          `Outside geofence! Distance: ${dist}m (Max: ${form.geofence_radius_meters}m)`
+        );
       }
     } catch (err: any) {
       toast.error(
@@ -313,7 +380,6 @@ export const SecuritySettings: React.FC = () => {
     }
   };
 
-  // Set gym center to current GPS location
   const handleSetGymToCurrentLocation = async () => {
     if (!isAdmin) return;
     setIsAcquiringGps(true);
@@ -334,7 +400,7 @@ export const SecuritySettings: React.FC = () => {
       }
 
       toast.success(
-        `Facility coordinates updated to your current GPS position: ${newLat}, ${newLng} (±${Math.round(pos.accuracy || 0)}m)`
+        `Facility coordinates updated: ${newLat}, ${newLng} (±${Math.round(pos.accuracy || 0)}m)`
       );
     } catch (err: any) {
       toast.error('Location error: ' + (err.message || 'Permission denied'));
@@ -343,7 +409,6 @@ export const SecuritySettings: React.FC = () => {
     }
   };
 
-  // Add Trusted Wi-Fi Network
   const handleAddNetwork = () => {
     if (!newSsid.trim()) {
       toast.warning('Network SSID is required.');
@@ -368,10 +433,9 @@ export const SecuritySettings: React.FC = () => {
     setNewSubnet('');
     setNewNotes('');
     setShowAddNetwork(false);
-    toast.success(`Network "${networkItem.ssid}" registered to trusted list.`);
+    toast.success(`Network "${networkItem.ssid}" registered.`);
   };
 
-  // Quick Register Current Network
   const handleRegisterCurrentNetwork = () => {
     const detectedSsid = networkInfo.ssid || 'Palomar-Gym-WiFi';
     const exists = form.trusted_networks.some(
@@ -399,7 +463,6 @@ export const SecuritySettings: React.FC = () => {
     toast.success(`Registered current network "${detectedSsid}".`);
   };
 
-  // Delete Trusted Wi-Fi Network
   const handleDeleteNetwork = (id: string) => {
     setForm((prev) => ({
       ...prev,
@@ -420,7 +483,8 @@ export const SecuritySettings: React.FC = () => {
             Super Admin Access Required
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
-            Facility Access & Security configuration (geofence perimeter, IP restrictions, and turnstile controls) is strictly reserved for Super Administrators.
+            Facility Access & Security configuration is strictly reserved for
+            Super Administrators.
           </p>
         </div>
       </div>
@@ -438,8 +502,8 @@ export const SecuritySettings: React.FC = () => {
               Facility Security & Access Controls
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-              Configure perimeter geofencing and physical Wi-Fi restrictions to
-              protect staff terminals and administrative consoles.
+              Lock down cashier consoles, staff terminals, and the login page to
+              the gym router's physical IP address.
             </p>
           </div>
 
@@ -466,7 +530,9 @@ export const SecuritySettings: React.FC = () => {
               disabled={loading}
               className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer shadow-xs"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
+              />
               <span>Refresh</span>
             </button>
           </div>
@@ -477,34 +543,37 @@ export const SecuritySettings: React.FC = () => {
           <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-heading font-bold uppercase text-slate-900 dark:text-white">
-              Public Pre-Registration Route Protection Note
+              Public Pre-Registration Route Always Accessible
             </p>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-              Geofence and Wi-Fi restrictions strictly guard internal staff and
-              administrative consoles (POS, Attendance Logbook, Members, and Cash
-              Management). Public member pre-registration at{' '}
+              Network and IP restrictions protect internal staff operations and
+              the{' '}
+              <code className="px-1.5 py-0.5 rounded bg-blue-500/10 font-mono text-blue-600 dark:text-blue-400">
+                /login
+              </code>{' '}
+              page from external access. The public registration page at{' '}
               <code className="px-1.5 py-0.5 rounded bg-blue-500/10 font-mono text-blue-600 dark:text-blue-400">
                 /register
               </code>{' '}
-              remains freely accessible to visitors worldwide.
+              remains open to anyone worldwide.
             </p>
           </div>
         </div>
 
-        {/* SECTION 1: LOCATION-BASED GEOFENCE CONTROL */}
+        {/* SECTION 1: STRATEGY 1 - GYM ROUTER PUBLIC IP RESTRICTION */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-red-500/10 dark:bg-red-950/50 border border-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center">
-                <MapPin className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 dark:bg-blue-950/50 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <Globe className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-sm font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wide">
-                  Perimeter Geofence Access Control
+                  Gym Router IP Restriction (Strategy 1)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Restricts terminal operation to physical gym premises based on
-                  device GPS location.
+                  Restricts access strictly to cashier terminals, staff phones,
+                  and computers connected to the gym's physical router.
                 </p>
               </div>
             </div>
@@ -514,198 +583,135 @@ export const SecuritySettings: React.FC = () => {
               <input
                 type="checkbox"
                 disabled={!isAdmin}
-                checked={form.location_restriction_enabled}
+                checked={form.ip_restriction_enabled}
                 onChange={(e) => {
                   setForm((prev) => ({
                     ...prev,
-                    location_restriction_enabled: e.target.checked,
+                    ip_restriction_enabled: e.target.checked,
                   }));
                   setIsDirty(true);
                 }}
                 className="sr-only peer"
               />
-              <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-700 peer-checked:bg-red-600"></div>
+              <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-700 peer-checked:bg-blue-600"></div>
               <span className="ml-3 text-xs font-heading font-black tracking-wider uppercase text-slate-700 dark:text-slate-300">
-                {form.location_restriction_enabled ? 'Enforced' : 'Disabled'}
+                {form.ip_restriction_enabled ? 'Enforced' : 'Disabled'}
               </span>
             </label>
           </div>
 
-          {/* MAP DISPLAY */}
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <span className="text-slate-600 dark:text-slate-400 font-medium">
-                {isAdmin
-                  ? 'Drag the red pin or click anywhere on the map to set the gym facility centerpoint.'
-                  : 'Gym facility location perimeter map.'}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleLocateCurrentDevice}
-                  disabled={testingLocation}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 font-heading font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer"
-                >
-                  <LocateFixed className={`w-3.5 h-3.5 ${testingLocation ? 'animate-spin' : ''}`} />
-                  <span>Test Device Location</span>
-                </button>
+          {/* Current Terminal IP Card with One-Click Registration */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Radio className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs font-heading font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  Current Terminal Public IP:{' '}
+                  <span className="text-blue-600 dark:text-blue-400 font-mono font-bold text-sm">
+                    {isDetectingIP ? 'Detecting...' : detectedIP || 'Unknown'}
+                  </span>
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {form.allowed_public_ips.includes(detectedIP)
+                    ? '✓ This device is connected to an authorized network.'
+                    : 'This IP is not yet saved to the authorized list.'}
+                </p>
+              </div>
+            </div>
 
-                {isAdmin && (
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleRegisterCurrentIP}
+                disabled={
+                  !detectedIP || form.allowed_public_ips.includes(detectedIP)
+                }
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-zinc-800 text-white text-xs font-heading font-black uppercase tracking-wider cursor-pointer shadow-xs transition-all active:scale-95 shrink-0"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>
+                  {form.allowed_public_ips.includes(detectedIP)
+                    ? 'Already Authorized'
+                    : 'Register This Network IP'}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* Whitelisted IPs List */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h4 className="text-xs font-heading font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Authorized Gym Router IP Addresses (
+                {form.allowed_public_ips.length})
+              </h4>
+
+              {isAdmin && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. 112.198.34.12"
+                    value={manualIPInput}
+                    onChange={(e) => setManualIPInput(e.target.value)}
+                    className="px-2.5 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-mono text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
                   <button
                     type="button"
-                    onClick={handleSetGymToCurrentLocation}
-                    disabled={isAcquiringGps}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-heading font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                    onClick={handleAddManualIP}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white text-xs font-heading font-bold uppercase tracking-wider cursor-pointer"
                   >
-                    <Navigation className={`w-3.5 h-3.5 ${isAcquiringGps ? 'animate-spin' : ''}`} />
-                    <span>{isAcquiringGps ? 'Acquiring GPS...' : 'Set Center to My GPS Location'}</span>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
-            {/* Leaflet Map Canvas */}
-            <div
-              ref={mapContainerRef}
-              className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-inner z-0"
-              style={{ minHeight: '280px' }}
-            />
+            {form.allowed_public_ips.length === 0 ? (
+              <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center text-xs text-slate-400">
+                No IP addresses whitelisted yet. Connect to the gym Wi-Fi and
+                click <strong>"Register This Network IP"</strong> to authorize
+                your router.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950">
+                {form.allowed_public_ips.map((ip) => (
+                  <div
+                    key={ip}
+                    className="p-3.5 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono text-xs">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                          {ip}
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {ip === detectedIP
+                            ? '• Matches your current router'
+                            : '• Authorized network'}
+                        </p>
+                      </div>
+                    </div>
 
-            {/* Quick GPS Geofence Setter Banner */}
-            {isAdmin && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-red-500/5 dark:bg-red-950/20 border border-red-500/20 rounded-2xl">
-                <div className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300">
-                  <Crosshair className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
-                  <div>
-                    <span className="font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
-                      Auto-Detect Facility Center via GPS
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Sync facility latitude & longitude directly to your current device location.
-                    </span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveIP(ip)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        title="Remove IP"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSetGymToCurrentLocation}
-                  disabled={isAcquiringGps}
-                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[11px] font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 disabled:opacity-50"
-                >
-                  <Navigation className={`w-3.5 h-3.5 ${isAcquiringGps ? 'animate-spin' : ''}`} />
-                  <span>{isAcquiringGps ? 'Acquiring GPS...' : 'Set to My Current Location'}</span>
-                </button>
+                ))}
               </div>
             )}
-
-            {/* Location Diagnostics Banner */}
-            {deviceCoords && (
-              <div
-                className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
-                  deviceCoords.withinGeofence
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  {deviceCoords.withinGeofence ? (
-                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500" />
-                  ) : (
-                    <AlertTriangle className="w-5 h-5 shrink-0 text-rose-500" />
-                  )}
-                  <div>
-                    <span className="font-heading font-bold uppercase tracking-wider">
-                      {deviceCoords.withinGeofence
-                        ? 'Device is within authorized geofence'
-                        : 'Device is outside permitted perimeter'}
-                    </span>
-                    <p className="text-[11px] opacity-90 mt-0.5">
-                      Distance to Gym: <strong>{deviceCoords.distance}m</strong> (Allowed Radius: {form.geofence_radius_meters}m). GPS Accuracy: ±{Math.round(deviceCoords.accuracy || 0)}m.
-                    </p>
-                  </div>
-                </div>
-
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-heading font-black tracking-widest uppercase self-start sm:self-center border bg-white dark:bg-zinc-950">
-                  {deviceCoords.withinGeofence ? 'Access Allowed' : 'Access Restricted'}
-                </span>
-              </div>
-            )}
-
-            {/* Geofence Parameters */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div>
-                <label className="block text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Facility Latitude
-                </label>
-                <input
-                  type="number"
-                  step="0.000001"
-                  disabled={!isAdmin}
-                  value={form.gym_latitude}
-                  onChange={(e) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      gym_latitude: parseFloat(e.target.value) || 0,
-                    }));
-                    setIsDirty(true);
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/30"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Facility Longitude
-                </label>
-                <input
-                  type="number"
-                  step="0.000001"
-                  disabled={!isAdmin}
-                  value={form.gym_longitude}
-                  onChange={(e) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      gym_longitude: parseFloat(e.target.value) || 0,
-                    }));
-                    setIsDirty(true);
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/30"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                    Geofence Radius (Meters)
-                  </label>
-                  <span className="text-xs font-mono font-bold text-red-600 dark:text-red-400">
-                    {form.geofence_radius_meters}m
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="30"
-                  max="1000"
-                  step="10"
-                  disabled={!isAdmin}
-                  value={form.geofence_radius_meters}
-                  onChange={(e) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      geofence_radius_meters: parseInt(e.target.value, 10) || 150,
-                    }));
-                    setIsDirty(true);
-                  }}
-                  className="w-full h-2 bg-slate-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-red-600"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
-                  <span>30m</span>
-                  <span>250m</span>
-                  <span>500m</span>
-                  <span>1000m</span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -771,7 +777,7 @@ export const SecuritySettings: React.FC = () => {
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   {networkInfo.isWifi
                     ? 'Terminal is connected via local Wi-Fi network.'
-                    : 'Terminal connection is mobile cellular or non-Wi-Fi interface.'}
+                    : 'Terminal connection is cellular or non-Wi-Fi interface.'}
                 </p>
               </div>
             </div>
@@ -908,8 +914,9 @@ export const SecuritySettings: React.FC = () => {
             {/* List of networks */}
             {form.trusted_networks.length === 0 ? (
               <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center text-xs text-slate-400">
-                No trusted Wi-Fi networks registered yet. Any detected local Wi-Fi
-                connection will be accepted until specific networks are added.
+                No trusted Wi-Fi networks registered yet. Any detected local
+                Wi-Fi connection will be accepted until specific networks are
+                added.
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950">
@@ -955,77 +962,240 @@ export const SecuritySettings: React.FC = () => {
           </div>
         </div>
 
-        {/* SECTION 3: ROLE ENFORCEMENT & OVERRIDE CONTROLS */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs space-y-4">
-          <h3 className="text-sm font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            Enforcement Scope & Emergency Bypass
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Superadmin Remote Access Toggle */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+        {/* SECTION 3: LOCATION-BASED GEOFENCE CONTROL */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 dark:bg-red-950/50 border border-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center">
+                <MapPin className="w-5 h-5" />
+              </div>
               <div>
-                <span className="text-xs font-heading font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-purple-500" />
-                  Superadmin Remote Bypass
-                </span>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Allows the authoritative Superadmin to manage the console
-                  remotely during emergencies or off-site maintenance.
+                <h3 className="text-sm font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wide">
+                  Perimeter Geofence Access Control (GPS)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Restricts terminal operation to physical gym premises based on
+                  device GPS location.
                 </p>
               </div>
-
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  disabled={!isAdmin}
-                  checked={form.bypass_superadmin}
-                  onChange={(e) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      bypass_superadmin: e.target.checked,
-                    }));
-                    setIsDirty(true);
-                  }}
-                  className="sr-only peer"
-                />
-                <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-zinc-700 peer-checked:bg-purple-600"></div>
-              </label>
             </div>
 
-            {/* Role Enforcement Scope */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xs font-heading font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Lock className="w-4 h-4 text-amber-500" />
-                  Enforce on Administrators
-                </span>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  When enabled, standard administrator accounts are subject to
-                  the same geofence and Wi-Fi restrictions as staff.
-                </p>
-              </div>
+            {/* Toggle Switch */}
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                disabled={!isAdmin}
+                checked={form.location_restriction_enabled}
+                onChange={(e) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    location_restriction_enabled: e.target.checked,
+                  }));
+                  setIsDirty(true);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-700 peer-checked:bg-red-600"></div>
+              <span className="ml-3 text-xs font-heading font-black tracking-wider uppercase text-slate-700 dark:text-slate-300">
+                {form.location_restriction_enabled ? 'Enforced' : 'Disabled'}
+              </span>
+            </label>
+          </div>
 
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+          {/* MAP DISPLAY */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <span className="text-slate-600 dark:text-slate-400 font-medium">
+                {isAdmin
+                  ? 'Drag the red pin or click anywhere on the map to set the gym facility centerpoint.'
+                  : 'Gym facility location perimeter map.'}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLocateCurrentDevice}
+                  disabled={testingLocation}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 font-heading font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  <LocateFixed
+                    className={`w-3.5 h-3.5 ${testingLocation ? 'animate-spin' : ''}`}
+                  />
+                  <span>Test Device Location</span>
+                </button>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleSetGymToCurrentLocation}
+                    disabled={isAcquiringGps}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-heading font-bold text-[11px] uppercase tracking-wider transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    <Navigation
+                      className={`w-3.5 h-3.5 ${isAcquiringGps ? 'animate-spin' : ''}`}
+                    />
+                    <span>
+                      {isAcquiringGps
+                        ? 'Acquiring GPS...'
+                        : 'Set Center to My GPS Location'}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Leaflet Map Canvas */}
+            <div
+              ref={mapContainerRef}
+              className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-inner z-0"
+              style={{ minHeight: '280px' }}
+            />
+
+            {/* Quick GPS Geofence Setter Banner */}
+            {isAdmin && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-red-500/5 dark:bg-red-950/20 border border-red-500/20 rounded-2xl">
+                <div className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                  <Crosshair className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                  <div>
+                    <span className="font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
+                      Auto-Detect Facility Center via GPS
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Sync facility coordinates directly to your current device
+                      location.
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSetGymToCurrentLocation}
+                  disabled={isAcquiringGps}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[11px] font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 disabled:opacity-50"
+                >
+                  <Navigation
+                    className={`w-3.5 h-3.5 ${isAcquiringGps ? 'animate-spin' : ''}`}
+                  />
+                  <span>
+                    {isAcquiringGps
+                      ? 'Acquiring GPS...'
+                      : 'Set to My Current Location'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* Location Diagnostics Banner */}
+            {deviceCoords && (
+              <div
+                className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                  deviceCoords.withinGeofence
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  {deviceCoords.withinGeofence ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 shrink-0 text-rose-500" />
+                  )}
+                  <div>
+                    <span className="font-heading font-bold uppercase tracking-wider">
+                      {deviceCoords.withinGeofence
+                        ? 'Device is within authorized geofence'
+                        : 'Device is outside permitted perimeter'}
+                    </span>
+                    <p className="text-[11px] opacity-90 mt-0.5">
+                      Distance to Gym: <strong>{deviceCoords.distance}m</strong>{' '}
+                      (Allowed Radius: {form.geofence_radius_meters}m). GPS
+                      Accuracy: ±{Math.round(deviceCoords.accuracy || 0)}m.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-heading font-black tracking-widest uppercase self-start sm:self-center border bg-white dark:bg-zinc-950">
+                  {deviceCoords.withinGeofence
+                    ? 'Access Allowed'
+                    : 'Access Restricted'}
+                </span>
+              </div>
+            )}
+
+            {/* Geofence Parameters */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div>
+                <label className="block text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  Facility Latitude
+                </label>
                 <input
-                  type="checkbox"
+                  type="number"
+                  step="0.000001"
                   disabled={!isAdmin}
-                  checked={form.enforce_on_roles.includes('admin')}
+                  value={form.gym_latitude}
                   onChange={(e) => {
-                    const nextRoles = e.target.checked
-                      ? ['staff', 'admin'] as ('staff' | 'admin')[]
-                      : ['staff'] as ('staff' | 'admin')[];
                     setForm((prev) => ({
                       ...prev,
-                      enforce_on_roles: nextRoles,
+                      gym_latitude: parseFloat(e.target.value) || 0,
                     }));
                     setIsDirty(true);
                   }}
-                  className="sr-only peer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/30"
                 />
-                <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-zinc-700 peer-checked:bg-amber-600"></div>
-              </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  Facility Longitude
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  disabled={!isAdmin}
+                  value={form.gym_longitude}
+                  onChange={(e) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      gym_longitude: parseFloat(e.target.value) || 0,
+                    }));
+                    setIsDirty(true);
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/30"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Geofence Radius (Meters)
+                  </label>
+                  <span className="text-xs font-mono font-bold text-red-600 dark:text-red-400">
+                    {form.geofence_radius_meters}m
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="30"
+                  max="1000"
+                  step="10"
+                  disabled={!isAdmin}
+                  value={form.geofence_radius_meters}
+                  onChange={(e) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      geofence_radius_meters:
+                        parseInt(e.target.value, 10) || 150,
+                    }));
+                    setIsDirty(true);
+                  }}
+                  className="w-full h-2 bg-slate-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-red-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                  <span>30m</span>
+                  <span>250m</span>
+                  <span>500m</span>
+                  <span>1000m</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

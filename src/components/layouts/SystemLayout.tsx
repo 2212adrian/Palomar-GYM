@@ -54,8 +54,8 @@ export const SystemLayout: React.FC = () => {
   const profile = useAuthStore((state) => state.profile);
   const isAdmin = Boolean(
     user?.email &&
-      (user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
-        profile?.role === 'admin')
+    (user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
+      profile?.role === 'admin')
   );
 
   // Auto-activate account status from 'pending' to 'active' upon entering the system/admin portal
@@ -258,8 +258,8 @@ export const SystemLayout: React.FC = () => {
           {/* GLOBAL SMART SCANNER MODAL OVERLAY */}
           <ScannerPage />
 
-          {/* SIDEBAR */}
-          <aside className="lg:relative lg:z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
+          {/* SIDEBAR: border & shadow active on lg: screens */}
+          <aside className="lg:relative lg:z-30 shrink-0 lg:shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none lg:border-r border-slate-200/80 dark:border-slate-800/80">
             <Sidebar
               collapsed={desktopCollapsed}
               setCollapsed={setDesktopCollapsed}
@@ -286,15 +286,21 @@ export const SystemLayout: React.FC = () => {
               {/* Subtle top edge scroll fade */}
               <div className="pointer-events-none absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-slate-200/30 dark:from-black/20 to-transparent z-10" />
 
+              {/* 
+                Phone & Tablet Scroll & Responsiveness Fix:
+                - Changed overflow-x-hidden to overflow-x-auto so users CAN scroll right to reach off-screen buttons.
+                - Added min-w-0 and touch-action pan-x pan-y for smooth mobile gesture scrolling.
+                - Reduced tablet/mobile padding (px-2.5 sm:px-4 md:px-6) to save ~20px width on tablet screens.
+              */}
               <main
                 ref={mainScrollRef}
-                className={`flex-1 pt-4 sm:pt-6 md:pt-8 pb-24 lg:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
+                className={`flex-1 pt-3 sm:pt-5 md:pt-6 pb-24 lg:pb-8 px-2.5 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-auto min-w-0 [touch-action:pan-x_pan-y] ${
                   isTabLoading
                     ? 'opacity-0 pointer-events-none'
                     : 'opacity-100 transition-opacity duration-300'
                 }`}
               >
-                <div className="max-w-[1600px] w-full mx-auto h-full flex flex-col min-h-0">
+                <div className="max-w-[1600px] w-full mx-auto min-h-full flex flex-col min-w-0">
                   <Outlet />
                 </div>
               </main>
