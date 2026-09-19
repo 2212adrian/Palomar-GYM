@@ -243,7 +243,6 @@ export interface SecurityAccessCheckResult {
  */
 export async function evaluateTerminalSecurityAccess(
   config: SecurityAccessConfig,
-  userRole: string = 'anonymous',
   userEmail?: string | null
 ): Promise<SecurityAccessCheckResult> {
   const result: SecurityAccessCheckResult = {
