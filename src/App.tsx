@@ -313,6 +313,7 @@ export const App: React.FC = () => {
 
   return (
     <>
+      <AppRoutes />
       {/* Toast Notification Layer */}
       <ToastContainer
         position="top-right"

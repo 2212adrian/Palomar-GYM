@@ -10,7 +10,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { supabase } from '../../lib/supabase/client';
-
+import { OfflinePopup } from '../ui/OfflinePopup';
 import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
@@ -257,6 +257,8 @@ export const SystemLayout: React.FC = () => {
 
           {/* GLOBAL SMART SCANNER MODAL OVERLAY */}
           <ScannerPage />
+
+          <OfflinePopup />
 
           {/* SIDEBAR: border & shadow active on lg: screens */}
           <aside className="lg:relative lg:z-30 shrink-0 lg:shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none lg:border-r border-slate-200/80 dark:border-slate-800/80">

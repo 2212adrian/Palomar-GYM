@@ -16,7 +16,9 @@ if (import.meta.env.DEV) {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
         for (const registration of registrations) {
           registration.unregister().then(() => {
-            console.log('[PWA Dev] Unregistered stale localhost service worker.');
+            console.log(
+              '[PWA Dev] Unregistered stale localhost service worker.'
+            );
           });
         }
       });
