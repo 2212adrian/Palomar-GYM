@@ -957,7 +957,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ─── MOBILE DRAWER ─── */}
       <div
-        className={`fixed inset-0 z-[300] lg:hidden ${
+        className={`fixed inset-0 z-[500] lg:hidden ${
           mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'
         }`}
       >
@@ -1065,7 +1065,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* MOBILE NAV ITEMS */}
-            <nav className="flex-1 min-h-0 overflow-y-auto space-y-2.5 p-5 pt-3 font-heading">
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-2.5 p-5 pt-3 pb-8 font-heading">
               {allowedMenu.map((item, idx) => {
                 const visibleChildren = item.children || [];
                 const isSingleItem = Boolean(
@@ -1258,7 +1258,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </nav>
 
             {/* MOBILE FOOTER ACTIONS */}
-            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 mt-auto shrink-0 bg-slate-100 dark:bg-[#0c0e12]">
+            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] mt-auto shrink-0 bg-slate-100 dark:bg-[#0c0e12]">
               {showMobileLogoutConfirm ? (
                 <div className="w-full flex items-center justify-between p-2.5 rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
                   <span className="text-[9px]">

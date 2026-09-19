@@ -193,7 +193,7 @@ const HeaderLayout: React.FC = () => {
 
   return (
     <HeaderActionsContext.Provider value={{ setActions }}>
-      <div className="space-y-6 h-full flex flex-col min-h-0 pt-4 md:pt-6 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
+      <div className="space-y-6 h-full flex flex-col min-h-0 pt-2 md:pt-4 pb-24 md:pb-0 relative animate-fade-in text-(--color-text) overflow-x-hidden">
         {headerInfo && (
           <div className="hidden md:block shrink-0">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

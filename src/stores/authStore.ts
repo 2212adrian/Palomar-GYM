@@ -243,12 +243,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         // 3. Client-Side Account Activation Trigger (Non-blocking)
-        if (userStatus === 'pending' && !isSuperAdminUser) {
+        // Any user entering the system/admin page should immediately have their status set to Active and no longer pending
+        let effectiveStatus = userStatus;
+        if (userStatus === 'pending') {
+          effectiveStatus = 'active';
           supabase
             .from('profiles')
             .update({ status: 'active' })
             .eq('id', session.user.id)
-            .then(() => {});
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to auto-activate pending profile:', error);
+              }
+            });
         }
 
         set({
@@ -263,7 +270,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 session.user.email?.split('@')[0] ||
                 'User',
             role: userRole as 'admin' | 'staff',
-            status: userStatus as 'active' | 'pending' | 'inactive',
+            status: effectiveStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,
             email_verification_enabled:
               dbProfile?.email_verification_enabled ??
@@ -332,6 +339,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     set({ loading: true });
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
+    }
     await supabase.auth.signOut();
     if (activeAvatarObjectUrl) {
       URL.revokeObjectURL(activeAvatarObjectUrl);
@@ -369,6 +379,9 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       initialized: true,
     });
   } else if (event === 'SIGNED_OUT') {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
+    }
     // Clear cached session parameters
     useAuthStore.setState({
       user: null,

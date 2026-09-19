@@ -258,7 +258,10 @@ const AnimatedKpiCurrency: React.FC<{
   );
 };
 
-export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
+export const Topbar: React.FC<TopbarProps> = ({
+  onMenuClick,
+  className = '',
+}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentTimeFull, setCurrentTimeFull] = useState('');
@@ -639,7 +642,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     (isCashLoading && !activeSession);
 
   return (
-    <header className="h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md fixed top-0 left-0 right-0 flex items-center justify-between px-3 sm:px-4 md:px-6 z-40 select-none">
+    <header
+      className={`w-full h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md relative flex items-center justify-between px-3 sm:px-4 md:px-6 z-30 select-none shrink-0 ${className}`}
+    >
       {/* 1. LEFT TITLE & DESKTOP TELEMETRY */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
         {subTab && (

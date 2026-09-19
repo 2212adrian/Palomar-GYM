@@ -71,12 +71,14 @@ export const CashManagementPage: React.FC = () => {
 
   useEffect(() => {
     loadActiveSession();
-    loadHistory();
+    if (isAdmin) {
+      loadHistory();
+    }
     const unsubscribe = subscribeRealtime();
     return () => {
       unsubscribe();
     };
-  }, [loadActiveSession, loadHistory, subscribeRealtime]);
+  }, [loadActiveSession, loadHistory, subscribeRealtime, isAdmin]);
 
   // Find the most recent closed session with an actual counted cash figure
   const lastClosedSession = useMemo(() => {
@@ -521,8 +523,9 @@ export const CashManagementPage: React.FC = () => {
         </div>
       )}
 
-      {/* CASH SESSIONS HISTORY (5 rows per page with pagination) */}
-      <div className="space-y-3 pt-2">
+      {/* CASH SESSIONS HISTORY (5 rows per page with pagination) - Admin Only */}
+      {isAdmin && (
+        <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-slate-500" />
@@ -689,6 +692,7 @@ export const CashManagementPage: React.FC = () => {
           )}
         </div>
       </div>
+      )}
 
       {/* Unified Modals */}
       {isSessionOpen && activeSession && activeTxType && (
@@ -710,12 +714,14 @@ export const CashManagementPage: React.FC = () => {
           metrics={metrics}
           onSuccess={async () => {
             await loadActiveSession();
-            await loadHistory();
+            if (isAdmin) {
+              await loadHistory();
+            }
           }}
         />
       )}
 
-      {selectedHistorySession && (
+      {isAdmin && selectedHistorySession && (
         <SessionDetailsModal
           isOpen={Boolean(selectedHistorySession)}
           onClose={() => setSelectedHistorySession(null)}

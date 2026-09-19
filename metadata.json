@@ -1,6 +1,6 @@
 {
   "name": "Palomar GYM",
   "description": "Gym Management System with members, attendance logbook, sales, and scanner.",
-  "requestFramePermissions": ["camera"],
+  "requestFramePermissions": ["camera", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

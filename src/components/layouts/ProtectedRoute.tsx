@@ -1,10 +1,12 @@
 //src/components/layouts/ProtectedRoute.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
+import { useSecurityStore } from '../../stores/useSecurityStore';
 import { supabase } from '../../lib/supabase/client';
 import { UserX } from 'lucide-react';
 import { isSuperAdmin } from '../../constants/auth';
+import { SecurityAccessBlocker } from '../security/SecurityAccessBlocker';
 
 interface ProtectedRouteProps {
   allowedRoles?: ('admin' | 'staff')[];
@@ -14,7 +16,42 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
 }) => {
   const { user, profile, loading, initialized } = useAuthStore() as any;
+  const {
+    config,
+    fetchConfig,
+    checkResult,
+    runVerification,
+    temporaryOverride,
+  } = useSecurityStore();
   const location = useLocation();
+
+  const isSuperAdminUser = isSuperAdmin(user?.email);
+  const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
+
+  // Load security configuration and evaluate terminal access
+  useEffect(() => {
+    if (user?.id && initialized && !loading) {
+      fetchConfig().then((cfg) => {
+        if (
+          (cfg.location_restriction_enabled || cfg.wifi_restriction_enabled) &&
+          cfg.enforce_on_roles.includes(effectiveRole) &&
+          !(cfg.bypass_superadmin && isSuperAdminUser) &&
+          !temporaryOverride
+        ) {
+          runVerification(effectiveRole, user?.email);
+        }
+      });
+    }
+  }, [
+    user?.id,
+    initialized,
+    loading,
+    effectiveRole,
+    isSuperAdminUser,
+    temporaryOverride,
+    fetchConfig,
+    runVerification,
+  ]);
 
   if (!initialized || loading) {
     return (
@@ -30,12 +67,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to={redirectTarget} state={{ from: location }} replace />;
   }
 
-  const isSuperAdminUser = isSuperAdmin(user?.email);
-
   const userStatus = isSuperAdminUser
     ? 'active'
     : profile?.status || user?.user_metadata?.status;
-  const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role;
 
   // Guard: Intercept and display suspension notice to deactivated users
   if (userStatus === 'inactive') {
@@ -66,6 +100,27 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Facility Geofence & Wi-Fi Access Control Check
+  const hasActiveSecurityRestrictions =
+    (config.location_restriction_enabled || config.wifi_restriction_enabled) &&
+    config.enforce_on_roles.includes(effectiveRole);
+
+  const canBypass =
+    temporaryOverride ||
+    (config.bypass_superadmin && isSuperAdminUser) ||
+    (location.pathname.startsWith('/settings') && effectiveRole === 'admin');
+
+  if (hasActiveSecurityRestrictions && !canBypass && checkResult && !checkResult.allowed) {
+    return (
+      <SecurityAccessBlocker
+        checkResult={checkResult}
+        onRetry={async () => {
+          await runVerification(effectiveRole, user?.email);
+        }}
+      />
     );
   }
 

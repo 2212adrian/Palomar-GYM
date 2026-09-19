@@ -4,6 +4,7 @@ export type PermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported';
 
 export interface HardwarePermissionsStatus {
   camera: PermissionState;
+  location: PermissionState;
   notification: PermissionState;
 }
 
@@ -95,7 +96,62 @@ export async function requestNotificationPermission(): Promise<PermissionState> 
 }
 
 /**
- * Automatically prompt for required camera and notification permissions on authentication
+ * Check the current status of browser geolocation permission
+ */
+export async function getLocationPermissionStatus(): Promise<PermissionState> {
+  if (typeof window === 'undefined' || !navigator?.geolocation) {
+    return 'unsupported';
+  }
+
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const result = await navigator.permissions.query({
+        name: 'geolocation' as any,
+      });
+      return result.state as PermissionState;
+    }
+  } catch {
+    // navigator.permissions.query may fail in some environments
+  }
+
+  const stored = localStorage.getItem('palomar_location_perm');
+  if (stored === 'granted' || stored === 'denied') {
+    return stored as PermissionState;
+  }
+
+  return 'prompt';
+}
+
+/**
+ * Request geolocation permission explicitly from user
+ */
+export async function requestLocationPermission(): Promise<PermissionState> {
+  if (typeof window === 'undefined' || !navigator?.geolocation) {
+    return 'unsupported';
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        localStorage.setItem('palomar_location_perm', 'granted');
+        resolve('granted');
+      },
+      (err) => {
+        console.warn('Location permission request error:', err);
+        if (err.code === err.PERMISSION_DENIED) {
+          localStorage.setItem('palomar_location_perm', 'denied');
+          resolve('denied');
+        } else {
+          resolve('prompt');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  });
+}
+
+/**
+ * Check hardware permissions status without prompting for camera before camera is opened
  */
 export async function promptInitialPermissionsOnLogin(): Promise<HardwarePermissionsStatus> {
   const notifStatus = getNotificationPermissionStatus();
@@ -104,14 +160,14 @@ export async function promptInitialPermissionsOnLogin(): Promise<HardwarePermiss
     updatedNotif = await requestNotificationPermission();
   }
 
+  // DO NOT prompt for camera permission on login.
+  // Camera permission will only be requested when the camera is explicitly opened by the user.
   const camStatus = await getCameraPermissionStatus();
-  let updatedCam = camStatus;
-  if (camStatus === 'prompt') {
-    updatedCam = await requestCameraPermission();
-  }
+  const locStatus = await getLocationPermissionStatus();
 
   return {
-    camera: updatedCam,
+    camera: camStatus,
+    location: locStatus,
     notification: updatedNotif,
   };
 }

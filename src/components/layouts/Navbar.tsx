@@ -22,7 +22,11 @@ import {
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
 
-export const Navbar: React.FC = () => {
+interface NavbarProps {
+  isMobileDrawerOpen?: boolean;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ isMobileDrawerOpen = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { isSessionOpen } = useCashSessionStore();
@@ -109,7 +113,7 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* Tap-outside transparent catcher (NO blur, NO dark tint) */}
-      {activeFloating && (
+      {!isMobileDrawerOpen && activeFloating && (
         <div
           className="fixed inset-0 z-[195] lg:hidden bg-transparent"
           onClick={closeFloating}
@@ -120,9 +124,13 @@ export const Navbar: React.FC = () => {
           MOBILE & TABLET NAVBAR
          ========================================================= */}
       <div
-        className="lg:hidden fixed z-[200] transition-all duration-300
+        className={`lg:hidden fixed z-[200] transition-all duration-300
         bottom-0 left-0 right-0 w-full pb-[env(safe-area-inset-bottom)] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800/80 shadow-lg
-        md:bottom-5 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-[440px] md:max-w-[calc(100vw-2rem)] md:pb-0 md:rounded-full md:border md:border-slate-200 dark:md:border-zinc-800 md:shadow-2xl"
+        md:bottom-5 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-[440px] md:max-w-[calc(100vw-2rem)] md:pb-0 md:rounded-full md:border md:border-slate-200 dark:md:border-zinc-800 md:shadow-2xl ${
+          isMobileDrawerOpen
+            ? 'pointer-events-none opacity-0 invisible translate-y-12'
+            : 'opacity-100 translate-y-0'
+        }`}
       >
         {/* ─── FLOATING SUB-MENU: SALES ─── */}
         {isAdmin && activeFloating === 'sales' && (

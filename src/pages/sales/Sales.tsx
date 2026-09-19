@@ -284,19 +284,6 @@ export const Sales: React.FC = () => {
     return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
-  // Non-intrusive alert toast informing user that session is closed without covering the screen
-  useEffect(() => {
-    if (!isInitializing && !isSessionOpen) {
-      toast.info(
-        'Cash drawer session is closed. New sales and Recycle Bin are currently locked.',
-        {
-          toastId: 'cash-session-closed-notice',
-          autoClose: 5000,
-        }
-      );
-    }
-  }, [isInitializing, isSessionOpen]);
-
   // Session-based deletability check
   const isTransactionDeletable = useCallback(
     (tx: any) => {

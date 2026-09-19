@@ -21,7 +21,6 @@ import {
   Trash2,
   ShieldAlert,
   Edit3,
-  LogOut,
   KeyRound,
   ShieldCheck,
   Camera,
@@ -86,9 +85,6 @@ export const UserManagement: React.FC = () => {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
-  const [isSigningOutSessions, setIsSigningOutSessions] = useState<
-    string | null
-  >(null);
   const [isSendingReset, setIsSendingReset] = useState<string | null>(null);
 
   // Edit User Profile (Username & Avatar) Modal states
@@ -243,6 +239,22 @@ export const UserManagement: React.FC = () => {
   useEffect(() => {
     if (!isAdmin) return;
     fetchUsers();
+
+    // Auto-activate user upon entering admin page if profile is pending
+    if (user?.id && profile?.status === 'pending') {
+      supabase
+        .from('profiles')
+        .update({ status: 'active' })
+        .eq('id', user.id)
+        .then(() => {
+          useAuthStore.setState((state) => ({
+            profile: state.profile
+              ? { ...state.profile, status: 'active' }
+              : null,
+          }));
+          fetchUsers();
+        });
+    }
 
     const directoryChannel = supabase
       .channel('profiles-directory-sync')
@@ -540,55 +552,6 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  // Sign out all active sessions for target user
-  const handleSignOutUserSessions = async (targetUser: any) => {
-    try {
-      setIsSigningOutSessions(targetUser.id);
-
-      // 1. Terminate database session in auth.sessions
-      const { error: rpcError } = await supabase.rpc('admin_sign_out_user', {
-        target_user_id: targetUser.id,
-      });
-
-      if (rpcError) {
-        if (
-          rpcError.message?.toLowerCase().includes('does not exist') ||
-          rpcError.code === 'PGRST202'
-        ) {
-          throw new Error(
-            'Function "admin_sign_out_user" is not found in Supabase. Please run the SQL migration.'
-          );
-        }
-        throw rpcError;
-      }
-
-      // 2. Broadcast instant real-time kick event to all active browsers
-      const sessionSyncChannel = supabase.channel('user-session-sync');
-      await sessionSyncChannel.subscribe();
-      await sessionSyncChannel.send({
-        type: 'broadcast',
-        event: 'FORCE_SIGNOUT_USER',
-        payload: { userId: targetUser.id },
-      });
-      supabase.removeChannel(sessionSyncChannel);
-
-      await logAudit(
-        'ADMIN_REVOKED_SESSIONS',
-        `Admin revoked active login sessions for user "${targetUser.username}".`,
-        user?.id ?? undefined
-      );
-
-      toast.success(
-        `All active sessions for "${targetUser.username}" have been signed out.`
-      );
-    } catch (err: any) {
-      console.error('Sign out error:', err);
-      toast.error(err.message || 'Failed to sign out user sessions.');
-    } finally {
-      setIsSigningOutSessions(null);
-    }
-  };
-
   const handleSendResetPassword = async (targetUser: any) => {
     const email = targetUser.email;
     if (!email || email.endsWith('@palomargym.noemail')) {
@@ -798,18 +761,14 @@ export const UserManagement: React.FC = () => {
       return;
     }
 
-    if (currentStatus === 'pending') {
-      toast.info(`Account status is pending first verification.`);
-      return;
-    }
-
     setDrafts((prev) => {
       const draft = prev[targetId] || {};
       const targetUser = usersList.find((u) => u.id === targetId);
       const originalStatus = targetUser?.status || 'active';
 
+      const effectiveCurrent = draft.status || currentStatus;
       const nextStatus: 'active' | 'inactive' =
-        (draft.status || currentStatus) === 'inactive' ? 'active' : 'inactive';
+        effectiveCurrent === 'active' ? 'inactive' : 'active';
 
       const updatedDraft: DraftChange = { ...draft, status: nextStatus };
 
@@ -1131,23 +1090,7 @@ export const UserManagement: React.FC = () => {
               )}
             </button>
 
-            {/* Action 3: Sign Out All Sessions */}
-            <button
-              type="button"
-              onClick={() => handleSignOutUserSessions(u)}
-              disabled={isSigningOutSessions === u.id}
-              title={`Force sign out all active sessions for ${u.username}`}
-              aria-label={`Force sign out sessions for ${u.username}`}
-              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/60 hover:bg-amber-500/10 hover:border-amber-500/30 text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
-            >
-              {isSigningOutSessions === u.id ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500 dark:text-amber-400" />
-              ) : (
-                <LogOut className="w-3.5 h-3.5" />
-              )}
-            </button>
-
-            {/* Action 4: Delete Account */}
+            {/* Action 3: Delete Account */}
             {isTargetSuperAdmin ? (
               <div
                 title="Superadmin account protected"

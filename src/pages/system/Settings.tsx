@@ -10,7 +10,7 @@ import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation';
-import { PermissionsSettings } from './PermissionsSettings';
+import { SecurityAndPermissions } from './security-and-permission';
 import {
   User as UserIcon,
   Building,
@@ -19,6 +19,8 @@ import {
   Database,
   FileText,
   ShieldCheck,
+  ShieldAlert,
+  Camera,
   ChevronRight,
   ChevronLeft,
   Save,
@@ -29,7 +31,7 @@ import {
 
 export type TabID =
   | 'account'
-  | 'permissions'
+  | 'security-permissions'
   | 'gym-profile'
   | 'rates'
   | 'users'
@@ -54,9 +56,9 @@ const TABS: TabItem[] = [
     adminOnly: false,
   },
   {
-    id: 'permissions',
-    label: 'Device Permissions',
-    description: 'Camera & notification access',
+    id: 'security-permissions',
+    label: 'Security & Permissions',
+    description: 'Facility access & device hardware',
     icon: ShieldCheck,
     adminOnly: false,
   },
@@ -106,7 +108,7 @@ const TABS: TabItem[] = [
 
 const TAB_URL_MAP: Record<TabID, string> = {
   account: 'personal-account',
-  permissions: 'device-permissions',
+  'security-permissions': 'security-and-permissions',
   'gym-profile': 'gym-profile',
   rates: 'rates-and-payments',
   users: 'user-management',
@@ -117,7 +119,8 @@ const TAB_URL_MAP: Record<TabID, string> = {
 
 const URL_TAB_MAP: Record<string, TabID> = {
   'personal-account': 'account',
-  'device-permissions': 'permissions',
+  'security-and-permissions': 'security-permissions',
+  'device-permissions': 'security-permissions',
   'gym-profile': 'gym-profile',
   'rates-and-payments': 'rates',
   'user-management': 'users',
@@ -156,10 +159,31 @@ export default function Settings() {
   const [isChildSaving, setIsChildSaving] = useState<boolean>(false);
 
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
-  const isAdmin = userRole === 'admin' || isSuperAdmin(user?.email);
-  const visibleTabs: TabItem[] = TABS.filter(
-    (tab: TabItem) => !tab.adminOnly || isAdmin
-  );
+  const isSuperAdminUser = isSuperAdmin(user?.email);
+  const isAdmin = userRole === 'admin' || isSuperAdminUser;
+
+  const visibleTabs: TabItem[] = useMemo(() => {
+    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin).map((tab) => {
+      if (tab.id === 'security-permissions') {
+        if (isSuperAdminUser) {
+          return {
+            ...tab,
+            label: 'Facility Access & Security',
+            description: 'Perimeter geofence, IP & turnstiles',
+            icon: ShieldAlert,
+          };
+        } else {
+          return {
+            ...tab,
+            label: 'Device Permission',
+            description: 'Hardware, camera & location access',
+            icon: Camera,
+          };
+        }
+      }
+      return tab;
+    });
+  }, [isAdmin, isSuperAdminUser]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
@@ -223,7 +247,7 @@ export default function Settings() {
       if (isMobile) {
         if (mobileView === 'detail') {
           const activeLabel =
-            TABS.find((t) => t.id === activeTabId)?.label || '';
+            visibleTabs.find((t) => t.id === activeTabId)?.label || '';
           window.dispatchEvent(
             new CustomEvent('settings-subtab-change', { detail: activeLabel })
           );
@@ -233,7 +257,7 @@ export default function Settings() {
           );
         }
       } else {
-        const activeLabel = TABS.find((t) => t.id === activeTabId)?.label || '';
+        const activeLabel = visibleTabs.find((t) => t.id === activeTabId)?.label || '';
         window.dispatchEvent(
           new CustomEvent('settings-subtab-change', { detail: activeLabel })
         );
@@ -241,7 +265,7 @@ export default function Settings() {
     }, 100);
 
     return () => clearTimeout(delayTimeout);
-  }, [activeTabId, mobileView]);
+  }, [activeTabId, mobileView, visibleTabs]);
 
   useEffect(() => {
     const handleDirtyState = (e: Event) => {
@@ -569,7 +593,8 @@ export default function Settings() {
             className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}
           >
             {activeTab === 'personal-account' && <PersonalAccount />}
-            {activeTab === 'device-permissions' && <PermissionsSettings />}
+            {(activeTab === 'security-and-permissions' ||
+              activeTab === 'device-permissions') && <SecurityAndPermissions />}
             {activeTab === 'gym-profile' && <GymProfile />}
             {activeTab === 'rates-and-payments' && <RatesPayments />}
             {activeTab === 'user-management' && <UserManagement />}

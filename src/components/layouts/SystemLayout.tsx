@@ -9,6 +9,7 @@ import React, {
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { supabase } from '../../lib/supabase/client';
 
 import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
@@ -17,6 +18,7 @@ import { TabLoader } from '../ui/TabLoader';
 import { CashFloatModal } from '../../pages/cash/components/CashFloatModal';
 import { ScannerPage } from '../../pages/scanner/ScannerPage';
 import { BackupSafetyBanner } from '../ui/BackupSafetyBanner';
+import { CashSessionClosedBanner } from '../ui/CashSessionClosedBanner';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 
 interface TabLoadingContextType {
@@ -48,14 +50,43 @@ export const SystemLayout: React.FC = () => {
     (state) => state.subscribeRealtime
   );
 
+  const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
+  const isAdmin = Boolean(
+    user?.email &&
+      (user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
+        profile?.role === 'admin')
+  );
+
+  // Auto-activate account status from 'pending' to 'active' upon entering the system/admin portal
+  useEffect(() => {
+    if (user?.id && profile?.status === 'pending') {
+      supabase
+        .from('profiles')
+        .update({ status: 'active' })
+        .eq('id', user.id)
+        .then(({ error }) => {
+          if (!error) {
+            useAuthStore.setState((state) => ({
+              profile: state.profile
+                ? { ...state.profile, status: 'active' }
+                : null,
+            }));
+          }
+        });
+    }
+  }, [user?.id, profile?.status]);
+
   useEffect(() => {
     loadActiveSession();
-    loadHistory();
+    if (isAdmin) {
+      loadHistory();
+    }
     const unsubscribe = subscribeRealtime();
     return () => {
       unsubscribe();
     };
-  }, [loadActiveSession, loadHistory, subscribeRealtime]);
+  }, [loadActiveSession, loadHistory, subscribeRealtime, isAdmin]);
 
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -192,6 +223,7 @@ export const SystemLayout: React.FC = () => {
 
     sessionStorage.removeItem('loginIntroPlayed');
     sessionStorage.setItem('loginIntroDone', '0');
+    sessionStorage.removeItem('cash_session_closed_banner_dismissed');
 
     setTimeout(() => {
       setLogoutStarted(true);
@@ -212,6 +244,8 @@ export const SystemLayout: React.FC = () => {
       <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
         {/* GLOBAL PERSISTENT RESTORATION VERIFICATION BANNER */}
         <BackupSafetyBanner />
+        {/* CASH SESSION CLOSED NOTICE BANNER */}
+        <CashSessionClosedBanner />
 
         {/* WORKSPACE & APPLICATION BODY */}
         <div className="relative flex-1 flex flex-row min-h-0 overflow-hidden">
@@ -225,7 +259,7 @@ export const SystemLayout: React.FC = () => {
           <ScannerPage />
 
           {/* SIDEBAR */}
-          <aside className="relative z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
+          <aside className="lg:relative lg:z-30 shrink-0 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none border-r border-slate-200/80 dark:border-slate-800/80">
             <Sidebar
               collapsed={desktopCollapsed}
               setCollapsed={setDesktopCollapsed}
@@ -241,7 +275,7 @@ export const SystemLayout: React.FC = () => {
             style={{ transform: 'translate3d(0, 0, 0)' }}
           >
             {/* Topbar */}
-            <div className="relative z-20 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.04)] dark:shadow-none bg-white/95 dark:bg-[#111620]/95 backdrop-blur-md">
+            <div className="relative z-20 shrink-0">
               <Topbar
                 onMenuClick={() => setMobileDrawerOpen((prev) => !prev)}
               />
@@ -254,7 +288,7 @@ export const SystemLayout: React.FC = () => {
 
               <main
                 ref={mainScrollRef}
-                className={`flex-1 pt-6 sm:pt-8 md:pt-10 pb-6 sm:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
+                className={`flex-1 pt-4 sm:pt-6 md:pt-8 pb-24 lg:pb-8 px-3 sm:px-5 md:px-7 xl:px-10 2xl:px-12 overflow-y-auto overflow-x-hidden ${
                   isTabLoading
                     ? 'opacity-0 pointer-events-none'
                     : 'opacity-100 transition-opacity duration-300'
@@ -268,7 +302,7 @@ export const SystemLayout: React.FC = () => {
           </div>
 
           {/* MOBILE BOTTOM NAVIGATION */}
-          <Navbar />
+          <Navbar isMobileDrawerOpen={mobileDrawerOpen} />
 
           {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
           {!curtainHidden && (

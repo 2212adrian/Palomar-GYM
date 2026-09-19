@@ -1,6 +1,7 @@
 // src/stores/useCashSessionStore.ts
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase/client';
+import { useAuthStore } from './authStore';
 import {
   fetchActiveCashSession,
   fetchCashSessionHistory,
@@ -123,6 +124,18 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
   },
 
   loadHistory: async () => {
+    // Restrict cash session history exclusively to admins; staff cannot read this
+    const auth = useAuthStore.getState();
+    const isAdmin = Boolean(
+      auth.user?.email &&
+        (auth.user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
+          auth.profile?.role === 'admin')
+    );
+    if (!isAdmin) {
+      set({ history: [] });
+      return;
+    }
+
     try {
       const history = await fetchCashSessionHistory(30);
       set({ history });
