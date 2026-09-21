@@ -105,7 +105,7 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
         cfg = await get().fetchConfig();
       }
 
-      const res = await evaluateTerminalSecurityAccess(cfg, userRole, userEmail);
+      const res = await evaluateTerminalSecurityAccess(cfg, userRole);
       set({
         checkResult: res,
         isChecking: false,
