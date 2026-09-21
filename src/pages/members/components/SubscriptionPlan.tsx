@@ -1728,6 +1728,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         ]);
       }
 
+      const isEnrolled = selectedPlan !== 'No Subscription';
+
       if (addIdCard) {
         await cardService.issue(
           targetMember.member_id,
@@ -1739,7 +1741,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           liveCardFee,
           receiptNo
         );
-      } else {
+      } else if (isEnrolled) {
+        // Automatically create membership card when new enrolled member has been added
         const existingCard = await cardService.getByMemberId(
           targetMember.member_id
         );
@@ -1755,6 +1758,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           );
         }
       }
+      // Fresh created member without enrollment and without card selection has no card created
 
       if (importedQueueReg) {
         await registrationService.approve(importedQueueReg.id, 'Admin Staff');

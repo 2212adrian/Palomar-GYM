@@ -320,39 +320,71 @@ export const IncidentReports: React.FC = () => {
   };
 
   // Fetch Incident Reports
-  const fetchIncidentReports = useCallback(async () => {
-    try {
-      if (isMountedRef.current) setLoading(true);
-      let query = supabase.from('incident_reports').select('*');
+  const fetchIncidentReports = useCallback(
+    async (silent = false) => {
+      const cacheKey = `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`;
 
-      if (!isAdmin && user) {
-        query = query.eq('created_by', user.id);
+      if (!silent) {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              setReports(parsed);
+              setLoading(false);
+            }
+          } catch {
+            // ignore cache parse error
+          }
+        }
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
+      try {
+        if (
+          isMountedRef.current &&
+          !silent &&
+          !sessionStorage.getItem(cacheKey)
+        ) {
+          setLoading(true);
+        }
+        let query = supabase.from('incident_reports').select('*');
 
-      if (data && isMountedRef.current) {
-        const typedData = data as IncidentReport[];
-        setReports(typedData);
+        if (!isAdmin && user) {
+          query = query.eq('created_by', user.id);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        if (data && isMountedRef.current) {
+          const typedData = data as IncidentReport[];
+          const cachedRaw = sessionStorage.getItem(cacheKey);
+          if (cachedRaw !== JSON.stringify(typedData)) {
+            setReports(typedData);
+            sessionStorage.setItem(cacheKey, JSON.stringify(typedData));
+          }
+        }
+      } catch {
+        if (isMountedRef.current) {
+          console.warn(
+            'INTERNET_ERR: Could not load incident files. Please check connection.'
+          );
+        }
+      } finally {
+        if (isMountedRef.current && !silent) {
+          setLoading(false);
+        }
       }
-    } catch (err: any) {
-      if (isMountedRef.current) {
-        console.warn(
-          'INTERNET_ERR: Could not load incident files. Please check connection.'
-        );
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [isAdmin, user]);
+    },
+    [isAdmin, user]
+  );
 
   // Realtime subscription
   useEffect(() => {
     fetchEmergencyContacts();
     fetchIncidentReports();
+
+    const cacheKey = `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`;
 
     const channel = supabase
       .channel('incident_reports_realtime_changes')
@@ -361,6 +393,7 @@ export const IncidentReports: React.FC = () => {
         { event: '*', schema: 'public', table: 'incident_reports' },
         (payload) => {
           if (!isMountedRef.current) return;
+          sessionStorage.removeItem(cacheKey);
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
@@ -368,20 +401,30 @@ export const IncidentReports: React.FC = () => {
             if (!isAdmin && report.created_by !== user?.id) return;
             setReports((prev) => {
               if (prev.some((r) => r.id === report.id)) return prev;
-              return [report, ...prev];
+              const updated = [report, ...prev];
+              sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+              return updated;
             });
           } else if (eventType === 'UPDATE') {
             const updated = newRecord as IncidentReport;
             if (!isAdmin && updated.created_by !== user?.id) return;
-            setReports((prev) =>
-              prev.map((r) => (r.id === updated.id ? updated : r))
-            );
+            setReports((prev) => {
+              const updatedList = prev.map((r) =>
+                r.id === updated.id ? updated : r
+              );
+              sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+              return updatedList;
+            });
             setSelectedReport((prev) =>
               prev?.id === updated.id ? updated : prev
             );
           } else if (eventType === 'DELETE') {
             const targetId = oldRecord.id;
-            setReports((prev) => prev.filter((r) => r.id !== targetId));
+            setReports((prev) => {
+              const updatedList = prev.filter((r) => r.id !== targetId);
+              sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+              return updatedList;
+            });
             setSelectedReport((prev) => (prev?.id === targetId ? null : prev));
           }
         }
@@ -574,6 +617,9 @@ export const IncidentReports: React.FC = () => {
       }
 
       setShowModal(false);
+      sessionStorage.removeItem(
+        `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`
+      );
       fetchIncidentReports();
     } catch {
       toast.error('Submission failed. Please verify your data.');

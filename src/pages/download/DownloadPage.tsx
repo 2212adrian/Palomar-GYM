@@ -42,6 +42,11 @@ interface DownloadPageProps {
   onToggleTheme?: () => void;
   gymLogo?: string;
   appVersion?: string;
+  /**
+   * Live Brand Preview Mode: locks this page into a strict view-only state so
+   * no download, install or copy process can be triggered from the preview.
+   */
+  previewMode?: boolean;
 }
 
 export const DownloadPage: React.FC<DownloadPageProps> = ({
@@ -51,9 +56,23 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
   onToggleTheme,
   gymLogo,
   appVersion = pkg.version,
+  previewMode = false,
 }) => {
   const navigate = useNavigate();
   const { isInstallable, isInstalled, isWindows, install } = usePWAInstall();
+
+  // ─── LIVE BRAND PREVIEW LOCK ────────────────────────────────────────────────
+  // Live Brand Preview Mode is strictly view-only: no download, install, copy
+  // or release-fetch process may run while the brand preview tab is open.
+  const isPreviewLocked = previewMode === true;
+
+  const blockPreviewAction = () => {
+    if (!isPreviewLocked) return false;
+    toast.info(
+      'View only: downloads and installs are disabled in Live Brand Preview Mode.'
+    );
+    return true;
+  };
 
   const [androidRelease, setAndroidRelease] = useState<AppReleaseInfo | null>(
     null
@@ -71,13 +90,15 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
   const activeLogo = gymLogo || defaultLogo;
 
   const loadReleaseData = useCallback(async () => {
+    // No release lookup process runs inside the brand preview.
+    if (isPreviewLocked) return;
     try {
       const rel = await fetchLatestRelease(appVersion, 'android');
       if (rel) setAndroidRelease(rel);
     } catch (e) {
       console.warn('Failed to fetch release info:', e);
     }
-  }, [appVersion]);
+  }, [appVersion, isPreviewLocked]);
 
   useEffect(() => {
     loadReleaseData();
@@ -93,6 +114,8 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
 
   // 1-Click PWA Install (PC / Web)
   const handleInstallWindows = async () => {
+    if (blockPreviewAction()) return;
+
     if (isInstalled) {
       toast.info('Palomar GYM is already installed on this device.');
       return;
@@ -110,6 +133,8 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
 
   // Android APK Direct Download (Bypasses CORS)
   const handleDownloadAndroid = () => {
+    if (blockPreviewAction()) return;
+
     if (!androidRelease?.downloadUrl) {
       toast.info('Connecting to download mirror, please wait...');
       loadReleaseData();
@@ -140,6 +165,7 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
   };
 
   const handleCopyLink = async (url: string) => {
+    if (blockPreviewAction()) return;
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLink(true);
@@ -196,6 +222,17 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
           </div>
         </div>
       </header>
+
+      {/* ─── LIVE BRAND PREVIEW LOCK NOTICE ─── */}
+      {isPreviewLocked && (
+        <div className="w-full bg-blue-600 dark:bg-[#bf0202] text-white text-[10px] font-heading tracking-widest uppercase py-2 px-4 text-center shadow-md flex flex-wrap items-center justify-center gap-2 select-none">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>
+            Live Brand Preview Mode (View Only) — Downloads, Installs &amp; Copy
+            Links Disabled
+          </span>
+        </div>
+      )}
 
       {/* ─── HERO HEADER ─── */}
       <section className="px-4 sm:px-8 pt-10 pb-6 max-w-4xl mx-auto text-center">
@@ -292,8 +329,8 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadAndroid}
-                disabled={isDownloading}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-heading font-black text-xs tracking-wider uppercase transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                disabled={isDownloading || isPreviewLocked}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-heading font-black text-xs tracking-wider uppercase transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:saturate-0"
               >
                 <Download
                   className={`w-4 h-4 ${isDownloading ? 'animate-bounce' : ''}`}
@@ -309,7 +346,8 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
                 <button
                   type="button"
                   onClick={() => handleCopyLink(androidRelease.downloadUrl)}
-                  className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 font-heading font-bold text-[11px] tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={isPreviewLocked}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 font-heading font-bold text-[11px] tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:saturate-0"
                 >
                   {copiedLink ? (
                     <>
@@ -379,7 +417,8 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
             <button
               type="button"
               onClick={handleInstallWindows}
-              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isPreviewLocked}
+              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:saturate-0"
             >
               {isInstalled ? (
                 <>

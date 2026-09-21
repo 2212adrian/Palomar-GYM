@@ -263,7 +263,28 @@ export const MembersList: React.FC<MembersListProps> = ({
   ]);
 
   const fetchMembers = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+    const cacheKey = 'members_sanitized_cache';
+
+    if (!silent) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && Array.isArray(parsed.members)) {
+            setMembers(parsed.members);
+            if (Array.isArray(parsed.subscriptions))
+              setSubscriptions(parsed.subscriptions);
+            if (Array.isArray(parsed.cards)) setCards(parsed.cards);
+            if (parsed.settings) setSettings(parsed.settings);
+            setLoading(false);
+          }
+        } catch {
+          // ignore cache parse error
+        }
+      }
+    }
+
+    if (!silent && !sessionStorage.getItem(cacheKey)) setLoading(true);
     try {
       const [membersData, subsData, cardsData, settingsData] =
         await Promise.all([
@@ -272,10 +293,22 @@ export const MembersList: React.FC<MembersListProps> = ({
           cardService.getAll(),
           settingsService.load().catch(() => DEFAULT_SETTINGS),
         ]);
-      setMembers(membersData);
-      setSubscriptions(subsData);
-      setCards(cardsData);
-      if (settingsData) setSettings(settingsData);
+
+      const newPayload = {
+        members: membersData,
+        subscriptions: subsData,
+        cards: cardsData,
+        settings: settingsData || DEFAULT_SETTINGS,
+      };
+
+      const cachedRaw = sessionStorage.getItem(cacheKey);
+      if (cachedRaw !== JSON.stringify(newPayload)) {
+        setMembers(membersData);
+        setSubscriptions(subsData);
+        setCards(cardsData);
+        if (settingsData) setSettings(settingsData);
+        sessionStorage.setItem(cacheKey, JSON.stringify(newPayload));
+      }
     } catch (err: any) {
       console.error('Error fetching members data:', err);
       toast.error(err.message || 'Failed to load member records');
@@ -288,36 +321,45 @@ export const MembersList: React.FC<MembersListProps> = ({
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
   useEffect(() => {
+    const cacheKey = 'members_sanitized_cache';
+    const invalidateAndRefresh = () => {
+      sessionStorage.removeItem(cacheKey);
+      fetchMembers(true);
+    };
+
     const channel = supabase
       .channel('realtime-members-list')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'receipts' },
-        () => fetchMembers(true)
+        invalidateAndRefresh
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'subscriptions' },
-        () => fetchMembers(true)
+        invalidateAndRefresh
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
-        () => fetchMembers(true)
+        invalidateAndRefresh
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cards' },
-        () => fetchMembers(true)
+        invalidateAndRefresh
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_cards' },
-        () => fetchMembers(true)
+        invalidateAndRefresh
       )
       .subscribe();
 
-    const handleRefresh = () => fetchMembers(true);
+    const handleRefresh = () => {
+      sessionStorage.removeItem(cacheKey);
+      fetchMembers(true);
+    };
     window.addEventListener('member-refresh', handleRefresh);
 
     return () => {

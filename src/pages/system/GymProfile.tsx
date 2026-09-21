@@ -188,7 +188,15 @@ export const GymProfile: React.FC = () => {
       initialConfigRef.current = current;
       toast.success('GYM profile settings saved successfully.');
     } catch (err: any) {
-      toast.error(err.message || 'Failed to sync modifications.');
+      const rawMessage = String(err?.message || '');
+      const isRlsError =
+        err?.code === '42501' || /row-level security/i.test(rawMessage);
+
+      toast.error(
+        isRlsError
+          ? 'Access denied: only an Administrator or the Superadmin may save Gym Profile settings.'
+          : rawMessage || 'Failed to sync modifications.'
+      );
     } finally {
       setIsSaving(false);
     }

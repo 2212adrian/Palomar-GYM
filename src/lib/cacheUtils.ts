@@ -17,6 +17,10 @@ export const clearAppCaches = () => {
           key.startsWith('logbook_') ||
           key.startsWith('members_') ||
           key.startsWith('attendance_') ||
+          key.startsWith('incident_') ||
+          key.startsWith('products_') ||
+          key.startsWith('cards_') ||
+          key.startsWith('subscriptions_') ||
           key.includes('sanitized'))
       ) {
         keysToRemove.push(key);

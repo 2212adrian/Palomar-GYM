@@ -207,6 +207,23 @@ export async function saveSecurityAccessConfig(
     return { ...DEFAULT_SECURITY_CONFIG, ...parsed };
   }
 
+  // A permission failure is final: the SECURITY DEFINER RPC is the
+  // authoritative writer, so the direct table fallback below would only fail
+  // again with "new row violates row-level security policy for table
+  // system_config". Surface the real reason instead.
+  if (rpcError) {
+    const rpcMessage = String(rpcError.message || '');
+    const isPermissionError =
+      rpcError.code === '42501' ||
+      /unauthorized|row-level security|permission denied/i.test(rpcMessage);
+
+    if (isPermissionError) {
+      throw new Error(
+        'Access denied: only an Administrator or the Superadmin can change Facility Access & Security settings.'
+      );
+    }
+  }
+
   const { error: upsertError } = await supabase
     .from('system_config')
     .upsert({

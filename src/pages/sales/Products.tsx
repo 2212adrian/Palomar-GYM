@@ -167,8 +167,25 @@ export const Products: React.FC<ProductsProps> = ({
 
   // Silent sync enabled by default for zero skeleton flicker
   const fetchProducts = async (silent = false) => {
+    const cacheKey = 'products_sanitized_list';
+
+    if (!silent) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setProducts(parsed);
+            setLoading(false);
+          }
+        } catch {
+          // ignore cache error
+        }
+      }
+    }
+
     try {
-      if (!silent) setLoading(true);
+      if (!silent && !sessionStorage.getItem(cacheKey)) setLoading(true);
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -176,8 +193,12 @@ export const Products: React.FC<ProductsProps> = ({
         .order('product_name', { ascending: true });
 
       if (error) throw error;
-      if (isMountedRef.current) {
-        setProducts(data || []);
+      if (isMountedRef.current && data) {
+        const cachedRaw = sessionStorage.getItem(cacheKey);
+        if (cachedRaw !== JSON.stringify(data)) {
+          setProducts(data);
+          sessionStorage.setItem(cacheKey, JSON.stringify(data));
+        }
       }
     } catch {
       if (isMountedRef.current) {
@@ -247,6 +268,7 @@ export const Products: React.FC<ProductsProps> = ({
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
         (payload) => {
+          sessionStorage.removeItem('products_sanitized_list');
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {

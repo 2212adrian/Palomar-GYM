@@ -445,6 +445,21 @@ export const Login: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDownloadOpen, isFlipped, showGreetingModal, closeGreetingAndProceed]);
 
+  // ─── LIVE BRAND PREVIEW LOCK ────────────────────────────────────────────────
+  // Live Brand Preview Mode is strictly view-only: the vertical slide-down
+  // "Download Apps" process can never be opened, and any attempt to reach it
+  // (state restore, stale storage, manual trigger) is reverted immediately.
+  const handleOpenDownload = useCallback(() => {
+    if (isPreview) return;
+    setIsDownloadOpen(true);
+  }, [isPreview]);
+
+  useEffect(() => {
+    if (isPreview && isDownloadOpen) {
+      setIsDownloadOpen(false);
+    }
+  }, [isPreview, isDownloadOpen]);
+
   useEffect(() => {
     const loadBranding = async () => {
       let activeConfig = null;
@@ -2244,7 +2259,8 @@ export const Login: React.FC = () => {
           <div
             className={`relative z-10 flex w-full h-full auth-split-container ${isReady ? 'is-ready' : ''} ${
               isLoggingIn ? 'is-logging-in' : ''
-            } ${isPreview ? 'pointer-events-none' : ''}`}
+            } ${isPreview ? 'pointer-events-none select-none' : ''}`}
+            inert={isPreview ? true : undefined}
           >
             {/* LEFT COLUMN / LOGIN (SWEEPS AND EXPANDS OVER THE CAROUSEL) */}
             <div
@@ -2473,9 +2489,21 @@ export const Login: React.FC = () => {
             >
               <button
                 type="button"
-                onClick={() => setIsDownloadOpen(true)}
-                className="pointer-events-auto group flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/85 dark:bg-[#161920]/90 border border-slate-200/90 dark:border-white/10 shadow-lg hover:shadow-xl dark:shadow-red-950/20 backdrop-blur-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-red-500 cursor-pointer select-none"
+                onClick={handleOpenDownload}
+                disabled={isPreview}
+                aria-disabled={isPreview}
+                tabIndex={isPreview ? -1 : 0}
+                className={`group flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/85 dark:bg-[#161920]/90 border border-slate-200/90 dark:border-white/10 shadow-lg backdrop-blur-xl transition-all duration-300 transform text-slate-800 dark:text-slate-200 select-none ${
+                  isPreview
+                    ? 'pointer-events-none opacity-40 saturate-0 cursor-not-allowed'
+                    : 'pointer-events-auto hover:shadow-xl dark:shadow-red-950/20 hover:-translate-y-0.5 active:translate-y-0 hover:text-blue-600 dark:hover:text-red-500 cursor-pointer'
+                }`}
                 aria-label="Slide down to download apps and terminal client"
+                title={
+                  isPreview
+                    ? 'Disabled in Live Brand Preview Mode'
+                    : 'Slide down to download apps and terminal client'
+                }
               >
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
@@ -2485,7 +2513,7 @@ export const Login: React.FC = () => {
                 <Download className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
 
                 <span className="text-[10.5px] font-heading font-black tracking-widest uppercase">
-                  DOWNLOAD APPS
+                  {isPreview ? 'DOWNLOAD APPS (LOCKED)' : 'DOWNLOAD APPS'}
                 </span>
 
                 <ChevronDown className="w-4 h-4 text-blue-600 dark:text-red-500 transition-transform duration-300 group-hover:translate-y-0.5 animate-bounce" />
@@ -2495,7 +2523,12 @@ export const Login: React.FC = () => {
         </div>
 
         {/* SECTION 2: DOWNLOAD VIEWPORT */}
-        <div className="relative w-full h-screen shrink-0 overflow-y-auto overflow-x-hidden scrollbar-none">
+        <div
+          className={`relative w-full h-screen shrink-0 overflow-y-auto overflow-x-hidden scrollbar-none ${
+            isPreview ? 'pointer-events-none select-none' : ''
+          }`}
+          inert={isPreview ? true : undefined}
+        >
           <DownloadPage
             standalone={false}
             onBackToLogin={() => setIsDownloadOpen(false)}
@@ -2503,6 +2536,7 @@ export const Login: React.FC = () => {
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             gymLogo={activeLogo}
             appVersion={APP_VERSION}
+            previewMode={isPreview}
           />
         </div>
       </div>
