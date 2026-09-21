@@ -2,6 +2,7 @@
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
+import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
 
 import type {
   Member,
@@ -127,7 +128,7 @@ export const getEffectiveSubscriptionStatus = (
 ): SubscriptionStatus => {
   if (status === 'Voided') return 'Voided';
 
-  const now = Date.now();
+  const now = getServerTime();
   const startMs = new Date(startDateStr).getTime();
   const endMs = new Date(endDateStr).getTime();
 
@@ -540,7 +541,7 @@ export const subscriptionService = {
       .neq('status', 'Voided')
       .order('end_date', { ascending: false });
 
-    const now = new Date();
+    const now = getServerNow();
     const activeSub = (memberSubs || []).find((s) => {
       const endMs = new Date(s.end_date).getTime();
       return s.status === 'Active' && endMs > now.getTime();
@@ -570,7 +571,7 @@ export const subscriptionService = {
       start = new Date(activeSub.end_date);
       initialStatus = 'Inactive';
     } else {
-      start = new Date();
+      start = getServerNow();
       initialStatus = 'Active';
     }
 
@@ -930,8 +931,8 @@ export const cardService = {
       return null;
     }
 
-    const now = new Date();
-    const nowIso = now.toISOString();
+    const now = getServerNow();
+    const nowIso = getServerISOString();
 
     let expiresIso = customExpireIso;
     if (!expiresIso) {
@@ -1028,8 +1029,8 @@ export const cardService = {
         ? existing.card_type
         : 'QR';
 
-    const now = new Date();
-    const nowIso = now.toISOString();
+    const now = getServerNow();
+    const nowIso = getServerISOString();
 
     let expiresIso = customExpireIso;
     if (!expiresIso) {
@@ -1261,7 +1262,7 @@ export const cardService = {
       if (uErr) throw new Error(uErr.message);
       cardRow = updated;
     } else {
-      const expDate = new Date();
+      const expDate = getServerNow();
       expDate.setFullYear(expDate.getFullYear() + 3);
       const expIso = expDate.toISOString();
       const cardNumber = generateCardTokenUuid();

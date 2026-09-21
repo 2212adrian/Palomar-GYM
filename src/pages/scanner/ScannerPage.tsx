@@ -862,7 +862,6 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           member_id: scanResult.member.memberId,
           customer_name: scanResult.member.fullName.toUpperCase(),
           customer_type: 'Existing Member',
-          check_in_time: new Date().toISOString(),
           plan_name: scanResult.member.membershipPlan,
           entry_fee: totalEntryFee,
           base_price: entryFee,

@@ -27,6 +27,7 @@ import {
   Loader2,
   Sun,
   Moon,
+  RefreshCw,
 } from 'lucide-react';
 
 export type TabID =
@@ -60,6 +61,13 @@ const TABS: TabItem[] = [
     label: 'Security & Permissions',
     description: 'Facility access & device hardware',
     icon: ShieldCheck,
+    adminOnly: false,
+  },
+  {
+    id: 'info',
+    label: 'System Updates & Info',
+    description: 'App release builds, updates & telemetry',
+    icon: RefreshCw,
     adminOnly: false,
   },
   {
@@ -97,13 +105,6 @@ const TABS: TabItem[] = [
     icon: FileText,
     adminOnly: true,
   },
-  {
-    id: 'info',
-    label: 'System Information',
-    description: 'Storage metrics & specifications',
-    icon: FileText,
-    adminOnly: true,
-  },
 ];
 
 const TAB_URL_MAP: Record<TabID, string> = {
@@ -114,7 +115,7 @@ const TAB_URL_MAP: Record<TabID, string> = {
   users: 'user-management',
   backup: 'database-backup',
   audit: 'audit-logs',
-  info: 'system-information',
+  info: 'system-updates',
 };
 
 const URL_TAB_MAP: Record<string, TabID> = {
@@ -126,7 +127,9 @@ const URL_TAB_MAP: Record<string, TabID> = {
   'user-management': 'users',
   'database-backup': 'backup',
   'audit-logs': 'audit',
+  'system-updates': 'info',
   'system-information': 'info',
+  'updates': 'info',
 };
 
 export default function Settings() {
@@ -600,7 +603,10 @@ export default function Settings() {
             {activeTab === 'user-management' && <UserManagement />}
             {activeTab === 'database-backup' && <DatabaseBackup />}
             {activeTab === 'audit-logs' && <AuditLogs />}
-            {activeTab === 'system-information' && <SystemInformation />}
+            {(activeTab === 'system-updates' ||
+              activeTab === 'system-information' ||
+              activeTab === 'updates' ||
+              activeTabId === 'info') && <SystemInformation />}
           </div>
         </div>
       </div>

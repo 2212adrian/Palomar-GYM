@@ -103,34 +103,37 @@ export const Dashboard: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Realtime Supabase Subscription
+  // Realtime Supabase Subscription with Debounce
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleLoadData = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadData();
+      }, 1500);
+    };
+
     const channel = supabase
       .channel('dashboard-realtime-feed')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance' },
-        () => {
-          loadData();
-        }
+        scheduleLoadData
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        () => {
-          loadData();
-        }
+        scheduleLoadData
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
-        () => {
-          loadData();
-        }
+        scheduleLoadData
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [loadData]);

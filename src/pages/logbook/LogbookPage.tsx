@@ -43,6 +43,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { getServerNow } from '../../lib/serverTime';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -381,10 +382,10 @@ export const LogbookPage: React.FC = () => {
 
   // Date selection states
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() =>
-    startOfWeek(new Date(), { weekStartsOn: 0 })
+    startOfWeek(getServerNow(), { weekStartsOn: 0 })
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() =>
-    getDay(new Date())
+    getDay(getServerNow())
   );
 
   const selectedDate = useMemo(() => {
@@ -422,7 +423,7 @@ export const LogbookPage: React.FC = () => {
 
   // Reset timeline filters to today's default helper
   const resetTimelineFilters = useCallback(() => {
-    const today = new Date();
+    const today = getServerNow();
     const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
     const todayIndex = getDay(today);
 

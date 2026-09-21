@@ -1,20 +1,12 @@
-// src/pages/settings/SystemInformation.tsx
+// src/pages/system/SystemInformation.tsx
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Database,
   ShieldCheck,
   Scale,
-  HardDrive,
-  Cpu,
   ChevronRight,
   RefreshCw,
-  Cloud,
-  Users,
-  ClipboardList,
-  ShoppingBag,
-  Package,
-  Layers,
   Code2,
   Phone,
   Mail,
@@ -23,18 +15,24 @@ import {
   CheckCircle2,
   Copy,
   Check,
-  ChevronDown,
+  History,
+  Smartphone,
+  Database,
+  HardDrive,
+  Layers,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { supabase } from '../../lib/supabase/client';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { Table } from '../../components/ui/Table';
-import type { Column } from '../../components/ui/Table';
 import { AgreementDocumentViewer } from '../../components/ui/AgreementDocumentViewer';
 
 import { Capacitor } from '@capacitor/core';
 import pkg from '../../../package.json';
+
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
+import { supabase } from '../../lib/supabase/client';
 
 import {
   fetchLatestRelease,
@@ -45,139 +43,148 @@ import {
 } from '../../lib/appUpdateService';
 
 import {
+  getAllChangelogs,
   getLatestChangelog,
   getChangelogForVersion,
   formatChangelogForReleaseNotes,
+  type ChangelogEntry,
 } from '../../lib/changelog';
-
-interface StorageMetric {
-  title: string;
-  value: string;
-  subtext: string;
-  progress: number;
-  limitText?: string;
-  icon: React.ReactNode;
-  colorClass: string;
-  barColorClass: string;
-}
-
-interface AppInfo {
-  label: string;
-  value: string;
-}
-
-interface RecordBreakdownItem {
-  id: string;
-  tableName: string;
-  recordCount: number;
-  sizeBytes: number;
-  purpose: string;
-  status: 'Active' | 'Operational' | 'System';
-}
 
 type LegalModalType = 'terms' | 'privacy' | 'developer' | null;
 
-const tableDisplayMapping: Record<
-  string,
+interface ResourceTelemetry {
+  id: string;
+  name: string;
+  category: 'database' | 'storage';
+  label: string;
+  description: string;
+  count: number | null;
+  bytes: number | null;
+  loading: boolean;
+  bytesPerRow?: number;
+}
+
+const TRACKED_RESOURCES: Omit<ResourceTelemetry, 'count' | 'bytes' | 'loading'>[] = [
+  // Database Tables
   {
-    label: string;
-    purpose: string;
-    status: 'Active' | 'Operational' | 'System';
-  }
-> = {
-  members: {
-    label: 'Members List',
-    purpose:
-      'Enrolled member profiles, contact directories, and security metadata',
-    status: 'Active',
+    id: 'members',
+    name: 'members',
+    category: 'database',
+    label: 'Members Directory',
+    description: 'Active, inactive, and archived gym member profiles',
+    bytesPerRow: 1600,
   },
-  attendance: {
-    label: 'Logbook Attendance',
-    purpose: 'Daily check-in logs, walk-in visits, and timestamp telemetry',
-    status: 'Active',
+  {
+    id: 'attendance',
+    name: 'attendance',
+    category: 'database',
+    label: 'Attendance & Scans',
+    description: 'Daily check-in logs and turnstile scanner events',
+    bytesPerRow: 350,
   },
-  sales: {
-    label: 'Sales Transactions',
-    purpose: 'Point-of-sale invoice receipts, retail logs, and cashier history',
-    status: 'Active',
+  {
+    id: 'subscriptions',
+    name: 'subscriptions',
+    category: 'database',
+    label: 'Membership Passes',
+    description: 'Active and expired membership subscriptions',
+    bytesPerRow: 550,
   },
-  products: {
-    label: 'Product Catalog',
-    purpose: 'Inventory merchandise, POS barcodes, stock quantity, and pricing',
-    status: 'Active',
+  {
+    id: 'sales',
+    name: 'sales',
+    category: 'database',
+    label: 'POS Sales Orders',
+    description: 'Store purchases, items sold, and cashier transactions',
+    bytesPerRow: 950,
   },
-  subscriptions: {
-    label: 'Subscription Contracts',
-    purpose: 'Active membership contracts, renewals, and expiration schedules',
-    status: 'Active',
+  {
+    id: 'products_tbl',
+    name: 'products',
+    category: 'database',
+    label: 'Merchandise Inventory',
+    description: 'Supplements, drinks, gear, and retail stock items',
+    bytesPerRow: 1200,
   },
-  receipts: {
-    label: 'Official Receipts',
-    purpose:
-      'Generated payment receipts, GCash references, and transaction proofs',
-    status: 'Operational',
+  {
+    id: 'receipts',
+    name: 'receipts',
+    category: 'database',
+    label: 'Official Payment Receipts',
+    description: 'Cash slips, GCash payments, and BIR receipt logs',
+    bytesPerRow: 1100,
   },
-  audit_logs: {
-    label: 'Audit History',
-    purpose:
-      'System-wide activity logs, staff actions, and security audit trail',
-    status: 'Operational',
+  {
+    id: 'audit_logs',
+    name: 'audit_logs',
+    category: 'database',
+    label: 'Security & Audit Logs',
+    description: 'Operational tracking, access history, and system changes',
+    bytesPerRow: 750,
   },
-  rates_config: {
-    label: 'Rates & Pricing',
-    purpose: 'Pricing tiers, membership walk-in fees, tax configuration rates',
-    status: 'System',
+  {
+    id: 'user_profiles',
+    name: 'user_profiles',
+    category: 'database',
+    label: 'System User Accounts',
+    description: 'Staff, coaches, managers, and administrator logins',
+    bytesPerRow: 1400,
   },
-  gym_profile: {
-    label: 'Gym Profile',
-    purpose:
-      'Gym metadata configuration, addresses, logos, and support directories',
-    status: 'System',
+  {
+    id: 'cash_sessions',
+    name: 'cash_sessions',
+    category: 'database',
+    label: 'Cash Drawer Sessions',
+    description: 'Shift opening floats, drawer close-outs, and cash audits',
+    bytesPerRow: 850,
   },
-  incident_reports: {
-    label: 'Incident Reports',
-    purpose:
-      'Incident logging directories, status parameters, and safety tracking',
-    status: 'Active',
+  {
+    id: 'incident_reports',
+    name: 'incident_reports',
+    category: 'database',
+    label: 'Incident & Facility Logs',
+    description: 'Equipment repair logs and incident documentation',
+    bytesPerRow: 1800,
   },
-  database_backups: {
-    label: 'Backup Archives',
-    purpose: 'Historical ledger exports, manual backups, and recovery archives',
-    status: 'Operational',
+  // Bucket Storage
+  {
+    id: 'bucket_avatars',
+    name: 'avatars',
+    category: 'storage',
+    label: 'Member & Staff Avatars',
+    description: 'Profile photos, verification captures, and badge images',
   },
-  profiles: {
-    label: 'Staff & User Accounts',
-    purpose: 'System user profiles, coach/staff roles, and admin credentials',
-    status: 'System',
+  {
+    id: 'bucket_products',
+    name: 'products',
+    category: 'storage',
+    label: 'Product Catalog Images',
+    description: 'Merchandise photos, drink labels, and item thumbnails',
   },
-  app_releases: {
-    label: 'App Release Packages',
-    purpose: 'app release builds, OTA deployment metadata, and version history',
-    status: 'System',
+  {
+    id: 'bucket_backups',
+    name: 'backups',
+    category: 'storage',
+    label: 'Database Snapshots',
+    description: 'Automated recovery checkpoints and manual export archives',
   },
-};
+];
 
 export const SystemInformation: React.FC = () => {
+  const navigate = useNavigate();
+  const { user, profile } = useAuthStore();
   const [activeModal, setActiveModal] = useState<LegalModalType>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Storage telemetry states
-  const [, setRpcSupported] = useState<boolean>(false);
-  const [dbSizeBytes, setDbSizeBytes] = useState<number | null>(null);
-  const [storageSizeBytes, setStorageSizeBytes] = useState<number | null>(null);
-
-  const [dbTables, setDbTables] = useState<
-    Array<{ table_name: string; record_count: number; size_bytes: number }>
-  >([]);
+  // Role Detection: Admin vs Non-admin (Staff)
+  const userRole = profile?.role || user?.app_metadata?.role || 'staff';
+  const isSuperAdminUser = isSuperAdmin(user?.email);
+  const isAdmin = userRole === 'admin' || isSuperAdminUser;
 
   // Platform & Update States
   const isNative = useMemo(() => Capacitor.isNativePlatform(), []);
   const currentNativePlatform = useMemo(() => Capacitor.getPlatform(), []);
   const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
-  const [latestRelease, setLatestRelease] = useState<AppReleaseInfo | null>(
-    null
-  );
+  const [latestRelease, setLatestRelease] = useState<AppReleaseInfo | null>(null);
   const [hasUpdate, setHasUpdate] = useState<boolean>(false);
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
 
@@ -186,38 +193,129 @@ export const SystemInformation: React.FC = () => {
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
 
-  // Changelog expand state - displays only ONE version (latest release)
-  const [isChangelogOpen, setIsChangelogOpen] = useState<boolean>(false);
-  const latestChangelog = useMemo(() => getLatestChangelog(), []);
+  // Selected changelog in the update history viewer
+  const allChangelogs = useMemo(() => getAllChangelogs(), []);
+  const [selectedVersion, setSelectedVersion] = useState<string>(
+    () => allChangelogs[0]?.version || pkg.version
+  );
 
-  const handlePwaRefresh = async () => {
-    toast.info('Refreshing application to apply the latest build...');
-    await reloadPwaApp();
-  };
+  const activeChangelogEntry = useMemo<ChangelogEntry>(() => {
+    return (
+      allChangelogs.find((c) => c.version === selectedVersion) ||
+      allChangelogs[0] ||
+      getLatestChangelog()
+    );
+  }, [allChangelogs, selectedVersion]);
 
   const APP_VERSION = pkg.version;
 
-  const buildNumber = useMemo(() => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    return `${yyyy}.${mm}.${dd}`;
-  }, []);
-
   const detectedEnvironment = useMemo(() => {
-    if (typeof window === 'undefined') return 'Production';
+    if (typeof window === 'undefined') return 'Production Web';
     if (isNative) return `Capacitor (${currentNativePlatform.toUpperCase()})`;
 
     const hostname = window.location.hostname;
-    if (
-      hostname.includes('localhost') ||
-      hostname.includes('dev-wolfpalomar')
-    ) {
-      return 'Development';
+    if (hostname.includes('localhost') || hostname.includes('dev-')) {
+      return 'Development Web';
     }
-    return 'Production';
+    return 'Production Web (PWA)';
   }, [isNative, currentNativePlatform]);
+
+  // Admin-Only Database & Storage Telemetry State
+  const [telemetryLoading, setTelemetryLoading] = useState<boolean>(false);
+  const [pingLatencyMs, setPingLatencyMs] = useState<number | null>(null);
+  const [resourcesTelemetry, setResourcesTelemetry] = useState<ResourceTelemetry[]>(() =>
+    TRACKED_RESOURCES.map((r) => ({
+      ...r,
+      count: null,
+      bytes: null,
+      loading: true,
+    }))
+  );
+
+  // Fetch Database & Storage telemetry for Admin users
+  const fetchAdminTelemetry = useCallback(async () => {
+    if (!isAdmin) return;
+    setTelemetryLoading(true);
+
+    const startTime = performance.now();
+    try {
+      await supabase.from('user_profiles').select('id', { count: 'exact', head: true });
+      const elapsed = Math.round(performance.now() - startTime);
+      setPingLatencyMs(elapsed);
+    } catch {
+      setPingLatencyMs(null);
+    }
+
+    const promises = TRACKED_RESOURCES.map(async (res) => {
+      if (res.category === 'database') {
+        try {
+          const { count, error } = await supabase
+            .from(res.name)
+            .select('*', { count: 'exact', head: true });
+          if (error) throw error;
+          const rowCount = count ?? 0;
+          const estimatedBytes = rowCount * (res.bytesPerRow || 1000);
+          return { id: res.id, count: rowCount, bytes: estimatedBytes };
+        } catch {
+          return { id: res.id, count: null, bytes: null };
+        }
+      } else {
+        // Storage Bucket
+        try {
+          const { data, error } = await supabase.storage.from(res.name).list('', { limit: 100 });
+          if (error) throw error;
+          const fileCount = data ? data.length : 0;
+          let totalBytes = 0;
+          if (data && data.length > 0) {
+            for (const file of data) {
+              totalBytes += file.metadata?.size || 0;
+            }
+          }
+          // If metadata size not available, use default baseline
+          if (totalBytes === 0 && fileCount > 0) {
+            totalBytes = fileCount * 180000;
+          }
+          return { id: res.id, count: fileCount, bytes: totalBytes };
+        } catch {
+          return { id: res.id, count: null, bytes: null };
+        }
+      }
+    });
+
+    const results = await Promise.all(promises);
+
+    setResourcesTelemetry((prev) =>
+      prev.map((item) => {
+        const found = results.find((r) => r.id === item.id);
+        return {
+          ...item,
+          count: found ? found.count : item.count,
+          bytes: found ? found.bytes : item.bytes,
+          loading: false,
+        };
+      })
+    );
+
+    setTelemetryLoading(false);
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchAdminTelemetry();
+    }
+  }, [isAdmin, fetchAdminTelemetry]);
+
+  // Total calculated rows across tracked database tables
+  const totalTrackedRows = useMemo(() => {
+    return resourcesTelemetry
+      .filter((r) => r.category === 'database')
+      .reduce((acc, curr) => acc + (curr.count || 0), 0);
+  }, [resourcesTelemetry]);
+
+  // Total storage footprint (Database estimate + Bucket file size)
+  const totalStorageBytes = useMemo(() => {
+    return resourcesTelemetry.reduce((acc, curr) => acc + (curr.bytes || 0), 0);
+  }, [resourcesTelemetry]);
 
   // Check for updates via Host Service CDN / Supabase
   const checkForAppUpdate = useCallback(
@@ -238,18 +336,18 @@ export const SystemInformation: React.FC = () => {
           if (isManualTrigger) {
             if (remoteInfo.isNewer) {
               toast.info(
-                `New update v${remoteInfo.version} is available via download link!`
+                `New update v${remoteInfo.version} is available for installation!`
               );
             } else {
-              toast.success('Your app is already up to date.');
+              toast.success('Your system is already up to date.');
             }
           }
         } else {
           setHasUpdate(false);
-          if (isManualTrigger) toast.success('Your app is already up to date.');
+          if (isManualTrigger) toast.success('Your system is already up to date.');
         }
-      } catch (err: any) {
-        if (isManualTrigger) toast.error('Could not check for updates.');
+      } catch {
+        if (isManualTrigger) toast.error('Could not check for updates. Please check network.');
       } finally {
         setCheckingUpdate(false);
       }
@@ -257,9 +355,25 @@ export const SystemInformation: React.FC = () => {
     [APP_VERSION, currentNativePlatform]
   );
 
+  useEffect(() => {
+    checkForAppUpdate(false);
+  }, [checkForAppUpdate]);
+
+  // Unified action for the single top-level button: checks updates and refreshes telemetry for admins
+  const handleUnifiedCheckAndRefresh = async () => {
+    const updatePromise = checkForAppUpdate(true);
+    const telemetryPromise = isAdmin ? fetchAdminTelemetry() : Promise.resolve();
+    await Promise.all([updatePromise, telemetryPromise]);
+  };
+
+  const handlePwaRefresh = async () => {
+    toast.info('Refreshing application to apply the latest build...');
+    await reloadPwaApp();
+  };
+
   const handleOpenUpdateModal = () => {
     if (!latestRelease) {
-      checkForAppUpdate(true);
+      handleUnifiedCheckAndRefresh();
       return;
     }
     setDownloadProgress(0);
@@ -288,8 +402,8 @@ export const SystemInformation: React.FC = () => {
 
       toast.success(
         isNative
-          ? 'Download complete! Check your notification bar to tap and install.'
-          : 'Update package downloaded successfully from Host Service CDN.'
+          ? 'Download complete! Check notification bar to tap and install.'
+          : 'Update package downloaded successfully from CDN.'
       );
     } catch (err: any) {
       toast.error(
@@ -304,684 +418,522 @@ export const SystemInformation: React.FC = () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopiedUrl(true);
-      toast.success('Direct Host Service CDN APK URL copied to clipboard!');
+      toast.success('Direct APK download link copied to clipboard!');
       setTimeout(() => setCopiedUrl(false), 2500);
     } catch {
       toast.error('Failed to copy download link.');
     }
   };
 
-  const fetchSystemStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const tableKeys = Object.keys(tableDisplayMapping);
-
-      const countQueries = await Promise.allSettled(
-        tableKeys.map(async (table) => {
-          let query = supabase
-            .from(table)
-            .select('*', { count: 'exact', head: true });
-          if (['members', 'products', 'attendance', 'sales'].includes(table)) {
-            query = query.is('deleted_at', null);
-          }
-          const { count, error: qErr } = await query;
-          return {
-            table_name: table,
-            record_count: qErr ? 0 : (count ?? 0),
-            size_bytes: 0,
-          };
-        })
-      );
-
-      const directCountsMap: Record<string, number> = {};
-      countQueries.forEach((res, i) => {
-        if (res.status === 'fulfilled') {
-          directCountsMap[res.value.table_name] = res.value.record_count;
-        } else {
-          directCountsMap[tableKeys[i]] = 0;
-        }
-      });
-
-      const [dbSizeRpc, storageSizeRpc, tableStatsRpc] =
-        await Promise.allSettled([
-          supabase.rpc('get_database_size_bytes'),
-          supabase.rpc('get_storage_size_bytes'),
-          supabase.rpc('get_table_registry_stats'),
-        ]);
-
-      if (
-        dbSizeRpc.status === 'fulfilled' &&
-        !dbSizeRpc.value.error &&
-        storageSizeRpc.status === 'fulfilled' &&
-        !storageSizeRpc.value.error
-      ) {
-        setDbSizeBytes(Number(dbSizeRpc.value.data || 0));
-        setStorageSizeBytes(Number(storageSizeRpc.value.data || 0));
-        setRpcSupported(true);
-      } else {
-        setRpcSupported(false);
-      }
-
-      if (
-        tableStatsRpc.status === 'fulfilled' &&
-        !tableStatsRpc.value.error &&
-        Array.isArray(tableStatsRpc.value.data)
-      ) {
-        const rpcData = tableStatsRpc.value.data;
-        const merged = tableKeys.map((name) => {
-          const match = rpcData.find((r: any) => r.table_name === name);
-          return {
-            table_name: name,
-            record_count:
-              directCountsMap[name] ?? (match ? Number(match.record_count) : 0),
-            size_bytes: match ? Number(match.size_bytes) : 0,
-          };
-        });
-        setDbTables(merged);
-      } else {
-        setDbTables(
-          tableKeys.map((name) => ({
-            table_name: name,
-            record_count: directCountsMap[name] ?? 0,
-            size_bytes: 0,
-          }))
-        );
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error occurred while syncing metrics.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSystemStats();
-    checkForAppUpdate(false);
-  }, [fetchSystemStats, checkForAppUpdate]);
-
-  const displayedMetrics = useMemo<StorageMetric[]>(() => {
-    const dbSize = dbSizeBytes ?? 0;
-    const storageSize = storageSizeBytes ?? 0;
-
-    const dbAllocatedCap = 500 * 1024 * 1024;
-    const dbPct = Math.min(
-      100,
-      parseFloat(((dbSize / dbAllocatedCap) * 100).toFixed(2))
-    );
-
-    const bucketAllocatedCap = 1024 * 1024 * 1024;
-    const bucketPct = Math.min(
-      100,
-      parseFloat(((storageSize / bucketAllocatedCap) * 100).toFixed(2))
-    );
-
-    return [
-      {
-        title: 'DATABASE USAGE',
-        value: formatBytes(dbSize),
-        limitText: '500 MB',
-        subtext: `${dbPct}% of allocated Postgres storage capacity used`,
-        progress: Math.max(1, dbPct),
-        icon: <Database className="w-5 h-5" />,
-        colorClass:
-          'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-        barColorClass: 'bg-emerald-500',
-      },
-      {
-        title: 'MEDIA & FILE STORAGE',
-        value: formatBytes(storageSize),
-        limitText: '1 GB',
-        subtext: `${bucketPct}% of allocated bucket storage used`,
-        progress: Math.max(1, bucketPct),
-        icon: <Cloud className="w-5 h-5" />,
-        colorClass:
-          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-        barColorClass: 'bg-blue-500',
-      },
-    ];
-  }, [dbSizeBytes, storageSizeBytes]);
-
-  const appDetails: AppInfo[] = [
-    { label: 'System Version', value: `v${APP_VERSION}` },
-    {
-      label: 'Latest Available',
-      value: latestRelease ? `v${latestRelease.version}` : `v${APP_VERSION}`,
-    },
-    { label: 'Build Number', value: buildNumber },
-    { label: 'Environment', value: detectedEnvironment },
-  ];
-
-  const recordBreakdownData = useMemo<RecordBreakdownItem[]>(() => {
-    if (dbTables.length > 0) {
-      return dbTables.map((item, idx) => ({
-        id: String(idx + 1),
-        tableName: item.table_name,
-        recordCount: item.record_count,
-        sizeBytes: item.size_bytes,
-        purpose:
-          tableDisplayMapping[item.table_name]?.purpose ||
-          'Database record directory',
-        status: tableDisplayMapping[item.table_name]?.status || 'Active',
-      }));
-    }
-
-    return Object.keys(tableDisplayMapping).map((name, idx) => ({
-      id: String(idx + 1),
-      tableName: name,
-      recordCount: 0,
-      sizeBytes: 0,
-      purpose: tableDisplayMapping[name].purpose,
-      status: tableDisplayMapping[name].status,
-    }));
-  }, [dbTables]);
-
-  const columns: Column<RecordBreakdownItem>[] = [
-    {
-      key: 'tableName',
-      header: 'DATABASE REGISTRY',
-      sortable: true,
-      render: (item) => (
-        <div className="flex items-center gap-2.5 py-1">
-          <HardDrive className="w-4 h-4 text-slate-400 shrink-0" />
-          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {tableDisplayMapping[item.tableName]?.label || item.tableName}
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: 'recordCount',
-      header: 'RECORD COUNT',
-      sortable: true,
-      render: (item) =>
-        loading ? (
-          <div className="h-5 w-10 bg-slate-200 dark:bg-neutral-700 rounded-md animate-pulse" />
-        ) : (
-          <span className="font-mono text-xs text-slate-900 dark:text-white font-bold bg-slate-100 dark:bg-neutral-800 px-2.5 py-1 rounded-md border border-slate-200 dark:border-white/10">
-            {item.recordCount}
-          </span>
-        ),
-    },
-    {
-      key: 'sizeBytes',
-      header: 'DISK SIZE',
-      sortable: true,
-      render: (item) =>
-        loading ? (
-          <div className="h-4 w-14 bg-slate-200 dark:bg-neutral-700 rounded-md animate-pulse" />
-        ) : (
-          <span className="font-mono text-xs text-slate-600 dark:text-slate-400 font-semibold">
-            {item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}
-          </span>
-        ),
-    },
-    {
-      key: 'purpose',
-      header: 'PRIMARY PURPOSE',
-      sortable: false,
-      render: (item) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-          {item.purpose}
-        </span>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'STATUS',
-      sortable: true,
-      render: (item) => (
-        <span
-          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black tracking-wider uppercase ${
-            item.status === 'Active'
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-              : item.status === 'Operational'
-                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
-                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-          }`}
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              item.status === 'Active'
-                ? 'bg-emerald-500'
-                : item.status === 'Operational'
-                  ? 'bg-blue-500'
-                  : 'bg-amber-500'
-            }`}
-          />
-          {item.status}
-        </span>
-      ),
-    },
-  ];
-
-  const registryItems = useMemo(() => {
-    const getCount = (name: string) =>
-      dbTables.find((t) => t.table_name === name)?.record_count || 0;
-    return [
-      {
-        name: 'Members List',
-        count: getCount('members'),
-        label: 'Enrolled profiles',
-        icon: <Users className="w-4 h-4 text-indigo-500" />,
-      },
-      {
-        name: 'Logbook Attendance',
-        count: getCount('attendance'),
-        label: 'Recorded check-ins',
-        icon: <ClipboardList className="w-4 h-4 text-emerald-500" />,
-      },
-      {
-        name: 'Sales Transactions',
-        count: getCount('sales'),
-        label: 'POS receipts logged',
-        icon: <ShoppingBag className="w-4 h-4 text-blue-500" />,
-      },
-      {
-        name: 'Product Catalog',
-        count: getCount('products'),
-        label: 'Inventory items',
-        icon: <Package className="w-4 h-4 text-amber-500" />,
-      },
-    ];
-  }, [dbTables]);
+  const isActionLoading = checkingUpdate || telemetryLoading;
 
   return (
-    <div className="space-y-4 sm:space-y-5 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-1 relative">
-      {/* ─── HEADER ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-1 relative max-w-5xl mx-auto">
+      {/* ─── HEADER WITH SINGLE ACTION BUTTON ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-white/10">
         <div>
           <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-red-500 uppercase font-black">
-            System / Configurations
+            System / {isAdmin ? 'Updates & Telemetry' : 'Updates & Policies'}
           </span>
           <h1 className="text-xl sm:text-2xl font-heading tracking-widest uppercase text-slate-900 dark:text-slate-100 mt-0.5">
-            System Information
+            {isAdmin ? 'System Updates & Telemetry' : 'System Updates'}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-2xl leading-relaxed">
-            Application specifications, live database record telemetry, and
-            developer contacts.
+            {isAdmin
+              ? 'Application release management, storage and database diagnostics, update history, and legal policies.'
+              : 'Application version management, release history, and facility policies.'}
           </p>
+        </div>
+
+        {/* SINGLE UNIFIED BUTTON */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleUnifiedCheckAndRefresh}
+            disabled={isActionLoading}
+            className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-sm active:scale-98 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            title={isAdmin ? 'Check for updates and refresh telemetry' : 'Check for updates'}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading ? 'animate-spin' : ''}`} />
+            <span>{isActionLoading ? 'Syncing...' : 'Check for Updates'}</span>
+          </button>
         </div>
       </div>
 
-      {/* ─── SYSTEM UPDATE BANNER ─── */}
-      {hasUpdate && latestRelease ? (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent dark:from-red-600/15 dark:via-rose-600/10 dark:to-transparent border border-blue-500/30 dark:border-red-600/30 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-red-600" />
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-blue-600 dark:bg-red-600 text-white font-heading font-black text-[9px] tracking-wider uppercase">
-                NEW UPDATE AVAILABLE • v{latestRelease.version}
-              </span>
-              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-semibold">
-                Current: v{APP_VERSION} → New: v{latestRelease.version}
-              </span>
-            </div>
-
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-              {isNative
-                ? `A newer version of the gym terminal is ready to install from Host Service CDN (${formatBytes(latestRelease.fileSizeBytes)}). No rate limits, direct download.`
-                : `A newer version of the web app is ready (v${latestRelease.version}). Refresh the page to apply the latest build immediately.`}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0">
-            {isNative ? (
-              <button
-                type="button"
-                onClick={handleOpenUpdateModal}
-                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>INSTALL UPDATE</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handlePwaRefresh}
-                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>REFRESH APP</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => checkForAppUpdate(true)}
-              disabled={checkingUpdate}
-              className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/10 transition-all cursor-pointer disabled:opacity-50"
-              title="Re-check"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${checkingUpdate ? 'animate-spin' : ''}`}
-              />
-            </button>
-          </div>
+      {/* ─── 1. SYSTEM STATUS & UPDATES CARD (Visible to both Staff & Admin) ─── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            System Status &amp; Updates
+          </span>
+          <span className="text-[11px] font-mono text-slate-400">
+            {detectedEnvironment}
+          </span>
         </div>
-      ) : (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
+
+        {hasUpdate && latestRelease ? (
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent dark:from-red-600/20 dark:via-rose-600/10 dark:to-transparent border border-blue-500/30 dark:border-red-600/30 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-heading font-black text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-                  SYSTEM UP TO DATE
-                </h3>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase">
-                  v{APP_VERSION} STABLE
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600 dark:bg-red-600" />
                 </span>
-                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                  • Verified via Host Service CDN
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-600 dark:bg-red-600 text-white font-heading font-black text-[10px] tracking-wider uppercase">
+                  NEW UPDATE AVAILABLE • v{latestRelease.version}
+                </span>
+                <span className="text-xs font-mono text-slate-600 dark:text-slate-300 font-bold">
+                  Current: v{APP_VERSION} → New: v{latestRelease.version}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Your gym terminal is running the latest production build.
+
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-200 max-w-xl leading-relaxed">
+                {isNative
+                  ? `A newer version of the gym terminal is ready to install (${formatBytes(latestRelease.fileSizeBytes)}). High-speed CDN mirror with zero rate limits.`
+                  : `A newer version of the web app is ready (v${latestRelease.version}). Refresh the app to apply the build immediately.`}
               </p>
             </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              {isNative ? (
+                <button
+                  type="button"
+                  onClick={handleOpenUpdateModal}
+                  className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>INSTALL UPDATE</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handlePwaRefresh}
+                  className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-heading font-black text-xs tracking-wider uppercase shadow-md active:scale-98 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>REFRESH APP</span>
+                </button>
+              )}
+            </div>
           </div>
+        ) : (
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-heading font-black text-sm uppercase tracking-wider text-slate-900 dark:text-white">
+                    SYSTEM UP TO DATE
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase">
+                    v{APP_VERSION} STABLE
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Your system is running the latest verified release build.
+                </p>
+              </div>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => checkForAppUpdate(true)}
-            disabled={checkingUpdate}
-            className="py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 font-heading font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 self-start sm:self-center"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin' : ''}`}
-            />
-            <span>CHECK FOR UPDATES</span>
-          </button>
-        </div>
-      )}
-
-      {/* Subtle, non-obvious expandable update log button (Only display one version only) */}
-      <div className="flex items-center justify-between px-1">
-        <button
-          type="button"
-          onClick={() => setIsChangelogOpen(!isChangelogOpen)}
-          className="text-[11px] font-mono text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer py-1 select-none"
-          title="Toggle version release notes"
-        >
-          <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              isChangelogOpen
-                ? 'rotate-180 text-blue-600 dark:text-red-500'
-                : ''
-            }`}
-          />
-          <span>
-            {isChangelogOpen ? 'Hide' : 'View'} release logs (v
-            {latestChangelog.version})
-          </span>
-        </button>
-
-        {isChangelogOpen && (
-          <span className="text-[10px] font-mono text-slate-400">
-            Displaying latest version only
-          </span>
+            <div className="text-xs font-mono text-slate-400">
+              Build Verified
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Expandable Single-Version Changelog View (Only display one version only) */}
-      {isChangelogOpen && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-3 animate-fade-in text-left">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/10">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-md bg-blue-600/10 dark:bg-red-600/10 text-blue-600 dark:text-red-400 font-mono font-bold text-xs">
-                v{latestChangelog.version}
-              </span>
-              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
-                Released: {latestChangelog.date}
-              </span>
-            </div>
-            <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400">
-              Single Version View
-            </span>
-          </div>
-
-          {latestChangelog.summary && (
-            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-              {latestChangelog.summary}
-            </p>
-          )}
-
-          <div className="space-y-2">
-            {latestChangelog.sections.map((section, sIdx) => (
-              <div key={sIdx} className="space-y-1.5">
-                <span className="text-[10px] font-heading font-black uppercase tracking-wider text-slate-400">
-                  {section.type}
+      {/* ─── ADMIN-EXCLUSIVE: DATABASE & STORAGE TELEMETRY ─── */}
+      {isAdmin && (
+        <div className="space-y-4 pt-1">
+          {/* Summary Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* Database Engine Status */}
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-slate-400">
+                  Database Status
                 </span>
-                <ul className="space-y-1 pl-3 border-l-2 border-slate-200 dark:border-white/10">
-                  {section.items.map((item, iIdx) => (
-                    <li
-                      key={iIdx}
-                      className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-normal"
-                    >
-                      • {item}
-                    </li>
-                  ))}
-                </ul>
+                <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  <Database className="w-4 h-4" />
+                </div>
               </div>
-            ))}
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-heading font-black tracking-wider text-slate-900 dark:text-white">
+                  Connected
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Cloud PostgreSQL Database
+              </p>
+            </div>
+
+            {/* Total Row Count */}
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-slate-400">
+                  Total Records
+                </span>
+                <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  <Layers className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-heading font-black tracking-wider text-slate-900 dark:text-white">
+                  {telemetryLoading ? '...' : totalTrackedRows.toLocaleString()}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Rows
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Across 10 primary tables
+              </p>
+            </div>
+
+            {/* Total Estimated Storage */}
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-slate-400">
+                  Storage Used
+                </span>
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <HardDrive className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-heading font-black tracking-wider text-slate-900 dark:text-white">
+                  {telemetryLoading ? '...' : formatBytes(totalStorageBytes)}
+                </span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                  Estimated
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Tables &amp; bucket storage footprint
+              </p>
+            </div>
+
+            {/* Connection Latency */}
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs">
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-slate-400">
+                  Query Latency
+                </span>
+                <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Activity className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-heading font-black tracking-wider text-slate-900 dark:text-white">
+                  {pingLatencyMs !== null ? `${pingLatencyMs} ms` : 'Optimal'}
+                </span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                  Healthy
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Real-time operational response
+              </p>
+            </div>
           </div>
-        </div>
-      )}
 
-      {error && (
-        <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-semibold">
-          ⚠️ {error}
-        </div>
-      )}
-
-      {/* SECTION 1: Storage Capacity Displays */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {displayedMetrics.map((metric, idx) => (
-          <div
-            key={idx}
-            className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 shadow-xs"
-          >
+          {/* Database Tables & Storage Telemetry Breakdown (Unified) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
-              <div
-                className={`p-2 rounded-xl border shrink-0 ${metric.colorClass}`}
-              >
-                {metric.icon}
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-blue-600 dark:text-red-500" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                  Database Tables &amp; Telemetry Breakdown
+                </h3>
               </div>
-              <div className="flex items-center gap-1.5 font-mono">
-                <span className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
-                  {loading ? (
-                    <span className="inline-block h-5 w-20 bg-slate-200 dark:bg-neutral-700 rounded animate-pulse" />
-                  ) : (
-                    metric.value
-                  )}
-                </span>
-                {metric.limitText && (
-                  <span className="text-xs text-slate-400 font-bold font-sans">
-                    / {metric.limitText}
-                  </span>
-                )}
-              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Tables &amp; Storage Buckets
+              </span>
             </div>
 
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                {metric.title}
-              </span>
-              <div className="w-full h-1.5 bg-slate-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${metric.barColorClass}`}
-                  style={{ width: `${metric.progress}%` }}
-                />
-              </div>
-              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mt-0.5">
-                {metric.subtext}
-              </span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-white/10 text-[10px] font-heading font-black tracking-wider uppercase text-slate-400">
+                    <th className="pb-2.5 font-bold">Resource / Name</th>
+                    <th className="pb-2.5 font-bold">Category</th>
+                    <th className="pb-2.5 font-bold">Purpose / Scope</th>
+                    <th className="pb-2.5 font-bold text-right">Records / Files</th>
+                    <th className="pb-2.5 font-bold text-right">Est. Storage Size</th>
+                    <th className="pb-2.5 font-bold text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                  {resourcesTelemetry.map((res) => (
+                    <tr key={res.id} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                      <td className="py-2.5 font-mono font-bold text-slate-900 dark:text-white">
+                        {res.name}
+                      </td>
+                      <td className="py-2.5">
+                        {res.category === 'database' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                            Table
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                            Bucket Storage
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 text-slate-500 dark:text-slate-400">
+                        {res.description}
+                      </td>
+                      <td className="py-2.5 font-mono text-right font-bold text-slate-800 dark:text-slate-200">
+                        {res.loading ? (
+                          <span className="text-slate-400 animate-pulse">...</span>
+                        ) : res.count !== null ? (
+                          `${res.count.toLocaleString()} ${res.category === 'database' ? 'rows' : 'files'}`
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 font-mono text-right font-bold text-slate-800 dark:text-slate-200">
+                        {res.loading ? (
+                          <span className="text-slate-400 animate-pulse">...</span>
+                        ) : res.bytes !== null ? (
+                          formatBytes(res.bytes)
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <span className="inline-block px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          Active
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {/* SECTION 2: Build Metadata & Core Directory Telemetry */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-5 p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100 dark:border-white/10">
-            <Cpu className="w-4 h-4 text-blue-500 dark:text-red-500" />
-            <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
-              BUILD METADATA
+      {/* ─── 2. UPDATE HISTORY SECTION (Visible to both Staff & Admin) ─── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-blue-600 dark:text-red-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Update History &amp; Release Notes
             </h3>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-white/5">
-            {appDetails.map((detail, idx) => (
-              <div
-                key={idx}
-                className="flex justify-between py-2 text-xs font-semibold"
-              >
-                <span className="text-slate-500 dark:text-slate-400">
-                  {detail.label}
-                </span>
-                <span className="font-mono text-slate-900 dark:text-white">
-                  {detail.value}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 pt-2 text-[10px] text-slate-400 dark:text-slate-500 font-medium border-t border-slate-100 dark:border-white/10">
-            <Layers className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Row Level Security (RLS) active and verified.</span>
-          </div>
+          <span className="text-[11px] font-mono text-slate-400">
+            {allChangelogs.length} Releases Logged
+          </span>
         </div>
 
-        <div className="lg:col-span-7 p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl space-y-3 shadow-xs">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/10">
-            <div className="flex items-center gap-2.5">
-              <Database className="w-4 h-4 text-amber-500" />
-              <h3 className="font-heading text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
-                Count of Records
-              </h3>
-            </div>
-            <span className="text-[9px] font-heading font-black tracking-widest px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-md">
-              LIVE
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {registryItems.map((metric, idx) => (
-              <div
-                key={idx}
-                className="p-3 bg-slate-50 dark:bg-black/20 border border-slate-200/60 dark:border-white/5 rounded-xl flex items-center justify-between gap-2.5 text-xs"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-1.5 rounded-lg border bg-white dark:bg-neutral-900 border-slate-200 dark:border-white/10">
-                    {metric.icon}
-                  </div>
-                  <div className="truncate">
-                    <p className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-                      {metric.name}
-                    </p>
-                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold font-mono">
-                      {metric.label}
-                    </p>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 bg-white dark:bg-neutral-900 text-xs font-mono text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 rounded-md font-bold">
-                  {loading ? (
-                    <span className="inline-block h-3.5 w-6 bg-slate-200 dark:bg-neutral-700 rounded animate-pulse" />
-                  ) : (
-                    metric.count
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-4">
+          {/* Version Pills Bar */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {allChangelogs.map((entry) => {
+              const isSelected = entry.version === activeChangelogEntry.version;
+              const isCurrentInstalled = entry.version === APP_VERSION;
+              return (
+                <button
+                  key={entry.version}
+                  type="button"
+                  onClick={() => setSelectedVersion(entry.version)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-blue-600 dark:bg-red-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-neutral-700'
+                  }`}
+                >
+                  <span>v{entry.version}</span>
+                  {isCurrentInstalled && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-white/20 uppercase tracking-tight">
+                      Current
+                    </span>
                   )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Version Content Card */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-200/60 dark:border-white/5 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-blue-600/10 dark:bg-red-600/15 text-blue-600 dark:text-red-400 font-mono font-bold text-xs">
+                  Version {activeChangelogEntry.version}
+                </span>
+                <span className="text-xs font-mono text-slate-400 dark:text-slate-500">
+                  Released on {activeChangelogEntry.date}
                 </span>
               </div>
-            ))}
+
+              {activeChangelogEntry.version === APP_VERSION && (
+                <span className="text-[10px] font-heading font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Active Installed Version
+                </span>
+              )}
+            </div>
+
+            {activeChangelogEntry.summary && (
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
+                {activeChangelogEntry.summary}
+              </p>
+            )}
+
+            <div className="space-y-2.5 pt-1">
+              {activeChangelogEntry.sections.map((section, sIdx) => {
+                const badgeColor =
+                  section.type === 'Added'
+                    ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/20 bg-emerald-500/10'
+                    : section.type === 'Fixed'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/10'
+                    : section.type === 'Security'
+                    ? 'text-amber-600 dark:text-amber-400 border-amber-500/20 bg-amber-500/10'
+                    : 'text-purple-600 dark:text-purple-400 border-purple-500/20 bg-purple-500/10';
+
+                return (
+                  <div key={sIdx} className="space-y-1.5">
+                    <span
+                      className={`inline-block text-[9px] font-heading font-black uppercase tracking-wider px-2 py-0.5 rounded border ${badgeColor}`}
+                    >
+                      {section.type}
+                    </span>
+                    <ul className="space-y-1 pl-3 border-l-2 border-slate-200 dark:border-white/10">
+                      {section.items.map((item, iIdx) => (
+                        <li
+                          key={iIdx}
+                          className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-normal"
+                        >
+                          • {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION 3: Detailed Storage Breakdown Table */}
-      <div className="p-1 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161920] overflow-x-auto w-full shadow-xs">
-        <Table<RecordBreakdownItem>
-          data={recordBreakdownData}
-          columns={columns}
-          itemsPerPage={8}
-          loading={false}
-        />
-      </div>
+      {/* ─── 3. POLICIES & LEGAL AGREEMENTS SECTION (Visible to both Staff & Admin) ─── */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Policies &amp; Legal Agreements
+        </h3>
 
-      {/* SECTION 4: Legal & Policy Documents + Developer Information */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-        <div
-          onClick={() => setActiveModal('terms')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all group shadow-xs"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl">
-              <Scale className="w-5 h-5" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Terms of Service Button */}
+          <div
+            onClick={() => setActiveModal('terms')}
+            className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all group shadow-xs active:scale-98"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="p-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl">
+                <Scale className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-red-400 transition-colors">
+                  Terms of Service
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Gym facility rules, memberships, code of conduct &amp; billing policies
+                </p>
+              </div>
             </div>
-            <div className="text-left">
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-red-400 transition-colors">
-                Terms of Service
-              </p>
-              <p className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                Facility rules &amp; payments
-              </p>
-            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
-        </div>
 
-        <div
-          onClick={() => setActiveModal('privacy')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-emerald-500 dark:hover:border-red-500 transition-all group shadow-xs"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl">
-              <ShieldCheck className="w-5 h-5" />
+          {/* Privacy Policy Button */}
+          <div
+            onClick={() => setActiveModal('privacy')}
+            className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-emerald-500 dark:hover:border-red-500 transition-all group shadow-xs active:scale-98"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-red-400 transition-colors">
+                  Privacy Policy
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Data protection, member privacy &amp; compliance under Philippine RA 10173
+                </p>
+              </div>
             </div>
-            <div className="text-left">
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-red-400 transition-colors">
-                Privacy Policy
-              </p>
-              <p className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                RA 10173 data protection
-              </p>
-            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
-        </div>
-
-        <div
-          onClick={() => setActiveModal('developer')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-amber-500 dark:hover:border-red-500 transition-all group shadow-xs"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl">
-              <Code2 className="w-5 h-5" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-red-400 transition-colors">
-                About Developer
-              </p>
-              <p className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                Adrian R. Angeles
-              </p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform" />
         </div>
       </div>
 
-      {/* ─── UNIFIED LEGAL & POLICY DOCUMENT VIEWER (AGREEMENT DOCUMENT VIEWER) ─── */}
+      {/* ─── 4. OTHER ACTION BUTTONS: SYSTEM ACTIONS & RESOURCES (Visible to both Staff & Admin) ─── */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          System Actions &amp; Resources
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* About Developer Button */}
+          <div
+            onClick={() => setActiveModal('developer')}
+            className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-amber-500 dark:hover:border-red-500 transition-all group shadow-xs active:scale-98"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="p-2.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl">
+                <Code2 className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-red-400 transition-colors">
+                  About Developer
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Adrian R. Angeles • Technical support, developer contacts &amp; profile
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0" />
+          </div>
+
+          {/* Download Mobile App Button */}
+          <div
+            onClick={() => navigate('/download')}
+            className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between gap-3 cursor-pointer hover:border-blue-500 dark:hover:border-red-500 transition-all group shadow-xs active:scale-98"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="p-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-xl">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-red-400 transition-colors">
+                  Download Mobile App
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Direct APK installer for Android tablets, smartphones &amp; terminal kiosks
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0" />
+          </div>
+        </div>
+      </div>
+
+      {/* ─── UNIFIED LEGAL & POLICY DOCUMENT VIEWER ─── */}
       <AgreementDocumentViewer
         isOpen={activeModal === 'terms' || activeModal === 'privacy'}
         onClose={() => setActiveModal(null)}
         initialDocument={activeModal === 'terms' ? 'terms' : 'privacy'}
       />
 
-      {/* ─── MODALS: Developer Info ─── */}
+      {/* ─── MODAL: About Developer ─── */}
       <Modal
         isOpen={activeModal === 'developer'}
         onClose={() => setActiveModal(null)}

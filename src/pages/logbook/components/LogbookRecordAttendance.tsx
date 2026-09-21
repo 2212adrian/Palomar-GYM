@@ -38,6 +38,7 @@ import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
+import { getServerNow } from '../../../lib/serverTime';
 import { createPortal } from 'react-dom';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
@@ -393,11 +394,16 @@ export const LogbookRecordAttendance: React.FC<
           memberService.getAll(),
           subscriptionService.getAll(),
           cardService.getAll(),
-          supabase.from('attendance').select('*').is('deleted_at', null),
+          supabase
+            .from('attendance')
+            .select('id, member_id, check_in_time')
+            .is('deleted_at', null)
+            .order('check_in_time', { ascending: false })
+            .limit(2000),
         ]);
 
       const attendanceList = dbAttendance || [];
-      const now = new Date();
+      const now = getServerNow();
 
       const mappedProfiles: MemberProfile[] = members.map((m: Member) => {
         const activeSub = subscriptions.find(
@@ -1058,7 +1064,6 @@ export const LogbookRecordAttendance: React.FC<
             customer_type: selectedClient.isWalkIn
               ? 'Walk-In'
               : 'Existing Member',
-            check_in_time: new Date().toISOString(),
             plan_name: derivedBilling.title,
             entry_fee: derivedBilling.totalDue,
             base_price: derivedBilling.subtotal,

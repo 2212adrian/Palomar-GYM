@@ -45,7 +45,7 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
       set({ isLoading: true });
       const { data, error } = await supabase
         .from('database_backups')
-        .select('*')
+        .select('id, filename, notes, type, size_bytes, created_at')
         .eq('type', 'safety')
         .order('created_at', { ascending: false })
         .limit(1)

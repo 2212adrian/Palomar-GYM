@@ -69,7 +69,6 @@ export async function logAudit(
           action: action,
           target_id: targetId || null,
           details: cleanedDetails,
-          created_at: new Date().toISOString(),
         },
       ]);
 

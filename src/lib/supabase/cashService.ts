@@ -1,6 +1,7 @@
 // src/lib/supabase/cashService.ts
 import { supabase } from './client';
 import { logAudit } from './audit';
+import { getServerNow } from '../serverTime';
 import type {
   CashSession,
   CashTransaction,
@@ -104,8 +105,8 @@ export async function openCashSession(params: {
   }
 
   // 2. Direct fallback: close existing open sessions first, then insert
-  const nowStr = new Date().toISOString();
-  const sessionNum = `CS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(
+  const now = getServerNow();
+  const sessionNum = `CS-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(
     100 + Math.random() * 900
   )}`;
 
@@ -114,9 +115,7 @@ export async function openCashSession(params: {
     .from('cash_sessions')
     .update({
       status: 'closed',
-      closed_at: nowStr,
       closed_by_name: params.openedByName || 'Admin',
-      updated_at: nowStr,
     })
     .eq('status', 'open');
 
@@ -126,7 +125,6 @@ export async function openCashSession(params: {
     .insert([
       {
         session_number: sessionNum,
-        opened_at: nowStr,
         opened_by: params.openedBy || null,
         opened_by_name: params.openedByName || 'Admin',
         status: 'open',
@@ -168,7 +166,6 @@ export async function recordCashTransaction(params: {
   performedByName?: string;
 }): Promise<CashTransaction> {
   const amountVal = Math.max(0.01, Number(params.amount) || 0);
-  const nowStr = new Date().toISOString();
 
   // Get current auth user if not provided
   let userId = params.performedBy;
@@ -187,7 +184,6 @@ export async function recordCashTransaction(params: {
     reference_number: params.referenceNumber?.trim() || null,
     performed_by: userId,
     performed_by_name: params.performedByName || 'Staff',
-    created_at: nowStr,
   };
 
   const { data, error } = await supabase
@@ -238,11 +234,8 @@ export async function closeCashSession(params: {
   closedBy?: string | null;
   closedByName?: string;
 }): Promise<CashSession> {
-  const nowStr = new Date().toISOString();
-
   const updatePayload = {
     status: 'closed' as const,
-    closed_at: nowStr,
     closed_by: params.closedBy || null,
     closed_by_name: params.closedByName || 'Admin',
     closing_actual_cash: params.actualCash,
@@ -251,7 +244,6 @@ export async function closeCashSession(params: {
     discrepancy_reason: null,
     notes: params.notes?.trim() || null,
     denominations: params.denominations,
-    updated_at: nowStr,
   };
 
   const { data, error } = await supabase

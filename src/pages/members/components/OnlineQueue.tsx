@@ -114,7 +114,11 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   useEffect(() => {
     fetchQueue();
-    const interval = setInterval(fetchQueue, 30000);
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchQueue();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchQueue]);
 

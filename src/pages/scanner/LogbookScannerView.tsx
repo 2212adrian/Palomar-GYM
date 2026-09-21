@@ -281,7 +281,6 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
           member_id: memberData.memberId,
           customer_name: memberData.fullName.toUpperCase(),
           customer_type: 'Existing Member',
-          check_in_time: new Date().toISOString(),
           plan_name: memberData.membershipPlan,
           entry_fee: totalDue,
           base_price: baseEntryFee,

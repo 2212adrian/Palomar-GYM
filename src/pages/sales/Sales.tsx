@@ -37,6 +37,7 @@ import { createPortal } from 'react-dom';
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { getServerNow } from '../../lib/serverTime';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useSessionLock } from '../../hooks/useSessionLock';
@@ -333,10 +334,10 @@ export const Sales: React.FC = () => {
   }, [role, activeView, navigate]);
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() =>
-    startOfWeek(new Date(), { weekStartsOn: 0 })
+    startOfWeek(getServerNow(), { weekStartsOn: 0 })
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() =>
-    getDay(new Date())
+    getDay(getServerNow())
   );
 
   const selectedDate = useMemo(() => {
@@ -380,7 +381,7 @@ export const Sales: React.FC = () => {
 
   // Reset timeline filters to today's default helper
   const resetTimelineFilters = useCallback(() => {
-    const today = new Date();
+    const today = getServerNow();
     const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
     const todayIndex = getDay(today);
 

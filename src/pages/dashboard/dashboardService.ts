@@ -102,29 +102,45 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       subscriptionsRes,
       receiptsRes,
     ] = await Promise.all([
-      supabase.from('members').select('*').is('deleted_at', null),
+      supabase
+        .from('members')
+        .select('id, member_id, status, created_at')
+        .is('deleted_at', null),
       supabase
         .from('attendance')
-        .select('*')
+        .select(
+          'id, check_in_time, entry_fee, base_price, gcash_fee, card_fee, receipt_number, customer_type, customer_name, plan_name, payment_method, gcash_ref_no, deleted_at, member_id'
+        )
         .is('deleted_at', null)
         .order('check_in_time', { ascending: false })
         .limit(1500),
       supabase
         .from('sales')
-        .select('*')
+        .select(
+          'id, receipt_no, items, product_name, payment_method, amount_received, change_calculated, total_amount, reference_number, created_at, deleted_at, cash_session_id, gcash_fee_applied'
+        )
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(1500),
-      supabase.from('products').select('*').is('deleted_at', null),
+      supabase
+        .from('products')
+        .select(
+          'id, barcode_id, product_name, image_url, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, created_at'
+        )
+        .is('deleted_at', null),
       supabase
         .from('subscriptions')
-        .select('*, members(full_name, phone)')
+        .select(
+          'id, member_id, plan_type, price, start_date, end_date, created_at, receipt_number, status, payment_status, voided_at, payment_method, gcash_ref_no, members(full_name, phone)'
+        )
         .is('voided_at', null)
         .order('created_at', { ascending: false })
         .limit(1500),
       supabase
         .from('receipts')
-        .select('*')
+        .select(
+          'id, member_id, customer_name, customer_type, amount, base_price, gcash_fee, card_fee, gcash_ref_no, payment_method, payment_status, item_description, created_at'
+        )
         .order('created_at', { ascending: false })
         .limit(1500),
     ]);
@@ -149,68 +165,52 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
     );
 
     const standaloneCardReceipts = receipts.filter((r) => {
-      if (r.deleted_at || r.voided_at) return false;
       if (r.payment_status && r.payment_status !== 'Paid') return false;
 
       const rId = String(r.id || '');
-      const rNo = String(r.receipt_number || r.receipt_no || '');
-      if (attendanceReceiptNos.has(rId) || (rNo && attendanceReceiptNos.has(rNo))) {
-        return false;
-      }
-      if (subscriptionReceiptNos.has(rId) || (rNo && subscriptionReceiptNos.has(rNo))) {
+      if (attendanceReceiptNos.has(rId) || subscriptionReceiptNos.has(rId)) {
         return false;
       }
 
       return (
         isCardReceipt(r) ||
-        r.customer_type === 'Card' ||
-        r.receipt_type === 'card'
+        r.customer_type === 'Card'
       );
     });
 
-    const hasRealData =
-      members.length > 0 ||
-      attendance.length > 0 ||
-      sales.length > 0 ||
-      products.length > 0 ||
-      subscriptions.length > 0 ||
-      receipts.length > 0;
-
-    // --- Metrics ---
-    const activeMembersCount =
-      members.filter((m) => m.status === 'Active').length ||
-      (hasRealData ? 0 : 142);
-    const totalMembersCount = members.length || (hasRealData ? 0 : 168);
+    // --- Metrics (strictly driven by real database records) ---
+    const activeMembersCount = members.filter((m) => m.status === 'Active').length;
+    const totalMembersCount = members.length;
 
     const todayAttendanceList = attendance.filter((a) => {
       const d = new Date(a.check_in_time);
       return d >= todayStart && d <= todayEnd;
     });
-    const todayAttendanceCount =
-      todayAttendanceList.length || (hasRealData ? 0 : 38);
+    const todayAttendanceCount = todayAttendanceList.length;
 
     const yesterdayAttendanceList = attendance.filter((a) => {
       const d = new Date(a.check_in_time);
       return d >= yesterdayStart && d <= yesterdayEnd;
     });
-    const yesterdayAttendanceCount =
-      yesterdayAttendanceList.length || (hasRealData ? 0 : 32);
+    const yesterdayAttendanceCount = yesterdayAttendanceList.length;
 
     const todaySalesList = sales.filter((s) => {
       const d = new Date(s.created_at);
       return d >= todayStart && d <= todayEnd;
     });
-    const todaySalesRevenue =
-      todaySalesList.reduce((acc, s) => acc + Number(s.total_amount || 0), 0) ||
-      (hasRealData ? 0 : 4250);
+    const todaySalesRevenue = todaySalesList.reduce(
+      (acc, s) => acc + Number(s.total_amount || 0),
+      0
+    );
 
     const todaySubsList = subscriptions.filter((sub) => {
       const d = new Date(sub.created_at);
       return d >= todayStart && d <= todayEnd;
     });
-    const todaySubsRevenue =
-      todaySubsList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) ||
-      (hasRealData ? 0 : 2500);
+    const todaySubsRevenue = todaySubsList.reduce(
+      (acc, sub) => acc + Number(sub.price || 0),
+      0
+    );
 
     const todayCardList = standaloneCardReceipts.filter((r) => {
       const d = new Date(r.created_at);
@@ -228,8 +228,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     // Combines Walk-ins, Subscriptions, and Physical Card purchases to align with Logbook
     const todayLogbookRevenue =
-      todayAttendanceRev + todaySubsRevenue + todayCardRevenue ||
-      (hasRealData ? 0 : 3600);
+      todayAttendanceRev + todaySubsRevenue + todayCardRevenue;
 
     const todayTotalRevenue = todaySalesRevenue + todayLogbookRevenue;
 
@@ -237,11 +236,10 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       const d = new Date(s.created_at);
       return d >= yesterdayStart && d <= yesterdayEnd;
     });
-    const yesterdaySalesRevenue =
-      yesterdaySalesList.reduce(
-        (acc, s) => acc + Number(s.total_amount || 0),
-        0
-      ) || (hasRealData ? 0 : 3800);
+    const yesterdaySalesRevenue = yesterdaySalesList.reduce(
+      (acc, s) => acc + Number(s.total_amount || 0),
+      0
+    );
 
     const yesterdaySubsList = subscriptions.filter((sub) => {
       const d = new Date(sub.created_at);
@@ -261,52 +259,71 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         (acc, sub) => acc + Number(sub.price || 0),
         0
       ) +
-      yesterdayCardList.reduce((acc, r) => acc + getReceiptFee(r), 0) ||
-      (hasRealData ? 0 : 2900);
+      yesterdayCardList.reduce((acc, r) => acc + getReceiptFee(r), 0);
 
     const yesterdayTotalRevenue =
       yesterdaySalesRevenue + yesterdayLogbookRevenue;
 
-    const monthSales =
-      sales
-        .filter((s) => {
-          const d = new Date(s.created_at);
-          return d >= monthStart && d <= monthEnd;
-        })
-        .reduce((acc, s) => acc + Number(s.total_amount || 0), 0) ||
-      (hasRealData ? 0 : 94600);
+    const monthSales = sales
+      .filter((s) => {
+        const d = new Date(s.created_at);
+        return d >= monthStart && d <= monthEnd;
+      })
+      .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
 
-    const monthAttendance =
-      attendance
-        .filter((a) => {
-          const d = new Date(a.check_in_time);
-          return d >= monthStart && d <= monthEnd;
-        })
-        .reduce((acc, a) => acc + getAttendanceFee(a), 0) ||
-      (hasRealData ? 0 : 72400);
+    const monthAttendance = attendance
+      .filter((a) => {
+        const d = new Date(a.check_in_time);
+        return d >= monthStart && d <= monthEnd;
+      })
+      .reduce((acc, a) => acc + getAttendanceFee(a), 0);
 
-    const monthSubs =
-      subscriptions
-        .filter((sub) => {
-          const d = new Date(sub.created_at);
-          return d >= monthStart && d <= monthEnd;
-        })
-        .reduce((acc, sub) => acc + Number(sub.price || 0), 0) ||
-      (hasRealData ? 0 : 48500);
+    const monthSubs = subscriptions
+      .filter((sub) => {
+        const d = new Date(sub.created_at);
+        return d >= monthStart && d <= monthEnd;
+      })
+      .reduce((acc, sub) => acc + Number(sub.price || 0), 0);
 
-    const monthCards =
-      standaloneCardReceipts
-        .filter((r) => {
-          const d = new Date(r.created_at);
-          return d >= monthStart && d <= monthEnd;
-        })
-        .reduce((acc, r) => acc + getReceiptFee(r), 0) || 0;
+    const monthCards = standaloneCardReceipts
+      .filter((r) => {
+        const d = new Date(r.created_at);
+        return d >= monthStart && d <= monthEnd;
+      })
+      .reduce((acc, r) => acc + getReceiptFee(r), 0);
 
     const monthTotalRevenue =
       monthSales + monthAttendance + monthSubs + monthCards;
-    const lastMonthTotalRevenue = hasRealData
-      ? monthTotalRevenue * 0.92
-      : 195000;
+
+    // Previous month total calculated from actual records
+    const lastMonthStart = startOfMonth(subDays(monthStart, 1));
+    const lastMonthEnd = endOfMonth(subDays(monthStart, 1));
+    const prevMonthSales = sales
+      .filter((s) => {
+        const d = new Date(s.created_at);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      })
+      .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
+    const prevMonthAttendance = attendance
+      .filter((a) => {
+        const d = new Date(a.check_in_time);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      })
+      .reduce((acc, a) => acc + getAttendanceFee(a), 0);
+    const prevMonthSubs = subscriptions
+      .filter((sub) => {
+        const d = new Date(sub.created_at);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      })
+      .reduce((acc, sub) => acc + Number(sub.price || 0), 0);
+    const prevMonthCards = standaloneCardReceipts
+      .filter((r) => {
+        const d = new Date(r.created_at);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      })
+      .reduce((acc, r) => acc + getReceiptFee(r), 0);
+    const lastMonthTotalRevenue =
+      prevMonthSales + prevMonthAttendance + prevMonthSubs + prevMonthCards;
 
     // --- Expiring Memberships & Expired Count (With 7-Day Rule Applied) ---
     const expiringSoonList: ExpiringMemberItem[] = [];
@@ -348,8 +365,9 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
         if (diff >= 0 && diff <= 7 && !processedExpiringMemberIds.has(sub.member_id)) {
           processedExpiringMemberIds.add(sub.member_id);
-          const memberName = sub.members?.full_name || sub.member_id || 'Member';
-          const memberPhone = sub.members?.phone || 'N/A';
+          const memberObj: any = Array.isArray(sub.members) ? sub.members[0] : sub.members;
+          const memberName = memberObj?.full_name || sub.member_id || 'Member';
+          const memberPhone = memberObj?.phone || 'N/A';
 
           expiringSoonList.push({
             id: sub.id,
@@ -424,11 +442,10 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     const lowStockCount = lowStockItems.length;
 
-    const newMembersThisMonth =
-      members.filter((m) => {
-        const d = new Date(m.created_at || now);
-        return d >= monthStart && d <= monthEnd;
-      }).length || (hasRealData ? 0 : 24);
+    const newMembersThisMonth = members.filter((m) => {
+      const d = new Date(m.created_at || now);
+      return d >= monthStart && d <= monthEnd;
+    }).length;
 
     // --- Context-Aware Attendance Distribution & Peak Metric ---
     const attendanceHourly: AttendanceHourData[] = [];
@@ -670,26 +687,14 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           subList.reduce((acc, sub) => acc + Number(sub.price || 0), 0) +
           cardList.reduce((acc, r) => acc + getReceiptFee(r), 0);
 
-        let finalSRev = sRev;
-        let finalARev = aRev;
-        if (sRev === 0 && aRev === 0 && !hasRealData) {
-          const seedBase = ((targetDate.getDate() * 137) % 3500) + 2000;
-          finalSRev = seedBase + 1200;
-          finalARev = seedBase * 1.4;
-        }
-
         revenueTimeline.push({
           date: dateKey,
           label,
-          salesRevenue: finalSRev,
-          logbookRevenue: finalARev,
-          totalRevenue: finalSRev + finalARev,
+          salesRevenue: sRev,
+          logbookRevenue: aRev,
+          totalRevenue: sRev + aRev,
           transactionsCount:
-            sList.length +
-              aList.length +
-              subList.length +
-              cardList.length ||
-            (hasRealData ? 0 : Math.floor(finalSRev / 150)),
+            sList.length + aList.length + subList.length + cardList.length,
         });
       }
     }
@@ -920,10 +925,11 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
     });
 
     subscriptions.slice(0, 10).forEach((sub) => {
+      const memberObj: any = Array.isArray(sub.members) ? sub.members[0] : sub.members;
       activityItems.push({
         id: `act-sub-${sub.id}`,
         type: 'membership_renew',
-        title: sub.members?.full_name || sub.member_id || 'Member',
+        title: memberObj?.full_name || sub.member_id || 'Member',
         subtitle: `Plan: ${sub.plan_type ? sub.plan_type.toUpperCase() : 'MONTHLY'} • ${sub.receipt_number}`,
         amount: Number(sub.price || 0),
         timestamp: sub.created_at,
@@ -937,7 +943,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         id: `act-card-${r.id}`,
         type: 'checkin',
         title: r.customer_name || 'Member',
-        subtitle: `${r.item_description || r.plan_name || 'Physical Card'} • Issued`,
+        subtitle: `${r.item_description || 'Physical Card'} • Issued`,
         amount: getReceiptFee(r),
         timestamp: r.created_at,
         badgeText: 'Card Issue',
@@ -974,10 +980,11 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     subscriptions.forEach((sub) => {
       const price = Number(sub.price || 0);
+      const memberObj: any = Array.isArray(sub.members) ? sub.members[0] : sub.members;
       birReportItems.push({
         receipt_no: sub.receipt_number || 'REC-000000',
         date: format(new Date(sub.created_at), 'yyyy-MM-dd HH:mm'),
-        customer_name: sub.members?.full_name || sub.member_id || 'Gym Member',
+        customer_name: memberObj?.full_name || sub.member_id || 'Gym Member',
         tin_number: 'N/A',
         transaction_type: 'Gym Subscription',
         gross_sales: price,
@@ -996,7 +1003,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
     standaloneCardReceipts.forEach((r) => {
       const amt = getReceiptFee(r);
       birReportItems.push({
-        receipt_no: r.receipt_number || `CRD-${String(r.id).slice(0, 8)}`,
+        receipt_no: r.id || `CRD-${String(r.id).slice(0, 8)}`,
         date: format(new Date(r.created_at), 'yyyy-MM-dd HH:mm'),
         customer_name: r.customer_name || 'Gym Member',
         tin_number: 'N/A',
@@ -1009,7 +1016,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         payment_method: r.payment_method || 'Cash',
         payment_ref:
           r.gcash_ref_no || (r.payment_method === 'GCash' ? 'GCASH-TX' : 'CASH'),
-        status: r.deleted_at || r.voided_at ? 'Voided' : 'Valid',
+        status: r.payment_status === 'Paid' ? 'Valid' : 'Voided',
       });
     });
 
@@ -1120,13 +1127,13 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         ? Math.round((monthlyCount / totalSubscribers) * 100)
         : activeTotalCount > 0
           ? Math.round((activeMonthlyCount / activeTotalCount) * 100)
-          : 75;
+          : 0;
     const yearlyPercentage =
       totalSubscribers > 0
         ? 100 - monthlyPercentage
         : activeTotalCount > 0
           ? 100 - monthlyPercentage
-          : 25;
+          : 0;
 
     if (timeRange === 'today') {
       for (let h = 6; h <= 21; h++) {
@@ -1270,16 +1277,16 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
     }
 
     const subscriptionBreakdown: SubscriptionPlanBreakdown = {
-      monthlyCount: monthlyCount || (hasRealData ? 0 : 28),
-      yearlyCount: yearlyCount || (hasRealData ? 0 : 7),
+      monthlyCount,
+      yearlyCount,
       otherCount: 0,
-      totalSubscribers: totalSubscribers || (hasRealData ? 0 : 35),
-      activeMonthlyCount: activeMonthlyCount || (hasRealData ? 0 : 42),
-      activeYearlyCount: activeYearlyCount || (hasRealData ? 0 : 12),
-      activeTotalCount: activeTotalCount || (hasRealData ? 0 : 54),
-      monthlyRevenue: monthlyRevenue || (hasRealData ? 0 : 25200),
-      yearlyRevenue: yearlyRevenue || (hasRealData ? 0 : 56000),
-      totalRevenue: totalRevenue || (hasRealData ? 0 : 81200),
+      totalSubscribers,
+      activeMonthlyCount,
+      activeYearlyCount,
+      activeTotalCount,
+      monthlyRevenue,
+      yearlyRevenue,
+      totalRevenue,
       monthlyPercentage,
       yearlyPercentage,
       timeline: subscriptionTimeline,
