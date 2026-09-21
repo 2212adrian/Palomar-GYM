@@ -21,7 +21,7 @@ export async function fetchActiveCashSession(): Promise<CashSession | null> {
     .limit(1)
     .maybeSingle();
 
-  if (error) {
+  if (error && error.code !== 'PGRST116') {
     console.error('Error fetching active cash session from Supabase:', error);
     throw error;
   }
@@ -115,6 +115,7 @@ export async function openCashSession(params: {
     .from('cash_sessions')
     .update({
       status: 'closed',
+      closed_at: now.toISOString(),
       closed_by_name: params.openedByName || 'Admin',
     })
     .eq('status', 'open');
@@ -137,7 +138,11 @@ export async function openCashSession(params: {
 
   if (error) {
     console.error('Failed to open cash session in Supabase:', error);
-    throw error;
+    throw new Error(error.message || 'Failed to open cash session in database.');
+  }
+
+  if (!data) {
+    throw new Error('No cash session record was created.');
   }
 
   const session = data as CashSession;
@@ -167,7 +172,6 @@ export async function recordCashTransaction(params: {
 }): Promise<CashTransaction> {
   const amountVal = Math.max(0.01, Number(params.amount) || 0);
 
-  // Get current auth user if not provided
   let userId = params.performedBy;
   if (!userId) {
     try {
@@ -190,14 +194,14 @@ export async function recordCashTransaction(params: {
     .from('cash_transactions')
     .insert([payload])
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Failed to record cash transaction:', error);
     throw new Error(error.message || 'Database error inserting cash transaction.');
   }
 
-  const tx = data as CashTransaction;
+  const tx = (data || payload) as CashTransaction;
 
   const actionLabel =
     params.type === 'cash_in'
@@ -234,8 +238,57 @@ export async function closeCashSession(params: {
   closedBy?: string | null;
   closedByName?: string;
 }): Promise<CashSession> {
+  const now = getServerNow();
+
+  // 1. Primary: Atomic RPC close function
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'close_cash_session_safe',
+      {
+        p_session_id: params.sessionId,
+        p_actual_cash: params.actualCash,
+        p_expected_cash: params.expectedCash,
+        p_discrepancy: params.discrepancy,
+        p_notes: params.notes?.trim() || null,
+        p_denominations: params.denominations || {},
+        p_closed_by: params.closedBy || null,
+        p_closed_by_name: params.closedByName || 'Admin',
+      }
+    );
+
+    if (!rpcError && rpcData) {
+      const closedSession = rpcData as CashSession;
+      const discLabel =
+        params.discrepancy === 0
+          ? 'BALANCED'
+          : params.discrepancy > 0
+          ? `OVER (+₱${params.discrepancy.toFixed(2)})`
+          : `CASH DISCREPANCY (-₱${Math.abs(params.discrepancy).toFixed(2)})`;
+
+      await logAudit(
+        'CASH_SESSION_CLOSE',
+        `Closed Cash Session #${closedSession.session_number || params.sessionId}: Expected ₱${params.expectedCash.toFixed(
+          2
+        )}, Actual ₱${params.actualCash.toFixed(2)} [${discLabel}].${
+          params.notes ? ` Notes: ${params.notes}` : ''
+        }`,
+        closedSession.id
+      );
+
+      return closedSession;
+    }
+
+    if (rpcError) {
+      console.warn('RPC close_cash_session_safe failed, attempting direct table update:', rpcError);
+    }
+  } catch (rpcErr) {
+    console.warn('RPC close_cash_session_safe call failed:', rpcErr);
+  }
+
+  // 2. Fallback: Direct Table Update via PostgREST
   const updatePayload = {
     status: 'closed' as const,
+    closed_at: now.toISOString(),
     closed_by: params.closedBy || null,
     closed_by_name: params.closedByName || 'Admin',
     closing_actual_cash: params.actualCash,
@@ -243,7 +296,7 @@ export async function closeCashSession(params: {
     discrepancy: params.discrepancy,
     discrepancy_reason: null,
     notes: params.notes?.trim() || null,
-    denominations: params.denominations,
+    denominations: params.denominations || {},
   };
 
   const { data, error } = await supabase
@@ -251,11 +304,18 @@ export async function closeCashSession(params: {
     .update(updatePayload)
     .eq('id', params.sessionId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
-    console.error('Failed to close cash session:', error);
-    throw error;
+    console.error('Failed to close cash session in Supabase:', error);
+    throw new Error(error.message || 'Database error closing cash session.');
+  }
+
+  // If data is null, 0 rows were updated (RLS blockage or non-existent session)
+  if (!data) {
+    throw new Error(
+      'Database failed to close session. You may lack permission, or the session was already closed.'
+    );
   }
 
   const closedSession = data as CashSession;
@@ -269,7 +329,7 @@ export async function closeCashSession(params: {
 
   await logAudit(
     'CASH_SESSION_CLOSE',
-    `Closed Cash Session #${closedSession.session_number}: Expected ₱${params.expectedCash.toFixed(
+    `Closed Cash Session #${closedSession.session_number || params.sessionId}: Expected ₱${params.expectedCash.toFixed(
       2
     )}, Actual ₱${params.actualCash.toFixed(2)} [${discLabel}].${
       params.notes ? ` Notes: ${params.notes}` : ''

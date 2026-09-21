@@ -18,23 +18,12 @@
  *   2. POST /api/sync-superadmin-email to push it into the database
  *   See 20260918000000_add_superadmin_email_config.sql for the full design.
  */
-const rawSuperAdminEmail = import.meta.env.VITE_SUPERADMIN_EMAIL as
-  | string
-  | undefined;
 
-export const SUPERADMIN_EMAIL = (rawSuperAdminEmail ?? '')
-  .trim()
-  .toLowerCase();
+export const SUPERADMIN_EMAIL = (
+  import.meta.env.VITE_SUPERADMIN_EMAIL
+).trim().toLowerCase();
 
-/**
- * Checks if a given email belongs to the Superadmin.
- * Performs a safe, case-insensitive comparison.
- *
- * Returns false when VITE_SUPERADMIN_EMAIL is not configured, or when no email
- * is supplied. That guard matters: without it, an empty configured value would
- * compare equal to an empty input and grant admin UI access to everybody.
- */
-export function isSuperAdmin(email?: string | null): boolean {
-  if (!email || !SUPERADMIN_EMAIL) return false;
+export const isSuperAdmin = (email?: string | null): boolean => {
+  if (!email) return false;
   return email.trim().toLowerCase() === SUPERADMIN_EMAIL;
-}
+};

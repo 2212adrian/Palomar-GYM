@@ -20,6 +20,7 @@ import { ScannerPage } from '../../pages/scanner/ScannerPage';
 import { BackupSafetyBanner } from '../ui/BackupSafetyBanner';
 import { CashSessionClosedBanner } from '../ui/CashSessionClosedBanner';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
+import { getRouteVerticalIndex } from '../../constants/navigation';
 
 interface TabLoadingContextType {
   startLoading: (id: string) => void;
@@ -41,7 +42,37 @@ export const SystemLayout: React.FC = () => {
   const mainScrollRef = useRef<HTMLElement>(null);
   const logout = useAuthStore((state) => state.logout);
 
-  // ─── Global Live Cash Drawer Sync (Keeps Topbar wallet counter live on every page) ───
+  // ─── Synchronous Direction Calculation During Render ───
+  const [navTransition, setNavTransition] = useState<{
+    pathname: string;
+    direction: 'down' | 'up' | null;
+    animKey: number;
+  }>({
+    pathname: location.pathname,
+    direction: null,
+    animKey: 0,
+  });
+
+  // When location changes, update state during render before paint occurs
+  if (navTransition.pathname !== location.pathname) {
+    const prevIdx = getRouteVerticalIndex(navTransition.pathname);
+    const currIdx = getRouteVerticalIndex(location.pathname);
+
+    let dir: 'down' | 'up' | null = null;
+    if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
+      // Selected item is below current item -> slide down
+      // Selected item is above current item -> slide up
+      dir = currIdx > prevIdx ? 'down' : 'up';
+    }
+
+    setNavTransition({
+      pathname: location.pathname,
+      direction: dir,
+      animKey: navTransition.animKey + 1,
+    });
+  }
+
+  // ─── Global Live Cash Drawer Sync ───
   const loadActiveSession = useCashSessionStore(
     (state) => state.loadActiveSession
   );
@@ -58,7 +89,6 @@ export const SystemLayout: React.FC = () => {
       profile?.role === 'admin')
   );
 
-  // Auto-activate account status from 'pending' to 'active' upon entering the system/admin portal
   useEffect(() => {
     if (user?.id && profile?.status === 'pending') {
       supabase
@@ -94,7 +124,6 @@ export const SystemLayout: React.FC = () => {
   const [logoutStarted, setLogoutStarted] = useState(false);
   const [logoutResting, setLogoutResting] = useState(false);
 
-  // Initialize slideOut as FALSE if dashboard intro was scheduled
   const [slideOut, setSlideOut] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('playDashboardIntro') !== 'true';
@@ -109,8 +138,6 @@ export const SystemLayout: React.FC = () => {
     return true;
   });
 
-  // Tab transition & network state
-  const [, setActivePath] = useState(location.pathname);
   const [activeTasks, setActiveTasks] = useState<string[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -121,40 +148,13 @@ export const SystemLayout: React.FC = () => {
     const forceScrollToTop = () => {
       if (mainScrollRef.current) {
         mainScrollRef.current.scrollTop = 0;
-        mainScrollRef.current.scrollTo({
-          top: 0,
-          left: 0,
-          behavior: 'instant' as ScrollBehavior,
-        });
       }
-      window.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: 'instant' as ScrollBehavior,
-      });
-      if (document.documentElement) document.documentElement.scrollTop = 0;
-      if (document.body) document.body.scrollTop = 0;
+      window.scrollTo(0, 0);
     };
 
     forceScrollToTop();
-    const rafId = requestAnimationFrame(() => {
-      forceScrollToTop();
-    });
-
-    const t1 = setTimeout(forceScrollToTop, 100);
-    const t2 = setTimeout(forceScrollToTop, 300);
-    const t3 = setTimeout(forceScrollToTop, 800);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [location.pathname, location.key]);
-
-  useEffect(() => {
-    setActivePath(location.pathname);
+    const rafId = requestAnimationFrame(forceScrollToTop);
+    return () => cancelAnimationFrame(rafId);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -177,7 +177,6 @@ export const SystemLayout: React.FC = () => {
     setActiveTasks((prev) => prev.filter((t) => t !== id));
   };
 
-  // Synchronized Intro Curtain Sweep
   useEffect(() => {
     const playIntro = sessionStorage.getItem('playDashboardIntro') === 'true';
     let hideTimer: ReturnType<typeof setTimeout>;
@@ -242,7 +241,39 @@ export const SystemLayout: React.FC = () => {
   return (
     <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
       <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
-        {/* GLOBAL PERSISTENT RESTORATION VERIFICATION BANNER */}
+        {/* Direction-Aware Page Slide Animations */}
+        <style>{`
+  @keyframes pageSlideDown {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, -48px, 0);
+    }
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+  @keyframes pageSlideUp {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 48px, 0);
+    }
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+  .page-slide-down {
+    animation: pageSlideDown 480ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+    will-change: transform, opacity;
+  }
+  .page-slide-up {
+    animation: pageSlideUp 480ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+    will-change: transform, opacity;
+  }
+`}</style>
+
+        {/* GLOBAL RESTORATION BANNER */}
         <BackupSafetyBanner />
         {/* CASH SESSION CLOSED NOTICE BANNER */}
         <CashSessionClosedBanner />
@@ -260,7 +291,7 @@ export const SystemLayout: React.FC = () => {
 
           <OfflinePopup />
 
-          {/* SIDEBAR: border & shadow active on lg: screens */}
+          {/* SIDEBAR: Static, untouched */}
           <aside className="lg:relative lg:z-30 shrink-0 lg:shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none lg:border-r border-slate-200/80 dark:border-slate-800/80">
             <Sidebar
               collapsed={desktopCollapsed}
@@ -285,15 +316,8 @@ export const SystemLayout: React.FC = () => {
 
             {/* Scrollable Main Content Pane */}
             <div className="flex-1 relative min-w-0 h-full flex flex-col min-h-0">
-              {/* Subtle top edge scroll fade */}
               <div className="pointer-events-none absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-slate-200/30 dark:from-black/20 to-transparent z-10" />
 
-              {/* 
-                Phone & Tablet Scroll & Responsiveness Fix:
-                - Changed overflow-x-hidden to overflow-x-auto so users CAN scroll right to reach off-screen buttons.
-                - Added min-w-0 and touch-action pan-x pan-y for smooth mobile gesture scrolling.
-                - Reduced tablet/mobile padding (px-2.5 sm:px-4 md:px-6) to save ~20px width on tablet screens.
-              */}
               <main
                 ref={mainScrollRef}
                 className={`flex-1 pt-3 sm:pt-5 md:pt-6 pb-24 lg:pb-8 px-2.5 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-auto min-w-0 [touch-action:pan-x_pan-y] ${
@@ -302,7 +326,20 @@ export const SystemLayout: React.FC = () => {
                     : 'opacity-100 transition-opacity duration-300'
                 }`}
               >
-                <div className="max-w-[1600px] w-full mx-auto min-h-full flex flex-col min-w-0">
+                {/* 
+                  animKey forces a fresh mount with the directional animation class
+                  whenever the route changes.
+                */}
+                <div
+                  key={navTransition.animKey}
+                  className={`max-w-[1600px] w-full mx-auto min-h-full flex flex-col min-w-0 ${
+                    navTransition.direction === 'down'
+                      ? 'page-slide-down'
+                      : navTransition.direction === 'up'
+                        ? 'page-slide-up'
+                        : ''
+                  }`}
+                >
                   <Outlet />
                 </div>
               </main>

@@ -15,19 +15,23 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Policy: Allow only administrators to read/view audit log rows
+-- ==============================================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ==============================================================================
+
+-- Policy: Allow only administrators / superadmins to read and view audit log rows
+-- Cast enum to text (::text) to prevent 22P02 invalid input value errors
 DROP POLICY IF EXISTS "Allow admins to read audit logs" ON public.audit_logs;
 CREATE POLICY "Allow admins to read audit logs" 
 ON public.audit_logs 
 FOR SELECT 
 TO authenticated
 USING (
-  (auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com')
-  OR
-  EXISTS (
+  lower((public.get_user_role())::text) IN ('admin', 'superadmin')
+  OR EXISTS (
     SELECT 1 FROM public.profiles 
     WHERE profiles.id = auth.uid() 
-      AND profiles.role = 'admin'
+      AND lower((profiles.role)::text) IN ('admin', 'superadmin')
   )
 );
 
@@ -39,7 +43,7 @@ FOR INSERT
 TO authenticated
 WITH CHECK (true);
 
--- Policy: Lock down manual updates and deletes completely
+-- Policy: Lock down manual updates
 DROP POLICY IF EXISTS "Prevent manual updates on audit logs" ON public.audit_logs;
 CREATE POLICY "Prevent manual updates on audit logs"
 ON public.audit_logs
@@ -47,12 +51,25 @@ FOR UPDATE
 TO authenticated
 USING (false);
 
+-- Policy: Allow administrators / superadmins to purge or delete historical logs
 DROP POLICY IF EXISTS "Prevent manual deletes on audit logs" ON public.audit_logs;
-CREATE POLICY "Prevent manual deletes on audit logs"
+DROP POLICY IF EXISTS "Allow admins to delete audit logs" ON public.audit_logs;
+CREATE POLICY "Allow admins to delete audit logs"
 ON public.audit_logs
 FOR DELETE
 TO authenticated
-USING (false);
+USING (
+  lower((public.get_user_role())::text) IN ('admin', 'superadmin')
+  OR EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE profiles.id = auth.uid() 
+      AND lower((profiles.role)::text) IN ('admin', 'superadmin')
+  )
+);
+
+-- ==============================================================================
+-- FUNCTIONS & RPC HELPERS
+-- ==============================================================================
 
 -- Clear previously overloaded signatures to prevent ambiguity
 DROP FUNCTION IF EXISTS public.log_audit_entry(uuid, text, text, text, text, text);
@@ -90,15 +107,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Seed default mock actions
+-- ==============================================================================
+-- DEFAULT SEED DATA
+-- ==============================================================================
+
 INSERT INTO public.audit_logs (actor_username, action, details, created_at)
 VALUES 
   ('System', 'CRON_JOB_EXECUTED', 'Automated Daily database backup snapshot generated successfully.', now() - INTERVAL '4 hours'),
-  ('wolf.palomar@gmail.com', 'SYSTEM_TIMEZONE_CONFIGURED', 'Database default connection timezone aligned to Asia/Manila (PHT).', now() - INTERVAL '6 hours'),
-  ('wolf.palomar@gmail.com', 'SYSTEM_RATES_UPDATED', 'Membership rates table adjusted: Monthly Sub rate set to ₱800.00.', now() - INTERVAL '1 day'),
+  ('SuperAdmin', 'SYSTEM_TIMEZONE_CONFIGURED', 'Database default connection timezone aligned to Asia/Manila (PHT).', now() - INTERVAL '6 hours'),
+  ('SuperAdmin', 'SYSTEM_RATES_UPDATED', 'Membership rates table adjusted: Monthly Sub rate set to ₱800.00.', now() - INTERVAL '1 day'),
   ('System', 'CRON_JOB_CLEANUP', 'Pruned 3 backup files older than 7 days from storage.', now() - INTERVAL '1 day 4 hours'),
-  ('Staff Ryan', 'MEMBER_CHECK_IN', 'Member ATASHALY OCAP (ME-7602) checked in at Gate 1.', now() - INTERVAL '2 days')
+  ('Staff', 'MEMBER_CHECK_IN', 'Member ATASHALY OCAP (ME-7602) checked in at Gate 1.', now() - INTERVAL '2 days')
 ON CONFLICT DO NOTHING;
+
+-- ==============================================================================
+-- MAINTENANCE & ROTATION
+-- ==============================================================================
 
 -- Enable pg_cron extension if not already active
 CREATE EXTENSION IF NOT EXISTS pg_cron;
@@ -119,3 +143,22 @@ SELECT cron.schedule(
     '0 16 * * *',
     'DELETE FROM public.audit_logs WHERE created_at < (now() - INTERVAL ''1 year'');'
 );
+
+-- ==============================================================================
+-- REALTIME SUBSCRIPTION
+-- ==============================================================================
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        IF NOT EXISTS (
+            SELECT 1 
+            FROM pg_publication_tables 
+            WHERE pubname = 'supabase_realtime' 
+              AND schemaname = 'public' 
+              AND tablename = 'audit_logs'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+        END IF;
+    END IF;
+END $$;

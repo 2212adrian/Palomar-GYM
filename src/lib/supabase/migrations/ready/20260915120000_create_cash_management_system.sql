@@ -121,7 +121,7 @@ SET search_path = public
 STABLE
 AS $$
   SELECT (
-    LOWER(COALESCE(auth.jwt() ->> 'email', '')) = 'wolf.palomar@gmail.com'
+    LOWER(COALESCE(auth.jwt() ->> 'email', '')) IN ('wolfpalomargym@gmail.com', 'wolf.palomar@gmail.com')
     OR
     EXISTS (
       SELECT 1 FROM public.profiles
@@ -132,7 +132,114 @@ AS $$
   );
 $$;
 
--- 9. Drop ALL existing policies for idempotent execution
+-- 9. Atomic Safe RPC Functions (Bypasses silent RLS deadlocks while enforcing strict authorization)
+CREATE OR REPLACE FUNCTION public.open_cash_session_safe(
+  p_opening_float NUMERIC,
+  p_notes TEXT DEFAULT NULL,
+  p_opened_by UUID DEFAULT NULL,
+  p_opened_by_name TEXT DEFAULT 'Admin'
+)
+RETURNS public.cash_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_session public.cash_sessions;
+  v_session_num TEXT;
+  v_caller_id UUID;
+  v_is_admin BOOLEAN;
+BEGIN
+  v_caller_id := auth.uid();
+  v_is_admin := public.is_cash_admin();
+
+  IF NOT v_is_admin THEN
+    RAISE EXCEPTION 'Unauthorized: Only administrators can open cash sessions.';
+  END IF;
+
+  -- Close any existing open session first to prevent collision
+  UPDATE public.cash_sessions
+  SET status = 'closed',
+      closed_at = timezone('utc', now()),
+      closed_by = COALESCE(p_opened_by, v_caller_id),
+      closed_by_name = COALESCE(p_opened_by_name, 'Admin')
+  WHERE status = 'open';
+
+  v_session_num := public.generate_cash_session_number();
+
+  INSERT INTO public.cash_sessions (
+    session_number,
+    opened_at,
+    opened_by,
+    opened_by_name,
+    status,
+    opening_float,
+    notes
+  ) VALUES (
+    v_session_num,
+    timezone('utc', now()),
+    COALESCE(p_opened_by, v_caller_id),
+    COALESCE(p_opened_by_name, 'Admin'),
+    'open',
+    p_opening_float,
+    p_notes
+  )
+  RETURNING * INTO v_session;
+
+  RETURN v_session;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.close_cash_session_safe(
+  p_session_id UUID,
+  p_actual_cash NUMERIC,
+  p_expected_cash NUMERIC,
+  p_discrepancy NUMERIC,
+  p_notes TEXT DEFAULT NULL,
+  p_denominations JSONB DEFAULT '{}'::jsonb,
+  p_closed_by UUID DEFAULT NULL,
+  p_closed_by_name TEXT DEFAULT 'Admin'
+)
+RETURNS public.cash_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_session public.cash_sessions;
+  v_caller_id UUID;
+  v_is_admin BOOLEAN;
+BEGIN
+  v_caller_id := auth.uid();
+  v_is_admin := public.is_cash_admin();
+
+  IF NOT v_is_admin THEN
+    RAISE EXCEPTION 'Unauthorized: Only administrators can close cash sessions.';
+  END IF;
+
+  UPDATE public.cash_sessions
+  SET status = 'closed',
+      closed_at = timezone('utc', now()),
+      closed_by = COALESCE(p_closed_by, v_caller_id),
+      closed_by_name = COALESCE(p_closed_by_name, 'Admin'),
+      closing_actual_cash = p_actual_cash,
+      closing_expected_cash = p_expected_cash,
+      discrepancy = p_discrepancy,
+      notes = p_notes,
+      denominations = p_denominations,
+      updated_at = timezone('utc', now())
+  WHERE id = p_session_id
+  RETURNING * INTO v_session;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Cash session with ID % not found.', p_session_id;
+  END IF;
+
+  RETURN v_session;
+END;
+$$;
+
+-- 10. Drop ALL existing policies for idempotent execution
 DROP POLICY IF EXISTS "Anyone authenticated can view cash sessions" ON public.cash_sessions;
 DROP POLICY IF EXISTS "Admins can open cash sessions" ON public.cash_sessions;
 DROP POLICY IF EXISTS "Admins can update and close cash sessions" ON public.cash_sessions;
@@ -143,7 +250,7 @@ DROP POLICY IF EXISTS "Authenticated users can insert cash transactions into ope
 DROP POLICY IF EXISTS "Anyone authenticated can insert cash transactions" ON public.cash_transactions;
 DROP POLICY IF EXISTS "Admins can manage cash transactions" ON public.cash_transactions;
 
--- 10. RLS Policies for cash_sessions
+-- 11. RLS Policies for cash_sessions
 CREATE POLICY "Anyone authenticated can view cash sessions"
   ON public.cash_sessions
   FOR SELECT
@@ -156,7 +263,6 @@ CREATE POLICY "Admins can open cash sessions"
   TO authenticated
   WITH CHECK (public.is_cash_admin());
 
--- Sessions are ONLY updated or closed when manually submitted by an administrator
 CREATE POLICY "Admins can update and close cash sessions"
   ON public.cash_sessions
   FOR UPDATE
@@ -170,8 +276,7 @@ CREATE POLICY "Admins can delete cash sessions"
   TO authenticated
   USING (public.is_cash_admin());
 
--- 11. RLS Policies for cash_transactions
--- Unrestricted authenticated SELECT & INSERT prevents false-rejection of drawer movements
+-- 12. RLS Policies for cash_transactions
 CREATE POLICY "Anyone authenticated can view cash transactions"
   ON public.cash_transactions
   FOR SELECT
@@ -191,11 +296,16 @@ CREATE POLICY "Admins can manage cash transactions"
   USING (public.is_cash_admin())
   WITH CHECK (public.is_cash_admin());
 
--- 12. Role Grants
+-- 13. Role Grants & RPC Function Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_sessions TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_transactions TO authenticated;
 
--- 13. Register all relevant revenue tables in Supabase Realtime Publication
+GRANT EXECUTE ON FUNCTION public.is_cash_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.generate_cash_session_number() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.open_cash_session_safe(NUMERIC, TEXT, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.close_cash_session_safe(UUID, NUMERIC, NUMERIC, NUMERIC, TEXT, JSONB, UUID, TEXT) TO authenticated;
+
+-- 14. Register all relevant revenue tables in Supabase Realtime Publication
 DO $$
 BEGIN
   IF NOT EXISTS (

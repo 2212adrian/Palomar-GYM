@@ -43,6 +43,7 @@ import {
   Printer,
   Loader2,
   RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 
 interface Product {
@@ -62,6 +63,24 @@ interface Product {
 
   manufacturer_barcode?: string | null;
   manufacturer_source?: string;
+}
+
+interface ProductDiff {
+  type: 'added' | 'updated' | 'deleted';
+  previous?: {
+    product_name?: string;
+    selling_price?: number;
+    stock_quantity?: number;
+    has_stock_limit?: boolean;
+    status?: 'Active' | 'Inactive';
+  };
+  current?: {
+    product_name?: string;
+    selling_price?: number;
+    stock_quantity?: number;
+    has_stock_limit?: boolean;
+    status?: 'Active' | 'Inactive';
+  };
 }
 
 interface ProductsProps {
@@ -95,6 +114,20 @@ export const Products: React.FC<ProductsProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Temporary Change Highlighting Tracker (Cleared on Toast Dismiss)
+  const [activeDiffs, setActiveDiffs] = useState<Record<string, ProductDiff>>(
+    {}
+  );
+
+  // Helper to clear highlight for an item
+  const clearDiff = (productId: string) => {
+    setActiveDiffs((prev) => {
+      const next = { ...prev };
+      delete next[productId];
+      return next;
+    });
+  };
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,9 +165,10 @@ export const Products: React.FC<ProductsProps> = ({
 
   const { setActions } = useContext(HeaderActionsContext);
 
-  const fetchProducts = async () => {
+  // Silent sync enabled by default for zero skeleton flicker
+  const fetchProducts = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -152,7 +186,7 @@ export const Products: React.FC<ProductsProps> = ({
         );
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && !silent) {
         setLoading(false);
       }
     }
@@ -205,7 +239,7 @@ export const Products: React.FC<ProductsProps> = ({
   }, [products]);
 
   useEffect(() => {
-    fetchProducts();
+    fetchProducts(false); // Initial load displays the skeleton
 
     const channel = supabase
       .channel('inventory_realtime_changes')
@@ -256,7 +290,7 @@ export const Products: React.FC<ProductsProps> = ({
     };
   }, []);
 
-  // Dispatch selection changes to custom window event so parent component can hide header actions
+  // Dispatch selection changes to custom window event
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('product-selection-change', {
@@ -276,13 +310,12 @@ export const Products: React.FC<ProductsProps> = ({
           <>
             <button
               onClick={() => setShowRecoveryModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer animate-fade-in"
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
               title="View and restore soft-deleted products"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
               <span>Recycle Bin</span>
             </button>
-
             <button
               onClick={() => setShowPrintModal(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-[#1e232d] hover:bg-slate-800 text-white border border-white/5 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer animate-fade-in"
@@ -410,16 +443,40 @@ export const Products: React.FC<ProductsProps> = ({
       setSaving(true);
 
       if (bulkItems && bulkItems.length > 0) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('products')
           .insert(bulkItems)
           .select();
 
         if (error) throw error;
 
-        toast.success(
-          `Successfully saved ${bulkItems.length} products to inventory.`
-        );
+        if (data) {
+          const newProducts = data as Product[];
+          setProducts((prev) =>
+            [...prev, ...newProducts].sort((a, b) =>
+              a.product_name.localeCompare(b.product_name)
+            )
+          );
+
+          // Mark bulk items as added
+          setActiveDiffs((prev) => {
+            const next = { ...prev };
+            newProducts.forEach((p) => {
+              next[p.id] = { type: 'added' };
+            });
+            return next;
+          });
+
+          toast.success(
+            `Successfully saved ${bulkItems.length} products to inventory.`,
+            {
+              autoClose: 4000,
+              onClose: () => {
+                newProducts.forEach((p) => clearDiff(p.id));
+              },
+            }
+          );
+        }
 
         const itemsList = bulkItems
           .map(
@@ -467,6 +524,17 @@ export const Products: React.FC<ProductsProps> = ({
             (p) => p.id === selectedProductId
           );
           const changes: string[] = [];
+
+          const previousState = targetProduct
+            ? {
+                product_name: targetProduct.product_name,
+                selling_price: targetProduct.selling_price,
+                stock_quantity: targetProduct.stock_quantity,
+                has_stock_limit: targetProduct.has_stock_limit,
+                status: targetProduct.status,
+              }
+            : undefined;
+
           if (targetProduct) {
             if (targetProduct.product_name !== nameClean) {
               changes.push(
@@ -498,13 +566,45 @@ export const Products: React.FC<ProductsProps> = ({
             }
           }
 
+          // Optimistically update product in local state
+          setProducts((prev) =>
+            prev
+              .map((p) =>
+                p.id === selectedProductId
+                  ? ({ ...p, ...productPayload } as Product)
+                  : p
+              )
+              .sort((a, b) => a.product_name.localeCompare(b.product_name))
+          );
+
+          // Register before/after highlight
+          const editedId = selectedProductId;
+          setActiveDiffs((prev) => ({
+            ...prev,
+            [editedId]: {
+              type: 'updated',
+              previous: previousState,
+              current: {
+                product_name: nameClean,
+                selling_price: priceNum,
+                stock_quantity: stockQty,
+                has_stock_limit: formHasStockLimit,
+                status: formStatus,
+              },
+            },
+          }));
+
           const { error } = await supabase
             .from('products')
             .update(productPayload)
             .eq('id', selectedProductId);
 
           if (error) throw error;
-          toast.success('Product updated.');
+
+          toast.success(`Updated "${nameClean}".`, {
+            autoClose: 4000,
+            onClose: () => clearDiff(editedId),
+          });
 
           const auditDetails =
             changes.length > 0
@@ -531,7 +631,32 @@ export const Products: React.FC<ProductsProps> = ({
             .single();
 
           if (error) throw error;
-          toast.success('New product listed.');
+
+          if (data) {
+            const newProduct = data as Product;
+            // Prepend new product so it is immediately visible
+            setProducts((prev) => [
+              newProduct,
+              ...prev.filter((p) => p.id !== newProduct.id),
+            ]);
+
+            // Register newly added highlight
+            setActiveDiffs((prev) => ({
+              ...prev,
+              [newProduct.id]: {
+                type: 'added',
+                current: {
+                  product_name: newProduct.product_name,
+                  selling_price: newProduct.selling_price,
+                },
+              },
+            }));
+
+            toast.success(`New product "${nameClean}" listed.`, {
+              autoClose: 4000,
+              onClose: () => clearDiff(newProduct.id),
+            });
+          }
 
           await logAudit(
             'PRODUCT_CREATED',
@@ -542,22 +667,37 @@ export const Products: React.FC<ProductsProps> = ({
       }
 
       setShowFormModal(false);
-      fetchProducts();
+      fetchProducts(true); // Silent sync in background
     } catch {
       toast.error('Failed to save parameters.');
+      fetchProducts(true);
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    try {
-      const targetProduct = products.find((p) => p.id === id);
+    const targetProduct = products.find((p) => p.id === id);
+    if (!targetProduct) return;
 
+    setDeleteConfirmId(null);
+
+    // Keep row in memory, but show as deleted highlight
+    setActiveDiffs((prev) => ({
+      ...prev,
+      [id]: {
+        type: 'deleted',
+        previous: {
+          product_name: targetProduct.product_name,
+          selling_price: targetProduct.selling_price,
+        },
+      },
+    }));
+
+    try {
       const { error } = await supabase.from('products').delete().eq('id', id);
 
       if (error) throw error;
-      toast.success('Product moved to Recycle Bin.');
 
       await logAudit(
         'PRODUCT_DELETED',
@@ -565,9 +705,19 @@ export const Products: React.FC<ProductsProps> = ({
         id
       );
 
-      setDeleteConfirmId(null);
-      fetchProducts();
+      // Once toast dismisses, cleanly purge the row from state
+      toast.success(`Moved "${targetProduct.product_name}" to Recycle Bin.`, {
+        autoClose: 4000,
+        onClose: () => {
+          setProducts((prev) => prev.filter((p) => p.id !== id));
+          setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
+          clearDiff(id);
+        },
+      });
+
+      fetchProducts(true);
     } catch {
+      clearDiff(id);
       toast.error('Action denied.');
     }
   };
@@ -588,30 +738,52 @@ export const Products: React.FC<ProductsProps> = ({
   const handleSaveBulkDelete = async () => {
     if (selectedProductIds.length === 0) return;
 
+    const idsToDelete = [...selectedProductIds];
     const targetTitles = products
-      .filter((p) => selectedProductIds.includes(p.id))
+      .filter((p) => idsToDelete.includes(p.id))
       .map((p) => p.product_name)
       .join(', ');
+
+    setShowBulkDeleteModal(false);
+    setSelectedProductIds([]);
+
+    // Register all IDs as deleted in highlights
+    setActiveDiffs((prev) => {
+      const next = { ...prev };
+      idsToDelete.forEach((id) => {
+        next[id] = { type: 'deleted' };
+      });
+      return next;
+    });
 
     try {
       setSaving(true);
       const { error } = await supabase
         .from('products')
         .delete()
-        .in('id', selectedProductIds);
+        .in('id', idsToDelete);
 
       if (error) throw error;
 
-      toast.success(`Moved ${selectedProductIds.length} items to Recycle Bin.`);
-
       await logAudit(
         'BULK_PRODUCTS_DELETED',
-        `Moved ${selectedProductIds.length} products to Recycle Bin: "${targetTitles}".`
+        `Moved ${idsToDelete.length} products to Recycle Bin: "${targetTitles}".`
       );
-      setShowBulkDeleteModal(false);
-      setSelectedProductIds([]);
-      fetchProducts();
+
+      toast.success(`Moved ${idsToDelete.length} items to Recycle Bin.`, {
+        autoClose: 4000,
+        onClose: () => {
+          setProducts((prev) =>
+            prev.filter((p) => !idsToDelete.includes(p.id))
+          );
+          idsToDelete.forEach((id) => clearDiff(id));
+        },
+      });
+
+      fetchProducts(true);
     } catch {
+      idsToDelete.forEach((id) => clearDiff(id));
+      setSelectedProductIds(idsToDelete);
       toast.error('Failed to perform bulk deletion.');
     } finally {
       setSaving(false);
@@ -656,9 +828,21 @@ export const Products: React.FC<ProductsProps> = ({
     }
   };
 
+  // Row Styling with Active Change Highlights
   const getRowStyle = (product: Product) => {
     const isSelected = selectedProductIds.includes(product.id);
+    const diff = activeDiffs[product.id];
     const isHidden = product.status === 'Inactive';
+
+    if (diff?.type === 'deleted') {
+      return '!bg-rose-500/15 dark:!bg-rose-950/40 border-l-4 !border-rose-500 text-rose-950 dark:text-rose-200 opacity-75 pointer-events-none transition-all duration-300';
+    }
+    if (diff?.type === 'added') {
+      return '!bg-emerald-500/15 dark:!bg-emerald-950/40 border-l-4 !border-emerald-500 shadow-sm transition-all duration-300';
+    }
+    if (diff?.type === 'updated') {
+      return '!bg-blue-500/15 dark:!bg-blue-950/40 border-l-4 !border-blue-500 shadow-sm transition-all duration-300';
+    }
 
     if (isSelected) {
       return 'group !bg-[#123c73]/10 dark:!bg-[#bf0202]/15 border-l-2 border-[#123c73] dark:border-[#bf0202] transition-colors duration-150';
@@ -670,6 +854,7 @@ export const Products: React.FC<ProductsProps> = ({
   };
 
   const handleRowClick = (product: Product) => {
+    if (activeDiffs[product.id]?.type === 'deleted') return;
     setSelectedProductIds((prev) =>
       prev.includes(product.id)
         ? prev.filter((id) => id !== product.id)
@@ -698,8 +883,11 @@ export const Products: React.FC<ProductsProps> = ({
       ) : null,
       headerClassName: 'w-12 text-center',
       cellClassName: 'text-center p-0',
-      render: (item) =>
-        isSelectionActive ? (
+      render: (item) => {
+        const isDeleted = activeDiffs[item.id]?.type === 'deleted';
+        if (isDeleted) return null;
+
+        return isSelectionActive ? (
           <label
             className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
             onClick={(e) => e.stopPropagation()}
@@ -719,7 +907,8 @@ export const Products: React.FC<ProductsProps> = ({
               className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
             />
           </label>
-        ) : null,
+        ) : null;
+      },
     },
     {
       key: 'barcode_id',
@@ -736,12 +925,8 @@ export const Products: React.FC<ProductsProps> = ({
             </span>
           )}
 
-          {/* High-Visibility Downward Barcode Preview Tooltip */}
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl pointer-events-none min-w-[220px] max-w-[280px] animate-scale-up">
-            {/* Top Arrow Indicator */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-1px] border-[6px] border-transparent border-b-white dark:border-b-slate-900" />
-
-            {/* Crisp Barcode Canvas/SVG with Strict Integer Module Scaling & Quiet Zones */}
             <div className="bg-white p-3 rounded-xl border border-slate-100 dark:border-slate-800 w-full flex items-center justify-center overflow-hidden">
               <BarcodeComponent
                 value={item.barcode_id}
@@ -751,8 +936,6 @@ export const Products: React.FC<ProductsProps> = ({
                 displayValue={false}
               />
             </div>
-
-            {/* Product Meta */}
             <div className="mt-2 text-center w-full px-1">
               <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate">
                 {item.product_name}
@@ -769,24 +952,72 @@ export const Products: React.FC<ProductsProps> = ({
       key: 'product_name',
       header: 'Product Name',
       sortable: true,
-      render: (item) => (
-        <div className="flex items-center gap-3 py-1">
-          {item.image_url ? (
-            <img
-              src={item.image_url}
-              alt={item.product_name}
-              className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${item.status === 'Inactive' ? 'grayscale opacity-75' : ''}`}
-            />
-          ) : (
-            <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-lg shadow-inner shrink-0">
-              {item.product_name[0]}
+      render: (item) => {
+        const diff = activeDiffs[item.id];
+        const isAdded = diff?.type === 'added';
+        const isUpdated = diff?.type === 'updated';
+        const isDeleted = diff?.type === 'deleted';
+        const oldName = diff?.previous?.product_name;
+        const nameChanged = oldName && oldName !== item.product_name;
+
+        return (
+          <div className="flex items-center gap-3 py-1">
+            {item.image_url ? (
+              <img
+                src={item.image_url}
+                alt={item.product_name}
+                className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
+                  item.status === 'Inactive' || isDeleted
+                    ? 'grayscale opacity-60'
+                    : ''
+                }`}
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-lg shadow-inner shrink-0">
+                {item.product_name[0]}
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`font-semibold tracking-wide block text-sm ${
+                    isDeleted
+                      ? 'line-through text-rose-600 dark:text-rose-400'
+                      : ''
+                  }`}
+                >
+                  {item.product_name}
+                </span>
+
+                {/* Badges for active state changes */}
+                {isAdded && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500 text-white font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs animate-bounce">
+                    <Sparkles className="w-2.5 h-2.5" /> NEW
+                  </span>
+                )}
+                {isUpdated && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-blue-600 text-white font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
+                    UPDATED
+                  </span>
+                )}
+                {isDeleted && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
+                    REMOVED
+                  </span>
+                )}
+              </div>
+
+              {/* Before/After Name Difference */}
+              {isUpdated && nameChanged && (
+                <span className="text-[10px] text-slate-400 line-through font-mono block mt-0.5">
+                  was: "{oldName}"
+                </span>
+              )}
             </div>
-          )}
-          <span className="font-semibold tracking-wide block text-sm">
-            {item.product_name}
-          </span>
-        </div>
-      ),
+          </div>
+        );
+      },
     },
     {
       key: 'selling_price',
@@ -794,17 +1025,40 @@ export const Products: React.FC<ProductsProps> = ({
       sortable: true,
       headerClassName: 'text-right justify-end pr-6',
       cellClassName: 'text-right pr-6',
-      render: (item) => (
-        <div className="inline-flex items-center justify-between w-24 font-mono font-bold text-[13px] opacity-95">
-          <span className="text-slate-400 font-medium select-none">₱</span>
-          <span>
-            {Number(item.selling_price).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-      ),
+      render: (item) => {
+        const diff = activeDiffs[item.id];
+        const oldPrice = diff?.previous?.selling_price;
+        const priceChanged =
+          oldPrice !== undefined && oldPrice !== item.selling_price;
+        const isDeleted = diff?.type === 'deleted';
+
+        return (
+          <div className="inline-flex flex-col items-end justify-center font-mono text-[13px]">
+            {priceChanged && (
+              <div className="text-[10px] font-mono text-slate-400 line-through leading-none mb-0.5">
+                ₱{Number(oldPrice).toFixed(2)}
+              </div>
+            )}
+            <div
+              className={`inline-flex items-center gap-1 font-bold ${
+                priceChanged
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : isDeleted
+                    ? 'line-through text-rose-500 opacity-60'
+                    : 'opacity-95'
+              }`}
+            >
+              <span className="text-slate-400 font-medium select-none">₱</span>
+              <span>
+                {Number(item.selling_price).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: 'stock_quantity',
@@ -815,6 +1069,23 @@ export const Products: React.FC<ProductsProps> = ({
       sortValue: (item) =>
         item.has_stock_limit ? item.stock_quantity : 999999,
       render: (item) => {
+        const diff = activeDiffs[item.id];
+        const oldStock = diff?.previous?.stock_quantity;
+        const stockChanged =
+          oldStock !== undefined && oldStock !== item.stock_quantity;
+
+        if (stockChanged) {
+          return (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[10px] font-mono font-bold rounded-full border border-blue-500/30 text-blue-600 dark:text-blue-400">
+              <span className="text-slate-400 line-through">{oldStock}</span>
+              <span>→</span>
+              <span className="font-extrabold">
+                {item.stock_quantity} UNITS
+              </span>
+            </div>
+          );
+        }
+
         if (!item.has_stock_limit) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-[11px] text-blue-400 border border-blue-500/20 rounded-full font-bold tracking-wider uppercase">
@@ -827,6 +1098,7 @@ export const Products: React.FC<ProductsProps> = ({
         const isLow =
           item.low_stock_alert !== null &&
           item.stock_quantity <= item.low_stock_alert;
+
         if (isOut) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-[11px] text-red-500 border border-red-500/20 rounded-full font-bold tracking-wider uppercase">
@@ -856,6 +1128,15 @@ export const Products: React.FC<ProductsProps> = ({
       header: 'Status',
       sortable: true,
       render: (item) => {
+        const diff = activeDiffs[item.id];
+        if (diff?.type === 'deleted') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/15 text-[10px] text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-full font-bold tracking-wider uppercase">
+              <Trash2 className="w-3 h-3" /> DELETING
+            </span>
+          );
+        }
+
         if (item.status === 'Active') {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-[10px] text-emerald-400 border border-emerald-500/20 rounded-full font-bold tracking-wider uppercase">
@@ -878,6 +1159,15 @@ export const Products: React.FC<ProductsProps> = ({
       headerClassName: 'text-right justify-end',
       cellClassName: 'text-right py-1',
       render: (item) => {
+        const diff = activeDiffs[item.id];
+        if (diff?.type === 'deleted') {
+          return (
+            <span className="text-[10px] font-mono font-bold text-rose-500 italic pr-2">
+              Pending toast...
+            </span>
+          );
+        }
+
         if (!isAdmin)
           return (
             <span className="text-xs text-slate-400 dark:text-slate-500 font-bold">
@@ -1023,7 +1313,6 @@ export const Products: React.FC<ProductsProps> = ({
         <>
           {/* MOBILE VIEW */}
           <div className="space-y-3 md:hidden">
-            {/* Select All Row on Mobile when Multi-Select Active */}
             {isSelectionActive && (
               <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
                 <label
@@ -1086,27 +1375,40 @@ export const Products: React.FC<ProductsProps> = ({
               {filteredProducts.map((product) => {
                 const isSelected = selectedProductIds.includes(product.id);
                 const isHidden = product.status === 'Inactive';
+                const diff = activeDiffs[product.id];
+                const isAdded = diff?.type === 'added';
+                const isUpdated = diff?.type === 'updated';
+                const isDeleted = diff?.type === 'deleted';
+                const oldPrice = diff?.previous?.selling_price;
+                const oldStock = diff?.previous?.stock_quantity;
 
                 return (
                   <div
                     key={product.id}
                     onClick={() => {
+                      if (isDeleted) return;
                       setSelectedProductIds((prev) =>
                         prev.includes(product.id)
                           ? prev.filter((id) => id !== product.id)
                           : [...prev, product.id]
                       );
                     }}
-                    className={`p-4 border rounded-2xl relative flex flex-col gap-3 transition-all duration-150 cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500 shadow-sm'
-                        : isHidden
-                          ? 'bg-slate-200/50 dark:bg-neutral-900/40 opacity-60 text-slate-455 dark:text-slate-500 border-(--border-color)'
-                          : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-slate-700'
+                    className={`p-4 border rounded-2xl relative flex flex-col gap-3 transition-all duration-200 cursor-pointer ${
+                      isDeleted
+                        ? '!bg-rose-500/15 border-rose-500 opacity-75 pointer-events-none'
+                        : isAdded
+                          ? '!bg-emerald-500/15 border-emerald-500 shadow-md ring-1 ring-emerald-500/40'
+                          : isUpdated
+                            ? '!bg-blue-500/15 border-blue-500 shadow-md ring-1 ring-blue-500/40'
+                            : isSelected
+                              ? 'bg-blue-500/10 border-blue-500 ring-1 ring-blue-500 shadow-sm'
+                              : isHidden
+                                ? 'bg-slate-200/50 dark:bg-neutral-900/40 opacity-60 text-slate-455 dark:text-slate-500 border-(--border-color)'
+                                : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      {isSelectionActive ? (
+                      {isSelectionActive && !isDeleted ? (
                         <label
                           className="flex items-center gap-2 cursor-pointer py-1.5 pr-4 min-h-[36px]"
                           onClick={(e) => e.stopPropagation()}
@@ -1131,15 +1433,32 @@ export const Products: React.FC<ProductsProps> = ({
                         <div className="w-1" />
                       )}
 
-                      <span
-                        className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                          product.status === 'Active'
-                            ? 'bg-emerald-500/10 text-emerald-400'
-                            : 'bg-slate-500/10 text-slate-455'
-                        }`}
-                      >
-                        {product.status === 'Active' ? 'VISIBLE' : 'HIDDEN'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {isAdded && (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
+                            NEW
+                          </span>
+                        )}
+                        {isUpdated && (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+                            UPDATED
+                          </span>
+                        )}
+                        {isDeleted && (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-rose-600 text-white shadow-xs">
+                            REMOVED
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                            product.status === 'Active'
+                              ? 'bg-emerald-500/10 text-emerald-400'
+                              : 'bg-slate-500/10 text-slate-455'
+                          }`}
+                        >
+                          {product.status === 'Active' ? 'VISIBLE' : 'HIDDEN'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-3 min-h-12 text-xs font-semibold">
@@ -1148,7 +1467,11 @@ export const Products: React.FC<ProductsProps> = ({
                           <img
                             src={product.image_url}
                             alt={product.product_name}
-                            className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${isHidden ? 'grayscale opacity-75' : ''}`}
+                            className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
+                              isHidden || isDeleted
+                                ? 'grayscale opacity-65'
+                                : ''
+                            }`}
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0">
@@ -1157,12 +1480,25 @@ export const Products: React.FC<ProductsProps> = ({
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <h4 className="font-semibold text-sm truncate leading-snug">
+                          <h4
+                            className={`font-semibold text-sm truncate leading-snug ${
+                              isDeleted ? 'line-through text-rose-500' : ''
+                            }`}
+                          >
                             {product.product_name}
                           </h4>
-                          <p className="font-mono font-bold text-emerald-500 text-sm mt-0.5 leading-none">
-                            ₱{product.selling_price.toFixed(2)}
-                          </p>
+
+                          <div className="flex items-center gap-1.5 mt-0.5 font-mono">
+                            {oldPrice !== undefined &&
+                              oldPrice !== product.selling_price && (
+                                <span className="text-xs text-slate-400 line-through">
+                                  ₱{oldPrice.toFixed(2)}
+                                </span>
+                              )}
+                            <p className="font-bold text-emerald-500 text-sm leading-none">
+                              ₱{product.selling_price.toFixed(2)}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
@@ -1185,7 +1521,18 @@ export const Products: React.FC<ProductsProps> = ({
                           Stock Status
                         </span>
                         <span className="font-bold inline-block">
-                          {!product.has_stock_limit ? (
+                          {oldStock !== undefined &&
+                          oldStock !== product.stock_quantity ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono">
+                              <span className="line-through text-slate-400">
+                                {oldStock}
+                              </span>
+                              <span>→</span>
+                              <span className="text-blue-500">
+                                {product.stock_quantity} UNITS
+                              </span>
+                            </span>
+                          ) : !product.has_stock_limit ? (
                             <span className="text-blue-400">UNLIMITED</span>
                           ) : product.stock_quantity === 0 ? (
                             <span className="text-red-500">OUT OF STOCK</span>
@@ -1214,7 +1561,8 @@ export const Products: React.FC<ProductsProps> = ({
 
                     {isAdmin &&
                       isSelected &&
-                      selectedProductIds.length === 1 && (
+                      selectedProductIds.length === 1 &&
+                      !isDeleted && (
                         <div
                           className="flex gap-2 mt-1 pt-2 border-t border-(--border-color) animate-slide-up"
                           onClick={(e) => e.stopPropagation()}
@@ -1265,7 +1613,7 @@ export const Products: React.FC<ProductsProps> = ({
             />
           </div>
 
-          {/* ─── QUICK ACTION: ADD NEW PRODUCT BUTTON (DESKTOP & TABLET ONLY) ─── */}
+          {/* QUICK ACTION: ADD NEW PRODUCT BUTTON (DESKTOP & TABLET ONLY) */}
           {isAdmin && (
             <motion.button
               whileHover={{ scale: 1.008 }}
@@ -1301,12 +1649,10 @@ export const Products: React.FC<ProductsProps> = ({
           setFormStatus={setFormStatus}
           formImageUrl={formImageUrl}
           setFormImageUrl={setFormImageUrl}
-
           formManufacturerBarcode={formManufacturerBarcode}
           setFormManufacturerBarcode={setFormManufacturerBarcode}
           formManufacturerSource={formManufacturerSource}
           setFormManufacturerSource={setFormManufacturerSource}
-
           showAdvanced={showAdvanced}
           setShowAdvanced={setShowAdvanced}
           saving={saving}
@@ -1416,7 +1762,7 @@ export const Products: React.FC<ProductsProps> = ({
           selectedProducts={selectedProductsForBulkEdit}
           onSaveSuccess={() => {
             setSelectedProductIds([]);
-            fetchProducts();
+            fetchProducts(true);
           }}
         />
       )}
@@ -1442,7 +1788,6 @@ export const Products: React.FC<ProductsProps> = ({
                 </p>
               </div>
 
-              {/* Scrollable grid list of cards */}
               <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 my-4">
                 {products
                   .filter((p) => selectedProductIds.includes(p.id))
@@ -1506,15 +1851,13 @@ export const Products: React.FC<ProductsProps> = ({
         )}
 
       {/* Product Recovery Bin Modal */}
-      {showRecoveryModal && (
-        <ProductRecoveryModal
-          isOpen={showRecoveryModal}
-          onClose={() => setShowRecoveryModal(false)}
-          onRestoreSuccess={() => {
-            fetchProducts();
-          }}
-        />
-      )}
+      <ProductRecoveryModal
+        isOpen={showRecoveryModal}
+        onClose={() => setShowRecoveryModal(false)}
+        onRestoreSuccess={() => {
+          fetchProducts(true);
+        }}
+      />
 
       {/* MOBILE DIRECT ACTION BOTTOM BAR FOR PRODUCTS */}
       {location.pathname.startsWith('/sales/products') &&
@@ -1527,7 +1870,6 @@ export const Products: React.FC<ProductsProps> = ({
                 : 'translate-y-0 opacity-100 pointer-events-auto'
             }`}
           >
-            {/* Summary stats on the left */}
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
                 <Package className="w-3.5 h-3.5" />
@@ -1542,7 +1884,6 @@ export const Products: React.FC<ProductsProps> = ({
               </div>
             </div>
 
-            {/* Direct 1-Tap Action Icon Buttons on the right */}
             <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin && (
                 <button

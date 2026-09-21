@@ -33,7 +33,7 @@ interface CashSessionStoreState {
   metrics: CashFlowMetrics;
   isLoading: boolean;
   isSessionOpen: boolean;
-  currentDrawerCash: number | null; // <-- Nullable so UI knows when data isn't ready
+  currentDrawerCash: number | null;
 
   loadActiveSession: () => Promise<void>;
   loadHistory: () => Promise<void>;
@@ -70,7 +70,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
   metrics: INITIAL_METRICS,
   isLoading: true,
   isSessionOpen: false,
-  currentDrawerCash: null, // <-- Defaults to null, NEVER 0
+  currentDrawerCash: null,
 
   setSessionClosed: () => {
     set({
@@ -103,28 +103,30 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         return;
       }
 
-      // Immediately seed with the opening float so even if metrics take 200ms, it NEVER drops to 0!
       const initialFloat = Number(session.opening_float || 0);
 
       set({
         activeSession: session,
         activeSessionId: session.id,
         isSessionOpen: true,
-        // If we don't have drawer cash yet, preload the known starting float
         currentDrawerCash: get().currentDrawerCash ?? initialFloat,
       });
 
-      // Await calculations BEFORE marking isInitializing as false
       await get().recalculateMetrics();
     } catch (err) {
       console.error('Failed to load active session:', err);
+      set({
+        activeSession: null,
+        activeSessionId: null,
+        isSessionOpen: false,
+        currentDrawerCash: null,
+      });
     } finally {
       set({ isLoading: false, isInitializing: false });
     }
   },
 
   loadHistory: async () => {
-    // Restrict cash session history exclusively to admins; staff cannot read this
     const auth = useAuthStore.getState();
     const isAdmin = Boolean(
       auth.user?.email &&
@@ -255,7 +257,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         };
       });
 
-      // 3. First fetch receipts to avoid ReferenceError when filtering attendance
+      // 3. Receipts
       const { data: receiptsData, error: rcptErr } = await supabase
         .from('receipts')
         .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at, cash_session_id')
@@ -307,7 +309,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         };
       });
 
-      // 4. Fetch Attendance Check-Ins
+      // 4. Attendance Check-Ins
       const { data: attendanceData, error: attErr } = await supabase
         .from('attendance')
         .select('id, customer_name, customer_type, plan_name, entry_fee, payment_method, gcash_ref_no, receipt_number, staff_name, check_in_time, created_at, deleted_at, cash_session_id')
@@ -382,8 +384,8 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
 
       const computedMetrics: CashFlowMetrics = {
         openingFloat,
-        cashInTotal: Math.round(cashInTotal * 100) / 100,      
-        cashOutTotal: Math.round(cashOutTotal * 100) / 100,   
+        cashInTotal: Math.round(cashInTotal * 100) / 100,
+        cashOutTotal: Math.round(cashOutTotal * 100) / 100,
         digitalInTotal,
         cashSales: Math.round(cashSales * 100) / 100,
         digitalSales: Math.round(digitalSales * 100) / 100,

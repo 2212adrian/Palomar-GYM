@@ -141,32 +141,29 @@ DROP POLICY IF EXISTS "Allow authenticated users to insert members" ON public.me
 DROP POLICY IF EXISTS "Allow authenticated users to update members" ON public.members;
 DROP POLICY IF EXISTS "Allow authenticated users to delete members" ON public.members;
 DROP POLICY IF EXISTS "Allow admin and superadmin to delete members" ON public.members;
+DROP POLICY IF EXISTS "Allow admins to delete members" ON public.members;
 
 -- A. SELECT Policy
+-- USING (true) allows fetching both active profiles and soft-deleted profiles in the Recycle Bin.
+-- Crucially, it prevents PostgreSQL from rejecting soft-delete updates during post-update visibility checks.
 CREATE POLICY "Allow authenticated users to view members" ON public.members
     FOR SELECT TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() 
-            AND role = 'admin'::public.user_role
-        )
-        OR auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
-        OR deleted_at IS NULL
-    );
+    USING (true);
 
 -- B. INSERT Policy
 CREATE POLICY "Allow authenticated users to insert members" ON public.members
     FOR INSERT TO authenticated 
-    WITH CHECK (deleted_at IS NULL);
+    WITH CHECK (true);
 
 -- C. UPDATE Policy
+-- WITH CHECK (true) ensures setting deleted_at / delete_reason on soft deletion does not violate RLS.
 CREATE POLICY "Allow authenticated users to update members" ON public.members
     FOR UPDATE TO authenticated 
     USING (true) 
     WITH CHECK (true);
 
 -- D. DELETE Policy
+-- Hard deletes are restricted to users with the admin role in profiles.
 CREATE POLICY "Allow admin and superadmin to delete members" ON public.members
     FOR DELETE TO authenticated
     USING (
@@ -175,7 +172,6 @@ CREATE POLICY "Allow admin and superadmin to delete members" ON public.members
             WHERE id = auth.uid() 
             AND role = 'admin'::public.user_role
         )
-        OR auth.jwt() ->> 'email' = 'wolf.palomar@gmail.com'
     );
 
 -- ============================================================================

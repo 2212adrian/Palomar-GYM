@@ -23,12 +23,35 @@ DECLARE
   new_user_id UUID;
   caller_role TEXT;
   caller_email TEXT;
+  caller_profile_email TEXT;
+  configured_superadmin TEXT;
+  is_authorized BOOLEAN := FALSE;
 BEGIN
   -- 1. Security Check: Validate that the client caller is an administrator or superadmin
-  SELECT email INTO caller_email FROM auth.users WHERE id = auth.uid();
-  SELECT role::text INTO caller_role FROM public.profiles WHERE id = auth.uid();
+  SELECT LOWER(TRIM(email)) INTO caller_email FROM auth.users WHERE id = auth.uid();
+  SELECT role::text, LOWER(TRIM(email)) INTO caller_role, caller_profile_email FROM public.profiles WHERE id = auth.uid();
 
-  IF caller_email <> 'wolf.palomar@gmail.com' AND COALESCE(caller_role, '') <> 'admin' THEN
+  -- Retrieve runtime superadmin email if system_config exists, fallback to default
+  BEGIN
+    SELECT LOWER(TRIM(value)) INTO configured_superadmin
+    FROM public.system_config
+    WHERE key = 'superadmin_email';
+  EXCEPTION WHEN OTHERS THEN
+    configured_superadmin := NULL;
+  END;
+
+  configured_superadmin := COALESCE(NULLIF(configured_superadmin, ''), 'wolf.palomar@gmail.com');
+
+  -- Verify authorization (caller is superadmin email or has admin/superadmin role)
+  IF caller_email = configured_superadmin
+     OR caller_profile_email = configured_superadmin
+     OR LOWER(TRIM(COALESCE(auth.jwt() ->> 'email', ''))) = configured_superadmin
+     OR caller_email = 'wolf.palomar@gmail.com'
+     OR COALESCE(caller_role, '') IN ('admin', 'superadmin') THEN
+    is_authorized := TRUE;
+  END IF;
+
+  IF NOT is_authorized THEN
     RAISE EXCEPTION 'Access Denied: Only system administrators are authorized to pre-register users.';
   END IF;
 
@@ -64,7 +87,7 @@ BEGIN
   VALUES (
     gen_random_uuid(),
     '00000000-0000-0000-0000-000000000000',
-    new_email,
+    LOWER(TRIM(new_email)),
     extensions.crypt(new_password, extensions.gen_salt('bf')),
     CASE WHEN new_email LIKE '%@palomargym.noemail' THEN now() ELSE NULL END, -- email_confirmed_at remains NULL for email accounts to enable signup mailers
     jsonb_build_object('provider', 'email', 'providers', array['email'], 'role', new_role), -- Synced raw_app_meta_data role on creation
@@ -107,7 +130,7 @@ BEGIN
     new_user_id,
     'email',
     new_user_id::text, -- Match user UUID as text string
-    jsonb_build_object('sub', new_user_id::text, 'email', new_email, 'email_verified', false),
+    jsonb_build_object('sub', new_user_id::text, 'email', LOWER(TRIM(new_email)), 'email_verified', false),
     now(),
     now(),
     now()
@@ -120,7 +143,7 @@ BEGIN
     new_name, 
     new_role::public.user_role,
     CASE WHEN new_email LIKE '%@palomargym.noemail' THEN 'active'::public.user_status ELSE 'pending'::public.user_status END,
-    new_email,
+    LOWER(TRIM(new_email)),
     now(), 
     now()
   )

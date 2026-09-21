@@ -1,6 +1,6 @@
 // src/pages/system/Settings.tsx
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { PersonalAccount } from './PersonalAccount';
 import { GymProfile } from './GymProfile';
@@ -9,8 +9,9 @@ import { UserManagement } from './UserManagement';
 import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
-import { SystemInformation } from './SystemInformation';
-import { SecurityAndPermissions } from './security-and-permission';
+import { SystemInformation } from './SystemInformation/SystemInformation';
+import { SecuritySettings } from './security-and-permission/SecuritySettings';
+import { PermissionsSettings } from './security-and-permission/PermissionsSettings';
 import {
   User as UserIcon,
   Building,
@@ -65,7 +66,7 @@ const TABS: TabItem[] = [
   },
   {
     id: 'info',
-    label: 'System Updates & Info',
+    label: 'System Information',
     description: 'App release builds, updates & telemetry',
     icon: RefreshCw,
     adminOnly: false,
@@ -129,12 +130,13 @@ const URL_TAB_MAP: Record<string, TabID> = {
   'audit-logs': 'audit',
   'system-updates': 'info',
   'system-information': 'info',
-  'updates': 'info',
+  updates: 'info',
 };
 
 export default function Settings() {
   const { user, profile } = useAuthStore();
   const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const activeTab = useMemo<string>(() => {
@@ -165,27 +167,47 @@ export default function Settings() {
   const isSuperAdminUser = isSuperAdmin(user?.email);
   const isAdmin = userRole === 'admin' || isSuperAdminUser;
 
+  // Super Admin sub-tab selection (Facility Access & Security vs Device Permissions)
+  const securitySubTab = useMemo<'security' | 'permissions'>(() => {
+    return searchParams.get('sub') === 'device-permissions'
+      ? 'permissions'
+      : 'security';
+  }, [searchParams]);
+
+  const handleSecuritySubTabChange = (tab: 'security' | 'permissions') => {
+    if (isChildDirty) {
+      window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
+    }
+    setSearchParams(
+      tab === 'permissions'
+        ? { sub: 'device-permissions' }
+        : { sub: 'security' }
+    );
+  };
+
   const visibleTabs: TabItem[] = useMemo(() => {
-    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin).map((tab) => {
-      if (tab.id === 'security-permissions') {
-        if (isSuperAdminUser) {
-          return {
-            ...tab,
-            label: 'Facility Access & Security',
-            description: 'Perimeter geofence, IP & turnstiles',
-            icon: ShieldAlert,
-          };
-        } else {
-          return {
-            ...tab,
-            label: 'Device Permission',
-            description: 'Hardware, camera & location access',
-            icon: Camera,
-          };
+    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin).map(
+      (tab) => {
+        if (tab.id === 'security-permissions') {
+          if (isSuperAdminUser) {
+            return {
+              ...tab,
+              label: 'Facility Access & Security',
+              description: 'Perimeter geofence, IP & turnstiles',
+              icon: ShieldAlert,
+            };
+          } else {
+            return {
+              ...tab,
+              label: 'Device Permission',
+              description: 'Hardware, camera & location access',
+              icon: Camera,
+            };
+          }
         }
+        return tab;
       }
-      return tab;
-    });
+    );
   }, [isAdmin, isSuperAdminUser]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -260,7 +282,8 @@ export default function Settings() {
           );
         }
       } else {
-        const activeLabel = visibleTabs.find((t) => t.id === activeTabId)?.label || '';
+        const activeLabel =
+          visibleTabs.find((t) => t.id === activeTabId)?.label || '';
         window.dispatchEvent(
           new CustomEvent('settings-subtab-change', { detail: activeLabel })
         );
@@ -308,7 +331,11 @@ export default function Settings() {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
 
-    const pathSegment = TAB_URL_MAP[tabId];
+    const pathSegment =
+      tabId === 'security-permissions' && !isSuperAdminUser
+        ? 'device-permissions'
+        : TAB_URL_MAP[tabId];
+
     if (pathSegment) {
       if (urlTabParam === pathSegment) {
         setMobileView('detail');
@@ -337,7 +364,9 @@ export default function Settings() {
 
   return (
     <div
-      className={`mx-auto pt-4 pb-16 ${activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'} xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}
+      className={`mx-auto pt-4 pb-16 ${
+        activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'
+      } xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}
     >
       <style>{`
         @keyframes slideUp {
@@ -370,7 +399,9 @@ export default function Settings() {
       <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-hidden">
         {/* Mobile / Tablet Navigation List */}
         <div
-          className={`${mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'} xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}
+          className={`${
+            mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
+          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}
         >
           <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
             {visibleTabs.map((tab: TabItem) => {
@@ -576,7 +607,9 @@ export default function Settings() {
 
         {/* Conditional Workspace Frame */}
         <div
-          className={`${mobileView === 'detail' ? 'flex' : 'hidden xl:flex'} flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}
+          className={`${
+            mobileView === 'detail' ? 'flex' : 'hidden xl:flex'
+          } flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}
         >
           {/* Back Navigation Bar */}
           {mobileView === 'detail' && (
@@ -591,13 +624,66 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs */}
+          {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs and Info */}
           <div
-            className={`flex-1 h-full overflow-y-auto scroll-smooth ${activeTabId === 'audit' || activeTabId === 'info' ? 'px-0 py-3 xl:p-5' : 'p-3 sm:p-4 md:p-5'}`}
+            className={`flex-1 h-full overflow-y-auto scroll-smooth ${
+              activeTabId === 'audit' || activeTabId === 'info'
+                ? 'px-0 py-3 xl:p-5'
+                : 'p-3 sm:p-4 md:p-5'
+            }`}
           >
             {activeTab === 'personal-account' && <PersonalAccount />}
+
+            {/* SECURITY & DEVICE PERMISSIONS WORKSPACE */}
             {(activeTab === 'security-and-permissions' ||
-              activeTab === 'device-permissions') && <SecurityAndPermissions />}
+              activeTab === 'device-permissions') && (
+              <div className="w-full space-y-6">
+                {/* Segmented Sub-Tab Switcher - Super Admin Only */}
+                {isSuperAdminUser && (
+                  <div className="flex justify-center">
+                    <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => handleSecuritySubTabChange('security')}
+                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
+                          securitySubTab === 'security'
+                            ? 'bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <ShieldAlert className="w-4 h-4" />
+                        <span>Facility Access & Security</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSecuritySubTabChange('permissions')
+                        }
+                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
+                          securitySubTab === 'permissions'
+                            ? 'bg-white dark:bg-zinc-800 text-purple-600 dark:text-purple-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>Hardware & Device Permissions</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-view render: Super Admin toggles between both, Standard Admin sees PermissionsSettings directly */}
+                <div className="w-full">
+                  {!isSuperAdminUser || securitySubTab === 'permissions' ? (
+                    <PermissionsSettings />
+                  ) : (
+                    <SecuritySettings />
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'gym-profile' && <GymProfile />}
             {activeTab === 'rates-and-payments' && <RatesPayments />}
             {activeTab === 'user-management' && <UserManagement />}

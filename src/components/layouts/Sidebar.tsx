@@ -23,6 +23,7 @@ import {
   useNotificationStore,
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
+import { SIDEBAR_NAV_STRUCTURE } from '../../constants/navigation';
 
 // Package version retrieval matching Login.tsx reference
 import pkg from '../../../package.json';
@@ -191,110 +192,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   }, [location.pathname]);
 
-  // Navigation Menu: Shift Session -> Sources of Income -> Gym Operations
+  // Dynamically map navigation items from the canonical structure
   const navigationMenu: MenuItem[] = useMemo(() => {
     const isMemberSection = location.pathname.startsWith('/members');
 
-    return [
-      // 1. SESSION & DRAWER (Shift Starting & Closing Point)
-      {
-        name: 'CASH MANAGEMENT',
-        section: 'SESSION & DRAWER',
-        icon: (
-          <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin', 'staff'],
-        path: '/cash-management',
-      },
+    const getIcon = (type: string) => {
+      switch (type) {
+        case 'wallet':
+          return (
+            <Wallet className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+        case 'shoppingBag':
+          return (
+            <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+        case 'usersLogbook':
+          return isMemberSection ? (
+            <Users className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          ) : (
+            <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+        case 'dashboard':
+          return (
+            <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+        case 'reports':
+          return (
+            <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+        default:
+          return (
+            <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+          );
+      }
+    };
 
-      // 2. SOURCES OF INCOME (Active Daily Business Generators)
-      {
-        name: 'SALES',
-        section: 'SOURCES OF INCOME',
-        icon: (
-          <ShoppingBag className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin', 'staff'],
-        notificationCount: isAdmin ? stockAlertsCount : undefined,
-        children: [
-          {
-            name: 'Register Sale',
-            path: '/sales',
-            description: 'Point of Registry Sales',
-          },
-          {
-            name: 'Product List',
-            path: '/sales/products',
-            description: 'Product Inventory & Barcode generation',
-            notificationCount: isAdmin ? stockAlertsCount : undefined,
-            notificationColor: 'amber',
-            roles: ['admin'],
-          },
-        ],
-      },
-      {
-        name: 'LOGBOOK & PLANS',
-        icon: isMemberSection ? (
-          <Users className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ) : (
-          <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin', 'staff'],
-        notificationCount: isAdmin ? expiringSubsCount : undefined,
-        children: [
-          {
-            name: 'Logbook',
-            path: '/logbook',
-            description: 'Instant gate/logbook telemetry',
-          },
-          {
-            name: 'Member List',
-            path: '/members/list',
-            description: 'Accounts & profiles',
-            notificationCount: isAdmin ? expiringSubsCount : undefined,
-            notificationColor: 'red',
-            roles: ['admin'],
-          },
-          {
-            name: 'Membership Plans',
-            path: '/members/plans',
-            description: 'Creates custom QR Code for hardware access cards',
-          },
-        ],
-      },
+    const getNotificationCount = (key?: string) => {
+      if (!isAdmin) return undefined;
+      if (key === 'stockAlerts') return stockAlertsCount;
+      if (key === 'expiringSubs') return expiringSubsCount;
+      if (key === 'incidentUnread') return incidentUnreadCount;
+      return undefined;
+    };
 
-      // 3. GYM OPERATIONS (Macro Performance & Facility)
-      {
-        name: 'DASHBOARD',
-        section: 'GYM OPERATIONS',
-        icon: (
-          <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin'],
-        children: [
-          {
-            name: 'Revenue Summary',
-            path: '/dashboard',
-            description: 'Sales & Logbook real-time metrics',
-          },
-          {
-            name: 'Revenue Goals',
-            path: '/dashboard/goals',
-            description: 'Set custom goal limits (Day, Week, Month)',
-            badge: 'GOALS',
-          },
-        ],
-      },
-      {
-        name: 'INCIDENT REPORTS',
-        icon: (
-          <ClipboardList className="w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-        ),
-        roles: ['admin', 'staff'],
-        notificationCount: isAdmin ? incidentUnreadCount : 0,
-        path: '/reports',
-      },
-    ];
+    return SIDEBAR_NAV_STRUCTURE.map((item) => ({
+      name: item.name,
+      section: item.section,
+      icon: getIcon(item.iconType),
+      roles: item.roles,
+      path: item.path,
+      notificationCount: getNotificationCount(item.notificationKey),
+      children: item.children?.map((child) => ({
+        ...child,
+        notificationCount: getNotificationCount(child.notificationKey),
+      })),
+    }));
   }, [
     location.pathname,
     isAdmin,
@@ -488,7 +440,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
         />
 
-        {/* DESKTOP HEADER (WITH FLUIDISM) */}
+        {/* DESKTOP HEADER */}
         <div
           className={`transition-all duration-300 ease-in-out relative z-10 shrink-0 ${
             collapsed
@@ -613,23 +565,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {isSingleItem && item.path ? (
                   <Link
                     to={item.path}
-                    className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group ${
+                    className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative cursor-pointer group ${
                       collapsed
-                        ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0'
-                        : 'w-full h-[52px] px-4 rounded-[16px] justify-between'
-                    } ${
-                      isSingleActive
-                        ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
-                        : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-[#141720] dark:text-slate-200 dark:hover:bg-[#1c202c] border-slate-200/90 dark:border-white/5 shadow-xs'
+                        ? `w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0 border ${
+                            isSingleActive
+                              ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                              : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
+                          }`
+                        : `w-full h-[52px] px-4 rounded-[16px] justify-between border ${
+                            isSingleActive
+                              ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
+                              : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-[#141720] dark:text-slate-200 dark:hover:bg-[#1c202c] border-slate-200/90 dark:border-white/5 shadow-xs'
+                          }`
                     }`}
                     title={collapsed ? item.name : undefined}
                   >
                     <div className="flex items-center gap-3 shrink-0 min-w-0">
                       <span
                         className={
-                          isSingleActive
-                            ? 'text-[#123c73] dark:text-white'
-                            : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                          collapsed
+                            ? isSingleActive
+                              ? 'text-white'
+                              : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                            : isSingleActive
+                              ? 'text-[#123c73] dark:text-white'
+                              : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
                         }
                       >
                         {item.icon}
@@ -650,6 +610,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </span>
                         </div>
                       )}
+
+                    {collapsed &&
+                      item.notificationCount !== undefined &&
+                      item.notificationCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920]">
+                          {formatBadgeCount(item.notificationCount)}
+                        </span>
+                      )}
                   </Link>
                 ) : (
                   <div
@@ -661,10 +629,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <button
                       onClick={() => handleParentMenuClick(item, false)}
-                      className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative border cursor-pointer group outline-none focus:outline-none ${
+                      className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative cursor-pointer group outline-none focus:outline-none ${
                         collapsed
-                          ? 'w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0'
-                          : `w-full h-[52px] px-4 justify-between ${
+                          ? `w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0 border ${
+                              isChildActive
+                                ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                                : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
+                            }`
+                          : `w-full h-[52px] px-4 justify-between border ${
                               isExpanded
                                 ? 'rounded-t-[16px] rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
                                 : 'rounded-[16px] ' +
@@ -678,9 +650,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex items-center gap-3 shrink-0 min-w-0">
                         <span
                           className={
-                            isExpanded || isChildActive
-                              ? 'text-[#123c73] dark:text-white'
-                              : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                            collapsed
+                              ? isChildActive
+                                ? 'text-white'
+                                : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
+                              : isExpanded || isChildActive
+                                ? 'text-[#123c73] dark:text-white'
+                                : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
                           }
                         >
                           {item.icon}
@@ -710,6 +686,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           />
                         </div>
                       )}
+
+                      {collapsed &&
+                        item.notificationCount !== undefined &&
+                        item.notificationCount > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920]">
+                            {formatBadgeCount(item.notificationCount)}
+                          </span>
+                        )}
                     </button>
 
                     {/* Submenu Accordion Container */}
@@ -813,25 +797,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {collapsed ? (
             <div className="space-y-3 relative">
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    markBadgeSeen();
-                    toggleNotificationOpen();
-                  }}
-                  className="relative w-11 h-11 mx-auto flex items-center justify-center rounded-xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#161920] hover:bg-slate-100 dark:hover:bg-[#1e232d] text-slate-700 dark:text-slate-300 shadow-xs cursor-pointer transition-all active:scale-95"
-                  title="Notifications"
-                >
-                  <Bell className="w-4 h-4" />
-                  {unreadBadgeCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920]">
-                      {formatBadgeCount(unreadBadgeCount)}
-                    </span>
-                  )}
-                </button>
-              )}
-
               <Link
                 to="/settings"
                 className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
@@ -953,6 +918,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+
+        {/* DESKTOP SIDEBAR NAV PORTAL ANCHOR */}
+        <div
+          id="desktop-sidebar-nav-portal"
+          className="absolute left-full top-0 bottom-0 pointer-events-none z-50 flex items-center"
+        />
       </aside>
 
       {/* ─── MOBILE DRAWER ─── */}
@@ -1073,6 +1044,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
                 const isSingleActive =
                   isSingleItem && item.path ? isPathActive(item.path) : false;
+                const isChildActive = visibleChildren.some((child) =>
+                  isPathActive(child.path)
+                );
                 const isMobileExpanded = mobileExpandedMenu === item.name;
 
                 return (
@@ -1131,13 +1105,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           className={`w-full h-[52px] px-4 flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer outline-none focus:outline-none ${
                             isMobileExpanded
                               ? 'rounded-t-[16px] rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
-                              : 'rounded-[16px] bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs'
+                              : 'rounded-[16px] ' +
+                                (isChildActive
+                                  ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
+                                  : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs')
                           }`}
                         >
                           <div className="flex items-center gap-3">
                             <span
                               className={
-                                isMobileExpanded
+                                isMobileExpanded || isChildActive
                                   ? 'text-[#123c73] dark:text-white'
                                   : 'text-slate-500 dark:text-slate-400'
                               }

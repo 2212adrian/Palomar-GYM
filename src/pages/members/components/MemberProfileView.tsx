@@ -134,10 +134,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
   const [isUnbindModalOpen, setIsUnbindModalOpen] = useState(false);
 
-  // Physical Card Claim & Undo Claim Modal States
-  const [isMarkClaimModalOpen, setIsMarkClaimModalOpen] = useState(false);
+  // Physical Card Claim & Undo Claim States
   const [isUndoClaimModalOpen, setIsUndoClaimModalOpen] = useState(false);
-  const [claimNotesInput, setClaimNotesInput] = useState('');
   const [isClaimingInProfile, setIsClaimingInProfile] = useState(false);
   const [isUndoingClaim, setIsUndoingClaim] = useState(false);
 
@@ -434,14 +432,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     try {
       await cardService.markClaimed(
         localMember.member_id,
-        user?.email || 'Admin Staff',
-        claimNotesInput
+        user?.email || 'Admin Staff'
       );
       toast.success(
         `Physical card for ${localMember.full_name} marked as CLAIMED.`
       );
-      setIsMarkClaimModalOpen(false);
-      setClaimNotesInput('');
       setRefreshKey((prev) => prev + 1);
       await loadProfileCollections();
       onMutationSuccess();
@@ -1330,13 +1325,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           currentCard.claim_status === 'UNCLAIMED' && (
                             <button
                               type="button"
-                              onClick={() => {
-                                setClaimNotesInput('');
-                                setIsMarkClaimModalOpen(true);
-                              }}
-                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                              disabled={isClaimingInProfile}
+                              onClick={handleConfirmMarkClaimed}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
                             >
-                              <Check className="w-3.5 h-3.5" /> Mark as Claimed
+                              <Check className="w-3.5 h-3.5" />
+                              <span>
+                                {isClaimingInProfile
+                                  ? 'Claiming...'
+                                  : 'Mark as Claimed'}
+                              </span>
                             </button>
                           )}
 
@@ -2496,14 +2494,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       currentCard.claim_status === 'UNCLAIMED' ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            setClaimNotesInput('');
-                            setIsMarkClaimModalOpen(true);
-                          }}
-                          className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                          disabled={isClaimingInProfile}
+                          onClick={handleConfirmMarkClaimed}
+                          className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
                         >
                           <Check className="w-4 h-4" />
-                          <span>Mark as Claimed</span>
+                          <span>
+                            {isClaimingInProfile
+                              ? 'Claiming...'
+                              : 'Mark as Claimed'}
+                          </span>
                         </button>
                       ) : currentCard.claim_status === 'CLAIMED' ? (
                         <button
@@ -3030,81 +3030,6 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </button>
             </div>
           </form>
-        </Modal>
-
-        {/* MARK AS CLAIMED / RELEASE PHYSICAL CARD MODAL */}
-        <Modal
-          isOpen={isMarkClaimModalOpen}
-          onClose={() => setIsMarkClaimModalOpen(false)}
-          title="RELEASE PHYSICAL MEMBERSHIP CARD"
-        >
-          <div className="space-y-4 text-left font-body">
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-700 dark:text-emerald-300 text-xs space-y-1">
-              <p className="font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>Card Handover Verification</span>
-              </p>
-              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                Confirm that the printed physical card has been handed over
-                directly to <strong>{localMember.full_name}</strong>.
-              </p>
-            </div>
-
-            <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs space-y-1 font-mono">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Card Token:</span>
-                <span className="font-bold text-(--color-text)">
-                  {currentCard?.card_number || 'N/A'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Fee Payment:</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                  PAID (₱{currentCard?.card_fee_paid || 50}.00)
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Staff In-Charge:</span>
-                <span className="text-(--color-text)">
-                  {user?.email || 'Admin Staff'}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400 block">
-                Handover Notes / Verification (Optional)
-              </label>
-              <input
-                type="text"
-                value={claimNotesInput}
-                onChange={(e) => setClaimNotesInput(e.target.value)}
-                placeholder="e.g. Handed over at front desk with signed waiver"
-                className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
-              />
-            </div>
-
-            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
-              <button
-                type="button"
-                onClick={() => setIsMarkClaimModalOpen(false)}
-                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isClaimingInProfile}
-                onClick={handleConfirmMarkClaimed}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>
-                  {isClaimingInProfile ? 'Updating...' : 'Confirm Card Claimed'}
-                </span>
-              </button>
-            </div>
-          </div>
         </Modal>
 
         {/* UNDO CLAIM CONFIRMATION MODAL */}

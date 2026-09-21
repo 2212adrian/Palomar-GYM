@@ -1,4 +1,3 @@
-// src/pages/system/security-and-permission/SecuritySettings.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldAlert,
@@ -106,6 +105,7 @@ export const SecuritySettings: React.FC = () => {
   const gymMarkerRef = useRef<L.Marker | null>(null);
   const deviceMarkerRef = useRef<L.Marker | null>(null);
   const geofenceCircleRef = useRef<L.Circle | null>(null);
+  const hasAutoCenteredRef = useRef(false);
 
   useEffect(() => {
     fetchConfig();
@@ -116,6 +116,17 @@ export const SecuritySettings: React.FC = () => {
       setForm(config);
     }
   }, [config, isDirty]);
+
+  // Clean up floating dirty-bar on unmount
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('settings-dirty-state', {
+          detail: { isDirty: false, isSaving: false },
+        })
+      );
+    };
+  }, []);
 
   // Detect current client public IP
   const detectIP = async () => {
@@ -237,6 +248,11 @@ export const SecuritySettings: React.FC = () => {
       mapInstanceRef.current = map;
       gymMarkerRef.current = marker;
       geofenceCircleRef.current = circle;
+
+      // Invalidate size shortly after mounting to avoid Leaflet tile gaps
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 250);
     }
 
     return () => {
@@ -250,6 +266,7 @@ export const SecuritySettings: React.FC = () => {
     };
   }, []);
 
+  // Update marker and map position when coordinates change
   useEffect(() => {
     if (
       mapInstanceRef.current &&
@@ -261,8 +278,23 @@ export const SecuritySettings: React.FC = () => {
       gymMarkerRef.current.setLatLng([lat, lng]);
       geofenceCircleRef.current.setLatLng([lat, lng]);
       geofenceCircleRef.current.setRadius(form.geofence_radius_meters);
+
+      // Auto-center map to the stored config on first successful load
+      if (
+        !hasAutoCenteredRef.current &&
+        config &&
+        (config.gym_latitude || config.gym_longitude)
+      ) {
+        mapInstanceRef.current.setView([lat, lng], 16);
+        hasAutoCenteredRef.current = true;
+      }
     }
-  }, [form.gym_latitude, form.gym_longitude, form.geofence_radius_meters]);
+  }, [
+    form.gym_latitude,
+    form.gym_longitude,
+    form.geofence_radius_meters,
+    config,
+  ]);
 
   const handleSaveConfig = async () => {
     if (!isAdmin) {
@@ -280,7 +312,6 @@ export const SecuritySettings: React.FC = () => {
     }
   };
 
-  // Strategy 1: One-click Register Current Public IP
   const handleRegisterCurrentIP = () => {
     if (!detectedIP || detectedIP === 'Unavailable') {
       toast.warning('Unable to register IP: No active IP detected.');
@@ -560,7 +591,7 @@ export const SecuritySettings: React.FC = () => {
           </div>
         </div>
 
-        {/* SECTION 1: STRATEGY 1 - GYM ROUTER PUBLIC IP RESTRICTION */}
+        {/* SECTION 1: GYM ROUTER PUBLIC IP RESTRICTION */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
@@ -578,7 +609,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Toggle Switch */}
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input
                 type="checkbox"
@@ -600,7 +630,6 @@ export const SecuritySettings: React.FC = () => {
             </label>
           </div>
 
-          {/* Current Terminal IP Card with One-Click Registration */}
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
@@ -640,7 +669,6 @@ export const SecuritySettings: React.FC = () => {
             )}
           </div>
 
-          {/* Whitelisted IPs List */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h4 className="text-xs font-heading font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
@@ -733,7 +761,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Toggle Switch */}
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input
                 type="checkbox"
@@ -755,7 +782,6 @@ export const SecuritySettings: React.FC = () => {
             </label>
           </div>
 
-          {/* Current Network Status Card */}
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div
@@ -794,7 +820,6 @@ export const SecuritySettings: React.FC = () => {
             )}
           </div>
 
-          {/* Strict Wi-Fi Matching Option */}
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800">
             <div className="space-y-0.5">
               <span className="text-xs font-heading font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
@@ -824,7 +849,6 @@ export const SecuritySettings: React.FC = () => {
             </label>
           </div>
 
-          {/* Trusted Wi-Fi Networks List */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-heading font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
@@ -844,7 +868,6 @@ export const SecuritySettings: React.FC = () => {
               )}
             </div>
 
-            {/* Add Network Inline Form */}
             {showAddNetwork && isAdmin && (
               <div className="p-4 rounded-xl bg-slate-100 dark:bg-zinc-950 border border-blue-500/30 space-y-3">
                 <h5 className="text-xs font-heading font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
@@ -911,7 +934,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             )}
 
-            {/* List of networks */}
             {form.trusted_networks.length === 0 ? (
               <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center text-xs text-slate-400">
                 No trusted Wi-Fi networks registered yet. Any detected local
@@ -980,7 +1002,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Toggle Switch */}
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input
                 type="checkbox"
@@ -1002,7 +1023,6 @@ export const SecuritySettings: React.FC = () => {
             </label>
           </div>
 
-          {/* MAP DISPLAY */}
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <span className="text-slate-600 dark:text-slate-400 font-medium">
@@ -1043,14 +1063,12 @@ export const SecuritySettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Leaflet Map Canvas */}
             <div
               ref={mapContainerRef}
               className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-inner z-0"
               style={{ minHeight: '280px' }}
             />
 
-            {/* Quick GPS Geofence Setter Banner */}
             {isAdmin && (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-red-500/5 dark:bg-red-950/20 border border-red-500/20 rounded-2xl">
                 <div className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300">
@@ -1084,7 +1102,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             )}
 
-            {/* Location Diagnostics Banner */}
             {deviceCoords && (
               <div
                 className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
@@ -1121,7 +1138,6 @@ export const SecuritySettings: React.FC = () => {
               </div>
             )}
 
-            {/* Geofence Parameters */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
               <div>
                 <label className="block text-xs font-heading font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">

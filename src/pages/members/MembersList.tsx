@@ -1,5 +1,4 @@
 // src/pages/members/MembersList.tsx
-
 import React, {
   useState,
   useMemo,
@@ -141,13 +140,33 @@ export const MembersList: React.FC<MembersListProps> = ({
   const [batchGcashRef, setBatchGcashRef] = useState('');
   const [isProcessingBatchPay, setIsProcessingBatchPay] = useState(false);
 
-  // Claim Physical Card Modal State
-  const [claimModalData, setClaimModalData] = useState<{
-    member: Member;
-    card: MemberCard;
-  } | null>(null);
-  const [claimNotes, setClaimNotes] = useState('');
-  const [isClaiming, setIsClaiming] = useState(false);
+  // Direct Claim Handler with Optimistic UI Update (No skeleton flash)
+  const handleDirectClaim = async (member: Member, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+
+    const prevCards = [...cards];
+
+    setCards((currentCards) =>
+      currentCards.map((card) =>
+        card.member_id === member.member_id
+          ? {
+              ...card,
+              claim_status: 'CLAIMED',
+              claimed_at: new Date().toISOString(),
+            }
+          : card
+      )
+    );
+
+    try {
+      await cardService.markClaimed(member.member_id, 'Admin Staff');
+      toast.success(`Physical card for ${member.full_name} marked as CLAIMED.`);
+      fetchMembers(true);
+    } catch (err: any) {
+      setCards(prevCards);
+      toast.error(err.message || 'Failed to mark card as claimed.');
+    }
+  };
 
   // Mobile Action Sheet State
   const [mobileActionSheetMember, setMobileActionSheetMember] =
@@ -243,8 +262,8 @@ export const MembersList: React.FC<MembersListProps> = ({
     settings.card_printing_fee,
   ]);
 
-  const fetchMembers = useCallback(async () => {
-    setLoading(true);
+  const fetchMembers = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [membersData, subsData, cardsData, settingsData] =
         await Promise.all([
@@ -261,7 +280,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       console.error('Error fetching members data:', err);
       toast.error(err.message || 'Failed to load member records');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -274,31 +293,31 @@ export const MembersList: React.FC<MembersListProps> = ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'receipts' },
-        () => fetchMembers()
+        () => fetchMembers(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'subscriptions' },
-        () => fetchMembers()
+        () => fetchMembers(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
-        () => fetchMembers()
+        () => fetchMembers(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cards' },
-        () => fetchMembers()
+        () => fetchMembers(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_cards' },
-        () => fetchMembers()
+        () => fetchMembers(true)
       )
       .subscribe();
 
-    const handleRefresh = () => fetchMembers();
+    const handleRefresh = () => fetchMembers(true);
     window.addEventListener('member-refresh', handleRefresh);
 
     return () => {
@@ -339,13 +358,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     const handlePrintEvent = () => handleOpenPrintModal();
     const handleRecycleEvent = () => setIsRecycleOpen(true);
     const handleWizardEvent = () => {
-      if (!isSessionOpen) {
-        toast.warning(
-          'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
-          { toastId: 'cash-session-closed-enroll-block' }
-        );
-        return;
-      }
       setWizardPrefillMember(undefined);
       setWizardPrefill(undefined);
       setIsWizardOpen(true);
@@ -360,7 +372,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
     };
-  }, [handleOpenPrintModal, isSessionOpen]);
+  }, [handleOpenPrintModal]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -543,7 +555,6 @@ export const MembersList: React.FC<MembersListProps> = ({
       if (isPast) {
         const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
 
-        // Over 7 days passed since end date -> turns into "No Subscription"
         if (daysExpired > 7) {
           return {
             hasSub: false,
@@ -558,7 +569,6 @@ export const MembersList: React.FC<MembersListProps> = ({
           };
         }
 
-        // Within 0–7 days post-expiry: marked as Expired
         return {
           hasSub: false,
           canRenew: true,
@@ -708,7 +718,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     getActiveCard,
   ]);
 
-  // FILTER & SORT MEMBERS: Non-subscription users at top priority -> lowest days -> longest days
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const now = Date.now();
@@ -773,9 +782,6 @@ export const MembersList: React.FC<MembersListProps> = ({
       }
     });
 
-    // Custom Hierarchy Sort:
-    // 1. Non-subscription users first (Profile only & Expired without active contract)
-    // 2. Subscribed users from shortest remaining days (1d, 2d, 3d...) to longest days (365d...)
     return matched.sort((a, b) => {
       const activeA = getActiveSubscription(a.member_id);
       const activeB = getActiveSubscription(b.member_id);
@@ -783,19 +789,16 @@ export const MembersList: React.FC<MembersListProps> = ({
       const hasActiveA = activeA ? 1 : 0;
       const hasActiveB = activeB ? 1 : 0;
 
-      // Group 0 (Non-subscription users) before Group 1 (Active subscribers)
       if (hasActiveA !== hasActiveB) {
         return hasActiveA - hasActiveB;
       }
 
-      // If both are non-subscription users, sort by newest registered/created first
       if (!activeA && !activeB) {
         const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
         const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
         return timeB - timeA;
       }
 
-      // If both have active subscriptions: sort ascending by days remaining
       const endA = new Date(activeA!.end_date).getTime();
       const endB = new Date(activeB!.end_date).getTime();
 
@@ -835,6 +838,14 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   const handleToggleSuspend = async (memberItem: Member) => {
     const nextStatus = memberItem.status === 'Active' ? 'Suspended' : 'Active';
+    const prevMembers = [...members];
+
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberItem.id ? { ...m, status: nextStatus } : m
+      )
+    );
+
     try {
       await memberService.update(
         memberItem.id,
@@ -842,12 +853,12 @@ export const MembersList: React.FC<MembersListProps> = ({
         'Admin Staff'
       );
       toast.success(`Member set to ${nextStatus}.`);
-      fetchMembers();
+      fetchMembers(true);
     } catch (err: any) {
+      setMembers(prevMembers);
       toast.error(err.message || 'Action failed.');
     }
   };
-
   const isSelectionActive = selectedMemberIds.length > 0;
 
   const handleRowClick = (member: Member) => {
@@ -871,7 +882,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     return 'group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150 cursor-pointer';
   };
 
-  // COMPACT & ULTRA-LEGIBLE TABLE COLUMNS WITH GATED RENEW / SUBSCRIBE BUTTONS
   const columns: Column<Member>[] = [
     {
       key: 'select',
@@ -1042,10 +1052,7 @@ export const MembersList: React.FC<MembersListProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setClaimModalData({ member: item, card: cardObj });
-                      setClaimNotes('');
-                    }}
+                    onClick={(e) => handleDirectClaim(item, e)}
                     className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1 transition-transform active:scale-95"
                     title="Mark this physical card as claimed by member"
                   >
@@ -1245,35 +1252,15 @@ export const MembersList: React.FC<MembersListProps> = ({
 
             <Button
               onClick={() => {
-                if (!isSessionOpen) {
-                  toast.warning(
-                    'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
-                    { toastId: 'cash-session-closed-enroll-block' }
-                  );
-                  return;
-                }
                 setWizardPrefillMember(undefined);
                 setWizardPrefill(undefined);
                 setIsWizardOpen(true);
               }}
-              disabled={!isSessionOpen}
-              title={
-                !isSessionOpen
-                  ? 'Cash session is closed. Open a cash session to enroll members.'
-                  : 'Enroll New Member'
-              }
               variant="primary"
-              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap ${
-                !isSessionOpen
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'cursor-pointer'
-              }`}
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 shadow-md animate-fade-in whitespace-nowrap cursor-pointer"
+              title="Enroll New Member"
             >
-              {!isSessionOpen ? (
-                <Lock className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
-              ) : (
-                <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
-              )}
+              <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
               <span>ENROLL MEMBER</span>
             </Button>
           </>
@@ -1293,7 +1280,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     isPlansPath,
     members,
     handleOpenPrintModal,
-    isSessionOpen,
   ]);
 
   useEffect(() => {
@@ -1342,8 +1328,8 @@ export const MembersList: React.FC<MembersListProps> = ({
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 shrink-0 text-yellow-500" />
                 <span>
-                  Cash drawer session is closed. Subscription enrollments,
-                  renewals, and card purchases are locked.
+                  Cash drawer session is closed. Subscription renewals and card
+                  purchases are locked.
                 </span>
               </div>
               <span className="text-[10px] font-mono opacity-80 lowercase font-normal hidden sm:inline">
@@ -1561,38 +1547,19 @@ export const MembersList: React.FC<MembersListProps> = ({
 
                   {/* QUICK ACTION: ENROLL NEW MEMBER BUTTON (DESKTOP & TABLET) */}
                   <motion.button
-                    whileHover={!isSessionOpen ? {} : { scale: 1.006 }}
-                    whileTap={!isSessionOpen ? {} : { scale: 0.985 }}
+                    whileHover={{ scale: 1.006 }}
+                    whileTap={{ scale: 0.985 }}
                     type="button"
                     onClick={() => {
-                      if (!isSessionOpen) {
-                        toast.warning(
-                          'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
-                          { toastId: 'cash-session-closed-enroll-block' }
-                        );
-                        return;
-                      }
                       setWizardPrefillMember(undefined);
                       setWizardPrefill(undefined);
                       setIsWizardOpen(true);
                     }}
-                    title={
-                      !isSessionOpen
-                        ? 'Cash drawer session is closed'
-                        : 'Enroll New Member'
-                    }
-                    className={`hidden sm:flex w-full py-3 px-4 rounded-2xl text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md transition-all duration-200 border border-white/10 group mt-3 select-none ${
-                      !isSessionOpen
-                        ? 'bg-slate-500 dark:bg-zinc-700 opacity-60 cursor-not-allowed'
-                        : 'bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] cursor-pointer hover:shadow-lg'
-                    }`}
+                    title="Enroll New Member"
+                    className="hidden sm:flex w-full py-3 px-4 rounded-2xl text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md transition-all duration-200 border border-white/10 group mt-3 select-none bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] cursor-pointer hover:shadow-lg"
                   >
                     <div className="w-5 h-5 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
-                      {!isSessionOpen ? (
-                        <Lock className="w-3.5 h-3.5 text-white" />
-                      ) : (
-                        <Plus className="w-3.5 h-3.5 text-white" />
-                      )}
+                      <Plus className="w-3.5 h-3.5 text-white" />
                     </div>
                     <span>ENROLL NEW MEMBER</span>
                   </motion.button>
@@ -1802,14 +1769,9 @@ export const MembersList: React.FC<MembersListProps> = ({
                                       </span>
                                       <button
                                         type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setClaimModalData({
-                                            member,
-                                            card: cardObj,
-                                          });
-                                          setClaimNotes('');
-                                        }}
+                                        onClick={(e) =>
+                                          handleDirectClaim(member, e)
+                                        }
                                         className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[8px] font-heading font-bold uppercase tracking-wider shadow-xs cursor-pointer flex items-center gap-1"
                                       >
                                         <Check className="w-2.5 h-2.5" />
@@ -1951,13 +1913,6 @@ export const MembersList: React.FC<MembersListProps> = ({
             {activeTab === 'Queue' && (
               <OnlineQueue
                 onApproveLaunchWizard={(reg) => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Cannot approve registration: Cash drawer session is closed. Open a cash session in Cash Management first.',
-                      { toastId: 'queue-session-closed' }
-                    );
-                    return;
-                  }
                   setWizardPrefill(reg);
                   setWizardPrefillMember(undefined);
                   setIsWizardOpen(true);
@@ -2145,35 +2100,15 @@ export const MembersList: React.FC<MembersListProps> = ({
 
               <button
                 type="button"
-                disabled={!isSessionOpen}
                 onClick={() => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.',
-                      { toastId: 'cash-session-closed-enroll-block' }
-                    );
-                    return;
-                  }
                   setWizardPrefillMember(undefined);
                   setWizardPrefill(undefined);
                   setIsWizardOpen(true);
                 }}
-                className={`h-9 px-3 rounded-xl text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-transform ${
-                  !isSessionOpen
-                    ? 'bg-slate-500 dark:bg-zinc-700 opacity-60 cursor-not-allowed'
-                    : 'bg-[#123c73] dark:bg-[#bf0202] cursor-pointer active:scale-95'
-                }`}
-                title={
-                  !isSessionOpen
-                    ? 'Cash drawer session is closed'
-                    : 'Enroll Member'
-                }
+                className="h-9 px-3 rounded-xl text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-transform bg-[#123c73] dark:bg-[#bf0202] cursor-pointer active:scale-95"
+                title="Enroll Member"
               >
-                {!isSessionOpen ? (
-                  <Lock className="w-3.5 h-3.5" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
+                <Plus className="w-4 h-4" />
                 <span className="text-[10px] hidden xs:inline">Enroll</span>
               </button>
             </div>
@@ -2601,101 +2536,6 @@ export const MembersList: React.FC<MembersListProps> = ({
                 {isProcessingBatchPay
                   ? 'Processing...'
                   : `Confirm (₱${batchMemberBreakdown.totalPrice.toFixed(2)})`}
-              </span>
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* QUICK CLAIM PHYSICAL MEMBERSHIP CARD MODAL */}
-      <Modal
-        isOpen={!!claimModalData}
-        onClose={() => {
-          if (!isClaiming) setClaimModalData(null);
-        }}
-        title="RELEASE PHYSICAL MEMBERSHIP CARD"
-      >
-        <div className="space-y-4 text-left font-body">
-          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1">
-            <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold text-xs">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>
-                Card Fee Paid (₱
-                {(
-                  claimModalData?.card.card_fee_paid ??
-                  settings.card_printing_fee ??
-                  50
-                ).toFixed(2)}
-                )
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Card Token:{' '}
-              <strong className="font-mono text-(--color-text)">
-                {claimModalData?.card.card_number}
-              </strong>
-            </p>
-          </div>
-
-          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-            Confirm handover of physical membership card to member{' '}
-            <strong className="text-slate-900 dark:text-white font-bold">
-              {claimModalData?.member.full_name}
-            </strong>{' '}
-            ({claimModalData?.member.member_id}).
-          </p>
-
-          <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Handover Remarks / Notes (Optional)
-            </label>
-            <input
-              type="text"
-              value={claimNotes}
-              onChange={(e) => setClaimNotes(e.target.value)}
-              placeholder="e.g. Handed over at front desk with free gym sticker"
-              className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none focus:border-emerald-500 font-medium text-(--color-text)"
-            />
-          </div>
-
-          <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
-            <button
-              type="button"
-              disabled={isClaiming}
-              onClick={() => setClaimModalData(null)}
-              className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={isClaiming}
-              onClick={async () => {
-                if (!claimModalData) return;
-                setIsClaiming(true);
-                try {
-                  await cardService.markClaimed(
-                    claimModalData.member.member_id,
-                    'Admin Staff',
-                    claimNotes
-                  );
-                  toast.success(
-                    `Physical card for ${claimModalData.member.full_name} marked as CLAIMED.`
-                  );
-                  setClaimModalData(null);
-                  setClaimNotes('');
-                  fetchMembers();
-                } catch (err: any) {
-                  toast.error(err.message || 'Failed to mark card as claimed.');
-                } finally {
-                  setIsClaiming(false);
-                }
-              }}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
-            >
-              <Check className="w-4 h-4" />
-              <span>
-                {isClaiming ? 'Saving...' : 'Confirm Release & Handover'}
               </span>
             </button>
           </div>

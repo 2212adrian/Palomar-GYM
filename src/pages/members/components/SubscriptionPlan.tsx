@@ -55,6 +55,7 @@ import {
   type OfficialReceiptRef,
 } from '../../../components/ui/OfficialReceipt';
 import { type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
+import { SideNavTab } from '../../../components/ui/SideNavTab';
 import type {
   OnlineRegistration,
   PaymentMethod,
@@ -1817,12 +1818,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const numericCashTendered = parseFloat(cashTendered) || 0;
   const cashChange = Math.max(0, numericCashTendered - totalPrice);
 
-// Automatically sync Cash Received to Total Price whenever plan or add-ons change
-useEffect(() => {
-  if (step === 2 && paymentMethod === 'Cash') {
-    setCashTendered(totalPrice > 0 ? String(totalPrice) : '');
-  }
-}, [step, paymentMethod, totalPrice]);
+  // Automatically sync Cash Received to Total Price whenever plan or add-ons change
+  useEffect(() => {
+    if (step === 2 && paymentMethod === 'Cash') {
+      setCashTendered(totalPrice > 0 ? String(totalPrice) : '');
+    }
+  }, [step, paymentMethod, totalPrice]);
 
   const isPlanLocked =
     intakeMode === 'Import' || !!importedQueueReg || !!prefillData;
@@ -3246,19 +3247,19 @@ useEffect(() => {
                     }}
                     className="sr-only"
                   />
-                 <div
-  className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
-    addIdCard
-      ? 'bg-(--color-primary)'
-      : 'bg-slate-300 dark:bg-zinc-700 border border-slate-400/60 dark:border-zinc-600'
-  }`}
->
-  <div
-    className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${
-      addIdCard ? 'translate-x-5' : 'translate-x-0'
-    }`}
-  />
-</div>
+                  <div
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+                      addIdCard
+                        ? 'bg-(--color-primary)'
+                        : 'bg-slate-300 dark:bg-zinc-700 border border-slate-400/60 dark:border-zinc-600'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${
+                        addIdCard ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
                 </label>
               </div>
 
@@ -3554,34 +3555,13 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   return (
     <div className="relative space-y-6">
       {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
-      <div className="hidden lg:block">
-        <AnimatePresence>
-          <motion.button
-            key="left-arrow-plans"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 0.9, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            whileHover={{ scale: 1.05, opacity: 1 }}
-            onClick={() => navigate('/members/list')}
-            title="View Member Directory"
-            className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-          >
-            <motion.div
-              animate={{ x: [0, -4, 0] }}
-              transition={{
-                repeat: Infinity,
-                duration: 1.5,
-                ease: 'easeInOut',
-              }}
-            >
-              <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
-            </motion.div>
-            <span className="[writing-mode:vertical-rl] rotate-180 font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-              MEMBERS
-            </span>
-          </motion.button>
-        </AnimatePresence>
-      </div>
+      <SideNavTab
+        side="left"
+        label="MEMBERS"
+        title="View Member Directory"
+        sidebarOffset={true}
+        onClick={() => navigate('/members/list')}
+      />
 
       {/* CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>

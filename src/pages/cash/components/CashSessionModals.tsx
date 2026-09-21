@@ -1,3 +1,4 @@
+// src/pages/cash/components/CashSessionModals.tsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import {
@@ -195,7 +196,13 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       toast.success(
         `Cash Session #${session.session_number} closed successfully.`
       );
-      await onSuccess();
+
+      try {
+        await onSuccess();
+      } catch (refreshErr) {
+        console.warn('Post-close refresh warning:', refreshErr);
+      }
+
       onClose();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to close cash session in Supabase.');
@@ -272,7 +279,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
               <input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 required
                 placeholder="0.00"
                 value={directCashInput}
@@ -629,7 +636,6 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
   const disc = Number(session.discrepancy || 0);
   const denoms = session.denominations || {};
 
-  // Custom 80mm Thermal Receipt Printer Handler
   const handlePrintThermalReceipt = () => {
     const gymName = gymProfile?.gym_name || 'PALOMAR FITNESS GYM';
     const gymAddress = gymProfile?.gym_address || 'QUEZON CITY, METRO MANILA';

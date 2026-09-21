@@ -137,7 +137,7 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           </span>
           <input
             type="number"
-            step="0.01"
+            step="1"
             min="0"
             value={p.selling_price}
             onChange={(e) => {
@@ -364,7 +364,7 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
             </span>
             <input
               type="number"
-              step="0.01"
+              step="1"
               min="0"
               value={p.selling_price}
               onChange={(e) => {

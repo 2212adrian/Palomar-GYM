@@ -54,6 +54,41 @@ export function Table<T>({
   );
   const [currentPage, setCurrentPage] = useState(1);
 
+  const getPaginationItems = (currentPage: number, totalPages: number) => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    // If near the start: 1, 2, 3, 4, 5, "...", totalPages
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+
+    // If near the end: 1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages
+    if (currentPage >= totalPages - 3) {
+      return [
+        1,
+        '...',
+        totalPages - 4,
+        totalPages - 3,
+        totalPages - 2,
+        totalPages - 1,
+        totalPages,
+      ];
+    }
+
+    // In the middle: 1, "...", current - 1, current, current + 1, "...", totalPages
+    return [
+      1,
+      '...',
+      currentPage - 1,
+      currentPage,
+      currentPage + 1,
+      '...',
+      totalPages,
+    ];
+  };
+
   const [viewportItemsPerPage, setViewportItemsPerPage] = useState(() => {
     if (typeof window === 'undefined') return 25;
     const width = window.innerWidth;
@@ -328,22 +363,38 @@ export function Table<T>({
               <ChevronLeft className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => setCurrentPage(page)}
-                title={`Go to page ${page}`}
-                aria-label={`Go to page ${page}`}
-                className={`px-3 py-1.5 rounded-lg font-mono font-semibold transition-all cursor-pointer ${
-                  clampedPage === page
-                    ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
-                    : 'border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-neutral-800'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
+            {getPaginationItems(clampedPage, totalPages).map((item, idx) => {
+              if (item === '...') {
+                return (
+                  <span
+                    key={`ellipsis-${idx}`}
+                    className="px-2 py-1 text-xs text-slate-400 select-none font-mono"
+                  >
+                    …
+                  </span>
+                );
+              }
+
+              const page = Number(item);
+              const isSelected = clampedPage === page;
+
+              return (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                  title={`Go to page ${page}`}
+                  aria-label={`Go to page ${page}`}
+                  className={`min-w-8 h-8 px-2.5 rounded-lg font-mono text-xs font-semibold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
+                      : 'border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  {page}
+                </button>
+              );
+            })}
 
             <button
               type="button"

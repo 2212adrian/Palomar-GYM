@@ -13,10 +13,6 @@ import { AvatarImage, compressImage } from './PersonalAccount';
 import { SUPERADMIN_EMAIL } from '../../constants/auth';
 import { buildAppUrl } from '../../lib/appUrl';
 import {
-  fetchSuperAdminEmail,
-  transferSuperAdminOwnership,
-} from '../../lib/supabase/superadminService';
-import {
   Loader2,
   Trash2,
   ShieldAlert,
@@ -25,9 +21,8 @@ import {
   ShieldCheck,
   Camera,
   User,
-  Crown,
-  Clock,
   Mail,
+  UserCheck,
 } from 'lucide-react';
 
 interface DraftChange {
@@ -35,39 +30,20 @@ interface DraftChange {
   status?: 'active' | 'inactive';
 }
 
-/**
- * Deliberate safety delay: the ownership transfer Confirm button stays disabled
- * for this many seconds after the dialog opens, so a transfer can never be
- * completed by a stray double-click or an accidental tap.
- */
-const TRANSFER_COUNTDOWN_SECONDS = 3;
-
 export const UserManagement: React.FC = () => {
   const { user, profile } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
 
-  // ─── Superadmin identity resolution ─────────────────────────────────────
-  const [superAdminEmail, setSuperAdminEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSuperAdminEmail()
-      .then((email) => {
-        if (!cancelled && email) setSuperAdminEmail(email);
-      })
-      .catch(() => {
-        // Non-admins and offline sessions simply keep the build-time fallback.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const effectiveSuperAdminEmail = superAdminEmail ?? SUPERADMIN_EMAIL;
+  // ─── Superadmin identity resolution (Pure ENV / Constant fallback) ──────
+  const superAdminEmail = (
+    import.meta.env.VITE_SUPERADMIN_EMAIL || SUPERADMIN_EMAIL
+  )
+    .trim()
+    .toLowerCase();
 
   const viewerEmail = (user?.email || '').trim().toLowerCase();
   const viewerIsSuperAdmin = Boolean(
-    viewerEmail && viewerEmail === effectiveSuperAdminEmail
+    viewerEmail && viewerEmail === superAdminEmail
   );
 
   const isAdmin = userRole === 'admin' || viewerIsSuperAdmin;
@@ -92,10 +68,12 @@ export const UserManagement: React.FC = () => {
   const [drafts, setDrafts] = useState<Record<string, DraftChange>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Invitation Modal fields (Email only)
+  // ─── Pre-Register User Modal states (Dual Options: Email vs Non-Email) ───
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [accountType, setAccountType] = useState<'email' | 'noemail'>('email');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'staff'>('staff');
   const [newUserAvatar, setNewUserAvatar] = useState<File | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -105,102 +83,6 @@ export const UserManagement: React.FC = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deleteTargetUser, setDeleteTargetUser] = useState<any | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
-
-  // ─── Ownership Transfer Modal ───
-  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  const [transferUsername, setTransferUsername] = useState('');
-  const [transferPassword, setTransferPassword] = useState('');
-  const [transferCountdown, setTransferCountdown] = useState(
-    TRANSFER_COUNTDOWN_SECONDS
-  );
-  const [isTransferring, setIsTransferring] = useState(false);
-
-  useEffect(() => {
-    if (!isTransferModalOpen) return;
-
-    setTransferCountdown(TRANSFER_COUNTDOWN_SECONDS);
-
-    const timer = setInterval(() => {
-      setTransferCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isTransferModalOpen]);
-
-  const openTransferModal = () => {
-    setTransferUsername('');
-    setTransferPassword('');
-    setTransferCountdown(TRANSFER_COUNTDOWN_SECONDS);
-    setIsTransferModalOpen(true);
-  };
-
-  const closeTransferModal = () => {
-    if (isTransferring) return;
-    setIsTransferModalOpen(false);
-    setTransferPassword('');
-    setTransferUsername('');
-  };
-
-  const canConfirmTransfer =
-    transferCountdown === 0 &&
-    transferUsername.trim().length > 0 &&
-    transferPassword.length > 0 &&
-    !isTransferring;
-
-  const handleConfirmTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const targetUsername = transferUsername.trim();
-
-    if (!targetUsername) {
-      toast.error(
-        'Enter the username of the account that should own the system.'
-      );
-      return;
-    }
-
-    if (!transferPassword) {
-      toast.error('Enter your own password to confirm this transfer.');
-      return;
-    }
-
-    try {
-      setIsTransferring(true);
-
-      const newOwnerEmail = await transferSuperAdminOwnership({
-        targetUsername,
-        confirmPassword: transferPassword,
-      });
-
-      setSuperAdminEmail(newOwnerEmail);
-      setIsTransferModalOpen(false);
-      setTransferPassword('');
-      setTransferUsername('');
-
-      toast.success(
-        `Superadmin ownership transferred to "${targetUsername}". They are now the system owner.`,
-        { autoClose: 8000 }
-      );
-
-      fetchUsers();
-    } catch (err: any) {
-      const message: string = err?.message || 'Failed to transfer ownership.';
-
-      if (message.toLowerCase().includes('incorrect password')) {
-        toast.error('Incorrect password. Ownership transfer aborted.');
-      } else {
-        toast.error(message);
-      }
-    } finally {
-      setIsTransferring(false);
-    }
-  };
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -343,38 +225,52 @@ export const UserManagement: React.FC = () => {
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = newUserName.trim();
-    const cleanEmail = newUserEmail.trim().toLowerCase();
 
     if (!cleanName) {
       toast.error('User name / Display identity is required.');
       return;
     }
 
-    if (!cleanEmail) {
-      toast.error('A valid email address is required.');
-      return;
-    }
+    let finalEmail = '';
+    let finalPassword = '';
 
-    // Strict validation: Reject .noemail and invalid email addresses
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail) || cleanEmail.endsWith('.noemail')) {
-      toast.error(
-        'A valid, standard email address is required. Non-email or local username-only accounts are not permitted.'
-      );
-      return;
-    }
+    if (accountType === 'email') {
+      finalEmail = newUserEmail.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(finalEmail) || finalEmail.endsWith('.noemail')) {
+        toast.error(
+          'Please enter a valid, standard email address for email-based registration.'
+        );
+        return;
+      }
+      finalPassword =
+        Math.random().toString(36).slice(-10) +
+        'A1!' +
+        Date.now().toString().slice(-4);
+    } else {
+      // Non-email / Local format: uses username@palomargym.noemail
+      const cleanSlug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!cleanSlug) {
+        toast.error('Username must contain letters or numbers.');
+        return;
+      }
+      finalEmail = `${cleanSlug}@palomargym.noemail`;
 
-    const temporaryPassword =
-      Math.random().toString(36).slice(-10) +
-      'A1!' +
-      Date.now().toString().slice(-4);
+      if (!newUserPassword || newUserPassword.length < 6) {
+        toast.error(
+          'Initial password must be at least 6 characters long for local accounts.'
+        );
+        return;
+      }
+      finalPassword = newUserPassword;
+    }
 
     try {
       setIsCreatingUser(true);
 
       const { data, error } = await supabase.rpc('admin_register_user', {
-        new_email: cleanEmail,
-        new_password: temporaryPassword,
+        new_email: finalEmail,
+        new_password: finalPassword,
         new_name: cleanName,
         new_role: newUserRole,
       });
@@ -385,29 +281,35 @@ export const UserManagement: React.FC = () => {
 
       await logAudit(
         'USER_PRE_REGISTERED',
-        `Pre-registered new user account "${cleanEmail}" with role "${newUserRole}".`,
+        `Pre-registered user "${cleanName}" (${finalEmail}) with role "${newUserRole}".`,
         registeredUserId
       );
 
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email: cleanEmail,
-        options: {
-          emailRedirectTo: buildAppUrl('/confirm-signup'),
-        },
-      });
+      if (accountType === 'email') {
+        const { error: resendError } = await supabase.auth.resend({
+          type: 'signup',
+          email: finalEmail,
+          options: {
+            emailRedirectTo: buildAppUrl('/confirm-signup'),
+          },
+        });
 
-      if (resendError) {
-        console.warn(
-          'SMTP confirmation dispatch bypassed:',
-          resendError.message
-        );
-        toast.info(
-          `Account registered, but verification email could not be sent: ${resendError.message}`
-        );
+        if (resendError) {
+          console.warn(
+            'SMTP confirmation dispatch bypassed:',
+            resendError.message
+          );
+          toast.info(
+            `Account registered, but verification email could not be sent: ${resendError.message}`
+          );
+        } else {
+          toast.success(
+            `Pre-registration successful! Verification email sent to ${finalEmail}`
+          );
+        }
       } else {
         toast.success(
-          `Pre-registration successful! Verification email has been sent to ${cleanEmail}`
+          `Local account created for "${cleanName}"! (ID: ${finalEmail})`
         );
       }
 
@@ -441,6 +343,7 @@ export const UserManagement: React.FC = () => {
       setIsCreateModalOpen(false);
       setNewUserName('');
       setNewUserEmail('');
+      setNewUserPassword('');
       setNewUserRole('staff');
       setNewUserAvatar(null);
 
@@ -451,7 +354,9 @@ export const UserManagement: React.FC = () => {
         errMsg.includes('users_email_partial_key') ||
         errMsg.includes('duplicate key value')
       ) {
-        toast.error('This email address is already registered in the system.');
+        toast.error(
+          'An account with this username or email already exists in the system.'
+        );
       } else {
         toast.error(err.message || 'Failed to pre-register system user.');
       }
@@ -525,7 +430,7 @@ export const UserManagement: React.FC = () => {
     const email = targetUser.email;
     if (!email || email.endsWith('@palomargym.noemail')) {
       toast.warn(
-        `"${targetUser.username}" has no valid external email address registered.`
+        `"${targetUser.username}" is a local username-only account and has no external email.`
       );
       return;
     }
@@ -784,9 +689,7 @@ export const UserManagement: React.FC = () => {
   };
 
   const isSuperAdminRow = (rowEmail?: string | null) =>
-    Boolean(
-      rowEmail && rowEmail.trim().toLowerCase() === effectiveSuperAdminEmail
-    );
+    Boolean(rowEmail && rowEmail.trim().toLowerCase() === superAdminEmail);
 
   const systemUsers = usersList.filter((u) => {
     if (viewerIsSuperAdmin) return true;
@@ -842,16 +745,16 @@ export const UserManagement: React.FC = () => {
       render: (u) => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
-        const isLegacyNoEmail = displayEmail.endsWith('@palomargym.noemail');
+        const isNoEmail = displayEmail.endsWith('@palomargym.noemail');
 
         return (
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs max-w-45 truncate block text-slate-400">
               {displayEmail}
             </span>
-            {isLegacyNoEmail && (
+            {isNoEmail && (
               <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
-                Legacy No-Email
+                No-Email (Local)
               </span>
             )}
           </div>
@@ -1033,7 +936,7 @@ export const UserManagement: React.FC = () => {
               disabled={isSendingReset === u.id || isNoEmailAccount}
               title={
                 isNoEmailAccount
-                  ? 'Account has no valid email'
+                  ? 'Local accounts have no external email'
                   : `Send password reset email to ${u.email}`
               }
               aria-label={`Send password reset to ${u.username}`}
@@ -1100,17 +1003,6 @@ export const UserManagement: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-          {viewerIsSuperAdmin && (
-            <button
-              onClick={openTransferModal}
-              title="Transfer Superadmin ownership to another account"
-              className="px-4 py-2.5 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <Crown className="w-3.5 h-3.5" />
-              Transfer Ownership
-            </button>
-          )}
-
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
@@ -1338,123 +1230,71 @@ export const UserManagement: React.FC = () => {
         )}
       </Modal>
 
-      {/* ─── Transfer Superadmin Ownership Modal ─── */}
-      <Modal
-        isOpen={isTransferModalOpen}
-        onClose={closeTransferModal}
-        title="Transfer Ownership"
-        className="max-w-md text-left p-6"
-      >
-        <form onSubmit={handleConfirmTransfer} className="space-y-4 font-body">
-          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-            <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
-                This hands over full system ownership
-              </p>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                The account you name becomes the Superadmin. You lose Superadmin
-                privileges immediately and can only regain them if the new owner
-                transfers it back to you.
-              </p>
-            </div>
-          </div>
-
-          <div className="field-wrap">
-            <input
-              type="text"
-              id="transferUsername"
-              placeholder=" "
-              value={transferUsername}
-              onChange={(e) => setTransferUsername(e.target.value)}
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              className="field-input text-xs"
-            />
-            <label htmlFor="transferUsername" className="field-label text-xs">
-              New Owner Username
-            </label>
-          </div>
-
-          <div className="field-wrap">
-            <input
-              type="password"
-              id="transferPassword"
-              placeholder=" "
-              value={transferPassword}
-              onChange={(e) => setTransferPassword(e.target.value)}
-              autoComplete="current-password"
-              className="field-input text-xs"
-            />
-            <label htmlFor="transferPassword" className="field-label text-xs">
-              Your Password (to confirm it&apos;s you)
-            </label>
-          </div>
-
-          {transferCountdown > 0 && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Review the details above. Confirming unlocks in{' '}
-                <strong className="font-mono text-(--color-text)">
-                  {transferCountdown}s
-                </strong>
-              </span>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={closeTransferModal}
-              disabled={isTransferring}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-
-            <button
-              type="submit"
-              disabled={!canConfirmTransfer}
-              className={`flex-1 py-3.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 ${
-                canConfirmTransfer
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white font-heading text-xs tracking-wider uppercase shadow-md cursor-pointer'
-                  : 'bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 font-heading text-xs tracking-wider uppercase cursor-not-allowed'
-              }`}
-            >
-              {isTransferring ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : transferCountdown > 0 ? (
-                `Wait ${transferCountdown}s`
-              ) : (
-                'Confirm Transfer'
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Pre-Register Modal (Strictly Requires Email) */}
+      {/* ─── Pre-Register Modal (Dual Options: Email vs Non-Email / Local) ─── */}
       <Modal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setNewUserName('');
+          setNewUserEmail('');
+          setNewUserPassword('');
+          setNewUserAvatar(null);
+        }}
         title="Pre-Register Account"
       >
         <form
           onSubmit={handleCreateUserSubmit}
           className="text-left w-full space-y-4 font-body"
         >
-          {/* Email Requirement Banner */}
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-400 font-medium">
-            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>
-              All system user accounts require a valid email address. An
-              invitation will be dispatched for security onboarding.
-            </span>
+          {/* Account Mode Switcher Tabs */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-(--bg-input) rounded-xl border border-(--border-color)">
+            <button
+              type="button"
+              onClick={() => setAccountType('email')}
+              className={`py-2 px-3 text-[10px] font-heading uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                accountType === 'email'
+                  ? 'bg-(--color-primary) text-white font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-(--color-text)'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email-Based</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAccountType('noemail')}
+              className={`py-2 px-3 text-[10px] font-heading uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                accountType === 'noemail'
+                  ? 'bg-(--color-primary) text-white font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-(--color-text)'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Username Only</span>
+            </button>
           </div>
 
+          {/* Mode Banner Description */}
+          {accountType === 'email' ? (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-400 font-medium">
+              <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Standard invitation. An automated verification and signup email
+                will be sent to the recipient inbox.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400 font-medium">
+              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Local staff ID account. Generates an internal{' '}
+                <code>@palomargym.noemail</code> identity with direct password
+                login.
+              </span>
+            </div>
+          )}
+
+          {/* User Name Field */}
           <div className="field-wrap">
             <input
               type="text"
@@ -1466,25 +1306,62 @@ export const UserManagement: React.FC = () => {
               className="field-input text-xs"
             />
             <label htmlFor="newUserName" className="field-label text-xs">
-              Display Full Name
+              {accountType === 'email'
+                ? 'Display Full Name'
+                : 'Account Username / Staff ID'}
             </label>
           </div>
 
-          <div className="field-wrap">
-            <input
-              type="email"
-              id="newUserEmail"
-              placeholder=" "
-              required
-              value={newUserEmail}
-              onChange={(e) => setNewUserEmail(e.target.value)}
-              className="field-input text-xs"
-            />
-            <label htmlFor="newUserEmail" className="field-label text-xs">
-              Email Address (Required)
-            </label>
-          </div>
+          {/* Email vs Password Switch */}
+          {accountType === 'email' ? (
+            <div className="field-wrap">
+              <input
+                type="email"
+                id="newUserEmail"
+                placeholder=" "
+                required
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                className="field-input text-xs"
+              />
+              <label htmlFor="newUserEmail" className="field-label text-xs">
+                Email Address (Required)
+              </label>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="field-wrap">
+                <input
+                  type="password"
+                  id="newUserPassword"
+                  placeholder=" "
+                  required
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="field-input text-xs"
+                />
+                <label
+                  htmlFor="newUserPassword"
+                  className="field-label text-xs"
+                >
+                  Initial Password (Min. 6 chars)
+                </label>
+              </div>
+              <p className="text-[10px] text-slate-400 font-mono">
+                Assigned system identifier:{' '}
+                <span className="text-(--color-text) font-semibold">
+                  {newUserName.trim()
+                    ? `${newUserName
+                        .trim()
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]/g, '')}@palomargym.noemail`
+                    : 'username@palomargym.noemail'}
+                </span>
+              </p>
+            </div>
+          )}
 
+          {/* Permission Role Selector */}
           <div className="grid gap-1.5">
             <label
               htmlFor="newUserRole"
@@ -1507,6 +1384,7 @@ export const UserManagement: React.FC = () => {
             </select>
           </div>
 
+          {/* Profile Photo (Optional) */}
           <div className="flex flex-col items-center gap-2 border border-dashed border-(--border-color) p-4 rounded-xl bg-(--bg-card)">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">
               Profile Photo (Optional)
@@ -1558,10 +1436,17 @@ export const UserManagement: React.FC = () => {
             />
           </div>
 
+          {/* Action Buttons */}
           <div className="flex gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setNewUserName('');
+                setNewUserEmail('');
+                setNewUserPassword('');
+                setNewUserAvatar(null);
+              }}
               className="flex-1 px-4 py-2.5 bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer text-center"
             >
               Cancel
@@ -1569,7 +1454,11 @@ export const UserManagement: React.FC = () => {
             <button
               type="submit"
               disabled={
-                isCreatingUser || !newUserName.trim() || !newUserEmail.trim()
+                isCreatingUser ||
+                !newUserName.trim() ||
+                (accountType === 'email'
+                  ? !newUserEmail.trim()
+                  : !newUserPassword.trim())
               }
               className="flex-1 px-4 py-2.5 bg-(--color-primary) text-white text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >

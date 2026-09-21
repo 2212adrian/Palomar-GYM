@@ -19,8 +19,6 @@ import {
   Plus,
   RotateCcw,
   ClipboardList,
-  ChevronRight,
-  ChevronLeft,
   Users,
   Search,
   Printer,
@@ -59,6 +57,7 @@ import {
   type SessionSummaryInfo,
 } from '../../components/ui/ClosedSessionGroup';
 import { useNavbarStore } from '../../stores/useNavbarStore';
+import { SideNavTab } from '../../components/ui/SideNavTab';
 
 // Unified Official Receipt & TimelineCard
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
@@ -1562,88 +1561,32 @@ export const LogbookPage: React.FC = () => {
 
       {/* --- SCALED VERTICAL DESKTOP NAVIGATION TABS --- */}
       {role === 'admin' && (
-        <div className="hidden lg:block">
-          <AnimatePresence>
-            {activePage === 'logbook' ? (
-              <motion.button
-                key="to-members-vertical"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 0.9, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                whileHover={{ scale: 1.05, opacity: 1 }}
-                onClick={() => navigate('/members/list')}
-                title="View Member Directory"
-                className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) py-6 px-3.5 rounded-l-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-              >
-                <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-                  MEMBERS
-                </span>
-                <motion.div
-                  animate={{ x: [0, 4, 0] }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.5,
-                    ease: 'easeInOut',
-                  }}
-                >
-                  <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
-                </motion.div>
-              </motion.button>
-            ) : (
-              <>
-                <motion.button
-                  key="to-logbook-vertical"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 0.9, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  whileHover={{ scale: 1.05, opacity: 1 }}
-                  onClick={() => navigate('/logbook')}
-                  title="View Attendance Logbook"
-                  className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-                >
-                  <motion.div
-                    animate={{ x: [0, -4, 0] }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1.5,
-                      ease: 'easeInOut',
-                    }}
-                  >
-                    <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
-                  </motion.div>
-                  <span className="[writing-mode:vertical-rl] rotate-180 font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-                    LOGBOOK
-                  </span>
-                </motion.button>
-
-                <motion.button
-                  key="to-plans-vertical"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 0.9, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  whileHover={{ scale: 1.05, opacity: 1 }}
-                  onClick={() => navigate('/members/plans')}
-                  title="View Membership Plans"
-                  className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) py-6 px-3.5 rounded-l-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-                >
-                  <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-                    PLANS
-                  </span>
-                  <motion.div
-                    animate={{ x: [0, 4, 0] }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1.5,
-                      ease: 'easeInOut',
-                    }}
-                  >
-                    <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
-                  </motion.div>
-                </motion.button>
-              </>
-            )}
-          </AnimatePresence>
-        </div>
+        <>
+          {activePage === 'logbook' ? (
+            <SideNavTab
+              side="right"
+              label="MEMBERS"
+              title="View Member Directory"
+              onClick={() => navigate('/members/list')}
+            />
+          ) : (
+            <>
+              <SideNavTab
+                side="left"
+                label="LOGBOOK"
+                title="View Attendance Logbook"
+                sidebarOffset={true}
+                onClick={() => navigate('/logbook')}
+              />
+              <SideNavTab
+                side="right"
+                label="PLANS"
+                title="View Membership Plans"
+                onClick={() => navigate('/members/plans')}
+              />
+            </>
+          )}
+        </>
       )}
 
       {/* SLIDING TIMELINE CANVAS GRID SCROLLER */}

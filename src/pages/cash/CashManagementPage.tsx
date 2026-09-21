@@ -438,7 +438,7 @@ export const CashManagementPage: React.FC = () => {
                     <input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       required
                       value={openingFloatInput}
                       onChange={(e) => setOpeningFloatInput(e.target.value)}
@@ -716,6 +716,7 @@ export const CashManagementPage: React.FC = () => {
           session={activeSession}
           metrics={metrics}
           onSuccess={async () => {
+            useCashSessionStore.getState().setSessionClosed();
             await loadActiveSession();
             if (isAdmin) {
               await loadHistory();
@@ -723,7 +724,6 @@ export const CashManagementPage: React.FC = () => {
           }}
         />
       )}
-
       {isAdmin && selectedHistorySession && (
         <SessionDetailsModal
           isOpen={Boolean(selectedHistorySession)}

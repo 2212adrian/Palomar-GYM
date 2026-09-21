@@ -19,8 +19,6 @@ import {
 } from 'date-fns';
 import {
   Plus,
-  ChevronLeft,
-  ChevronRight,
   RotateCcw,
   ShoppingBag,
   Printer,
@@ -30,7 +28,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { Html5Qrcode } from 'html5-qrcode';
 import 'react-loading-skeleton/dist/skeleton.css';
 import { createPortal } from 'react-dom';
 
@@ -63,6 +60,7 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 
 // Unified UI TimelineCard
 import { TimelineCard } from '../../components/ui/TimelineCard';
+import { SideNavTab } from '../../components/ui/SideNavTab';
 
 // ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
 const DynamicBanknoteIcon: React.FC<{
@@ -206,7 +204,6 @@ const PAYMENT_FILTERS = [
   { label: 'GCash', value: 'GCash' },
 ];
 
-// Formatter to produce clean human-readable product titles for the undo toast
 const formatSalesToastTitle = (tx: any) => {
   if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
     const itemsSummary = tx.items
@@ -285,7 +282,6 @@ export const Sales: React.FC = () => {
     return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
-  // Session-based deletability check
   const isTransactionDeletable = useCallback(
     (tx: any) => {
       if (!isSessionOpen || !activeSession) return false;
@@ -362,24 +358,16 @@ export const Sales: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
 
-  // Consolidated Stacked Deletion states
   const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
   const stagedDeletionsRef = useRef<any[]>([]);
   stagedDeletionsRef.current = stagedDeletions;
 
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
 
-  const [showLiveScanner] = useState(false);
-  const [, setCameras] = useState<Array<{ id: string; label: string }>>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-
-  // Animation states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
 
-  // Reset timeline filters to today's default helper
   const resetTimelineFilters = useCallback(() => {
     const today = getServerNow();
     const todayWeekStart = startOfWeek(today, { weekStartsOn: 0 });
@@ -391,32 +379,15 @@ export const Sales: React.FC = () => {
     setPaymentFilter('All');
   }, []);
 
-  // Always reset timeline filters whenever user exits or changes views/pages
   useEffect(() => {
     resetTimelineFilters();
   }, [location.pathname, activeView, resetTimelineFilters]);
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       resetTimelineFilters();
     };
   }, [resetTimelineFilters]);
-
-  useEffect(() => {
-    if (showLiveScanner) {
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            if (!selectedCameraId) {
-              setSelectedCameraId(devices[0].id);
-            }
-          }
-        })
-        .catch(console.warn);
-    }
-  }, [showLiveScanner]);
 
   useEffect(() => {
     if (role !== 'admin') return;
@@ -448,7 +419,6 @@ export const Sales: React.FC = () => {
     };
   }, []);
 
-  // Merged closed sessions lookup
   const mergedClosedSessions = useMemo(() => {
     const map = new Map<string, SessionSummaryInfo>();
     closedSessionsList.forEach((s) => map.set(String(s.id), s));
@@ -488,7 +458,6 @@ export const Sales: React.FC = () => {
     }
   };
 
-  // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchTransactions = useCallback(
     async (isBackground: boolean = false) => {
       const cacheKey = `sales_sanitized_${dateStr}`;
@@ -510,7 +479,6 @@ export const Sales: React.FC = () => {
       }
 
       try {
-        // Fetch closed sessions list from Supabase
         const { data: closedSessionsData } = await supabase
           .from('cash_sessions')
           .select(
@@ -591,7 +559,7 @@ export const Sales: React.FC = () => {
                 reference_number: s.reference_number,
               }));
             }
-          } catch (directErr) {
+          } catch {
             // Direct query failed
           }
         }
@@ -600,7 +568,7 @@ export const Sales: React.FC = () => {
           setTransactions(freshTransactions);
           sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
         }
-      } catch (err) {
+      } catch {
         // General error guard
       } finally {
         if (!isBackground) {
@@ -756,7 +724,6 @@ export const Sales: React.FC = () => {
     return filteredDayTransactions.slice(0, visibleCount);
   }, [filteredDayTransactions, visibleCount]);
 
-  // Active session transactions only (strictly 0 if session is closed)
   const activeSessionTransactions = useMemo(() => {
     if (!isSessionOpen || !activeSession) return [];
     return dayTransactions.filter((tx) => {
@@ -1085,9 +1052,7 @@ export const Sales: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in">
           {role === 'admin' && (
             <>
-              {/* ─── REDESIGNED TABLET TELEMETRY CAPSULE ─── */}
               <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
-                {/* Banknote & Animated Amount */}
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
                     <DynamicBanknoteIcon trend={revenueTrend} />
@@ -1099,7 +1064,6 @@ export const Sales: React.FC = () => {
 
                 <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
 
-                {/* Sales Counter */}
                 <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
                   <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                   <span className="font-heading font-bold text-xs tracking-wide">
@@ -1111,7 +1075,6 @@ export const Sales: React.FC = () => {
                 </div>
               </div>
 
-              {/* RECYCLE BIN BUTTON */}
               <button
                 type="button"
                 onClick={() => {
@@ -1146,7 +1109,6 @@ export const Sales: React.FC = () => {
             </>
           )}
 
-          {/* NEW SALE CTA BUTTON */}
           <button
             type="button"
             onClick={() => {
@@ -1181,31 +1143,15 @@ export const Sales: React.FC = () => {
       } else {
         setActions(
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
-            {/* INVENTORY RECYCLE BIN */}
             <Button
               onClick={() => {
-                if (!isSessionOpen) {
-                  toast.warning(
-                    'Recycle Bin is unavailable while the cash session is closed.'
-                  );
-                  return;
-                }
                 window.dispatchEvent(
                   new CustomEvent('trigger-product-recovery')
                 );
               }}
-              disabled={!isSessionOpen}
-              title={
-                !isSessionOpen
-                  ? 'Recycle Bin is locked: Cash session is closed'
-                  : 'Recycle Bin'
-              }
+              title="Recycle Bin"
               variant="secondary"
-              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
-                !isSessionOpen
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'cursor-pointer'
-              }`}
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
@@ -1285,66 +1231,29 @@ export const Sales: React.FC = () => {
   }, [stagedDeletions]);
 
   return (
-    <div className="relative min-h-[85vh] w-full animate-fade-in">
+    <div className="relative min-h-[85vh] w-full">
       <TabLoader isVisible={false} />
 
       {/* --- SLIM VERTICAL DESKTOP NAVIGATION TABS --- */}
       {role === 'admin' && (
-        <div className="hidden lg:block">
-          <AnimatePresence>
-            {activeView === 'register' ? (
-              <motion.button
-                key="to-products-vertical"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 0.9, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                whileHover={{ scale: 1.05, opacity: 1 }}
-                onClick={() => handlePcViewTransition('inventory')}
-                title="View Product Inventory"
-                className="group fixed right-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-l border-(--border-color) py-6 px-3.5 rounded-l-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-              >
-                <span className="[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-                  PRODUCTS
-                </span>
-                <motion.div
-                  animate={{ x: [0, 4, 0] }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.5,
-                    ease: 'easeInOut',
-                  }}
-                >
-                  <ChevronRight className="w-5 h-5 text-(--color-primary-light)" />
-                </motion.div>
-              </motion.button>
-            ) : (
-              <motion.button
-                key="to-register-vertical"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 0.9, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                whileHover={{ scale: 1.05, opacity: 1 }}
-                onClick={() => handlePcViewTransition('register')}
-                title="View Cashier Register"
-                className="group fixed left-0 top-1/2 -translate-y-1/2 bg-(--bg-card)/90 backdrop-blur-md border-y border-r border-(--border-color) py-6 px-3.5 rounded-r-3xl shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 z-45 transition-all hover:border-(--color-primary-light)/50 hover:bg-(--bg-card)"
-              >
-                <motion.div
-                  animate={{ x: [0, -4, 0] }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.5,
-                    ease: 'easeInOut',
-                  }}
-                >
-                  <ChevronLeft className="w-5 h-5 text-(--color-primary-light)" />
-                </motion.div>
-                <span className="[writing-mode:vertical-rl] rotate-180 font-heading text-xs font-black tracking-widest uppercase text-slate-400 group-hover:text-(--color-primary-light) transition-colors select-none">
-                  SALES
-                </span>
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
+        <>
+          {activeView === 'register' ? (
+            <SideNavTab
+              side="right"
+              label="PRODUCTS"
+              title="View Product Inventory"
+              onClick={() => handlePcViewTransition('inventory')}
+            />
+          ) : (
+            <SideNavTab
+              side="left"
+              label="SALES"
+              title="View Cashier Register"
+              sidebarOffset={true}
+              onClick={() => handlePcViewTransition('register')}
+            />
+          )}
+        </>
       )}
 
       {/* --- TIMELINE CANVAS SCROLLER --- */}
@@ -1380,7 +1289,6 @@ export const Sales: React.FC = () => {
             role={role}
             searchPlaceholder="Search here (E.g. Name, Product, ID)"
           />
-
           {/* --- HOURLY LEDGER TIMELINE WITH CLOSED SESSION CONTAINERS --- */}
           <div className="space-y-6">
             <AnimatePresence mode="popLayout">
@@ -1405,7 +1313,7 @@ export const Sales: React.FC = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
+                      className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs"
                     >
                       <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
                         {hasFilter ? (
@@ -1457,7 +1365,6 @@ export const Sales: React.FC = () => {
                   );
                 }
 
-                // ─── PARTITION: ONGOING vs. CLOSED SESSION TRANSACTIONS (WITH TIMESTAMP WINDOW FALLBACK) ───
                 const activeSessionId = activeSession?.id
                   ? String(activeSession.id)
                   : null;
@@ -1474,7 +1381,6 @@ export const Sales: React.FC = () => {
                     ? String(tx.cash_session_id)
                     : null;
 
-                  // 1. If session is currently open and tx belongs to it -> Live / Ongoing (not contained)
                   if (
                     isSessionOpen &&
                     activeSessionId &&
@@ -1484,12 +1390,10 @@ export const Sales: React.FC = () => {
                     return;
                   }
 
-                  // 2. Check if tx belongs to any closed session (by ID or timestamp window fallback)
                   const matchedClosedSession = mergedClosedSessions.find(
                     (cs) => {
                       if (sid && String(cs.id) === sid) return true;
 
-                      // Timestamp window fallback:
                       const txTimeStr = tx.created_at || tx.createdAt;
                       if (txTimeStr && cs.opened_at && cs.closed_at) {
                         const t = new Date(txTimeStr).getTime();
@@ -1517,12 +1421,17 @@ export const Sales: React.FC = () => {
                     (cs) => String(cs.id) === sid
                   );
                   if (sessionMeta) {
-                    closedSessionGroups.push({ session: sessionMeta, txs });
+                    closedSessionGroups.push({
+                      session: sessionMeta,
+                      txs,
+                    });
                   }
                 });
 
-                // Group ongoing transactions by hour
-                const ongoingHourlyGroups: { label: string; txs: any[] }[] = [];
+                const ongoingHourlyGroups: {
+                  label: string;
+                  txs: any[];
+                }[] = [];
                 ongoingTransactions.forEach((tx) => {
                   const rawTime = tx.created_at || tx.createdAt;
                   let hourLabel = 'Unknown Time';
@@ -1539,7 +1448,10 @@ export const Sales: React.FC = () => {
                   if (existing) {
                     existing.txs.push(tx);
                   } else {
-                    ongoingHourlyGroups.push({ label: hourLabel, txs: [tx] });
+                    ongoingHourlyGroups.push({
+                      label: hourLabel,
+                      txs: [tx],
+                    });
                   }
                 });
 
@@ -1601,7 +1513,10 @@ export const Sales: React.FC = () => {
                           '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
                       }}
                       transition={{
-                        layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+                        layout: {
+                          duration: 0.35,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
                         boxShadow: {
                           duration: isDeleting ? 0.15 : 1.5,
                           ease: 'easeOut',
@@ -1625,10 +1540,10 @@ export const Sales: React.FC = () => {
 
                 return (
                   <div className="space-y-6">
-                    {/* 1. ONGOING / LIVE TRANSACTIONS (NOT CONTAINED) */}
+                    {/* 1. ONGOING / LIVE TRANSACTIONS */}
                     {ongoingHourlyGroups.map((group) => (
                       <div key={group.label} className="space-y-4">
-                        <div className="flex items-center gap-3 select-none pt-2 animate-fade-in">
+                        <div className="flex items-center gap-3 select-none pt-2">
                           <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
                             {group.label}
                           </div>
@@ -1643,7 +1558,7 @@ export const Sales: React.FC = () => {
                       </div>
                     ))}
 
-                    {/* ─── SEPARATOR: ACTIVE VS ENDED SESSIONS ─── */}
+                    {/* SEPARATOR: ACTIVE VS ENDED SESSIONS */}
                     {ongoingHourlyGroups.length > 0 &&
                       closedSessionGroups.length > 0 && (
                         <div className="flex items-center gap-3 pt-3 select-none">
@@ -1653,11 +1568,11 @@ export const Sales: React.FC = () => {
                               CLOSED SESSIONS ({closedSessionGroups.length})
                             </span>
                           </div>
-                          <div className="h-px flex-1 bg-gradient-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                          <div className="h-px flex-1 bg-linear-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
                         </div>
                       )}
 
-                    {/* 2. ENDED SESSION GROUPS (CONTAINED, DEFAULT COLLAPSED, BLUE) */}
+                    {/* 2. ENDED SESSION GROUPS */}
                     {closedSessionGroups.map((group) => {
                       const totalRev = group.txs.reduce(
                         (sum, t) => sum + (Number(t.total_amount) || 0),
@@ -1713,7 +1628,7 @@ export const Sales: React.FC = () => {
                       </div>
                     )}
 
-                    {/* QUICK ACTION HORIZONTAL CREATE NEW SALE BUTTON */}
+                    {/* QUICK ACTION BUTTON */}
                     <motion.button
                       whileHover={
                         isLocked || !isSessionOpen ? {} : { scale: 1.01 }
@@ -1828,7 +1743,7 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* CONSOLIDATED STACKABLE UNDO TOAST (PAUSES ON HOVER/TOUCH + INNER ITEM ACTIONS) */}
+      {/* CONSOLIDATED STACKABLE UNDO TOAST */}
       <UndoToast
         items={undoToastItems}
         duration={5}
@@ -1842,7 +1757,7 @@ export const Sales: React.FC = () => {
       {activeView === 'register' &&
         createPortal(
           <div
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl transition-all duration-300 ease-in-out ${
               isNavFloatingOpen
                 ? 'translate-y-24 opacity-0 pointer-events-none'
                 : 'translate-y-0 opacity-100 pointer-events-auto'
@@ -1864,7 +1779,6 @@ export const Sales: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
               {role === 'admin' && (
                 <button
