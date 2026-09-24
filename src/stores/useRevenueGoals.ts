@@ -11,6 +11,7 @@ import {
   endOfYear,
 } from 'date-fns';
 import { supabase } from '../lib/supabase/client';
+import { logAudit } from '../lib/supabase/audit';
 import { useAuthStore } from './authStore';
 import { isSuperAdmin } from '../constants/auth';
 
@@ -91,6 +92,7 @@ export function useRevenueGoals() {
       );
     }
 
+    const oldGoals = { ...goalsConfig };
     setGoalsConfig(newGoals);
 
     const { error } = await supabase.from('revenue_goals').upsert(
@@ -109,6 +111,26 @@ export function useRevenueGoals() {
       console.error('Failed to update revenue_goals in Supabase:', error);
       throw error;
     }
+
+    const changes: string[] = [];
+    if (oldGoals.daily !== newGoals.daily) {
+      changes.push(`Daily: ₱${oldGoals.daily.toLocaleString()} -> ₱${newGoals.daily.toLocaleString()}`);
+    }
+    if (oldGoals.weekly !== newGoals.weekly) {
+      changes.push(`Weekly: ₱${oldGoals.weekly.toLocaleString()} -> ₱${newGoals.weekly.toLocaleString()}`);
+    }
+    if (oldGoals.monthly !== newGoals.monthly) {
+      changes.push(`Monthly: ₱${oldGoals.monthly.toLocaleString()} -> ₱${newGoals.monthly.toLocaleString()}`);
+    }
+    if (oldGoals.yearly !== newGoals.yearly) {
+      changes.push(`Yearly: ₱${oldGoals.yearly.toLocaleString()} -> ₱${newGoals.yearly.toLocaleString()}`);
+    }
+    const diffStr = changes.length > 0 ? `: ${changes.join(', ')}` : '';
+    await logAudit(
+      'REVENUE_GOALS_UPDATED',
+      `Updated facility revenue goals targets${diffStr}.`,
+      user?.id
+    ).catch((e) => console.warn('Revenue goals audit log error:', e));
   };
 
   // Calculate Date Boundaries

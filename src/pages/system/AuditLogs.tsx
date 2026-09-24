@@ -25,18 +25,17 @@ import {
   CheckCircle2,
   UserCheck,
   UserX,
+  Wallet,
 } from 'lucide-react';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Activities' },
-  { id: 'sales', label: 'Sales & Products' },
-  { id: 'attendance', label: 'Logbook & Attendance' },
-  { id: 'members', label: 'Members' },
-  { id: 'payments', label: 'Payments & Rates' },
+  { id: 'cash', label: 'Cash Management' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'logbook', label: 'Logbook & Plans' },
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'incidents', label: 'Incident Reports' },
-  { id: 'backups', label: 'Backups' },
-  { id: 'security', label: 'Security & Users' },
-  { id: 'auth', label: 'Authentication' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 export const AuditLogs: React.FC = () => {
@@ -76,6 +75,13 @@ export const AuditLogs: React.FC = () => {
 
   const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
+    // Cash Management
+    if (act.includes('CASH_SESSION_OPEN') || act.includes('OPEN_DRAWER'))
+      return 'Opened Cash Drawer Session';
+    if (act.includes('CASH_SESSION_CLOSED') || act.includes('CLOSE_DRAWER'))
+      return 'Closed & Reconciled Cash Session';
+    if (act.includes('CASH_FLOAT')) return 'Configured Cash Float';
+
     // Sales & Products
     if (act.includes('SALE_CREATED') || act.includes('SALE_ADD'))
       return 'Created New Sale';
@@ -96,7 +102,7 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('PRODUCT_LABELS_PRINTED'))
       return 'Printed Product Sheet Labels';
 
-    // Logbook & Attendance
+    // Logbook & Attendance & Members
     if (
       act.includes('CHECK_IN') ||
       act.includes('LOGBOOK_CHECKIN') ||
@@ -117,8 +123,6 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('PAYMENT_COLLECTED'))
       return 'Collected Outstanding Payment';
     if (act.includes('PAYMENT_UNDONE')) return 'Reverted Payment to Unpaid';
-
-    // Members
     if (
       act.includes('ONLINE_REGISTRATION_APPROVED') ||
       act.includes('ONLINE_REG_APPROVED')
@@ -169,15 +173,16 @@ export const AuditLogs: React.FC = () => {
     if (act.includes('INCIDENT_DELETED') || act.includes('INCIDENT_REMOVED'))
       return 'Deleted Incident Report';
     if (act.includes('INCIDENT_COMMENT')) return 'Added Comment to Incident';
+    if (act.includes('INCIDENT_ARCHIVED')) return 'Archived Incident Report';
+    if (act.includes('INCIDENT_RESTORED')) return 'Restored Incident Report';
 
-    // Dashboard & Reports
+    // Dashboard & Goals
     if (act.includes('DASHBOARD_REPORT') || act.includes('DASHBOARD_PRINT'))
       return 'Printed Dashboard Summary';
-    if (act.includes('REVENUE_GOAL')) return 'Configured Revenue Goal';
+    if (act.includes('REVENUE_GOAL') || act.includes('REVENUE_GOALS'))
+      return 'Updated Facility Revenue Goals';
 
     // Settings & System
-    if (act.includes('PAYMENT_RECEIVED') || act.includes('PAYMENT_ADD'))
-      return 'Received Plan Payment';
     if (act.includes('SYSTEM_RATES_UPDATED') || act.includes('RATES_CONFIG'))
       return 'Updated Pricing & Rates';
     if (act.includes('DATABASE_BACKUP') || act.includes('GENERATE_BACKUP'))
@@ -192,8 +197,15 @@ export const AuditLogs: React.FC = () => {
       return 'Created Staff/Admin Account';
     if (act.includes('USER_UPDATED') || act.includes('ACCOUNT_UPDATED'))
       return 'Updated Staff/Admin Account';
+    if (act.includes('USER_STATUS_TOGGLED'))
+      return 'Updated Staff Status/Role';
+    if (act.includes('ADMIN_EDIT_USER_PROFILE'))
+      return 'Edited Staff Profile Details';
+    if (act.includes('ADMIN_PASSWORD_RESET_SENT'))
+      return 'Sent Password Reset Link';
     if (act.includes('USER_DEACTIVATED') || act.includes('USER_SUSPENDED'))
       return 'Suspended User Account';
+    if (act.includes('USER_DELETED')) return 'Deleted User Account';
     if (act.includes('GYM_PROFILE')) return 'Updated Gym Profile Information';
     if (act.includes('DELETE') || act.includes('PURGE'))
       return 'Purged System Record';
@@ -206,29 +218,52 @@ export const AuditLogs: React.FC = () => {
 
   const getActionCategory = (action: string): string => {
     const act = action.toLowerCase();
-    if (act.includes('login') || act.includes('logout') || act.includes('auth'))
-      return 'auth';
+    if (
+      act.includes('cash') ||
+      act.includes('drawer') ||
+      act.includes('float') ||
+      act.includes('session') ||
+      act.includes('reconcil')
+    ) {
+      return 'cash';
+    }
     if (
       act.includes('sale') ||
       act.includes('product') ||
-      act.includes('receipt')
-    )
+      act.includes('receipt') ||
+      act.includes('stock')
+    ) {
       return 'sales';
-    if (act.includes('incident')) return 'incidents';
+    }
     if (
       act.includes('check_in') ||
       act.includes('check_out') ||
       act.includes('logbook') ||
-      act.includes('attendance')
-    )
-      return 'attendance';
-    if (
+      act.includes('attendance') ||
       act.includes('member') ||
       act.includes('online_registration') ||
       act.includes('online_reg') ||
-      act.includes('enroll')
-    )
-      return 'members';
+      act.includes('enroll') ||
+      act.includes('subscription') ||
+      act.includes('plan')
+    ) {
+      return 'logbook';
+    }
+    if (
+      act.includes('incident') ||
+      act.includes('report_created') ||
+      act.includes('report_resolved')
+    ) {
+      return 'incidents';
+    }
+    if (
+      act.includes('goal') ||
+      act.includes('revenue') ||
+      act.includes('dashboard') ||
+      act.includes('metric')
+    ) {
+      return 'dashboard';
+    }
     if (
       act.includes('profile') ||
       act.includes('user') ||
@@ -238,21 +273,20 @@ export const AuditLogs: React.FC = () => {
       act.includes('security') ||
       act.includes('account') ||
       act.includes('permission') ||
-      act.includes('gym')
-    )
-      return 'security';
-    if (
-      act.includes('payment') ||
-      act.includes('fee') ||
-      act.includes('charge') ||
-      act.includes('invoice') ||
+      act.includes('gym') ||
+      act.includes('rate') ||
       act.includes('rates') ||
-      act.includes('revenue_goal') ||
-      act.includes('config') ||
-      act.includes('settings')
-    )
-      return 'payments';
-    if (act.includes('backup') || act.includes('snapshot')) return 'backups';
+      act.includes('backup') ||
+      act.includes('snapshot') ||
+      act.includes('auth') ||
+      act.includes('login') ||
+      act.includes('logout') ||
+      act.includes('password') ||
+      act.includes('setting') ||
+      act.includes('system')
+    ) {
+      return 'settings';
+    }
     return 'all';
   };
 
@@ -289,6 +323,13 @@ export const AuditLogs: React.FC = () => {
   const getActionIcon = (action: string, severity: string) => {
     const act = action.toUpperCase();
     const style = 'w-4 h-4';
+    if (
+      act.includes('CASH') ||
+      act.includes('DRAWER') ||
+      act.includes('FLOAT') ||
+      act.includes('SESSION')
+    )
+      return <Wallet className={`${style} text-emerald-500`} />;
     if (act.includes('ONLINE_REGISTRATION_APPROVED'))
       return <UserCheck className={`${style} text-emerald-500`} />;
     if (act.includes('ONLINE_REGISTRATION_REJECTED'))
@@ -370,83 +411,102 @@ export const AuditLogs: React.FC = () => {
 
   const renderFormattedAuditDetails = (details: string) => {
     if (!details)
-      return <span className="text-slate-400">System action executed.</span>;
+      return <span className="text-slate-400 italic">System action executed.</span>;
 
-    // Check if there are "->" or "changed from X to Y" patterns
     const hasArrowChange =
       details.includes('->') ||
       details.includes(' -> ') ||
       details.includes('changed from');
 
     if (!hasArrowChange) {
-      return <span>{details}</span>;
+      return <span className="leading-relaxed">{details}</span>;
     }
 
-    // Split on commas or newlines if it's multiple change items
-    const parts = details
+    let prefixDescription = '';
+    let diffsText = details;
+
+    const firstArrowIdx = details.indexOf('->');
+    const firstColonIdx = details.indexOf(':');
+
+    if (firstColonIdx > -1 && firstColonIdx < firstArrowIdx) {
+      const secondColonIdx = details.indexOf(':', firstColonIdx + 1);
+      if (secondColonIdx > -1 && secondColonIdx < firstArrowIdx) {
+        prefixDescription = details.substring(0, firstColonIdx).trim();
+        diffsText = details.substring(firstColonIdx + 1).trim();
+      }
+    }
+
+    const parts = diffsText
       .split(/[,;\n]+/)
       .map((p) => p.trim())
       .filter(Boolean);
 
     return (
-      <div className="space-y-1.5 mt-1">
-        {parts.map((part, idx) => {
-          if (part.includes('->') || part.includes('changed from')) {
-            let label = '';
-            let beforeVal = '';
-            let afterVal = '';
+      <div className="space-y-2 mt-1">
+        {prefixDescription && (
+          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+            {prefixDescription}:
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {parts.map((part, idx) => {
+            if (part.includes('->') || part.includes('changed from')) {
+              let label = '';
+              let beforeVal = '';
+              let afterVal = '';
 
-            if (part.includes('->')) {
-              const colonIdx = part.indexOf(':');
-              if (colonIdx > -1 && colonIdx < part.indexOf('->')) {
-                label = part.substring(0, colonIdx).trim();
-                const rest = part.substring(colonIdx + 1).trim();
-                const [b, a] = rest.split('->');
-                beforeVal = (b || '').trim().replace(/^"|"$/g, '');
-                afterVal = (a || '').trim().replace(/^"|"$/g, '');
-              } else {
-                const [b, a] = part.split('->');
-                beforeVal = (b || '').trim().replace(/^"|"$/g, '');
-                afterVal = (a || '').trim().replace(/^"|"$/g, '');
+              if (part.includes('->')) {
+                const colonIdx = part.indexOf(':');
+                if (colonIdx > -1 && colonIdx < part.indexOf('->')) {
+                  label = part.substring(0, colonIdx).trim();
+                  const rest = part.substring(colonIdx + 1).trim();
+                  const [b, a] = rest.split('->');
+                  beforeVal = (b || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
+                  afterVal = (a || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
+                } else {
+                  const [b, a] = part.split('->');
+                  beforeVal = (b || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
+                  afterVal = (a || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
+                }
+              } else if (part.includes('changed from')) {
+                const [prefix, rest] = part.split('changed from');
+                label = prefix.trim().replace(/:$/, '');
+                const [b, a] = (rest || '').split('to');
+                beforeVal = (b || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
+                afterVal = (a || '').trim().replace(/^["'\s]+|["'\s]+$/g, '');
               }
-            } else if (part.includes('changed from')) {
-              const [prefix, rest] = part.split('changed from');
-              label = prefix.trim();
-              const [b, a] = (rest || '').split('to');
-              beforeVal = (b || '').trim().replace(/^"|"$/g, '');
-              afterVal = (a || '').trim().replace(/^"|"$/g, '');
+
+              return (
+                <div
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-xs shadow-2xs"
+                >
+                  {label && (
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 text-[11px] uppercase tracking-wider">
+                      {label}:
+                    </span>
+                  )}
+                  <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono text-[11px] line-through font-medium">
+                    {beforeVal || 'None'}
+                  </span>
+                  <span className="text-slate-400 font-bold text-xs">➜</span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono text-[11px] font-bold">
+                    {afterVal || 'None'}
+                  </span>
+                </div>
+              );
             }
 
             return (
               <div
                 key={idx}
-                className="flex flex-wrap items-center gap-1.5 text-xs"
+                className="text-xs text-slate-600 dark:text-slate-300 bg-slate-100/50 dark:bg-slate-900/50 px-2 py-1 rounded border border-slate-200/50 dark:border-slate-800/50"
               >
-                {label && (
-                  <span className="font-bold text-slate-700 dark:text-slate-300">
-                    {label}:
-                  </span>
-                )}
-                <span className="px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-semibold line-through text-[11px]">
-                  {beforeVal || 'None'}
-                </span>
-                <span className="text-slate-400 font-bold">➜</span>
-                <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
-                  {afterVal || 'None'}
-                </span>
+                {part}
               </div>
             );
-          }
-
-          return (
-            <div
-              key={idx}
-              className="text-xs text-slate-600 dark:text-slate-300"
-            >
-              {part}
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
     );
   };
@@ -1077,10 +1137,12 @@ export const AuditLogs: React.FC = () => {
                                           })}
                                         </span>
                                       </div>
-                                      <p className="text-slate-700 dark:text-slate-300 font-semibold pl-5 break-words">
-                                        {item.details ||
-                                          'No additional context recorded.'}
-                                      </p>
+                                      <div className="pl-5 break-words">
+                                        {renderFormattedAuditDetails(
+                                          item.details ||
+                                            'No additional context recorded.'
+                                        )}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

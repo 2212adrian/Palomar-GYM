@@ -182,12 +182,18 @@ export const UserManagement: React.FC = () => {
         if (error) throw error;
 
         const auditChanges = [];
-        if (draft.role) auditChanges.push(`role to "${draft.role}"`);
-        if (draft.status) auditChanges.push(`status to "${draft.status}"`);
+        if (draft.role !== undefined && draft.role !== target.role) {
+          auditChanges.push(`Role: "${target.role}" -> "${draft.role}"`);
+        }
+        if (draft.status !== undefined && draft.status !== target.status) {
+          auditChanges.push(
+            `Status: "${target.status || 'active'}" -> "${draft.status}"`
+          );
+        }
 
         await logAudit(
           'USER_STATUS_TOGGLED',
-          `Modified staff credentials for "${target.username}" (${target.email}): changed ${auditChanges.join(' and ')}.`,
+          `Modified staff credentials for "${target.username}" (${target.email}): ${auditChanges.join(', ')}.`,
           id
         );
       });
@@ -583,10 +589,13 @@ export const UserManagement: React.FC = () => {
       }
 
       const auditNotes = [];
-      if (usernameChanged) auditNotes.push(`username to "${trimmed}"`);
+      if (usernameChanged)
+        auditNotes.push(
+          `Username: "${editTargetUser.username}" -> "${trimmed}"`
+        );
       if (avatarChanged)
         auditNotes.push(
-          newAvatarPath ? 'uploaded new profile photo' : 'removed profile photo'
+          newAvatarPath ? 'Uploaded new profile photo' : 'Removed profile photo'
         );
 
       await logAudit(

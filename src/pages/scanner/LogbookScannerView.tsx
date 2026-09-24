@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import {
   memberService,
   subscriptionService,
@@ -294,6 +295,12 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
       ]);
 
       if (error) throw error;
+
+      await logAudit(
+        'ATTENDANCE_CHECKIN',
+        `Recorded check-in for member "${memberData.fullName}" (${memberData.memberId}) - Plan: ${memberData.membershipPlan}, Fee: ₱${totalDue} via ${paymentMethod}.`,
+        memberData.memberId
+      ).catch((e) => console.warn('Attendance audit log error:', e));
 
       toast.success(`Check-in recorded for ${memberData.fullName}!`);
       onClearScan();

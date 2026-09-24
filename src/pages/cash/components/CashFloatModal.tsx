@@ -27,6 +27,7 @@ export const CashFloatModal: React.FC = () => {
   const [openingFloatInput, setOpeningFloatInput] = useState('1000');
   const [openingNotes, setOpeningNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [countdown, setCountdown] = useState(3);
 
   // Storage key per user to track if prompt has already been shown this login session
   const sessionPromptKey = user?.id
@@ -45,6 +46,37 @@ export const CashFloatModal: React.FC = () => {
     if (typeof window === 'undefined') return;
     setHasAlreadySeen(sessionStorage.getItem(sessionPromptKey) === 'true');
   }, [sessionPromptKey]);
+
+  // 3 seconds countdown before Open Drawer button is enabled
+  useEffect(() => {
+    if (
+      isInitializing ||
+      isSessionOpen ||
+      isDismissed ||
+      hasAlreadySeen ||
+      !isAdminOrSuperAdmin
+    ) {
+      return;
+    }
+    setCountdown(3);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [
+    isInitializing,
+    isSessionOpen,
+    isDismissed,
+    hasAlreadySeen,
+    isAdminOrSuperAdmin,
+  ]);
 
   // Record the prompt as seen for the remainder of this login session.
   const markPromptSeen = () => {
@@ -150,19 +182,19 @@ export const CashFloatModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in select-none">
-      <div className="w-full max-w-md bg-white dark:bg-[#16181a] border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+      <div className="w-full max-w-md bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-800/80 rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
         {/* Header */}
         <div className="px-6 pt-6 pb-2 text-center relative">
           <button
             type="button"
             onClick={handleJustCheckingIn}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-3 shadow-inner">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-3 shadow-inner">
             <Coins className="w-7 h-7" />
           </div>
 
@@ -202,7 +234,7 @@ export const CashFloatModal: React.FC = () => {
                 value={openingFloatInput}
                 onChange={(e) => setOpeningFloatInput(e.target.value)}
                 placeholder="0.00"
-                className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-2xl text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800/80 rounded-2xl text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
@@ -214,7 +246,7 @@ export const CashFloatModal: React.FC = () => {
                   onClick={() =>
                     setOpeningFloatInput(lastCountedCash.toString())
                   }
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     openingFloatInput === lastCountedCash.toString()
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
@@ -230,10 +262,10 @@ export const CashFloatModal: React.FC = () => {
                   type="button"
                   key={amt}
                   onClick={() => setOpeningFloatInput(amt.toString())}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     openingFloatInput === amt.toString()
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                      : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-neutral-700'
+                      : 'bg-slate-100 dark:bg-[#1e232d] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/60'
                   }`}
                 >
                   ₱{amt.toLocaleString()}
@@ -251,7 +283,7 @@ export const CashFloatModal: React.FC = () => {
               placeholder="e.g. Added extra small bills for change"
               value={openingNotes}
               onChange={(e) => setOpeningNotes(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800/80 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
@@ -261,16 +293,19 @@ export const CashFloatModal: React.FC = () => {
               type="submit"
               variant="primary"
               loading={isSubmitting}
-              className="w-full py-3.5 text-sm font-heading font-black tracking-wide bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white border-none shadow-md shadow-amber-500/20"
+              disabled={countdown > 0 || isSubmitting}
+              className="w-full py-3.5 text-sm font-heading font-black tracking-wide !bg-emerald-600 hover:!bg-emerald-700 active:!bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white border-none shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
             >
               <Check className="w-4 h-4 mr-1.5" />
-              Open Drawer with this Cash
+              {countdown > 0
+                ? `Open Drawer with this Cash (${countdown}s)`
+                : 'Open Drawer with this Cash'}
             </Button>
 
             <button
               type="button"
               onClick={handleJustCheckingIn}
-              className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
+              className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
             >
               Just checking in (Skip for now)
             </button>

@@ -581,9 +581,25 @@ export const IncidentReports: React.FC = () => {
         if (error) throw error;
 
         toast.success('Report updated successfully.');
+        const diffs: string[] = [];
+        if (selectedReport) {
+          if (selectedReport.title !== titleClean)
+            diffs.push(`Title: "${selectedReport.title}" -> "${titleClean}"`);
+          if (selectedReport.priority !== formPriority)
+            diffs.push(
+              `Priority: "${selectedReport.priority}" -> "${formPriority}"`
+            );
+          if (selectedReport.description !== descClean)
+            diffs.push('Description updated');
+          if (JSON.stringify(selectedReport.tags) !== JSON.stringify(formTags))
+            diffs.push(
+              `Tags: [${selectedReport.tags?.join(', ') || ''}] -> [${formTags.join(', ')}]`
+            );
+        }
+        const diffStr = diffs.length > 0 ? `: ${diffs.join(', ')}` : '';
         await recordAuditLog(
           'INCIDENT_UPDATED',
-          `Updated incident report "${titleClean}" (${formPriority} priority).`
+          `Updated incident report "${titleClean}"${diffStr}.`
         );
       } else {
         const staffName =
@@ -644,9 +660,7 @@ export const IncidentReports: React.FC = () => {
 
       await recordAuditLog(
         status === 'Read' ? 'INCIDENT_RESOLVED' : 'INCIDENT_UPDATED',
-        status === 'Read'
-          ? `Marked incident report "${target?.title || 'Report'}" as Reviewed / Read.`
-          : `Marked incident report "${target?.title || 'Report'}" as Unread.`
+        `Incident report "${target?.title || 'Report'}" Status: "${target?.status || 'Unread'}" -> "${status}".`
       );
 
       if (selectedReport?.id === id) {

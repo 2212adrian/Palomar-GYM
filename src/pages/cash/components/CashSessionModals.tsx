@@ -216,9 +216,10 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="CLOSE CASH SESSION & RECONCILE"
-      className="max-w-2xl p-6 text-left"
+      className="max-w-4xl p-5 sm:p-6 text-left"
     >
-      <div className="flex items-center justify-between p-3.5 bg-slate-100 dark:bg-neutral-800/80 border border-slate-200 dark:border-white/10 rounded-2xl mb-4">
+      {/* Session summary header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-100 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl mb-4">
         <div>
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Active Session
@@ -237,349 +238,365 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Count Mode Selector */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-neutral-800 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setCountMode('direct')}
-            className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              countMode === 'direct'
-                ? 'bg-white dark:bg-[#111] text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-            }`}
-          >
-            <DollarSign className="w-3.5 h-3.5" />
-            Direct Amount Input
-          </button>
-          <button
-            type="button"
-            onClick={() => setCountMode('denominations')}
-            className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              countMode === 'denominations'
-                ? 'bg-white dark:bg-[#111] text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-            }`}
-          >
-            <Calculator className="w-3.5 h-3.5" />
-            Count Denominations
-          </button>
-        </div>
-
-        {/* Mode 1: Direct Amount Input */}
-        {countMode === 'direct' ? (
-          <div className="p-4 rounded-2xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
-              Actual Counted Cash in Drawer (₱) *
-            </label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">
-                ₱
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                required
-                placeholder="0.00"
-                value={directCashInput}
-                onChange={(e) => setDirectCashInput(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-            </div>
-            {!directCashInput.trim() && (
-              <p className="text-[11px] text-rose-500 font-semibold">
-                * Input is required to end the session.
-              </p>
-            )}
-          </div>
-        ) : (
-          /* Mode 2: Denominations Counter */
-          <div className="space-y-4">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-white/10">
-              <div className="flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
-                <h4 className="text-xs font-heading uppercase tracking-wider text-slate-900 dark:text-white font-bold">
-                  PHYSICAL DRAWER DENOMINATIONS
-                </h4>
-              </div>
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+          {/* Left Column: Count Entry (7 columns) */}
+          <div className="md:col-span-7 space-y-4">
+            {/* Count Mode Selector */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-[#1e232d] rounded-xl border border-slate-200/80 dark:border-slate-800/80">
               <button
                 type="button"
-                onClick={() => setDenominations(INITIAL_DENOMINATIONS)}
-                className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                onClick={() => setCountMode('direct')}
+                className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  countMode === 'direct'
+                    ? 'bg-white dark:bg-[#161920] text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                }`}
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
+                <DollarSign className="w-3.5 h-3.5" />
+                Direct Amount
+              </button>
+              <button
+                type="button"
+                onClick={() => setCountMode('denominations')}
+                className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  countMode === 'denominations'
+                    ? 'bg-white dark:bg-[#161920] text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                }`}
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                Count Denominations
               </button>
             </div>
 
-            {/* Banknotes */}
+            {/* Mode 1: Direct Amount Input */}
+            {countMode === 'direct' ? (
+              <div className="p-4 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                  Actual Counted Cash in Drawer (₱) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">
+                    ₱
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    placeholder="0.00"
+                    value={directCashInput}
+                    onChange={(e) => setDirectCashInput(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+                {!directCashInput.trim() && (
+                  <p className="text-[11px] text-rose-500 font-semibold">
+                    * Input is required to end the session.
+                  </p>
+                )}
+              </div>
+            ) : (
+              /* Mode 2: Denominations Counter */
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 space-y-3 max-h-[360px] overflow-y-auto pr-1.5">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200/80 dark:border-slate-800/80">
+                  <div className="flex items-center gap-1.5">
+                    <Calculator className="w-4 h-4 text-blue-500" />
+                    <h4 className="text-xs font-heading uppercase tracking-wider text-slate-900 dark:text-white font-bold">
+                      Physical Drawer Denominations
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDenominations(INITIAL_DENOMINATIONS)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset
+                  </button>
+                </div>
+
+                {/* Banknotes */}
+                <div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">
+                    <Banknote className="w-3.5 h-3.5" /> Banknotes
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {(
+                      [
+                        'bill_1000',
+                        'bill_500',
+                        'bill_200',
+                        'bill_100',
+                        'bill_50',
+                        'bill_20',
+                      ] as Array<keyof DenominationCounts>
+                    ).map((key) => {
+                      const meta = DENOMINATION_VALUES[key];
+                      const count = denominations[key] || 0;
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80"
+                        >
+                          <div className="w-20">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white">
+                              {meta.label}
+                            </span>
+                            <p className="text-[10px] text-slate-500 font-mono">
+                              = ₱
+                              {(count * meta.value).toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleIncrement(key, -1)}
+                              className="w-7 h-7 rounded-lg bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <MinusCircle className="w-4 h-4" />
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              value={count === 0 ? '' : count}
+                              placeholder="0"
+                              onChange={(e) =>
+                                handleDenomChange(
+                                  key,
+                                  parseInt(e.target.value, 10)
+                                )
+                              }
+                              className="w-12 text-center py-1 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleIncrement(key, 1)}
+                              className="w-7 h-7 rounded-lg bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Coins */}
+                <div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5">
+                    <Coins className="w-3.5 h-3.5" /> Metallic Coins
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {(
+                      [
+                        'coin_20',
+                        'coin_10',
+                        'coin_5',
+                        'coin_1',
+                        'coin_025',
+                      ] as Array<keyof DenominationCounts>
+                    ).map((key) => {
+                      const meta = DENOMINATION_VALUES[key];
+                      const count = denominations[key] || 0;
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80"
+                        >
+                          <div className="w-20">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white">
+                              {meta.label}
+                            </span>
+                            <p className="text-[10px] text-slate-500 font-mono">
+                              = ₱
+                              {(count * meta.value).toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleIncrement(key, -1)}
+                              className="w-7 h-7 rounded-lg bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <MinusCircle className="w-4 h-4" />
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              value={count === 0 ? '' : count}
+                              placeholder="0"
+                              onChange={(e) =>
+                                handleDenomChange(
+                                  key,
+                                  parseInt(e.target.value, 10)
+                                )
+                              }
+                              className="w-12 text-center py-1 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleIncrement(key, 1)}
+                              className="w-7 h-7 rounded-lg bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Shift Notes */}
             <div>
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-2">
-                <Banknote className="w-3.5 h-3.5" /> Banknotes
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                Closing Shift Notes (Optional)
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Handover notes, discrepancy explanation, comments..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Right Column: Reconciliation & Actions (Visible at top without scrolling!) */}
+          <div className="md:col-span-5 space-y-3.5">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 space-y-3 shadow-xs">
+              {/* Prominent Expected Cash & Counted Cash */}
+              <div className="grid grid-cols-2 gap-2 pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
+                <div className="p-3 rounded-xl bg-slate-100 dark:bg-[#1e232d] text-left">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                    Expected Cash
+                  </span>
+                  <span className="font-heading font-black text-base sm:text-lg text-slate-900 dark:text-white block mt-0.5">
+                    ₱
+                    {expectedCash.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-left">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-500 dark:text-blue-400 block">
+                    Counted Cash
+                  </span>
+                  <span className="font-heading font-black text-base sm:text-lg text-blue-600 dark:text-blue-400 block mt-0.5">
+                    ₱
+                    {totalActualCash.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {(
-                  [
-                    'bill_1000',
-                    'bill_500',
-                    'bill_200',
-                    'bill_100',
-                    'bill_50',
-                    'bill_20',
-                  ] as Array<keyof DenominationCounts>
-                ).map((key) => {
-                  const meta = DENOMINATION_VALUES[key];
-                  const count = denominations[key] || 0;
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10"
-                    >
-                      <div className="w-24">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white">
-                          {meta.label}
-                        </span>
-                        <p className="text-[10px] text-slate-500 font-mono">
-                          = ₱
-                          {(count * meta.value).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleIncrement(key, -1)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer"
-                        >
-                          <MinusCircle className="w-4 h-4" />
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count === 0 ? '' : count}
-                          placeholder="0"
-                          onChange={(e) =>
-                            handleDenomChange(key, parseInt(e.target.value, 10))
-                          }
-                          className="w-14 text-center py-1 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleIncrement(key, 1)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer"
-                        >
-                          <PlusCircle className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+
+              {/* CASH DISCREPANCY / BALANCED BANNER - Prominently Displayed */}
+              <div
+                className={`p-3 rounded-xl flex items-center justify-between font-bold text-xs ${
+                  discrepancy === 0
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                    : discrepancy > 0
+                      ? 'bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400'
+                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  {discrepancy === 0 ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                  )}
+                  <span className="font-heading font-black tracking-wider uppercase">
+                    {discrepancy === 0
+                      ? 'DRAWER BALANCED'
+                      : discrepancy > 0
+                        ? 'DRAWER OVERAGE'
+                        : 'CASH DISCREPANCY'}
+                  </span>
+                </div>
+                <span className="font-mono font-black text-sm">
+                  {discrepancy === 0
+                    ? '₱0.00'
+                    : discrepancy > 0
+                      ? `+₱${discrepancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                      : `-₱${Math.abs(discrepancy).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                </span>
+              </div>
+
+              {/* Calculation Breakdown */}
+              <div className="space-y-1.5 text-xs pt-1">
+                <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                  <span>Opening Float:</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                    ₱
+                    {metrics.openingFloat.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                  <span>Cash Collections:</span>
+                  <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                    +₱
+                    {(metrics.cashSales + metrics.cashLogbook).toLocaleString(
+                      'en-US',
+                      { minimumFractionDigits: 2 }
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                  <span>Manual In / Out Net:</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                    {metrics.cashInTotal - metrics.cashOutTotal >= 0 ? '+' : '-'}
+                    ₱
+                    {Math.abs(
+                      metrics.cashInTotal - metrics.cashOutTotal
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Coins */}
-            <div>
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-2">
-                <Coins className="w-3.5 h-3.5" /> Metallic Coins
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {(
-                  [
-                    'coin_20',
-                    'coin_10',
-                    'coin_5',
-                    'coin_1',
-                    'coin_025',
-                  ] as Array<keyof DenominationCounts>
-                ).map((key) => {
-                  const meta = DENOMINATION_VALUES[key];
-                  const count = denominations[key] || 0;
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10"
-                    >
-                      <div className="w-24">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white">
-                          {meta.label}
-                        </span>
-                        <p className="text-[10px] text-slate-500 font-mono">
-                          = ₱
-                          {(count * meta.value).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleIncrement(key, -1)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer"
-                        >
-                          <MinusCircle className="w-4 h-4" />
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count === 0 ? '' : count}
-                          placeholder="0"
-                          onChange={(e) =>
-                            handleDenomChange(key, parseInt(e.target.value, 10))
-                          }
-                          className="w-14 text-center py-1 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleIncrement(key, 1)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer"
-                        >
-                          <PlusCircle className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <Button
+                type="submit"
+                variant="primary"
+                loading={isSubmitting}
+                disabled={
+                  isSubmitting ||
+                  closeCooldown > 0 ||
+                  (countMode === 'direct' && !directCashInput.trim())
+                }
+                className="w-full py-3.5 text-xs font-heading font-black tracking-wide !bg-rose-600 hover:!bg-rose-700 active:!bg-rose-800 !text-white border-none shadow-md shadow-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              >
+                <ShieldCheck className="w-4 h-4 mr-1.5" />
+                {closeCooldown > 0
+                  ? `CONFIRM & CLOSE SESSION (${closeCooldown}s)`
+                  : 'CONFIRM & CLOSE SESSION'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="w-full py-2.5 text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </Button>
             </div>
           </div>
-        )}
-
-        {/* Calculation Box */}
-        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-neutral-900/90 border border-slate-200 dark:border-white/10 space-y-2.5 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 dark:text-slate-400">
-              Opening Float:
-            </span>
-            <span className="font-bold font-mono">
-              ₱
-              {metrics.openingFloat.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 dark:text-slate-400">
-              Cash Collections:
-            </span>
-            <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
-              +₱
-              {(metrics.cashSales + metrics.cashLogbook).toLocaleString(
-                'en-US',
-                { minimumFractionDigits: 2 }
-              )}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 dark:text-slate-400">
-              Manual In / Out Net:
-            </span>
-            <span className="font-bold font-mono">
-              {metrics.cashInTotal - metrics.cashOutTotal >= 0 ? '+' : '-'}₱
-              {Math.abs(
-                metrics.cashInTotal - metrics.cashOutTotal
-              ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-
-          <div className="pt-2 border-t border-slate-200 dark:border-white/10 flex items-center justify-between text-sm">
-            <span className="font-bold text-slate-700 dark:text-slate-200">
-              Expected Cash:
-            </span>
-            <span className="font-heading font-black">
-              ₱
-              {expectedCash.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-bold text-slate-700 dark:text-slate-200">
-              Actual Counted Cash:
-            </span>
-            <span className="font-heading font-black text-blue-600 dark:text-blue-400">
-              ₱
-              {totalActualCash.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
-            </span>
-          </div>
-
-          <div
-            className={`p-2.5 rounded-xl flex items-center justify-between font-bold ${
-              discrepancy === 0
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                : discrepancy > 0
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              {discrepancy === 0 ? (
-                <CheckCircle2 className="w-4 h-4" />
-              ) : (
-                <AlertTriangle className="w-4 h-4" />
-              )}
-              <span>
-                {discrepancy === 0
-                  ? 'BALANCED'
-                  : discrepancy > 0
-                    ? 'DRAWER OVERAGE'
-                    : 'CASH DISCREPANCY'}
-              </span>
-            </div>
-            <span>
-              {discrepancy === 0
-                ? '₱0.00'
-                : discrepancy > 0
-                  ? `+₱${discrepancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                  : `-₱${Math.abs(discrepancy).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-            </span>
-          </div>
-        </div>
-
-        {/* Single Shift Notes Input */}
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-            Closing Shift Notes (Optional)
-          </label>
-          <textarea
-            rows={3}
-            placeholder="Handover notes, discrepancy explanation, comments..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          />
-        </div>
-
-        <div className="flex gap-2 pt-2">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="flex-1 py-3 text-xs cursor-pointer"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={isSubmitting}
-            disabled={
-              isSubmitting ||
-              closeCooldown > 0 ||
-              (countMode === 'direct' && !directCashInput.trim())
-            }
-            className="flex-1 py-3 text-xs !bg-slate-900 dark:!bg-white !text-white dark:!text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <ShieldCheck className="w-4 h-4 mr-1" />
-            {closeCooldown > 0
-              ? `CONFIRM & CLOSE SESSION (${closeCooldown}s)`
-              : 'CONFIRM & CLOSE SESSION'}
-          </Button>
         </div>
       </form>
     </Modal>
@@ -847,7 +864,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
       className="max-w-2xl p-6 text-left"
     >
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-slate-100 dark:bg-neutral-800/80 border border-slate-200 dark:border-white/10 gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-slate-100 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 gap-2">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-500">
               Session Reference
@@ -873,7 +890,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-          <div className="p-3 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10">
+          <div className="p-3 rounded-xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80">
             <span className="text-slate-500 block">Opening Float</span>
             <span className="font-bold text-sm">
               ₱
@@ -882,7 +899,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
               })}
             </span>
           </div>
-          <div className="p-3 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10">
+          <div className="p-3 rounded-xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80">
             <span className="text-slate-500 block">Expected Drawer</span>
             <span className="font-bold text-sm">
               ₱
@@ -892,7 +909,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
               )}
             </span>
           </div>
-          <div className="p-3 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10">
+          <div className="p-3 rounded-xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80">
             <span className="text-slate-500 block">Counted Cash</span>
             <span className="font-bold text-sm text-blue-600 dark:text-blue-400">
               ₱
@@ -902,7 +919,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
               )}
             </span>
           </div>
-          <div className="p-3 rounded-xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10">
+          <div className="p-3 rounded-xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80">
             <span className="text-slate-500 block">Discrepancy</span>
             <span
               className={`font-bold text-sm ${disc === 0 ? 'text-emerald-500' : 'text-rose-500'}`}
@@ -913,7 +930,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
         </div>
 
         {session.notes && (
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 text-xs">
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 text-xs">
             <span className="font-bold text-slate-700 dark:text-slate-300 block mb-0.5">
               Shift Closing Notes:
             </span>
@@ -924,7 +941,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
         )}
 
         {Object.keys(denoms).length > 0 && (
-          <div className="p-3.5 rounded-2xl bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10">
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80">
             <h5 className="text-[11px] font-black uppercase text-slate-600 dark:text-slate-300 mb-2">
               Denominations Breakdown
             </h5>
@@ -937,7 +954,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
                   return (
                     <div
                       key={key}
-                      className="p-2 rounded-lg bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/5 flex justify-between"
+                      className="p-2 rounded-lg bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 flex justify-between"
                     >
                       <span className="text-slate-500">
                         {meta?.label || key}:
@@ -968,7 +985,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
               {transactions.map((tx) => (
                 <div
                   key={tx.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#151515] border border-slate-200 dark:border-white/5 text-xs"
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 text-xs"
                 >
                   <div>
                     <span className="font-bold mr-2 capitalize">
@@ -988,7 +1005,7 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
           )}
         </div>
 
-        <div className="flex gap-2 pt-2 border-t border-slate-200 dark:border-white/10">
+        <div className="flex gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-800/80">
           <Button
             type="button"
             variant="secondary"

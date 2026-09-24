@@ -1,9 +1,17 @@
 // src/pages/system/DatabaseBackup.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { clearAppCaches } from '../../lib/cacheUtils';
 import { useBackupSafetyStore } from '../../stores/useBackupSafetyStore';
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { SalesDialog } from '../sales/components/SalesDialog';
+import { LogbookRecordAttendance } from '../logbook/components/LogbookRecordAttendance';
+import { SalesManager } from './SystemInformation/SalesManager';
+import { AttendanceManager } from './SystemInformation/AttendanceManager';
+import { AuditLogsManager } from './SystemInformation/AuditLogsManager';
 import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -23,6 +31,16 @@ import {
   Undo2,
   ShieldCheck,
 } from 'lucide-react';
+
+const MIN_ALLOWED_DATE = '2024-01-01';
+
+const getTodayDateString = (): string => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 interface BackupItem {
   id: string;
@@ -50,12 +68,219 @@ export const DatabaseBackup: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(3);
   const [verifyPassword, setVerifyPassword] = useState<string>('');
 
+  // SuperAdmin Access Control & Terminal States
+  const { user, profile } = useAuthStore() as any;
+  const { activeSession } = useCashSessionStore();
+
+  const isSuperAdminOnly = useMemo(() => {
+    return isSuperAdmin(user?.email || profile?.email);
+  }, [user?.email, profile?.email]);
+
+  const todayStr = useMemo(() => getTodayDateString(), []);
+  const [startDate, setStartDate] = useState<string>(MIN_ALLOWED_DATE);
+  const [endDate, setEndDate] = useState<string>(todayStr);
+  const [activeTab, setActiveTab] = useState<
+    'attendance' | 'sales' | 'audit_logs'
+  >('attendance');
+  const [tabLoading, setTabLoading] = useState<boolean>(false);
+  const [attendanceList, setAttendanceList] = useState<any[]>([]);
+  const [salesList, setSalesList] = useState<any[]>([]);
+  const [auditLogsList, setAuditLogsList] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [isSalesDialogOpen, setIsSalesDialogOpen] = useState<boolean>(false);
+  const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] =
+    useState<boolean>(false);
+
   // Global Safety Store state hook
   const safetyBackup = useBackupSafetyStore((s) => s?.safetyBackup ?? null);
   const isVerifying = useBackupSafetyStore((s) => s?.isVerifying ?? false);
   const revertRestoration = useBackupSafetyStore((s) => s?.revertRestoration);
   const commitRestoration = useBackupSafetyStore((s) => s?.commitRestoration);
   const fetchSafetyBackup = useBackupSafetyStore((s) => s?.fetchSafetyBackup);
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('*')
+        .is('deleted_at', null)
+        .order('product_name', { ascending: true });
+      setProducts(data || []);
+    } catch (e) {
+      console.warn('Error loading products for sales dialog:', e);
+    }
+  }, []);
+
+  const fetchTabData = useCallback(async () => {
+    if (!isSuperAdminOnly) return;
+    setTabLoading(true);
+
+    const startIso = new Date(`${startDate}T00:00:00+08:00`).toISOString();
+    const endIso = new Date(`${endDate}T23:59:59.999+08:00`).toISOString();
+
+    try {
+      if (activeTab === 'attendance') {
+        const { data, error } = await supabase
+          .from('attendance')
+          .select('*')
+          .is('deleted_at', null)
+          .gte('check_in_time', startIso)
+          .lte('check_in_time', endIso)
+          .order('check_in_time', { ascending: false });
+
+        if (error) throw error;
+        setAttendanceList(data || []);
+      } else if (activeTab === 'sales') {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('*')
+          .is('deleted_at', null)
+          .gte('created_at', startIso)
+          .lte('created_at', endIso)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const normalized = (data || []).map((s: any) => {
+          const parsedItems: Array<{
+            productName: string;
+            quantity: number;
+            price: number;
+          }> = [];
+          if (s.items && Array.isArray(s.items) && s.items.length > 0) {
+            s.items.forEach((it: any) => {
+              parsedItems.push({
+                productName: it.productName || it.product_name || 'Item',
+                quantity: Number(it.quantity || 1),
+                price: Number(it.price || 0),
+              });
+            });
+          } else if (s.product_name) {
+            parsedItems.push({
+              productName: s.product_name,
+              quantity: 1,
+              price: Number(s.total_amount || 0),
+            });
+          }
+
+          const itemsText = parsedItems
+            .map((i) => `${i.quantity}x ${i.productName}`)
+            .join(', ');
+
+          return {
+            ...s,
+            parsed_items: parsedItems,
+            searchable_items: `${s.product_name || ''} ${itemsText} ${s.receipt_no || ''}`,
+            total_amount: Number(s.total_amount || 0),
+            amount_received: Number(s.amount_received || s.total_amount || 0),
+            payment_method: s.payment_method || 'Cash',
+          };
+        });
+
+        setSalesList(normalized);
+      } else if (activeTab === 'audit_logs') {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .gte('created_at', startIso)
+          .lte('created_at', endIso)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setAuditLogsList(data || []);
+      }
+    } catch (err: any) {
+      toast.error(
+        `Error loading ${activeTab}: ` + (err.message || 'Database error')
+      );
+    } finally {
+      setTabLoading(false);
+    }
+  }, [activeTab, isSuperAdminOnly, startDate, endDate]);
+
+  useEffect(() => {
+    if (isSuperAdminOnly) {
+      fetchProducts();
+      fetchTabData();
+    }
+  }, [isSuperAdminOnly, activeTab, fetchProducts, fetchTabData]);
+
+  const handleExistingSaleSuccess = async (
+    newTx: any,
+    updatedProducts: any[]
+  ) => {
+    try {
+      const { data: insertedSale, error } = await supabase
+        .from('sales')
+        .insert([
+          {
+            items: newTx.items,
+            product_name: newTx.productName,
+            payment_method: newTx.paymentMethod,
+            amount_received: newTx.amountReceived,
+            change_calculated: newTx.changeCalculated,
+            total_amount: newTx.totalAmount,
+            reference_number: newTx.referenceNumber || null,
+            cash_session_id: activeSession?.id || null,
+            created_at: newTx.createdAt || new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (updatedProducts && Array.isArray(updatedProducts)) {
+        for (const p of updatedProducts) {
+          if (p.has_stock_limit) {
+            await supabase
+              .from('products')
+              .update({
+                stock_quantity: p.stock_quantity,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', p.id);
+          }
+        }
+      }
+
+      await logAudit(
+        'SALE_CREATED',
+        `SuperAdmin Terminal created sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${newTx.productName}`,
+        insertedSale?.id || newTx.id
+      );
+
+      toast.success('Sale successfully logged!');
+      fetchProducts();
+      fetchTabData();
+      setIsSalesDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save sale transaction');
+    }
+  };
+
+  const handlePresetDate = (preset: 'today' | '7days' | 'month' | 'all') => {
+    if (preset === 'today') {
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === '7days') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      const s = d.toISOString().split('T')[0];
+      setStartDate(s < MIN_ALLOWED_DATE ? MIN_ALLOWED_DATE : s);
+      setEndDate(todayStr);
+    } else if (preset === 'month') {
+      const d = new Date();
+      const startOfMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      setStartDate(
+        startOfMonth < MIN_ALLOWED_DATE ? MIN_ALLOWED_DATE : startOfMonth
+      );
+      setEndDate(todayStr);
+    } else {
+      setStartDate(MIN_ALLOWED_DATE);
+      setEndDate(todayStr);
+    }
+  };
 
   const fetchBackups = async () => {
     try {
@@ -990,6 +1215,150 @@ export const DatabaseBackup: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* SuperAdmin Master Terminal (Hidden for staff and admin, visible only to superadmin) */}
+      {isSuperAdminOnly && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-4 text-left">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-white/5">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-red-500" />
+              <div>
+                <h3 className="font-heading font-black text-xs uppercase tracking-wider text-slate-900 dark:text-white">
+                  SUPERADMIN MASTER TERMINAL
+                </h3>
+                <p className="text-[10px] text-slate-400">
+                  Full CRUD database control with multi-product &amp; batch
+                  cards editing.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10">
+              {(['attendance', 'sales', 'audit_logs'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                    activeTab === tab
+                      ? 'bg-[#123c73] dark:bg-red-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Date Filter Bar */}
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-black/25 border border-slate-200 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-heading font-bold uppercase tracking-wider">
+              <Calendar className="w-4 h-4 text-blue-600 dark:text-red-500" />
+              <span>Range:</span>
+              <input
+                type="date"
+                min={MIN_ALLOWED_DATE}
+                max={todayStr}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-800 text-xs font-mono"
+              />
+              <span>to</span>
+              <input
+                type="date"
+                min={MIN_ALLOWED_DATE}
+                max={todayStr}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-2 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-800 text-xs font-mono"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handlePresetDate('all')}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePresetDate('month')}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer"
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePresetDate('7days')}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer"
+              >
+                7 Days
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePresetDate('today')}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer"
+              >
+                Today
+              </button>
+            </div>
+          </div>
+
+          {/* Active Tab Managers */}
+          {activeTab === 'sales' && (
+            <SalesManager
+              sales={salesList}
+              loading={tabLoading}
+              isSuperAdmin={isSuperAdminOnly}
+              onRefresh={fetchTabData}
+              onOpenNewModal={() => setIsSalesDialogOpen(true)}
+            />
+          )}
+
+          {activeTab === 'attendance' && (
+            <AttendanceManager
+              attendanceList={attendanceList}
+              loading={tabLoading}
+              isSuperAdmin={isSuperAdminOnly}
+              onRefresh={fetchTabData}
+              onOpenNewModal={() => setIsAttendanceDialogOpen(true)}
+            />
+          )}
+
+          {activeTab === 'audit_logs' && (
+            <AuditLogsManager
+              auditLogsList={auditLogsList}
+              loading={tabLoading}
+              isSuperAdmin={isSuperAdminOnly}
+              onRefresh={fetchTabData}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Shared Modals for SuperAdmin Terminal */}
+      {isSalesDialogOpen && (
+        <SalesDialog
+          isOpen={isSalesDialogOpen}
+          onClose={() => setIsSalesDialogOpen(false)}
+          products={products}
+          onSaleSuccess={handleExistingSaleSuccess}
+        />
+      )}
+
+      {isAttendanceDialogOpen && (
+        <LogbookRecordAttendance
+          isOpen={isAttendanceDialogOpen}
+          onClose={() => setIsAttendanceDialogOpen(false)}
+          onCheckInSuccess={() => {
+            fetchTabData();
+            setIsAttendanceDialogOpen(false);
+          }}
+        />
+      )}
 
       {/* Modal: Create Backup */}
       <Modal

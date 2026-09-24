@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
 import { compressImage } from '../../lib/imageCompressor';
 import {
@@ -183,6 +184,49 @@ export const GymProfile: React.FC = () => {
       ]);
 
       if (error) throw error;
+
+      const changes: string[] = [];
+      if (initialConfig.gymName !== current.gymName) {
+        changes.push(`Gym Name: "${initialConfig.gymName}" -> "${current.gymName}"`);
+      }
+      if (initialConfig.gymDescription !== current.gymDescription) {
+        changes.push(`Description updated`);
+      }
+      if (initialConfig.gymAddress !== current.gymAddress) {
+        changes.push(`Address: "${initialConfig.gymAddress}" -> "${current.gymAddress}"`);
+      }
+      if (initialConfig.contactName1 !== current.contactName1) {
+        changes.push(`Primary Contact Name: "${initialConfig.contactName1}" -> "${current.contactName1}"`);
+      }
+      if (initialConfig.contactNumber1 !== current.contactNumber1) {
+        changes.push(`Primary Contact Phone: "${initialConfig.contactNumber1}" -> "${current.contactNumber1}"`);
+      }
+      if (initialConfig.contactName2 !== current.contactName2) {
+        changes.push(`Secondary Contact Name: "${initialConfig.contactName2}" -> "${current.contactName2}"`);
+      }
+      if (initialConfig.contactNumber2 !== current.contactNumber2) {
+        changes.push(`Secondary Contact Phone: "${initialConfig.contactNumber2}" -> "${current.contactNumber2}"`);
+      }
+      if (initialConfig.emailAddress !== current.emailAddress) {
+        changes.push(`Email Address: "${initialConfig.emailAddress}" -> "${current.emailAddress}"`);
+      }
+      if (initialConfig.gymLogo !== current.gymLogo) {
+        changes.push(`Gym Logo updated`);
+      }
+      if (
+        JSON.stringify(initialConfig.carouselImages) !==
+        JSON.stringify(current.carouselImages)
+      ) {
+        changes.push(
+          `Carousel Images: ${initialConfig.carouselImages.length} images -> ${current.carouselImages.length} images`
+        );
+      }
+      const diffStr = changes.length > 0 ? `: ${changes.join(', ')}` : '';
+      await logAudit(
+        'GYM_PROFILE_UPDATED',
+        `Updated Gym Profile configurations${diffStr}.`,
+        '1'
+      );
 
       setInitialConfig(current);
       initialConfigRef.current = current;

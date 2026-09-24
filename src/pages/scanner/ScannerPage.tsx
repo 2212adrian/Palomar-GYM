@@ -51,12 +51,20 @@ import {
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase/client';
+import { logAudit } from '../../lib/supabase/audit';
 import { ImageZoomModal } from './ImageZoomModal';
 import { useSessionLock } from '../../hooks/useSessionLock';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {
   try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(60);
+      } catch {
+        // Ignore vibration errors
+      }
+    }
     const audio = new Audio(beepSoundUrl);
     audio.currentTime = 0;
     audio.play().catch((err) => {
@@ -369,7 +377,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     if (!cleanCode) return;
 
     const now = Date.now();
-    const SCAN_COOLDOWN_MS = 1200;
+    const SCAN_COOLDOWN_MS = 800;
 
     if (
       lastScannedRef.current.code.toUpperCase() === cleanCode.toUpperCase() &&
@@ -514,19 +522,18 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       if (!element || isCancelled || isExitingRef.current) return;
 
       try {
-        const formatsToSupport =
-          scanMode === 'qr'
-            ? [Html5QrcodeSupportedFormats.QR_CODE]
-            : [
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.CODE_39,
-                Html5QrcodeSupportedFormats.CODE_93,
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.ITF,
-              ];
+        // Support all common formats simultaneously so both member QR codes and product barcodes scan swiftly
+        const formatsToSupport = [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.CODE_93,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.ITF,
+        ];
 
         html5QrCode = new Html5Qrcode(qrRegionId, {
           verbose: false,
@@ -547,11 +554,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         ) => {
           if (scanMode === 'qr') {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const edgeSize = Math.floor(minEdge * 0.72);
+            const edgeSize = Math.floor(minEdge * 0.82);
             return { width: edgeSize, height: edgeSize };
           } else {
-            const width = Math.min(Math.floor(viewfinderWidth * 0.88), 380);
-            const height = Math.min(Math.floor(viewfinderHeight * 0.38), 160);
+            const width = Math.min(Math.floor(viewfinderWidth * 0.94), 480);
+            const height = Math.min(Math.floor(viewfinderHeight * 0.52), 240);
             return { width, height };
           }
         };
@@ -560,12 +567,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           .start(
             cameraConfig,
             {
-              fps: 25,
+              fps: 30,
               qrbox: qrboxFunction,
               videoConstraints: {
                 ...cameraConfig,
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
+                width: { ideal: 1920, min: 640 },
+                height: { ideal: 1080, min: 480 },
                 facingMode: 'environment',
               },
             },
@@ -875,6 +882,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       ]);
 
       if (insertErr) throw insertErr;
+
+      await logAudit(
+        'ATTENDANCE_CHECKIN',
+        `Recorded attendance check-in for member "${scanResult.member.fullName}" (${scanResult.member.memberId}) - Plan: ${scanResult.member.membershipPlan}, Fee: ₱${totalEntryFee} via ${paymentMethod}.`,
+        scanResult.member.memberId
+      ).catch((e) => console.warn('Attendance checkin audit log error:', e));
 
       Object.keys(sessionStorage).forEach((key) => {
         if (key.startsWith('logbook_sanitized_')) {

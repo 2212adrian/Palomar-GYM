@@ -77,35 +77,43 @@ export const OfflinePopup: React.FC = () => {
     }, 350); // Matches ease-out transition duration
   }, []);
 
-  const handleOnlineDetected = useCallback(() => {
-    clearAllTimers();
-    setIsOffline(false);
-    setIsDismissed(false);
-    setIsRestored(true);
-    setIsAnimatingOut(false);
-    setProgress(100);
+  // Dedicated effect for auto-closing the restored state after 3 seconds
+  useEffect(() => {
+    if (!isRestored) return;
 
+    setProgress(100);
     const intervalStep = 50;
     const totalSteps = RESTORED_DURATION_MS / intervalStep;
     const stepDecrement = 100 / totalSteps;
 
-    progressIntervalRef.current = setInterval(() => {
+    const progInterval = setInterval(() => {
       setProgress((prev) => {
         const nextVal = prev - stepDecrement;
         if (nextVal <= 0) {
-          if (progressIntervalRef.current)
-            clearInterval(progressIntervalRef.current);
+          clearInterval(progInterval);
           return 0;
         }
         return nextVal;
       });
     }, intervalStep);
 
-    // Automatically trigger smooth outro when timer hits zero
-    restoredTimerRef.current = setTimeout(() => {
+    const closeTimer = setTimeout(() => {
       triggerClose();
     }, RESTORED_DURATION_MS);
-  }, [triggerClose]);
+
+    return () => {
+      clearInterval(progInterval);
+      clearTimeout(closeTimer);
+    };
+  }, [isRestored, triggerClose]);
+
+  const handleOnlineDetected = useCallback(() => {
+    clearAllTimers();
+    setIsOffline(false);
+    setIsDismissed(false);
+    setIsRestored(true);
+    setIsAnimatingOut(false);
+  }, []);
 
   const handleOfflineDetected = useCallback(() => {
     clearAllTimers();

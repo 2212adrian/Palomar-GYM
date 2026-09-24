@@ -250,9 +250,33 @@ export const RatesPayments: React.FC = () => {
 
       if (error) throw error;
 
+      const oldCfg = initialConfigRef.current || ({} as any);
+      const changes: string[] = [];
+      if (oldCfg.monthlyRate !== current.monthlyRate)
+        changes.push(`Monthly Plan: ₱${oldCfg.monthlyRate} -> ₱${current.monthlyRate}`);
+      if (oldCfg.yearlyRate !== current.yearlyRate)
+        changes.push(`Yearly Plan: ₱${oldCfg.yearlyRate} -> ₱${current.yearlyRate}`);
+      if (oldCfg.regularWalkIn !== current.regularWalkIn)
+        changes.push(`Regular Walk-In: ₱${oldCfg.regularWalkIn} -> ₱${current.regularWalkIn}`);
+      if (oldCfg.studentWalkIn !== current.studentWalkIn)
+        changes.push(`Student Walk-In: ₱${oldCfg.studentWalkIn} -> ₱${current.studentWalkIn}`);
+      if (oldCfg.yearlyWalkIn !== current.yearlyWalkIn)
+        changes.push(`Yearly Member Walk-In: ₱${oldCfg.yearlyWalkIn} -> ₱${current.yearlyWalkIn}`);
+      if (oldCfg.gcashFee !== current.gcashFee)
+        changes.push(`GCash Surcharge: ₱${oldCfg.gcashFee} -> ₱${current.gcashFee}`);
+      if (oldCfg.newCardFee !== current.newCardFee)
+        changes.push(`RFID Card Fee: ₱${oldCfg.newCardFee} -> ₱${current.newCardFee}`);
+      if (oldCfg.vatEnabled !== current.vatEnabled)
+        changes.push(
+          `VAT Status: ${oldCfg.vatEnabled ? 'Enabled' : 'Disabled'} -> ${current.vatEnabled ? 'Enabled' : 'Disabled'}`
+        );
+      if (oldCfg.vatPercentage !== current.vatPercentage)
+        changes.push(`VAT Rate: ${oldCfg.vatPercentage}% -> ${current.vatPercentage}%`);
+
+      const diffStr = changes.length > 0 ? `: ${changes.join(', ')}` : '';
       await logAudit(
         'SYSTEM_RATES_UPDATED',
-        `Rates updated: Monthly sub = ₱${current.monthlyRate}, Yearly sub = ₱${current.yearlyRate}, Regular Walk-In = ₱${current.regularWalkIn}, Student Walk-In = ₱${current.studentWalkIn}, Yearly Member Walk-In = ₱${current.yearlyWalkIn}.`
+        `Updated facility rates and pricing structure${diffStr}.`
       );
 
       setInitialConfig(current);
