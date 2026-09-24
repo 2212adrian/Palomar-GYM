@@ -17,7 +17,7 @@ const urlArg = args.find((a) => a.startsWith('--url='));
 const cliProvidedUrl = urlArg ? urlArg.split('=')[1]?.trim() : null;
 
 const isManual = args.includes('--manual');
-const noUpload = args.includes('--no-upload');
+const noUpload = args.includes('--no-upload') || isManual;
 
 console.log(`\n======================================================`);
 console.log(`⚙️  Release Publisher [${mode.toUpperCase()}]`);
@@ -71,6 +71,16 @@ if (rawApkPath !== renamedApkPath) {
   fs.copyFileSync(rawApkPath, renamedApkPath);
 }
 
+// ALWAYS PRINT FILE DETAILS
+console.log(`\n======================================================`);
+console.log(`📦 COMPILED APK READY`);
+console.log(`======================================================`);
+console.log(`📁 Directory: ${outputDir}`);
+console.log(`📄 File Name: ${customFileName}`);
+console.log(`📍 Full Path: ${renamedApkPath}`);
+console.log(`📊 File Size: ${fileSizeMB} MB`);
+console.log(`======================================================\n`);
+
 // 5. Extract release notes from CHANGELOG.md
 let releaseNotes = '';
 const changelogPath = path.resolve(rootDir, 'CHANGELOG.md');
@@ -93,13 +103,6 @@ if (!releaseNotes) {
 
 // 6. Connect to Supabase
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-const { data: existingRow } = await supabase
-  .from('app_releases')
-  .select('download_url, storage_host')
-  .eq('platform', 'android')
-  .eq('environment', mode)
-  .maybeSingle();
 
 // ─── Helper Functions ───
 async function resolveDirectoryId(token) {
@@ -135,14 +138,8 @@ function extractFileId(rawText) {
   return text.split('/').filter(Boolean).pop();
 }
 
-/**
- * Attempts automated resolution of the direct download link.
- * Handles Cloudflare Turnstile blocks gracefully without crashing.
- */
 async function attemptAutomatedResolution(fileId) {
   const pageUrl = `https://fuckingfast.net/${fileId}`;
-  console.log(`🔍 Checking if direct URL can be resolved automatically...`);
-
   try {
     const pageRes = await fetch(pageUrl, {
       headers: {
@@ -153,46 +150,30 @@ async function attemptAutomatedResolution(fileId) {
       },
     });
 
-    if (pageRes.status === 403) {
-      console.log(`   ℹ️ FuckingFast web landing page is guarded by Cloudflare Turnstile (HTTP 403).`);
-      return null;
-    }
-
-    if (!pageRes.ok) {
-      console.log(`   ℹ️ Landing page returned HTTP ${pageRes.status}.`);
-      return null;
-    }
+    if (pageRes.status === 403 || !pageRes.ok) return null;
 
     const html = await pageRes.text();
-
-    // Check for inline direct streaming links
     const directMatch = html.match(
       /https?:\/\/(?:[a-z0-9.-]+\.)?(?:fafda\.to|fuckingfast\.net)\/(?:d|dl)\/[a-zA-Z0-9_-]+(?:\?[^"'\s<>\\]+)?/i
     );
-    if (directMatch) {
-      return directMatch[0].replaceAll('&amp;', '&');
-    }
+    if (directMatch) return directMatch[0].replaceAll('&amp;', '&');
 
     const windowOpenMatch = html.match(/window\.open\(\s*["'](https?:\/\/[^"']+)["']/i);
-    if (windowOpenMatch) {
-      return windowOpenMatch[1].replaceAll('&amp;', '&');
-    }
-  } catch (err) {
-    console.log(`   ℹ️ Automated check skipped: ${err.message}`);
+    if (windowOpenMatch) return windowOpenMatch[1].replaceAll('&amp;', '&');
+  } catch {
+    return null;
   }
-
   return null;
 }
 
-// ─── PHASE 1: APK UPLOAD (Decoupled from URL Resolution) ───
+// ─── PHASE 1: APK UPLOAD ───
 let fileId = null;
-const MAX_UPLOAD_RETRIES = 3;
 
 if (noUpload) {
-  console.log(`\n⏭️  Skipping APK upload (--no-upload requested).`);
+  console.log(`⏭️  Skipping hosting upload. Manual URL entry mode activated.`);
 } else {
-  console.log(`\n🚀 Uploading APK to FuckingFast (Max ${MAX_UPLOAD_RETRIES} attempts)...`);
-
+  console.log(`🚀 Uploading APK to FuckingFast...`);
+  const MAX_UPLOAD_RETRIES = 3;
   const parentId = await resolveDirectoryId(FF_ACCOUNT_ID);
   const encodedName = encodeURIComponent(customFileName);
   const uploadEndpoint = parentId
@@ -200,12 +181,8 @@ if (noUpload) {
     : `https://w.fuckingfast.net/${encodedName}`;
 
   const fileBuffer = fs.readFileSync(rawApkPath);
-  const headers = {
-    'Content-Type': 'application/vnd.android.package-archive',
-  };
-  if (FF_ACCOUNT_ID) {
-    headers['Authorization'] = `Bearer ${FF_ACCOUNT_ID}`;
-  }
+  const headers = { 'Content-Type': 'application/vnd.android.package-archive' };
+  if (FF_ACCOUNT_ID) headers['Authorization'] = `Bearer ${FF_ACCOUNT_ID}`;
 
   for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
     try {
@@ -217,25 +194,21 @@ if (noUpload) {
       });
 
       const responseText = await response.text();
-      if (!response.ok) {
-        throw new Error(`Upload HTTP ${response.status}: ${responseText || response.statusText}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${responseText}`);
 
       fileId = extractFileId(responseText);
-      console.log(`\n✅ Upload successful`);
-      console.log(`📦 File ID: ${fileId}`);
+      console.log(`✅ Upload successful! File ID: ${fileId}`);
       break;
     } catch (err) {
-      console.warn(`⚠️  Upload attempt ${attempt}/${MAX_UPLOAD_RETRIES} failed: ${err.message}`);
+      console.warn(`⚠️  Upload attempt ${attempt} failed: ${err.message}`);
       if (attempt < MAX_UPLOAD_RETRIES) {
-        console.log(`🔄 Waiting 2 seconds before retrying upload...`);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
   }
 
   if (!fileId) {
-    console.error(`\n❌ UPLOAD FAILURE: All ${MAX_UPLOAD_RETRIES} upload attempts failed.`);
+    console.error(`\n❌ UPLOAD FAILURE: All attempts failed.`);
     process.exit(1);
   }
 }
@@ -243,71 +216,54 @@ if (noUpload) {
 // ─── PHASE 2: DIRECT DOWNLOAD URL RESOLUTION ───
 let resolvedDirectUrl = cliProvidedUrl || null;
 
-// Only attempt resolution if URL wasn't provided via CLI flag
 if (!resolvedDirectUrl && fileId && !isManual) {
   resolvedDirectUrl = await attemptAutomatedResolution(fileId);
 }
 
-// If still unresolved, trigger manual resolution workflow
+// Prompt user for input if URL is not yet determined
 if (!resolvedDirectUrl) {
-  const landingPageUrl = fileId ? `https://fuckingfast.net/${fileId}` : null;
-
-  console.log(`\n------------------------------------------------------`);
-  if (fileId) {
-    console.log(`⚠️  Direct URL could not be resolved automatically.`);
-    console.log(`The APK was uploaded successfully and was NOT uploaded again.`);
-    console.log(`Landing Page: ${landingPageUrl}`);
-  } else {
-    console.log(`⚠️  Manual URL input required.`);
-  }
-  console.log(`------------------------------------------------------`);
-
-  // If interactive terminal, prompt the developer directly
   if (process.stdin.isTTY) {
     const rl = readline.createInterface({ input, output });
-    console.log(`👉 Open: ${landingPageUrl || 'https://fuckingfast.net/'}`);
-    console.log(`   Click "Copy download link" (direct link, e.g. https://...fafda.to/... or https://ts.fuckingfast.net/d/...)`);
 
-    const answer = await rl.question(`\nPaste direct download URL (or press Enter to skip database update): `);
+    if (noUpload) {
+      console.log(`👉 Step 1: Upload the APK from the path shown above to your hosting service.`);
+      console.log(`👉 Step 2: Paste the direct download link below.\n`);
+    } else if (fileId) {
+      console.log(`👉 Open: https://fuckingfast.net/${fileId}`);
+      console.log(`   Click "Copy download link"\n`);
+    }
+
+    const answer = await rl.question(`Paste direct download URL (or press Enter to cancel): `);
     rl.close();
 
     if (answer && answer.trim().startsWith('http')) {
       resolvedDirectUrl = answer.trim();
     }
+  } else {
+    console.error(`❌ Terminal is not interactive. Pass the URL directly using --url="<LINK>"`);
+    process.exit(1);
   }
 }
 
-// Validate that we never write the landing page or a placeholder URL to Supabase
-if (
-  resolvedDirectUrl &&
-  (resolvedDirectUrl.includes('fuckingfast.net/') && !resolvedDirectUrl.includes('/d/'))
-) {
-  console.warn(`\n⚠️  The provided URL appears to be a landing page, not a direct download link.`);
-  console.warn(`Refusing to save landing page as direct download URL.`);
-  resolvedDirectUrl = null;
+// Validate URL format
+if (resolvedDirectUrl) {
+  try {
+    new URL(resolvedDirectUrl);
+  } catch {
+    console.error(`\n❌ Invalid URL provided: ${resolvedDirectUrl}`);
+    resolvedDirectUrl = null;
+  }
 }
 
 if (!resolvedDirectUrl) {
-  console.log(`\n======================================================`);
-  console.log(`⚠️  RELEASE INCOMPLETE: Supabase was NOT updated`);
-  console.log(`======================================================`);
-  console.log(`📦 File:          ${customFileName} (${fileSizeMB} MB)`);
-  if (fileId) {
-    console.log(`🔗 File ID:       ${fileId}`);
-    console.log(`🌐 Landing Page:  https://fuckingfast.net/${fileId}`);
-  }
-  console.log(`\n👉 NEXT STEPS:`);
-  console.log(`1. Open the landing page in your browser.`);
-  console.log(`2. Click "Copy download link" to copy the fafda.to URL.`);
-  console.log(`3. Run this command to update Supabase without re-uploading:`);
-  console.log(`   npm run upload:${mode === 'development' ? 'dev' : 'prod'} -- --no-upload --url="<PASTE_FAFDA_URL_HERE>"\n`);
+  console.log(`\n⚠️  Supabase was NOT updated because no download URL was entered.`);
   process.exit(1);
 }
 
 // ─── PHASE 3: DATABASE UPDATE ───
 const storageHost = new URL(resolvedDirectUrl).hostname;
 
-console.log(`\nUpdating Supabase...`);
+console.log(`\nUpdating Supabase database...`);
 const { error: dbError } = await supabase.from('app_releases').upsert(
   {
     platform: 'android',
@@ -332,8 +288,6 @@ if (dbError) {
 console.log(`\n======================================================`);
 console.log(`🎉 RELEASE COMPLETE [${mode.toUpperCase()}]`);
 console.log(`======================================================`);
-console.log(`📦 File:                     ${customFileName} (${fileSizeMB} MB)`);
-if (fileId) {
-  console.log(`🆔 File ID:                  ${fileId}`);
-}
-console.log(`⚡ Instant Download URL:     ${resolvedDirectUrl}\n`);
+console.log(`📦 File:                 ${customFileName} (${fileSizeMB} MB)`);
+console.log(`🌐 Host:                 ${storageHost}`);
+console.log(`⚡ Direct Download URL:  ${resolvedDirectUrl}\n`);

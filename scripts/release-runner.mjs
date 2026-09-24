@@ -6,7 +6,8 @@ const rootDir = process.cwd();
 const args = process.argv.slice(2);
 const modeArg = args.find((a) => a.startsWith('--mode='));
 const mode = modeArg ? modeArg.split('=')[1] : 'production';
-const noUpload = args.includes('--no-upload') || args.includes('--manual');
+const isManual = args.includes('--manual');
+const noUpload = args.includes('--no-upload') || isManual;
 const isWin = process.platform === 'win32';
 const gradlewCmd = isWin ? 'gradlew.bat' : './gradlew';
 
@@ -20,9 +21,10 @@ try {
   run(`npx cap sync android`);
   run(`${gradlewCmd} assembleRelease -x lintVitalRelease`, path.resolve(rootDir, 'android'));
 
-  // Forward flags to publish script
+  // Forward flags
   const forwardFlags = [`--mode=${mode}`];
   if (noUpload) forwardFlags.push('--no-upload');
+  if (isManual) forwardFlags.push('--manual');
 
   run(`node scripts/publish-update.mjs ${forwardFlags.join(' ')}`);
 } catch (err) {

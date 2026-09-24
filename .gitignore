@@ -27,3 +27,6 @@ dev-dist
 .env.production
 # Local Netlify folder
 .netlify
+scripts
+scripts/publish-update.mjs
+scripts/release-runner.mjs
