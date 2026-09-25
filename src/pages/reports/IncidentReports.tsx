@@ -33,7 +33,6 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
-  PhoneCall,
   User,
   Calendar,
   Clock,
@@ -48,7 +47,6 @@ import {
   MapPin,
   HeartPulse,
   ShieldAlert,
-  ShieldCheck,
   Lock,
   Building2,
 } from 'lucide-react';
