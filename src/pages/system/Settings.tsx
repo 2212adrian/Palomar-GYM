@@ -1,5 +1,5 @@
 // src/pages/system/Settings.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { PersonalAccount } from './PersonalAccount';
@@ -40,6 +40,21 @@ export type TabID =
   | 'backup'
   | 'audit'
   | 'info';
+
+export const SETTINGS_TAB_ORDER: TabID[] = [
+  'account',
+  'security-permissions',
+  'info',
+  'gym-profile',
+  'rates',
+  'users',
+  'backup',
+  'audit',
+];
+
+export const getSettingsTabVerticalIndex = (tabId: TabID): number => {
+  return SETTINGS_TAB_ORDER.indexOf(tabId);
+};
 
 export interface TabItem {
   id: TabID;
@@ -148,6 +163,44 @@ export default function Settings() {
     if (!urlTabParam) return 'account';
     return URL_TAB_MAP[urlTabParam] || 'account';
   }, [urlTabParam]);
+
+  const settingsScrollRef = useRef<HTMLDivElement>(null);
+
+  // ─── Synchronous Direction Calculation During Render (Matching Sidebar Transitions) ───
+  const [tabTransition, setTabTransition] = useState<{
+    tabId: TabID;
+    direction: 'down' | 'up' | null;
+    animKey: number;
+  }>({
+    tabId: activeTabId,
+    direction: null,
+    animKey: 0,
+  });
+
+  if (tabTransition.tabId !== activeTabId) {
+    const prevIdx = getSettingsTabVerticalIndex(tabTransition.tabId);
+    const currIdx = getSettingsTabVerticalIndex(activeTabId);
+
+    let dir: 'down' | 'up' | null = null;
+    if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
+      // Selected item is below current item -> slide down
+      // Selected item is above current item -> slide up
+      dir = currIdx > prevIdx ? 'down' : 'up';
+    }
+
+    setTabTransition({
+      tabId: activeTabId,
+      direction: dir,
+      animKey: tabTransition.animKey + 1,
+    });
+  }
+
+  // Reset scroll to top on tab change
+  useEffect(() => {
+    if (settingsScrollRef.current) {
+      settingsScrollRef.current.scrollTop = 0;
+    }
+  }, [activeTabId]);
 
   const [mobileView, setMobileView] = useState<'menu' | 'detail'>(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1280) {
@@ -369,6 +422,34 @@ export default function Settings() {
       } xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}
     >
       <style>{`
+        @keyframes pageSlideDown {
+          0% {
+            opacity: 0;
+            transform: translate3d(0, -48px, 0);
+          }
+          100% {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        @keyframes pageSlideUp {
+          0% {
+            opacity: 0;
+            transform: translate3d(0, 48px, 0);
+          }
+          100% {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        .page-slide-down {
+          animation: pageSlideDown 480ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+          will-change: transform, opacity;
+        }
+        .page-slide-up {
+          animation: pageSlideUp 480ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+          will-change: transform, opacity;
+        }
         @keyframes slideUp {
           from {
             opacity: 0;
@@ -626,73 +707,85 @@ export default function Settings() {
 
           {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs and Info */}
           <div
+            ref={settingsScrollRef}
             className={`flex-1 h-full overflow-y-auto scroll-smooth ${
               activeTabId === 'audit' || activeTabId === 'info'
                 ? 'px-0 py-3 xl:p-5'
                 : 'p-3 sm:p-4 md:p-5'
             }`}
           >
-            {activeTab === 'personal-account' && <PersonalAccount />}
+            <div
+              key={tabTransition.animKey}
+              className={`w-full min-h-full flex flex-col ${
+                tabTransition.direction === 'down'
+                  ? 'page-slide-down'
+                  : tabTransition.direction === 'up'
+                    ? 'page-slide-up'
+                    : ''
+              }`}
+            >
+              {activeTab === 'personal-account' && <PersonalAccount />}
 
-            {/* SECURITY & DEVICE PERMISSIONS WORKSPACE */}
-            {(activeTab === 'security-and-permissions' ||
-              activeTab === 'device-permissions') && (
-              <div className="w-full space-y-6">
-                {/* Segmented Sub-Tab Switcher - Super Admin Only */}
-                {isSuperAdminUser && (
-                  <div className="flex justify-center">
-                    <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-inner">
-                      <button
-                        type="button"
-                        onClick={() => handleSecuritySubTabChange('security')}
-                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
-                          securitySubTab === 'security'
-                            ? 'bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 shadow-sm'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <ShieldAlert className="w-4 h-4" />
-                        <span>Facility Access & Security</span>
-                      </button>
+              {/* SECURITY & DEVICE PERMISSIONS WORKSPACE */}
+              {(activeTab === 'security-and-permissions' ||
+                activeTab === 'device-permissions') && (
+                <div className="w-full space-y-6">
+                  {/* Segmented Sub-Tab Switcher - Super Admin Only */}
+                  {isSuperAdminUser && (
+                    <div className="flex justify-center">
+                      <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-inner">
+                        <button
+                          type="button"
+                          onClick={() => handleSecuritySubTabChange('security')}
+                          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
+                            securitySubTab === 'security'
+                              ? 'bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <ShieldAlert className="w-4 h-4" />
+                          <span>Facility Access & Security</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleSecuritySubTabChange('permissions')
-                        }
-                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
-                          securitySubTab === 'permissions'
-                            ? 'bg-white dark:bg-zinc-800 text-purple-600 dark:text-purple-400 shadow-sm'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span>Hardware & Device Permissions</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSecuritySubTabChange('permissions')
+                          }
+                          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
+                            securitySubTab === 'permissions'
+                              ? 'bg-white dark:bg-zinc-800 text-purple-600 dark:text-purple-400 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Camera className="w-4 h-4" />
+                          <span>Hardware & Device Permissions</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Sub-view render: Super Admin toggles between both, Standard Admin sees PermissionsSettings directly */}
-                <div className="w-full">
-                  {!isSuperAdminUser || securitySubTab === 'permissions' ? (
-                    <PermissionsSettings />
-                  ) : (
-                    <SecuritySettings />
                   )}
-                </div>
-              </div>
-            )}
 
-            {activeTab === 'gym-profile' && <GymProfile />}
-            {activeTab === 'rates-and-payments' && <RatesPayments />}
-            {activeTab === 'user-management' && <UserManagement />}
-            {activeTab === 'database-backup' && <DatabaseBackup />}
-            {activeTab === 'audit-logs' && <AuditLogs />}
-            {(activeTab === 'system-updates' ||
-              activeTab === 'system-information' ||
-              activeTab === 'updates' ||
-              activeTabId === 'info') && <SystemInformation />}
+                  {/* Sub-view render: Super Admin toggles between both, Standard Admin sees PermissionsSettings directly */}
+                  <div className="w-full">
+                    {!isSuperAdminUser || securitySubTab === 'permissions' ? (
+                      <PermissionsSettings />
+                    ) : (
+                      <SecuritySettings />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'gym-profile' && <GymProfile />}
+              {activeTab === 'rates-and-payments' && <RatesPayments />}
+              {activeTab === 'user-management' && <UserManagement />}
+              {activeTab === 'database-backup' && <DatabaseBackup />}
+              {activeTab === 'audit-logs' && <AuditLogs />}
+              {(activeTab === 'system-updates' ||
+                activeTab === 'system-information' ||
+                activeTab === 'updates' ||
+                activeTabId === 'info') && <SystemInformation />}
+            </div>
           </div>
         </div>
       </div>

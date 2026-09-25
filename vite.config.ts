@@ -65,7 +65,7 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          globPatterns: ['**/*.{js,css,ico,png,svg,webp,webmanifest,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,webmanifest,woff,woff2}'],
           navigateFallback: null,
           runtimeCaching: [
             {
@@ -79,10 +79,67 @@ export default defineConfig(({ mode }) => {
                 },
               },
             },
+            {
+              // Critical App Data: Member Lists, Attendance Logs, Receipts, Subscriptions, Cards & Settings
+              urlPattern: ({ url }) =>
+                url.pathname.includes('/rest/v1/members') ||
+                url.pathname.includes('/rest/v1/attendance') ||
+                url.pathname.includes('/rest/v1/receipts') ||
+                url.pathname.includes('/rest/v1/subscriptions') ||
+                url.pathname.includes('/rest/v1/cards') ||
+                url.pathname.includes('/rest/v1/member_cards') ||
+                url.pathname.includes('/rest/v1/membership_settings') ||
+                url.pathname.includes('/rest/v1/cash_sessions') ||
+                url.pathname.includes('/rest/v1/profiles'),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'palomar-critical-data-cache',
+                networkTimeoutSeconds: 3,
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 300,
+                  maxAgeSeconds: 60 * 60 * 24 * 14, // 14 days
+                },
+              },
+            },
+            {
+              // General Supabase REST API queries
+              urlPattern: ({ url }) => url.pathname.includes('/rest/v1/'),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'palomar-api-cache',
+                networkTimeoutSeconds: 3,
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+                },
+              },
+            },
+            {
+              // External Web Fonts
+              urlPattern: /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
           ],
         },
         devOptions: {
-          enabled: false, // Disables PWA in 'npm run dev' to eliminate localhost caching and ensure instant HMR
+          enabled: true, // Enables service worker in development and AI Studio preview for offline testing
+          type: 'module',
         },
       }),
     ],

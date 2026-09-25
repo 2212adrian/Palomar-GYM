@@ -4,40 +4,10 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 
-// Register Service Worker only in production; unregister & clean in dev
+// Register Service Worker with non-intrusive background updates and offline caching
 import { registerSW } from 'virtual:pwa-register';
 
-if (import.meta.env.DEV) {
-  // ── Development Mode (localhost) ──
-  // Proactively unregister any active service worker and purge all cache storage on localhost
-  // so updates to your code reflect immediately without requiring manual storage clearance.
-  if (typeof window !== 'undefined') {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister().then(() => {
-            console.log(
-              '[PWA Dev] Unregistered stale localhost service worker.'
-            );
-          });
-        }
-      });
-    }
-    if ('caches' in window) {
-      caches.keys().then((keys) => {
-        for (const key of keys) {
-          caches.delete(key).then(() => {
-            console.log(`[PWA Dev] Purged cache: ${key}`);
-          });
-        }
-      });
-    }
-  }
-} else {
-  // ── Production Mode (Web / PWA) ──
-  // Register service worker with non-intrusive background updates.
-  // With NetworkFirst HTML navigation in vite.config.ts, users always get the freshest version directly
-  // from the network on open, preventing the delayed reload flash.
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   registerSW({
     immediate: true,
     onNeedReload() {

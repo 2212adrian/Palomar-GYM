@@ -266,7 +266,8 @@ export const MembersList: React.FC<MembersListProps> = ({
     const cacheKey = 'members_sanitized_cache';
 
     if (!silent) {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached =
+        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
@@ -284,7 +285,13 @@ export const MembersList: React.FC<MembersListProps> = ({
       }
     }
 
-    if (!silent && !sessionStorage.getItem(cacheKey)) setLoading(true);
+    if (
+      !silent &&
+      !sessionStorage.getItem(cacheKey) &&
+      !localStorage.getItem(cacheKey)
+    ) {
+      setLoading(true);
+    }
     try {
       const [membersData, subsData, cardsData, settingsData] =
         await Promise.all([
@@ -301,17 +308,46 @@ export const MembersList: React.FC<MembersListProps> = ({
         settings: settingsData || DEFAULT_SETTINGS,
       };
 
-      const cachedRaw = sessionStorage.getItem(cacheKey);
+      const cachedRaw =
+        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
       if (cachedRaw !== JSON.stringify(newPayload)) {
         setMembers(membersData);
         setSubscriptions(subsData);
         setCards(cardsData);
         if (settingsData) setSettings(settingsData);
-        sessionStorage.setItem(cacheKey, JSON.stringify(newPayload));
+        const payloadStr = JSON.stringify(newPayload);
+        sessionStorage.setItem(cacheKey, payloadStr);
+        try {
+          localStorage.setItem(cacheKey, payloadStr);
+        } catch {
+          // quota or private mode fallback
+        }
       }
     } catch (err: any) {
       console.error('Error fetching members data:', err);
-      toast.error(err.message || 'Failed to load member records');
+      // Attempt to load from persistent offline cache
+      const offlineCached =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (offlineCached) {
+        try {
+          const parsed = JSON.parse(offlineCached);
+          if (parsed && Array.isArray(parsed.members)) {
+            setMembers(parsed.members);
+            if (Array.isArray(parsed.subscriptions))
+              setSubscriptions(parsed.subscriptions);
+            if (Array.isArray(parsed.cards)) setCards(parsed.cards);
+            if (parsed.settings) setSettings(parsed.settings);
+            toast.info(
+              'Showing cached member directory while offline/unstable.',
+              { toastId: 'members-offline-cache-loaded' }
+            );
+          }
+        } catch {
+          toast.error(err.message || 'Failed to load member records');
+        }
+      } else {
+        toast.error(err.message || 'Failed to load member records');
+      }
     } finally {
       if (!silent) setLoading(false);
     }
