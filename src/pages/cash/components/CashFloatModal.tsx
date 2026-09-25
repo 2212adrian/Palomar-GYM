@@ -294,18 +294,18 @@ export const CashFloatModal: React.FC = () => {
               variant="primary"
               loading={isSubmitting}
               disabled={countdown > 0 || isSubmitting}
-              className="w-full py-3.5 text-sm font-heading font-black tracking-wide !bg-emerald-600 hover:!bg-emerald-700 active:!bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white border-none shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
+              className="w-full py-3.5 text-sm font-heading font-black tracking-wide !bg-emerald-600 hover:!bg-emerald-700 active:!bg-emerald-800 disabled:!bg-emerald-700 disabled:cursor-not-allowed text-white border-none shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
             >
               <Check className="w-4 h-4 mr-1.5" />
               {countdown > 0
-                ? `Open Drawer with this Cash (${countdown}s)`
-                : 'Open Drawer with this Cash'}
+                ? `Please wait in (${countdown}s)`
+                : 'Place Cash in Drawer'}
             </Button>
 
             <button
               type="button"
               onClick={handleJustCheckingIn}
-              className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+              className="w-full py-2.5 text-xs font-bold text-white-500 hover:text-slate-800 dark:text-white-400 dark:hover:text-white transition-colors cursor-pointer"
             >
               Just checking in (Skip for now)
             </button>

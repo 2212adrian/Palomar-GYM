@@ -118,14 +118,26 @@ export const App: React.FC = () => {
     let isSubscribed = true;
 
     // 1. Listen for new service worker controlling the page
-    if ('serviceWorker' in navigator) {
-      const handleControllerChange = () => {
+    const handleControllerChange = async () => {
+      if (!isSubscribed) return;
+
+      try {
+        // Verify against remote releases before alerting the user
+        const remote = await fetchLatestRelease(pkg.version, 'web');
+
+        // If there is no newer version than current pkg.version, do nothing
+        if (!remote?.isNewer) return;
+
+        // Dismiss outdated toast if active to avoid duplicate prompts
+        toast.dismiss('pwa-version-outdated');
+
         toast.info(
           ({ closeToast }) => (
             <div className="flex flex-col gap-1.5 text-xs">
               <span className="font-bold">App update applied</span>
               <span className="text-[11px] text-slate-300">
-                A new version has loaded in the background. Refresh to activate.
+                A new version (v{remote.version}) has loaded in the background.
+                Refresh to activate.
               </span>
               <button
                 type="button"
@@ -145,8 +157,15 @@ export const App: React.FC = () => {
             closeOnClick: false,
           }
         );
-      };
+      } catch (err) {
+        console.debug(
+          '[PWA] Version check deferred on controller change:',
+          err
+        );
+      }
+    };
 
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener(
         'controllerchange',
         handleControllerChange
@@ -200,6 +219,13 @@ export const App: React.FC = () => {
       isSubscribed = false;
       clearTimeout(initialTimer);
       clearInterval(intervalTimer);
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          'controllerchange',
+          handleControllerChange
+        );
+      }
     };
   }, []);
 

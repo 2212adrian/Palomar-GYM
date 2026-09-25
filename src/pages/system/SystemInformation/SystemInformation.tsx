@@ -1,3 +1,4 @@
+// src/pages/system/SystemInformation.tsx
 import React, { useState } from 'react';
 import {
   ShieldCheck,
@@ -36,173 +37,226 @@ export const SystemInformation: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-1 relative max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="space-y-1">
-        <span className="text-[10px] font-heading tracking-widest text-[#123c73] dark:text-red-500 uppercase font-black">
-          SYSTEM / CONFIGURATIONS
-        </span>
-        <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider uppercase text-slate-900 dark:text-slate-100">
-          SYSTEM INFORMATION
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Application specifications, version metadata, storage health, and facility legal documentation.
+    <div className="space-y-6 font-body text-(--color-text)">
+      {/* Page Header */}
+      <div>
+        <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
+          System Information
+        </h2>
+        <p className="text-sm text-slate-400 mt-1 font-medium">
+          Application specifications, version metadata, storage health, and
+          facility legal documentation.
         </p>
       </div>
 
-      {/* System Status Banner */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white">
-                All Core Services Operational
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                ACTIVE
-              </span>
+      {/* Two-Column Layout Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT COLUMN: Specifications & Legal Links (5 Cols) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Build Specifications Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Build Specifications
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-semibold">
+                Active runtime environment and release specifications.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Supabase Auth, Realtime Postgres, and Cloud Storage are synced and
-              operating normally.
-            </p>
+
+            <div className="space-y-2.5 pt-2 border-t border-(--border-color) text-xs">
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">Framework</span>
+                <span className="font-mono font-bold text-(--color-text)">
+                  React 19 + Vite 6
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">
+                  Current Release
+                </span>
+                <span className="font-mono font-bold text-emerald-500">
+                  v{APP_VERSION}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-slate-400 font-medium">Environment</span>
+                <span className="font-mono font-bold text-(--color-text) uppercase">
+                  {import.meta.env.MODE || 'Production'}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Reload Application Core</span>
+            </button>
+          </div>
+
+          {/* Legal Documentation & Developer Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-4">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Documentation & Support
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-semibold">
+                Facility terms, privacy policies, and developer contact details.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setActiveModal('terms')}
+                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <Scale className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-bold text-(--color-text)">
+                    Terms of Service
+                  </span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModal('privacy')}
+                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  <span className="text-xs font-bold text-(--color-text)">
+                    Privacy Policy
+                  </span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModal('developer')}
+                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <Code2 className="w-4 h-4 text-amber-500" />
+                  <span className="text-xs font-bold text-(--color-text)">
+                    About Developer
+                  </span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 text-xs font-heading font-bold uppercase tracking-wider border border-slate-200 dark:border-white/10 transition-all cursor-pointer shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Reload Core</span>
-        </button>
-      </div>
+        {/* RIGHT COLUMN: Service Health & Resource Utilization (7 Cols) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Core Services Operational Status Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-4">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Core Services Status
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-semibold">
+                Operational integrity across active application microservices.
+              </p>
+            </div>
 
-      {/* Grid: App Specifications & Deployment */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Specification Card */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-3">
-          <span className="text-[10px] font-heading font-black tracking-wider uppercase text-slate-400 block">
-            BUILD SPECIFICATIONS
-          </span>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
-              <span className="text-slate-500">Framework</span>
-              <span className="font-mono font-bold text-slate-900 dark:text-white">
-                React 19 + Vite 6
-              </span>
-            </div>
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
-              <span className="text-slate-500">Current Release</span>
-              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                v{APP_VERSION}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Environment</span>
-              <span className="font-mono font-bold text-slate-900 dark:text-white uppercase">
-                {import.meta.env.MODE || 'Production'}
-              </span>
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-semibold text-(--color-text)">
+                  All Core Services Operational
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Supabase Auth, Realtime Postgres, and Cloud Storage are
+                  synchronized and operating within normal operational
+                  parameters.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Database Health Card */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-heading font-black tracking-wider uppercase text-slate-400">
-              DATABASE UTILIZATION
-            </span>
-            <Database className="w-4 h-4 text-blue-500" />
-          </div>
-          <div>
-            <div className="flex items-baseline justify-between mb-1.5">
-              <span className="text-lg font-heading font-black text-slate-900 dark:text-white">
-                {formatBytes(totalDbBytes)}
-              </span>
-              <span className="text-xs font-mono text-slate-400">
-                / {formatBytes(maxDbBytes)}
-              </span>
+          {/* Infrastructure & Resource Allocation Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Resource Utilization
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-semibold">
+                Database volume allocations and cloud asset storage pools.
+              </p>
             </div>
-            <div className="w-full h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                style={{ width: `${dbUsagePercent}%` }}
-              />
+
+            {/* Database Utilization Gauge */}
+            <div className="space-y-2 pt-2 border-t border-(--border-color)">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-blue-500" />
+                  Database Utilization
+                </span>
+                <span className="text-[10px] font-mono font-bold text-slate-400">
+                  {dbUsagePercent.toFixed(1)}%
+                </span>
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <span className="text-base font-heading font-black text-(--color-text)">
+                    {formatBytes(totalDbBytes)}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">
+                    / {formatBytes(maxDbBytes)}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-(--bg-page) border border-(--border-color) rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${dbUsagePercent}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                  {dbUsagePercent.toFixed(1)}% of 500 MB capacity utilized
+                </p>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-              {dbUsagePercent.toFixed(1)}% of 500 MB capacity utilized
-            </p>
-          </div>
-        </div>
 
-        {/* Bucket Storage Card */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-heading font-black tracking-wider uppercase text-slate-400">
-              STORAGE BUCKETS
-            </span>
-            <Cloud className="w-4 h-4 text-purple-500" />
-          </div>
-          <div>
-            <div className="flex items-baseline justify-between mb-1.5">
-              <span className="text-lg font-heading font-black text-slate-900 dark:text-white">
-                {formatBytes(totalStorageBytes)}
-              </span>
-              <span className="text-xs font-mono text-slate-400">
-                / {formatBytes(maxStorageBytes)}
-              </span>
+            {/* Storage Buckets Gauge */}
+            <div className="space-y-2 pt-4 border-t border-(--border-color)">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Cloud className="w-3.5 h-3.5 text-purple-500" />
+                  Storage Buckets
+                </span>
+                <span className="text-[10px] font-mono font-bold text-slate-400">
+                  {storageUsagePercent.toFixed(1)}%
+                </span>
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <span className="text-base font-heading font-black text-(--color-text)">
+                    {formatBytes(totalStorageBytes)}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">
+                    / {formatBytes(maxStorageBytes)}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-(--bg-page) border border-(--border-color) rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                    style={{ width: `${storageUsagePercent}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                  {storageUsagePercent.toFixed(1)}% of 1 GB bucket pool utilized
+                </p>
+              </div>
             </div>
-            <div className="w-full h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-purple-500 rounded-full transition-all duration-500"
-                style={{ width: `${storageUsagePercent}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-              {storageUsagePercent.toFixed(1)}% of 1 GB bucket pool
-            </p>
           </div>
-        </div>
-      </div>
-
-      {/* Policies & Links */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-        <div
-          onClick={() => setActiveModal('terms')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between cursor-pointer hover:border-blue-500 transition-all"
-        >
-          <div className="flex items-center gap-3">
-            <Scale className="w-4 h-4 text-blue-500" />
-            <span className="text-xs font-bold">Terms of Service</span>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-        </div>
-
-        <div
-          onClick={() => setActiveModal('privacy')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between cursor-pointer hover:border-emerald-500 transition-all"
-        >
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs font-bold">Privacy Policy</span>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-        </div>
-
-        <div
-          onClick={() => setActiveModal('developer')}
-          className="p-4 bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl flex items-center justify-between cursor-pointer hover:border-amber-500 transition-all"
-        >
-          <div className="flex items-center gap-3">
-            <Code2 className="w-4 h-4 text-amber-500" />
-            <span className="text-xs font-bold">About Developer</span>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
         </div>
       </div>
 
@@ -213,36 +267,59 @@ export const SystemInformation: React.FC = () => {
         initialDocument={activeModal === 'terms' ? 'terms' : 'privacy'}
       />
 
+      {/* Developer Modal */}
       <Modal
         isOpen={activeModal === 'developer'}
         onClose={() => setActiveModal(null)}
         title="About Developer"
-        className="max-w-md p-6 text-left"
       >
-        <div className="space-y-4 text-xs">
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-neutral-800 border border-slate-200 dark:border-white/10">
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              Adrian R. Angeles
-            </h4>
-            <p className="text-blue-600 dark:text-red-400 font-semibold text-xs">
-              Lead Software Developer
-            </p>
+        <div className="space-y-4 font-body text-left text-xs">
+          <div className="p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-(--color-primary)/10 border border-(--color-primary)/20 flex items-center justify-center text-(--color-primary) shrink-0">
+              <Code2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-heading tracking-wider uppercase text-(--color-text) text-sm font-bold">
+                Adrian R. Angeles
+              </h4>
+              <p className="text-xs text-(--color-primary-light) font-bold tracking-wider">
+                Lead Software Developer
+              </p>
+            </div>
           </div>
+
           <div className="space-y-2">
-            <a
-              href="tel:09762607481"
-              className="flex items-center gap-2 text-slate-600 dark:text-slate-300"
+            <h4 className="font-bold text-xs uppercase tracking-wider text-(--color-text)">
+              Direct Inquiries
+            </h4>
+            <div className="space-y-2">
+              <a
+                href="tel:09762607481"
+                className="flex items-center gap-2.5 p-2.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-(--color-text) hover:border-(--color-primary) transition-colors"
+              >
+                <Phone className="w-4 h-4 text-(--color-primary)" />
+                <span className="font-mono text-xs">09762607481</span>
+              </a>
+              <a
+                href="mailto:adrianangeles2213@gmail.com"
+                className="flex items-center gap-2.5 p-2.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-(--color-text) hover:border-(--color-primary) transition-colors"
+              >
+                <Mail className="w-4 h-4 text-emerald-500" />
+                <span className="font-mono text-xs">
+                  adrianangeles2213@gmail.com
+                </span>
+              </a>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setActiveModal(null)}
+              className="w-full py-2.5 bg-(--bg-input) text-(--color-text) rounded-xl font-heading text-xs uppercase tracking-wider hover:opacity-90 transition-all cursor-pointer text-center"
             >
-              <Phone className="w-4 h-4 text-blue-500" />
-              <span>09762607481</span>
-            </a>
-            <a
-              href="mailto:adrianangeles2213@gmail.com"
-              className="flex items-center gap-2 text-slate-600 dark:text-slate-300"
-            >
-              <Mail className="w-4 h-4 text-emerald-500" />
-              <span>adrianangeles2213@gmail.com</span>
-            </a>
+              Close
+            </button>
           </div>
         </div>
       </Modal>

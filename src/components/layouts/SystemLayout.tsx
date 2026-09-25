@@ -42,6 +42,33 @@ export const SystemLayout: React.FC = () => {
   const mainScrollRef = useRef<HTMLElement>(null);
   const logout = useAuthStore((state) => state.logout);
 
+  // ─── Intro Curtain Detection Helper ───
+  const checkShouldPlayIntro = (): boolean => {
+    if (typeof window === 'undefined') return false;
+
+    // Do not replay if already marked completed in the active session
+    if (sessionStorage.getItem('loginIntroDone') === '1') {
+      return false;
+    }
+
+    const locState = location.state as {
+      playIntro?: boolean;
+      fromLogin?: boolean;
+      loggedIn?: boolean;
+    } | null;
+
+    return Boolean(
+      locState?.playIntro ||
+      locState?.fromLogin ||
+      locState?.loggedIn ||
+      sessionStorage.getItem('playDashboardIntro') === 'true' ||
+      sessionStorage.getItem('loginIntroDone') === '0' ||
+      sessionStorage.getItem('loginIntroPlayed') === '1' ||
+      sessionStorage.getItem('loginIntroPlayed') === 'true' ||
+      sessionStorage.getItem('loginIntroPlayed') === 'pending'
+    );
+  };
+
   // ─── Synchronous Direction Calculation During Render ───
   const [navTransition, setNavTransition] = useState<{
     pathname: string;
@@ -60,8 +87,6 @@ export const SystemLayout: React.FC = () => {
 
     let dir: 'down' | 'up' | null = null;
     if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
-      // Selected item is below current item -> slide down
-      // Selected item is above current item -> slide up
       dir = currIdx > prevIdx ? 'down' : 'up';
     }
 
@@ -124,19 +149,11 @@ export const SystemLayout: React.FC = () => {
   const [logoutStarted, setLogoutStarted] = useState(false);
   const [logoutResting, setLogoutResting] = useState(false);
 
-  const [slideOut, setSlideOut] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('playDashboardIntro') !== 'true';
-    }
-    return true;
-  });
-
-  const [curtainHidden, setCurtainHidden] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('playDashboardIntro') !== 'true';
-    }
-    return true;
-  });
+  // Initialize state based on whether the intro curtain should play
+  const [slideOut, setSlideOut] = useState(() => !checkShouldPlayIntro());
+  const [curtainHidden, setCurtainHidden] = useState(
+    () => !checkShouldPlayIntro()
+  );
 
   const [activeTasks, setActiveTasks] = useState<string[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -178,21 +195,32 @@ export const SystemLayout: React.FC = () => {
   };
 
   useEffect(() => {
-    const playIntro = sessionStorage.getItem('playDashboardIntro') === 'true';
+    const playIntro = checkShouldPlayIntro();
     let hideTimer: ReturnType<typeof setTimeout>;
 
     if (playIntro) {
       setCurtainHidden(false);
       setSlideOut(false);
 
+      // Give the browser time to paint frame 0 at translate-x-0 before transitioning
       const timer = setTimeout(() => {
-        setSlideOut(true);
+        requestAnimationFrame(() => {
+          setSlideOut(true);
+        });
+
+        // Mark intro completed so refreshes don't replay it
         sessionStorage.removeItem('playDashboardIntro');
-      }, 50);
+        sessionStorage.setItem('loginIntroDone', '1');
+        sessionStorage.removeItem('loginIntroPlayed');
+
+        if (window.history.state) {
+          window.history.replaceState({}, document.title);
+        }
+      }, 80);
 
       hideTimer = setTimeout(() => {
         setCurtainHidden(true);
-      }, 1600);
+      }, 1700);
 
       return () => {
         clearTimeout(timer);
@@ -208,9 +236,10 @@ export const SystemLayout: React.FC = () => {
     );
     if (!hasPrompted) {
       sessionStorage.setItem('palomar_initial_permissions_prompted', '1');
+      // Delay prompt until after curtain reveal finishes
       setTimeout(() => {
         promptInitialPermissionsOnLogin().catch(() => {});
-      }, 1000);
+      }, 2000);
     }
   }, []);
 
@@ -222,6 +251,7 @@ export const SystemLayout: React.FC = () => {
 
     sessionStorage.removeItem('loginIntroPlayed');
     sessionStorage.setItem('loginIntroDone', '0');
+    sessionStorage.setItem('playDashboardIntro', 'true');
     sessionStorage.removeItem('cash_session_closed_banner_dismissed');
 
     setTimeout(() => {
@@ -291,7 +321,7 @@ export const SystemLayout: React.FC = () => {
 
           <OfflinePopup />
 
-          {/* SIDEBAR: Static, untouched */}
+          {/* SIDEBAR */}
           <aside className="lg:relative lg:z-30 shrink-0 lg:shadow-[4px_0_24px_-4px_rgba(15,23,42,0.06)] dark:shadow-none lg:border-r border-slate-200/80 dark:border-slate-800/80">
             <Sidebar
               collapsed={desktopCollapsed}
@@ -326,10 +356,6 @@ export const SystemLayout: React.FC = () => {
                     : 'opacity-100 transition-opacity duration-300'
                 }`}
               >
-                {/* 
-                  animKey forces a fresh mount with the directional animation class
-                  whenever the route changes.
-                */}
                 <div
                   key={navTransition.animKey}
                   className={`max-w-[1600px] w-full mx-auto min-h-full flex flex-col min-w-0 ${
@@ -352,7 +378,7 @@ export const SystemLayout: React.FC = () => {
           {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
           {!curtainHidden && (
             <div
-              className={`fixed inset-0 z-[16000] pointer-events-none transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
+              className={`fixed inset-0 z-[16000] pointer-events-none will-change-transform transition-transform duration-[1500ms] ease-[cubic-bezier(0.77,0,0.175,1)] ${
                 isLoggingOut
                   ? logoutStarted
                     ? 'translate-x-0 scale-x-[-1]'

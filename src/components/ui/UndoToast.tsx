@@ -1,5 +1,6 @@
 // src/components/ui/UndoToast.tsx
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RotateCcw,
@@ -56,15 +57,20 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   onConfirmAll,
 }) => {
   const totalMs = duration * 1000;
+  const [mounted, setMounted] = useState(false);
   const [remainingMs, setRemainingMs] = useState(totalMs);
   const [isPaused, setIsPaused] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const prevItemsLength = useRef(items.length);
   const onConfirmAllRef = useRef(onConfirmAll);
   onConfirmAllRef.current = onConfirmAll;
+
+  // Mount to body via portal once ready
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Whenever items are added to the stack, refresh timer to give the user full reaction time
   useEffect(() => {
@@ -85,7 +91,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
     }
   }, [items.length, totalMs]);
 
-  // High-precision ticker (pauses on hover or touch/expand)
+  // High-precision ticker (pauses on hover, touch, or when explicitly expanded)
   useEffect(() => {
     if (items.length === 0 || isProcessing || isPaused || isExpanded) return;
 
@@ -105,14 +111,13 @@ export const UndoToast: React.FC<UndoToastProps> = ({
     return () => clearInterval(timer);
   }, [items.length, isPaused, isExpanded, isProcessing]);
 
-  if (items.length === 0) return null;
+  if (!mounted || items.length === 0) return null;
 
   const secondsLeft = Math.max(0, Math.ceil(remainingMs / 1000));
   const progressPercent = Math.max(
     0,
     Math.min(100, (remainingMs / totalMs) * 100)
   );
-  const isDetailsOpen = isHovered || isExpanded;
 
   const formatTimestamp = (raw?: string) => {
     if (!raw) return null;
@@ -129,8 +134,8 @@ export const UndoToast: React.FC<UndoToastProps> = ({
     0
   );
 
-  return (
-    <div className="fixed bottom-32 sm:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-3000 flex flex-col items-center w-[calc(100vw-1.5rem)] sm:w-auto sm:min-w-[480px] sm:max-w-xl pointer-events-none px-1">
+  const toastContent = (
+    <div className="fixed bottom-32 sm:bottom-28 lg:bottom-8 left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center w-[calc(100vw-1.5rem)] sm:w-auto sm:min-w-[480px] sm:max-w-xl pointer-events-none px-1">
       <motion.div
         layout
         initial={{ opacity: 0, y: 24, scale: 0.95 }}
@@ -138,11 +143,10 @@ export const UndoToast: React.FC<UndoToastProps> = ({
         exit={{ opacity: 0, y: 16, scale: 0.92 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onMouseEnter={() => {
-          setIsHovered(true);
+          // Hover only pauses the countdown — does NOT auto-expand
           setIsPaused(true);
         }}
         onMouseLeave={() => {
-          setIsHovered(false);
           setIsPaused(false);
         }}
         onTouchStart={() => {
@@ -158,7 +162,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
         {/* TOP BAR / SUMMARY ROW */}
         <div className="p-3 sm:p-4">
           <div className="flex items-center justify-between gap-2.5">
-            {/* Left badge & summary text */}
+            {/* Left badge & summary text (Click to Toggle Drawer) */}
             <div
               onClick={() => setIsExpanded((prev) => !prev)}
               className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
@@ -194,25 +198,25 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
                   {items.length > 1
-                    ? `${items[0].title} + ${items.length - 1} more • Tap to inspect`
-                    : 'Hover or tap to inspect breakdown before deletion'}
+                    ? `${items[0].title} + ${items.length - 1} more • Click or tap to inspect`
+                    : 'Click or tap to inspect breakdown before deletion'}
                 </p>
               </div>
             </div>
 
             {/* Right Global Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Expand Drawer Button */}
+              {/* Expand / Collapse Button (Click Only) */}
               <button
                 type="button"
                 onClick={() => setIsExpanded((prev) => !prev)}
                 className="p-1.5 sm:px-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 text-xs font-bold cursor-pointer transition-colors"
-                title={isDetailsOpen ? 'Collapse list' : 'View all items'}
+                title={isExpanded ? 'Collapse list' : 'View all items'}
               >
                 <span className="hidden sm:inline text-[11px]">
-                  {isDetailsOpen ? 'Hide' : 'Details'}
+                  {isExpanded ? 'Hide' : 'Details'}
                 </span>
-                {isDetailsOpen ? (
+                {isExpanded ? (
                   <ChevronUp className="w-3.5 h-3.5" />
                 ) : (
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -253,9 +257,9 @@ export const UndoToast: React.FC<UndoToastProps> = ({
             </div>
           </div>
 
-          {/* EXPANDABLE HOVER / TOUCH DRAWER (INDIVIDUAL ITEM ROWS) */}
+          {/* EXPANDABLE DRAWER (OPENS ON CLICK ONLY) */}
           <AnimatePresence>
-            {isDetailsOpen && (
+            {isExpanded && (
               <motion.div
                 initial={{ opacity: 0, height: 0, marginTop: 0 }}
                 animate={{ opacity: 1, height: 'auto', marginTop: 12 }}
@@ -397,4 +401,6 @@ export const UndoToast: React.FC<UndoToastProps> = ({
       </motion.div>
     </div>
   );
+
+  return createPortal(toastContent, document.body);
 };

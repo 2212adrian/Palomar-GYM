@@ -2833,7 +2833,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               className="w-4 h-4 rounded border-(--border-color) text-(--color-primary) accent-[var(--color-primary)] cursor-pointer"
                             />
                             <span>
-                              Use Parent / Guardian as Primary Emergency Contact
+                              Use Parent / Guardian as In Case of Emergency
                             </span>
                           </label>
                         </div>
