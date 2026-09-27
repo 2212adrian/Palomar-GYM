@@ -477,7 +477,8 @@ export const LogbookPage: React.FC = () => {
       const cacheKey = `logbook_sanitized_${dateStr}`;
 
       if (!isBackground) {
-        const cachedSession = sessionStorage.getItem(cacheKey);
+        const cachedSession =
+          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
         if (cachedSession) {
           try {
             const parsed = JSON.parse(cachedSession);
@@ -494,16 +495,20 @@ export const LogbookPage: React.FC = () => {
 
       try {
         // Fetch closed sessions list from Supabase
-        const { data: closedSessionsData } = await supabase
-          .from('cash_sessions')
-          .select(
-            'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
-          )
-          .eq('status', 'closed')
-          .order('closed_at', { ascending: false });
+        try {
+          const { data: closedSessionsData } = await supabase
+            .from('cash_sessions')
+            .select(
+              'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+            )
+            .eq('status', 'closed')
+            .order('closed_at', { ascending: false });
 
-        if (closedSessionsData) {
-          setClosedSessionsList(closedSessionsData);
+          if (closedSessionsData) {
+            setClosedSessionsList(closedSessionsData);
+          }
+        } catch {
+          // ignore offline error for closed sessions
         }
 
         let mappedLogs: LogRecord[] | null = null;
@@ -545,11 +550,8 @@ export const LogbookPage: React.FC = () => {
           console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
         }
 
-        // Direct table query fallback
-        if (
-          !mappedLogs &&
-          (typeof navigator === 'undefined' || navigator.onLine)
-        ) {
+        // Direct table query fallback (always allow so Service Worker can serve cached GET responses when offline)
+        if (!mappedLogs) {
           try {
             const startOfDay = new Date(
               `${dateStr}T00:00:00+08:00`
@@ -641,12 +643,14 @@ export const LogbookPage: React.FC = () => {
               });
             });
 
-            fallbackList.sort(
-              (a, b) =>
-                new Date(b.timestamp).getTime() -
-                new Date(a.timestamp).getTime()
-            );
-            mappedLogs = fallbackList;
+            if (rawAttendance.length > 0 || rawReceipts.length > 0) {
+              fallbackList.sort(
+                (a, b) =>
+                  new Date(b.timestamp).getTime() -
+                  new Date(a.timestamp).getTime()
+              );
+              mappedLogs = fallbackList;
+            }
           } catch (directErr) {
             console.error('Direct table fetch error:', directErr);
           }
@@ -654,7 +658,13 @@ export const LogbookPage: React.FC = () => {
 
         if (mappedLogs) {
           setLogs(mappedLogs);
-          sessionStorage.setItem(cacheKey, JSON.stringify(mappedLogs));
+          const serialized = JSON.stringify(mappedLogs);
+          sessionStorage.setItem(cacheKey, serialized);
+          try {
+            localStorage.setItem(cacheKey, serialized);
+          } catch {
+            // ignore quota error
+          }
         }
       } catch (err) {
         console.error('Failed to fetch attendance:', err);

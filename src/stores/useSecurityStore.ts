@@ -45,7 +45,27 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     set({ loading: true });
     try {
       const cfg = await fetchSecurityAccessConfig();
-      set({ config: cfg, loading: false });
+      const allDisabled =
+        !cfg.location_restriction_enabled &&
+        !cfg.wifi_restriction_enabled &&
+        !cfg.ip_restriction_enabled;
+
+      if (allDisabled) {
+        set({
+          config: cfg,
+          loading: false,
+          checkResult: {
+            allowed: true,
+            locationPassed: true,
+            wifiPassed: true,
+            ipPassed: true,
+            errors: [],
+          },
+          isChecking: false,
+        });
+      } else {
+        set({ config: cfg, loading: false });
+      }
 
       if (!activeRealtimeUnsubscribe) {
         get().subscribeRealtime();
@@ -100,13 +120,13 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     });
 
     try {
-      let cfg = get().config;
-      if (get().loading) {
-        cfg = await get().fetchConfig();
-      }
+      // Always fetch the latest security configuration state so "Re-check Connection"
+      // detects immediately if security restrictions were disabled or modified.
+      const cfg = await get().fetchConfig();
 
-      const res = await evaluateTerminalSecurityAccess(cfg, userRole);
+      const res = await evaluateTerminalSecurityAccess(cfg, userEmail);
       set({
+        config: cfg,
         checkResult: res,
         isChecking: false,
         lastCheckedAt: Date.now(),

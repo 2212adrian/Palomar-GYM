@@ -25,17 +25,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   useEffect(() => {
     if (user?.id && initialized && !loading) {
-      fetchConfig().then((cfg) => {
-        if (
-          (cfg.location_restriction_enabled || cfg.wifi_restriction_enabled) &&
-          !isSuperAdminUser
-        ) {
-          runVerification(effectiveRole, user?.email);
-        }
-      });
+      if (!isSuperAdminUser) {
+        runVerification(effectiveRole, user?.email);
+      } else {
+        fetchConfig();
+      }
     }
   }, [
     user?.id,
+    user?.email,
     initialized,
     loading,
     effectiveRole,
@@ -93,7 +91,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   const hasActiveSecurityRestrictions =
-    config.location_restriction_enabled || config.wifi_restriction_enabled;
+    Boolean(config.location_restriction_enabled) ||
+    Boolean(config.wifi_restriction_enabled) ||
+    Boolean(config.ip_restriction_enabled);
 
   const canBypass =
     isSuperAdminUser ||

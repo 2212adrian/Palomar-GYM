@@ -20,6 +20,10 @@ import { DownloadPage } from '../pages/download/DownloadPage';
 import { SecurityAccessBlocker } from '../components/security/SecurityAccessBlocker';
 import { useSecurityStore } from '../stores/useSecurityStore';
 import { useAuthStore } from '../stores/authStore';
+import { isSuperAdmin } from '../constants/auth';
+import { checkIsSuperAdminUser } from '../lib/securityAccessService';
+import { supabase } from '../lib/supabase/client';
+import { toast } from 'react-toastify';
 
 // Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
@@ -123,27 +127,55 @@ const LoginRouteGuard: React.FC = () => {
     // Keep a live realtime connection open on /login
     const unsubscribe = subscribeRealtime();
 
-    fetchConfig().then((cfg) => {
-      if (cfg.location_restriction_enabled || cfg.wifi_restriction_enabled) {
-        runVerification('anonymous', user?.email);
+    const verifyAccess = async () => {
+      // Handle Superadmin Google OAuth bypass return
+      const oauthBypassAttempt =
+        sessionStorage.getItem('palomar_superadmin_bypass_oauth') === 'true';
+
+      if (user?.email && oauthBypassAttempt) {
+        sessionStorage.removeItem('palomar_superadmin_bypass_oauth');
+        const isSuper = await checkIsSuperAdminUser(user.email);
+        if (!isSuper) {
+          await supabase.auth.signOut();
+          toast.error(
+            'Access Denied: Only the Superadmin account can log in while terminal security restrictions are enforced.'
+          );
+          await runVerification('anonymous', null);
+          return;
+        } else {
+          toast.success('Superadmin verified. Terminal restriction bypassed.');
+        }
       }
-    });
+
+      await runVerification(user ? 'admin' : 'anonymous', user?.email);
+    };
+
+    verifyAccess();
 
     return () => {
       unsubscribe();
     };
-  }, [fetchConfig, runVerification, subscribeRealtime, user?.email]);
+  }, [fetchConfig, runVerification, subscribeRealtime, user, user?.email]);
 
   const hasActiveRestrictions =
-    config.location_restriction_enabled || config.wifi_restriction_enabled;
+    Boolean(config.location_restriction_enabled) ||
+    Boolean(config.wifi_restriction_enabled) ||
+    Boolean(config.ip_restriction_enabled);
 
-  // If restrictions are active and this terminal is not authorized, render the blocker modal
-  if (hasActiveRestrictions && checkResult && !checkResult.allowed) {
+  const isSuperUser = Boolean(user?.email && isSuperAdmin(user.email));
+
+  // If restrictions are active, user is not Superadmin, and terminal is not authorized, render the blocker modal
+  if (
+    hasActiveRestrictions &&
+    !isSuperUser &&
+    checkResult &&
+    !checkResult.allowed
+  ) {
     return (
       <SecurityAccessBlocker
         checkResult={checkResult}
         onRetry={async () => {
-          await runVerification('anonymous', user?.email);
+          await runVerification(user ? 'admin' : 'anonymous', user?.email);
         }}
       />
     );

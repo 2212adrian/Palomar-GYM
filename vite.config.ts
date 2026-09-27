@@ -80,10 +80,14 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              // Critical App Data: Member Lists, Attendance Logs, Receipts, Subscriptions, Cards & Settings
+              // Critical App Data: Member Lists, Attendance Logs, Products, Sales, Receipts, Subscriptions, Cards & Settings
               urlPattern: ({ url }) =>
                 url.pathname.includes('/rest/v1/members') ||
                 url.pathname.includes('/rest/v1/attendance') ||
+                url.pathname.includes('/rest/v1/products') ||
+                url.pathname.includes('/rest/v1/sales') ||
+                url.pathname.includes('/rest/v1/rates_config') ||
+                url.pathname.includes('/rest/v1/gym_profile') ||
                 url.pathname.includes('/rest/v1/receipts') ||
                 url.pathname.includes('/rest/v1/subscriptions') ||
                 url.pathname.includes('/rest/v1/cards') ||
@@ -99,14 +103,33 @@ export default defineConfig(({ mode }) => {
                   statuses: [0, 200],
                 },
                 expiration: {
-                  maxEntries: 300,
+                  maxEntries: 500,
                   maxAgeSeconds: 60 * 60 * 24 * 14, // 14 days
                 },
               },
             },
             {
-              // General Supabase REST API queries
-              urlPattern: ({ url }) => url.pathname.includes('/rest/v1/'),
+              // Product Images & Public Storage Assets for Offline Viewing
+              urlPattern: ({ url }) =>
+                url.pathname.includes('/storage/v1/object/public/'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'palomar-product-images-cache',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+              },
+            },
+            {
+              // General Supabase REST API queries (excluding live security access config)
+              urlPattern: ({ url }) =>
+                url.pathname.includes('/rest/v1/') &&
+                !url.pathname.includes('/rest/v1/system_config') &&
+                !url.pathname.includes('/rest/v1/rpc/get_security_access_config'),
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'palomar-api-cache',

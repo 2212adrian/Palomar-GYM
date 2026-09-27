@@ -296,16 +296,22 @@ export const SecuritySettings: React.FC = () => {
     config,
   ]);
 
-  const handleSaveConfig = async () => {
+  const handleSaveConfig = async (overrideForm?: SecurityAccessConfig) => {
     if (!isAdmin) {
       toast.error('Only administrators can modify security policy.');
       return;
     }
 
+    const payloadToSave = overrideForm || form;
+
     try {
-      await updateConfig(form);
-      setIsDirty(false);
-      toast.success('Security configuration saved and applied in realtime!');
+      await updateConfig(payloadToSave);
+      if (!overrideForm) {
+        setIsDirty(false);
+      }
+      toast.success('Security configuration saved and applied in realtime!', {
+        toastId: 'security-config-saved',
+      });
     } catch (err: any) {
       console.error('Error saving security policy:', err);
       toast.error(err.message || 'Failed to save security settings.');
@@ -542,7 +548,7 @@ export const SecuritySettings: React.FC = () => {
             {isAdmin && isDirty && (
               <button
                 type="button"
-                onClick={handleSaveConfig}
+                onClick={() => handleSaveConfig()}
                 disabled={isSaving}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider bg-blue-600 dark:bg-red-600 hover:bg-blue-700 dark:hover:bg-red-700 text-white transition-all shadow-md active:scale-95 cursor-pointer"
               >
@@ -615,11 +621,12 @@ export const SecuritySettings: React.FC = () => {
                 disabled={!isAdmin}
                 checked={form.ip_restriction_enabled}
                 onChange={(e) => {
-                  setForm((prev) => ({
-                    ...prev,
+                  const nextForm = {
+                    ...form,
                     ip_restriction_enabled: e.target.checked,
-                  }));
-                  setIsDirty(true);
+                  };
+                  setForm(nextForm);
+                  handleSaveConfig(nextForm);
                 }}
                 className="sr-only peer"
               />
@@ -767,11 +774,12 @@ export const SecuritySettings: React.FC = () => {
                 disabled={!isAdmin}
                 checked={form.wifi_restriction_enabled}
                 onChange={(e) => {
-                  setForm((prev) => ({
-                    ...prev,
+                  const nextForm = {
+                    ...form,
                     wifi_restriction_enabled: e.target.checked,
-                  }));
-                  setIsDirty(true);
+                  };
+                  setForm(nextForm);
+                  handleSaveConfig(nextForm);
                 }}
                 className="sr-only peer"
               />
@@ -837,11 +845,12 @@ export const SecuritySettings: React.FC = () => {
                 disabled={!isAdmin}
                 checked={form.require_trusted_network}
                 onChange={(e) => {
-                  setForm((prev) => ({
-                    ...prev,
+                  const nextForm = {
+                    ...form,
                     require_trusted_network: e.target.checked,
-                  }));
-                  setIsDirty(true);
+                  };
+                  setForm(nextForm);
+                  handleSaveConfig(nextForm);
                 }}
                 className="sr-only peer"
               />
@@ -1008,11 +1017,12 @@ export const SecuritySettings: React.FC = () => {
                 disabled={!isAdmin}
                 checked={form.location_restriction_enabled}
                 onChange={(e) => {
-                  setForm((prev) => ({
-                    ...prev,
+                  const nextForm = {
+                    ...form,
                     location_restriction_enabled: e.target.checked,
-                  }));
-                  setIsDirty(true);
+                  };
+                  setForm(nextForm);
+                  handleSaveConfig(nextForm);
                 }}
                 className="sr-only peer"
               />

@@ -444,6 +444,16 @@ export const Sales: React.FC = () => {
   }, [closedSessionsList, history]);
 
   const fetchRatesConfig = async () => {
+    const cacheKey = 'palomar_rates_config_cache';
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setRatesConfig(JSON.parse(cached));
+      }
+    } catch {
+      // ignore parse error
+    }
+
     try {
       const { data, error } = await supabase
         .from('rates_config')
@@ -452,6 +462,11 @@ export const Sales: React.FC = () => {
         .single();
       if (!error && data) {
         setRatesConfig(data);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch {
+          // ignore quota error
+        }
       }
     } catch (err) {
       console.error('Error fetching rates_config:', err);
@@ -461,12 +476,26 @@ export const Sales: React.FC = () => {
   const fetchTransactions = useCallback(
     async (isBackground: boolean = false) => {
       const cacheKey = `sales_sanitized_${dateStr}`;
+      const sessionsCacheKey = 'sales_closed_sessions_cache';
 
       if (!isBackground) {
-        const cachedSession = sessionStorage.getItem(cacheKey);
-        if (cachedSession) {
+        const cachedClosed = localStorage.getItem(sessionsCacheKey);
+        if (cachedClosed) {
           try {
-            const parsed = JSON.parse(cachedSession);
+            const parsedClosed = JSON.parse(cachedClosed);
+            if (Array.isArray(parsedClosed)) {
+              setClosedSessionsList(parsedClosed);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const cachedSales =
+          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+        if (cachedSales) {
+          try {
+            const parsed = JSON.parse(cachedSales);
             if (Array.isArray(parsed)) {
               setTransactions(parsed);
             }
@@ -479,19 +508,37 @@ export const Sales: React.FC = () => {
       }
 
       try {
-        const { data: closedSessionsData } = await supabase
-          .from('cash_sessions')
-          .select(
-            'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
-          )
-          .eq('status', 'closed')
-          .order('closed_at', { ascending: false });
+        try {
+          const { data: closedSessionsData } = await supabase
+            .from('cash_sessions')
+            .select(
+              'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+            )
+            .eq('status', 'closed')
+            .order('closed_at', { ascending: false });
 
-        if (closedSessionsData) {
-          setClosedSessionsList(closedSessionsData);
+          if (closedSessionsData) {
+            setClosedSessionsList(closedSessionsData);
+            try {
+              localStorage.setItem(
+                sessionsCacheKey,
+                JSON.stringify(closedSessionsData)
+              );
+            } catch {
+              // ignore storage error
+            }
+          }
+        } catch {
+          // Offline fallback handled via cachedClosed above
         }
 
         let freshTransactions: any[] | null = null;
+        const startOfDayIso = new Date(
+          `${dateStr}T00:00:00+08:00`
+        ).toISOString();
+        const endOfDayIso = new Date(
+          `${dateStr}T23:59:59.999+08:00`
+        ).toISOString();
 
         try {
           const { data, error } = await supabase.rpc('get_sanitized_sales', {
@@ -503,6 +550,18 @@ export const Sales: React.FC = () => {
               ...s,
               cash_session_id: s.cash_session_id || null,
             }));
+
+            // Warm the Service Worker GET cache for /rest/v1/sales in the background when online
+            if (typeof navigator === 'undefined' || navigator.onLine) {
+              supabase
+                .from('sales')
+                .select('*')
+                .is('deleted_at', null)
+                .gte('created_at', startOfDayIso)
+                .lte('created_at', endOfDayIso)
+                .order('created_at', { ascending: false })
+                .then(() => {});
+            }
           } else if (error) {
             const isOfflineErr =
               error?.message?.includes('No internet connection') ||
@@ -523,18 +582,10 @@ export const Sales: React.FC = () => {
           }
         }
 
-        if (
-          !freshTransactions &&
-          (typeof navigator === 'undefined' || navigator.onLine)
-        ) {
+        // Always allow the REST GET fallback so the Service Worker (palomar-critical-data-cache)
+        // can intercept and return cached /rest/v1/sales responses even when offline or unstable.
+        if (!freshTransactions) {
           try {
-            const startOfDayIso = new Date(
-              `${dateStr}T00:00:00+08:00`
-            ).toISOString();
-            const endOfDayIso = new Date(
-              `${dateStr}T23:59:59.999+08:00`
-            ).toISOString();
-
             const { data: salesData, error: salesErr } = await supabase
               .from('sales')
               .select('*')
@@ -560,13 +611,38 @@ export const Sales: React.FC = () => {
               }));
             }
           } catch {
-            // Direct query failed
+            // Direct query failed; fall back to localStorage/sessionStorage below
           }
         }
 
         if (freshTransactions) {
           setTransactions(freshTransactions);
-          sessionStorage.setItem(cacheKey, JSON.stringify(freshTransactions));
+          const serialized = JSON.stringify(freshTransactions);
+          sessionStorage.setItem(cacheKey, serialized);
+          try {
+            localStorage.setItem(cacheKey, serialized);
+          } catch {
+            // ignore storage quota errors
+          }
+        } else {
+          const offlineSales =
+            localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+          if (offlineSales) {
+            try {
+              const parsed = JSON.parse(offlineSales);
+              if (Array.isArray(parsed)) {
+                setTransactions(parsed);
+                if (!isBackground) {
+                  toast.info(
+                    'Showing cached sales records while network is offline/unstable.',
+                    { toastId: 'sales-offline-cache-loaded' }
+                  );
+                }
+              }
+            } catch {
+              // ignore parse error
+            }
+          }
         }
       } catch {
         // General error guard
@@ -580,6 +656,20 @@ export const Sales: React.FC = () => {
   );
 
   const fetchProducts = useCallback(async () => {
+    const cacheKey = 'products_sanitized_list';
+    const cached =
+      sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setProducts(parsed);
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+
     try {
       const { data, error } = await supabase
         .from('products')
@@ -587,7 +677,16 @@ export const Sales: React.FC = () => {
         .is('deleted_at', null)
         .order('product_name', { ascending: true });
       if (error) throw error;
-      setProducts(data || []);
+      if (data) {
+        setProducts(data);
+        const serialized = JSON.stringify(data);
+        sessionStorage.setItem(cacheKey, serialized);
+        try {
+          localStorage.setItem(cacheKey, serialized);
+        } catch {
+          // ignore storage quota errors
+        }
+      }
     } catch (err) {
       console.error('Error loading products list:', err);
     }

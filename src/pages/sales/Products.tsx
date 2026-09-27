@@ -170,7 +170,8 @@ export const Products: React.FC<ProductsProps> = ({
     const cacheKey = 'products_sanitized_list';
 
     if (!silent) {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached =
+        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
@@ -185,7 +186,13 @@ export const Products: React.FC<ProductsProps> = ({
     }
 
     try {
-      if (!silent && !sessionStorage.getItem(cacheKey)) setLoading(true);
+      if (
+        !silent &&
+        !sessionStorage.getItem(cacheKey) &&
+        !localStorage.getItem(cacheKey)
+      ) {
+        setLoading(true);
+      }
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -194,14 +201,39 @@ export const Products: React.FC<ProductsProps> = ({
 
       if (error) throw error;
       if (isMountedRef.current && data) {
-        const cachedRaw = sessionStorage.getItem(cacheKey);
-        if (cachedRaw !== JSON.stringify(data)) {
+        const payloadStr = JSON.stringify(data);
+        const cachedRaw =
+          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+        if (cachedRaw !== payloadStr) {
           setProducts(data);
-          sessionStorage.setItem(cacheKey, JSON.stringify(data));
+        }
+        sessionStorage.setItem(cacheKey, payloadStr);
+        try {
+          localStorage.setItem(cacheKey, payloadStr);
+        } catch {
+          // ignore storage quota errors
         }
       }
     } catch {
       if (isMountedRef.current) {
+        const offlineCached =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (offlineCached) {
+          try {
+            const parsed = JSON.parse(offlineCached);
+            if (Array.isArray(parsed)) {
+              setProducts(parsed);
+              if (!silent) {
+                toast.info(
+                  'Showing cached products list while network is offline/unstable.',
+                  { toastId: 'products-offline-cache-loaded' }
+                );
+              }
+            }
+          } catch {
+            // ignore parse error
+          }
+        }
         console.warn(
           'INTERNET_ERR: Could not load your product items. Please Check your Connection.'
         );

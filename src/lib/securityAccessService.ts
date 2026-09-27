@@ -164,29 +164,130 @@ export async function getDeviceNetworkStatus(): Promise<{
   }
 }
 
+const SECURITY_CONFIG_CACHE_KEY = 'palomar_security_access_config';
+
+/**
+ * Verifies whether a user email belongs to the Superadmin account via client env,
+ * database RPC `is_superadmin()`, or `system_config` (`key = 'superadmin_email'`).
+ */
+export async function checkIsSuperAdminUser(
+  email?: string | null
+): Promise<boolean> {
+  if (email && isSuperAdmin(email)) {
+    return true;
+  }
+
+  try {
+    const { data: isSuperRpc, error: rpcErr } = await supabase.rpc('is_superadmin');
+    if (!rpcErr && isSuperRpc === true) {
+      return true;
+    }
+  } catch {
+    // ignore RPC error
+  }
+
+  if (email) {
+    try {
+      const { data: rowData, error: rowErr } = await supabase
+        .from('system_config')
+        .select('value')
+        .eq('key', 'superadmin_email')
+        .maybeSingle();
+
+      if (!rowErr && rowData?.value) {
+        const cleanDbEmail = String(rowData.value)
+          .replace(/^"|"$/g, '')
+          .trim()
+          .toLowerCase();
+        if (cleanDbEmail && cleanDbEmail === email.trim().toLowerCase()) {
+          return true;
+        }
+      }
+    } catch {
+      // ignore fallback error
+    }
+  }
+
+  return false;
+}
+
+function parseConfigPayload(raw: unknown): SecurityAccessConfig | null {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (parsed && typeof parsed === 'object') {
+      return {
+        ...DEFAULT_SECURITY_CONFIG,
+        ...parsed,
+        location_restriction_enabled: Boolean(
+          (parsed as any).location_restriction_enabled
+        ),
+        wifi_restriction_enabled: Boolean(
+          (parsed as any).wifi_restriction_enabled
+        ),
+        ip_restriction_enabled: Boolean((parsed as any).ip_restriction_enabled),
+        require_trusted_network: Boolean(
+          (parsed as any).require_trusted_network
+        ),
+      };
+    }
+  } catch {
+    // ignore parse error
+  }
+  return null;
+}
+
 export async function fetchSecurityAccessConfig(): Promise<SecurityAccessConfig> {
   try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
-      'get_security_access_config'
-    );
+    const [rpcRes, tableRes] = await Promise.allSettled([
+      supabase.rpc('get_security_access_config'),
+      supabase
+        .from('system_config')
+        .select('value')
+        .eq('key', 'security_access_control')
+        .maybeSingle(),
+    ]);
 
-    if (!rpcError && rpcData) {
-      const parsed = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
-      return { ...DEFAULT_SECURITY_CONFIG, ...parsed };
+    let resolvedConfig: SecurityAccessConfig | null = null;
+
+    if (
+      tableRes.status === 'fulfilled' &&
+      !tableRes.value.error &&
+      tableRes.value.data?.value
+    ) {
+      resolvedConfig = parseConfigPayload(tableRes.value.data.value);
     }
 
-    const { data: rowData, error: tableError } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'security_access_control')
-      .maybeSingle();
+    if (
+      !resolvedConfig &&
+      rpcRes.status === 'fulfilled' &&
+      !rpcRes.value.error &&
+      rpcRes.value.data
+    ) {
+      resolvedConfig = parseConfigPayload(rpcRes.value.data);
+    }
 
-    if (!tableError && rowData?.value) {
-      const parsed = JSON.parse(rowData.value);
-      return { ...DEFAULT_SECURITY_CONFIG, ...parsed };
+    if (resolvedConfig) {
+      try {
+        localStorage.setItem(
+          SECURITY_CONFIG_CACHE_KEY,
+          JSON.stringify(resolvedConfig)
+        );
+      } catch {
+        // ignore storage error
+      }
+      return resolvedConfig;
     }
   } catch (err) {
     console.warn('Error fetching security access config:', err);
+  }
+
+  try {
+    const cached = localStorage.getItem(SECURITY_CONFIG_CACHE_KEY);
+    const parsedCached = parseConfigPayload(cached);
+    if (parsedCached) return parsedCached;
+  } catch {
+    // ignore cache read error
   }
 
   return DEFAULT_SECURITY_CONFIG;
@@ -195,23 +296,34 @@ export async function fetchSecurityAccessConfig(): Promise<SecurityAccessConfig>
 export async function saveSecurityAccessConfig(
   config: SecurityAccessConfig
 ): Promise<SecurityAccessConfig> {
+  const normalizedConfig: SecurityAccessConfig = {
+    ...DEFAULT_SECURITY_CONFIG,
+    ...config,
+    location_restriction_enabled: Boolean(config.location_restriction_enabled),
+    wifi_restriction_enabled: Boolean(config.wifi_restriction_enabled),
+    ip_restriction_enabled: Boolean(config.ip_restriction_enabled),
+    require_trusted_network: Boolean(config.require_trusted_network),
+  };
+
   const { data: rpcData, error: rpcError } = await supabase.rpc(
     'update_security_access_config',
     {
-      p_config: config,
+      p_config: normalizedConfig,
     }
   );
 
-  if (!rpcError && rpcData) {
-    const parsed = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
-    return { ...DEFAULT_SECURITY_CONFIG, ...parsed };
-  }
+  // Also attempt direct upsert to system_config with explicit onConflict: 'key'
+  // so both RPC and table readers stay 100% synchronized.
+  const { error: upsertError } = await supabase.from('system_config').upsert(
+    {
+      key: 'security_access_control',
+      value: JSON.stringify(normalizedConfig),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
 
-  // A permission failure is final: the SECURITY DEFINER RPC is the
-  // authoritative writer, so the direct table fallback below would only fail
-  // again with "new row violates row-level security policy for table
-  // system_config". Surface the real reason instead.
-  if (rpcError) {
+  if (rpcError && upsertError) {
     const rpcMessage = String(rpcError.message || '');
     const isPermissionError =
       rpcError.code === '42501' ||
@@ -222,21 +334,17 @@ export async function saveSecurityAccessConfig(
         'Access denied: only an Administrator or the Superadmin can change Facility Access & Security settings.'
       );
     }
-  }
-
-  const { error: upsertError } = await supabase
-    .from('system_config')
-    .upsert({
-      key: 'security_access_control',
-      value: JSON.stringify(config),
-      updated_at: new Date().toISOString(),
-    });
-
-  if (upsertError) {
     throw upsertError;
   }
 
-  return config;
+  const finalSaved = parseConfigPayload(rpcData) || normalizedConfig;
+  try {
+    localStorage.setItem(SECURITY_CONFIG_CACHE_KEY, JSON.stringify(finalSaved));
+  } catch {
+    // ignore storage error
+  }
+
+  return finalSaved;
 }
 
 export interface SecurityAccessCheckResult {
@@ -280,7 +388,7 @@ export async function evaluateTerminalSecurityAccess(
   }
 
   // Superadmin bypass: Only bypasses if signed in as Superadmin
-  if (userEmail && isSuperAdmin(userEmail)) {
+  if (userEmail && (await checkIsSuperAdminUser(userEmail))) {
     return result;
   }
 
