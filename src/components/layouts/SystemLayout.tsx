@@ -14,6 +14,7 @@ import { OfflinePopup } from '../ui/OfflinePopup';
 import { Topbar } from './Topbar';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
+import { AppFooter } from './AppFooter';
 import { TabLoader } from '../ui/TabLoader';
 import { CashFloatModal } from '../../pages/cash/components/CashFloatModal';
 import { ScannerPage } from '../../pages/scanner/ScannerPage';
@@ -366,7 +367,10 @@ export const SystemLayout: React.FC = () => {
                         : ''
                   }`}
                 >
-                  <Outlet />
+                  <div className="flex-1 flex flex-col min-w-0">
+                    <Outlet />
+                  </div>
+                  <AppFooter variant="system" />
                 </div>
               </main>
             </div>

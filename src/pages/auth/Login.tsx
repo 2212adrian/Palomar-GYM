@@ -1842,6 +1842,10 @@ export const Login: React.FC = () => {
         isOpen={agreementDocument !== null}
         onClose={() => setAgreementDocument(null)}
         initialDocument={agreementDocument || 'terms'}
+        onAccept={() => {
+          setLoginValue('agree', true, { shouldValidate: true });
+          localStorage.setItem('palomar_user_agreement_accepted', 'true');
+        }}
       />
     </div>
   );

@@ -2,7 +2,17 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Scale, ShieldCheck, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Mail,
+  MapPin,
+  Phone,
+  Scale,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
+import { supabase } from '../../lib/supabase/client';
 
 export type AgreementDocument = 'terms' | 'privacy';
 
@@ -10,7 +20,30 @@ interface AgreementDocumentViewerProps {
   isOpen: boolean;
   onClose: () => void;
   initialDocument?: AgreementDocument;
+  onAccept?: () => void;
 }
+
+interface LiveGymLegalProfile {
+  gymName: string;
+  gymAddress: string;
+  contactName1: string;
+  contactNumber1: string;
+  contactName2: string;
+  contactNumber2: string;
+  emailAddress: string;
+  updatedAt: string | null;
+}
+
+const DEFAULT_LEGAL_PROFILE: LiveGymLegalProfile = {
+  gymName: 'Wolf Palomar Gym',
+  gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
+  contactName1: 'Staff Ryan',
+  contactNumber1: '09762607481',
+  contactName2: 'Admin Wolf',
+  contactNumber2: '09123456789',
+  emailAddress: 'contact@wolfpalomargym.com',
+  updatedAt: null,
+};
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({
   title,
@@ -35,10 +68,13 @@ const Highlight: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 export const AgreementDocumentViewer: React.FC<
   AgreementDocumentViewerProps
-> = ({ isOpen, onClose, initialDocument = 'terms' }) => {
+> = ({ isOpen, onClose, initialDocument = 'terms', onAccept }) => {
   const [activeDocument, setActiveDocument] =
     useState<AgreementDocument>(initialDocument);
   const [isMounted, setIsMounted] = useState(false);
+  const [gymProfile, setGymProfile] = useState<LiveGymLegalProfile>(
+    DEFAULT_LEGAL_PROFILE
+  );
 
   useEffect(() => {
     if (isOpen) setActiveDocument(initialDocument);
@@ -48,6 +84,67 @@ export const AgreementDocumentViewer: React.FC<
     setIsMounted(true);
     return () => setIsMounted(false);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isSubscribed = true;
+
+    const loadGymProfile = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('gym_profile')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!error && data && isSubscribed) {
+          setGymProfile({
+            gymName: data.gym_name || DEFAULT_LEGAL_PROFILE.gymName,
+            gymAddress: data.gym_address || DEFAULT_LEGAL_PROFILE.gymAddress,
+            contactName1:
+              data.contact_name_1 || DEFAULT_LEGAL_PROFILE.contactName1,
+            contactNumber1:
+              data.contact_number_1 || DEFAULT_LEGAL_PROFILE.contactNumber1,
+            contactName2:
+              data.contact_name_2 || DEFAULT_LEGAL_PROFILE.contactName2,
+            contactNumber2:
+              data.contact_number_2 || DEFAULT_LEGAL_PROFILE.contactNumber2,
+            emailAddress:
+              data.email_address || DEFAULT_LEGAL_PROFILE.emailAddress,
+            updatedAt: data.updated_at || null,
+          });
+          return;
+        }
+      } catch {
+        // Fallback to localStorage if offline
+      }
+
+      try {
+        const saved = localStorage.getItem('palomar_gym_profile');
+        if (saved && isSubscribed) {
+          const parsed = JSON.parse(saved);
+          setGymProfile((prev) => ({
+            ...prev,
+            gymName: parsed.gymName || prev.gymName,
+            gymAddress: parsed.gymAddress || prev.gymAddress,
+            contactName1: parsed.contactName1 || prev.contactName1,
+            contactNumber1: parsed.contactNumber1 || prev.contactNumber1,
+            contactName2: parsed.contactName2 || prev.contactName2,
+            contactNumber2: parsed.contactNumber2 || prev.contactNumber2,
+            emailAddress: parsed.emailAddress || prev.emailAddress,
+          }));
+        }
+      } catch {
+        // Ignore parse error
+      }
+    };
+
+    loadGymProfile();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [isOpen]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -62,6 +159,27 @@ export const AgreementDocumentViewer: React.FC<
 
   if (!isMounted || !isOpen) return null;
 
+  const handleAccept = () => {
+    try {
+      localStorage.setItem('palomar_user_agreement_accepted', 'true');
+      window.dispatchEvent(new CustomEvent('palomar-agreement-accepted'));
+    } catch {
+      // Ignore storage errors
+    }
+    if (onAccept) {
+      onAccept();
+    }
+    onClose();
+  };
+
+  const formattedEffectiveDate = gymProfile.updatedAt
+    ? new Date(gymProfile.updatedAt).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    : '30 Aug 2026';
+
   return createPortal(
     <div
       className="fixed inset-0 z-[3000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in"
@@ -75,7 +193,7 @@ export const AgreementDocumentViewer: React.FC<
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-red-400">
-                Wolf Palomar Gym
+                {gymProfile.gymName}
               </p>
               <h3 className="font-heading text-lg uppercase tracking-wider text-slate-900 dark:text-white">
                 User Agreement
@@ -84,7 +202,7 @@ export const AgreementDocumentViewer: React.FC<
 
             <div className="flex items-center gap-2">
               <span className="shrink-0 rounded-full bg-slate-200 dark:bg-white/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                Effective 30 Aug 2026
+                Effective {formattedEffectiveDate}
               </span>
               <button
                 type="button"
@@ -130,17 +248,26 @@ export const AgreementDocumentViewer: React.FC<
 
         {/* Scrollable Document Body */}
         <main className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
-          {activeDocument === 'terms' ? <TermsContent /> : <PrivacyContent />}
+          {activeDocument === 'terms' ? (
+            <TermsContent profile={gymProfile} />
+          ) : (
+            <PrivacyContent profile={gymProfile} />
+          )}
         </main>
 
         {/* Footer Bar */}
-        <footer className="sticky bottom-0 flex justify-end bg-slate-100/90 dark:bg-[#12141a] border-t border-slate-200 dark:border-white/10 p-4 sm:px-6 shrink-0">
+        <footer className="sticky bottom-0 flex items-center justify-between gap-3 bg-slate-100/90 dark:bg-[#12141a] border-t border-slate-200 dark:border-white/10 p-4 sm:px-6 shrink-0">
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block">
+            By clicking Accept, you acknowledge the Terms &amp; Conditions and
+            Privacy Policy.
+          </p>
           <button
             type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-200 text-white dark:text-slate-900 text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-colors"
+            onClick={handleAccept}
+            className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white text-xs font-heading font-black uppercase tracking-widest cursor-pointer border-none shadow-md transition-all active:scale-95"
           >
-            Close Agreement
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Accept</span>
           </button>
         </footer>
       </div>
@@ -149,12 +276,14 @@ export const AgreementDocumentViewer: React.FC<
   );
 };
 
-const TermsContent = () => (
+const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
+  profile,
+}) => (
   <div className="space-y-4 text-left">
     <div className="flex gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
       <Scale className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        These rules keep Wolf Palomar Gym safe, fair, and welcoming. They apply
+        These rules keep {profile.gymName} safe, fair, and welcoming. They apply
         to every member, guest, staff member, and parent or guardian agreeing
         for a minor.
       </p>
@@ -256,14 +385,16 @@ const TermsContent = () => (
   </div>
 );
 
-const PrivacyContent = () => (
+const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
+  profile,
+}) => (
   <div className="space-y-4 text-left">
     <div className="flex gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
       <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
         We collect only the information reasonably needed to register members,
-        provide gym services, manage payments and access, and keep the facility
-        safe.
+        provide gym services, manage payments and access, and keep{' '}
+        {profile.gymName} safe.
       </p>
     </div>
 
@@ -323,11 +454,38 @@ const PrivacyContent = () => (
     </Section>
 
     <Section title="6. Contact">
-      <p>
-        For a privacy request or question, contact Wolf Palomar Gym through the
-        contact details shown in this application or at the gym. Please provide
-        enough detail for us to verify and respond to your request.
-      </p>
+      <div className="space-y-2">
+        <p>
+          For a privacy request or question, contact {profile.gymName} through
+          the contact details below or at the gym. Please provide enough detail
+          for us to verify and respond to your request.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+            <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <span className="text-[11px] text-slate-700 dark:text-slate-300 leading-snug">
+              {profile.gymAddress}
+            </span>
+          </div>
+          <div className="space-y-1.5 p-2.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+            <div className="flex items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+              <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="font-mono">
+                {profile.contactName1}: {profile.contactNumber1}
+                {profile.contactName2 &&
+                  profile.contactNumber2 &&
+                  ` | ${profile.contactName2}: ${profile.contactNumber2}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+              <Mail className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="font-mono break-all">
+                {profile.emailAddress}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </Section>
 
     <p className="text-[10px] text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-white/10 pt-3">

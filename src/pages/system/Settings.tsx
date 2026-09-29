@@ -64,7 +64,7 @@ export interface TabItem {
   adminOnly: boolean;
 }
 
-const TABS: TabItem[] = [
+export const TABS: TabItem[] = [
   {
     id: 'account',
     label: 'Personal Account',
@@ -123,7 +123,7 @@ const TABS: TabItem[] = [
   },
 ];
 
-const TAB_URL_MAP: Record<TabID, string> = {
+export const TAB_URL_MAP: Record<TabID, string> = {
   account: 'personal-account',
   'security-permissions': 'security-and-permissions',
   'gym-profile': 'gym-profile',

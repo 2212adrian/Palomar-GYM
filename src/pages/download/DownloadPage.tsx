@@ -23,6 +23,7 @@ import {
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { AppFooter } from '../../components/layouts/AppFooter';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 import landscapeLogoDark from '../../assets/landscape-logo-dark.webp';
@@ -550,6 +551,12 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
           </div>
         </div>
       </Modal>
+
+      {standalone && (
+        <div className="w-full max-w-5xl mx-auto px-4 pb-8">
+          <AppFooter variant="public" />
+        </div>
+      )}
     </div>
   );
 };

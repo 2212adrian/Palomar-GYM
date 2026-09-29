@@ -56,6 +56,7 @@ import {
   AgreementDocumentViewer,
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
+import { AppFooter } from '../../../components/layouts/AppFooter';
 
 import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
@@ -2561,6 +2562,9 @@ export const OnlineRegistrationPage: React.FC = () => {
               isOpen={agreementDocument !== null}
               onClose={() => setAgreementDocument(null)}
               initialDocument={agreementDocument || 'terms'}
+              onAccept={() =>
+                setValue('agreement', true, { shouldValidate: true })
+              }
             />
 
             {/* WIZARD BUTTONS */}
@@ -2620,9 +2624,13 @@ export const OnlineRegistrationPage: React.FC = () => {
         )}
       </div>
 
-      <footer className="mt-6 sm:mt-8 text-center text-[10px] text-slate-400 font-mono select-none uppercase tracking-widest">
-        Wolf Palomar Fitness Management • Public Self-Service Portal
-      </footer>
+      <AppFooter
+        variant="public"
+        className="max-w-4xl"
+        onAcceptAgreement={() =>
+          setValue('agreement', true, { shouldValidate: true })
+        }
+      />
     </div>
   );
 };

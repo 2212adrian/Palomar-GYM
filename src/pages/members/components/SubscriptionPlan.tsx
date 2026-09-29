@@ -54,7 +54,10 @@ import {
   OfficialReceipt,
   type OfficialReceiptRef,
 } from '../../../components/ui/OfficialReceipt';
-import { type AgreementDocument } from '../../../components/ui/AgreementDocumentViewer';
+import {
+  AgreementDocumentViewer,
+  type AgreementDocument,
+} from '../../../components/ui/AgreementDocumentViewer';
 import { SideNavTab } from '../../../components/ui/SideNavTab';
 import type {
   OnlineRegistration,
@@ -454,7 +457,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [consentDate, setConsentDate] = useState<string | null>(null);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [, setSubscriptionAgreement] = useState(false);
-  const [, setAgreementDocument] = useState<AgreementDocument | null>(null);
+  const [agreementDocument, setAgreementDocument] =
+    useState<AgreementDocument | null>(null);
 
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
@@ -2987,6 +2991,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </span>
                     )}
                   </div>
+
+                  <AgreementDocumentViewer
+                    isOpen={agreementDocument !== null}
+                    onClose={() => setAgreementDocument(null)}
+                    initialDocument={agreementDocument || 'terms'}
+                    onAccept={() => {
+                      setWaiverAgreed(true);
+                      if (errors.waiverAgreed) {
+                        setErrors((prev) => ({ ...prev, waiverAgreed: '' }));
+                      }
+                    }}
+                  />
                 </div>
               )}
             </div>
