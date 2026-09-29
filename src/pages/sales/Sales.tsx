@@ -25,6 +25,7 @@ import {
   Search,
   Trash2,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -367,6 +368,13 @@ export const Sales: React.FC = () => {
 
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
+  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
+    useState(false);
+  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
+
+  useEffect(() => {
+    setHasAttemptedEmptyRefresh(false);
+  }, [location.pathname, activeView]);
 
   const resetTimelineFilters = useCallback(() => {
     const today = getServerNow();
@@ -1460,6 +1468,33 @@ export const Sales: React.FC = () => {
                           <span>RECORD NEW SALE</span>
                         </button>
                       ) : null}
+
+                      {!hasAttemptedEmptyRefresh && (
+                        <button
+                          type="button"
+                          disabled={isRefreshingEmpty}
+                          onClick={async () => {
+                            setIsRefreshingEmpty(true);
+                            try {
+                              sessionStorage.removeItem(
+                                `sales_sanitized_${dateStr}`
+                              );
+                              await fetchTransactions(false);
+                            } finally {
+                              setHasAttemptedEmptyRefresh(true);
+                              setIsRefreshingEmpty(false);
+                            }
+                          }}
+                          className="mt-3 px-4 py-2 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${isRefreshingEmpty ? 'animate-spin' : ''}`}
+                          />
+                          <span>
+                            {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
+                          </span>
+                        </button>
+                      )}
                     </motion.div>
                   );
                 }

@@ -31,6 +31,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -327,6 +328,37 @@ export const Login: React.FC = () => {
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   );
 
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.dismiss('login-offline-toast');
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const dismissVirtualKeyboard = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    document
+      .querySelectorAll<HTMLElement>('input, textarea, select')
+      .forEach((el) => el.blur());
+  }, []);
+
   // ─── GREETING MODAL STATE ───────────────────────────────────────────────────
   const [showGreetingModal, setShowGreetingModal] = useState<boolean>(false);
   const [isGreetingClosing, setIsGreetingClosing] = useState<boolean>(false);
@@ -339,6 +371,7 @@ export const Login: React.FC = () => {
   const greetingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const closeGreetingAndProceed = useCallback(() => {
+    dismissVirtualKeyboard();
     if (greetingTimerRef.current) {
       clearTimeout(greetingTimerRef.current);
       greetingTimerRef.current = null;
@@ -352,10 +385,12 @@ export const Login: React.FC = () => {
       sessionStorage.removeItem('outroActive');
       navigate(greetingTargetRoute, { replace: true });
     }, 280);
-  }, [greetingTargetRoute, navigate]);
+  }, [greetingTargetRoute, navigate, dismissVirtualKeyboard]);
 
   const triggerGreetingAndNavigate = useCallback(
     (targetRoute: string, userName: string, userRole?: string) => {
+      dismissVirtualKeyboard();
+
       // 1. Trigger the tilted plain color expansion over the carousel
       setIsLoggingIn(true);
 
@@ -372,7 +407,7 @@ export const Login: React.FC = () => {
         closeGreetingAndProceed();
       }, 4000);
     },
-    [closeGreetingAndProceed]
+    [closeGreetingAndProceed, dismissVirtualKeyboard]
   );
 
   // Cleanup timer on unmount
@@ -966,12 +1001,21 @@ export const Login: React.FC = () => {
   // ─── GOOGLE OAUTH LOGIN ───────────────────────────────────────────────────────
   const handleGoogleLogin = async () => {
     if (isPreview) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setIsOffline(true);
+      toast.error(
+        'No internet connection. Please check your network and try again.',
+        { toastId: 'login-offline-toast' }
+      );
+      return;
+    }
     if (!watchAgreement) {
       toast.error(
         'Please agree to the Terms & Conditions and Privacy Policy first.'
       );
       return;
     }
+    dismissVirtualKeyboard();
     setIsGoogleSubmitting(true);
     try {
       const isNative = Capacitor.isNativePlatform();
@@ -1013,6 +1057,17 @@ export const Login: React.FC = () => {
   // ─── LOGIN SUBMIT ────────────────────────────────────────────────────────────
   const onLoginSubmit = async (data: LoginFormValues) => {
     if (isSubmittingRef.current || isPreview) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setIsOffline(true);
+      toast.error(
+        'No internet connection. Please check your network and try again.',
+        { toastId: 'login-offline-toast' }
+      );
+      return;
+    }
+
+    dismissVirtualKeyboard();
 
     const currentFailures = getStoredFailedAttempts();
     if (currentFailures >= MAX_FAILED_ATTEMPTS_THRESHOLD) {
@@ -1156,9 +1211,28 @@ export const Login: React.FC = () => {
       const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
 
       // ── TRIGGER SLANTED DIVIDER EXPANSION & GREETINGS MODAL ──
+      dismissVirtualKeyboard();
       triggerGreetingAndNavigate(calculatedRoute, targetName, dbProfile?.role);
     } catch (err: any) {
       setIsLoggingIn(false);
+      const errMsg = String(err?.message || '').toLowerCase();
+      const isNetworkError =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        errMsg.includes('failed to fetch') ||
+        errMsg.includes('networkerror') ||
+        errMsg.includes('network request failed') ||
+        errMsg.includes('load failed');
+
+      if (isNetworkError) {
+        setIsOffline(true);
+        toast.error(
+          'No internet connection. Unable to reach authentication server.',
+          { toastId: 'login-offline-toast' }
+        );
+        triggerShake(setShakePassword);
+        return;
+      }
+
       const updatedAttempts = recordFailedAttempt();
       setFailedAttempts(updatedAttempts);
 
@@ -1263,6 +1337,16 @@ export const Login: React.FC = () => {
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setIsOffline(true);
+      toast.error(
+        'No internet connection. Please check your network and try again.',
+        { toastId: 'login-offline-toast' }
+      );
+      return;
+    }
+
+    dismissVirtualKeyboard();
     setIsVerifying2FA(true);
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
@@ -1575,6 +1659,25 @@ export const Login: React.FC = () => {
           GYM MANAGEMENT SYSTEM
         </p>
       </div>
+
+      {isOffline && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-3 p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center gap-2.5 text-left animate-slide-up select-none relative z-20"
+        >
+          <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+          <div className="text-[10.5px] leading-snug font-medium">
+            <span className="font-bold uppercase tracking-wider block text-amber-600 dark:text-amber-400">
+              No Internet Connection
+            </span>
+            <span>
+              You appear to be offline. Connect to Wi-Fi or mobile data to sign
+              in.
+            </span>
+          </div>
+        </div>
+      )}
 
       <form
         onSubmit={handlePreLoginSubmit}
@@ -2208,6 +2311,16 @@ export const Login: React.FC = () => {
               >
                 Close Preview
               </button>
+            </div>
+          )}
+
+          {/* Offline Top Indicator Pill */}
+          {isOffline && !isPreview && (
+            <div className="absolute top-4 left-4 z-[200] flex items-center gap-2 bg-amber-500/95 dark:bg-amber-600/95 text-white border border-amber-400/40 rounded-full px-3.5 py-1.5 shadow-lg backdrop-blur-xl animate-slide-up select-none pointer-events-none">
+              <WifiOff className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+              <span className="text-[10px] font-heading font-black tracking-widest uppercase">
+                Offline • No Internet
+              </span>
             </div>
           )}
 

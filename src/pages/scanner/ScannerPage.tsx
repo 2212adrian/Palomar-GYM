@@ -116,7 +116,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
   // Active Scanner References
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const isStoppingRef = useRef<boolean>(false);
+  const stopPromiseRef = useRef<Promise<void> | null>(null);
   const isExitingRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
 
@@ -183,9 +183,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
     []
   );
-  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => {
-    return localStorage.getItem('preferred_camera_id') || '';
-  });
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
 
@@ -220,39 +218,6 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     };
     fetchRates();
   }, []);
-
-  // Enumerate Connected Camera Devices
-  useEffect(() => {
-    if (!isOpen) return;
-
-    Html5Qrcode.getCameras()
-      .then((devices) => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-          const savedCameraId = localStorage.getItem('preferred_camera_id');
-          const cameraExists =
-            savedCameraId && devices.some((d) => d.id === savedCameraId);
-
-          if (cameraExists) {
-            setSelectedCameraId(savedCameraId!);
-          } else if (
-            !selectedCameraId ||
-            !devices.some((d) => d.id === selectedCameraId)
-          ) {
-            const backCam = devices.find(
-              (d) =>
-                d.label.toLowerCase().includes('back') ||
-                d.label.toLowerCase().includes('rear') ||
-                d.label.toLowerCase().includes('environment')
-            );
-            const defaultId = backCam ? backCam.id : devices[0].id;
-            setSelectedCameraId(defaultId);
-            localStorage.setItem('preferred_camera_id', defaultId);
-          }
-        }
-      })
-      .catch((err) => console.warn('Camera enumeration error:', err));
-  }, [isOpen, selectedCameraId]);
 
   const entryFee = useMemo(() => {
     if (!scanResult?.member) return 0;
@@ -299,49 +264,58 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     setReferenceNumber('');
   }, [scanResult]);
 
-  const forceStopCamera = useCallback(() => {
-    if (isStoppingRef.current) return;
-    isStoppingRef.current = true;
-
-    try {
-      if (scannerRef.current) {
-        if (scannerRef.current.isScanning) {
-          scannerRef.current
-            .stop()
-            .then(() => {
-              scannerRef.current?.clear();
-            })
-            .catch(() => {});
-        } else {
-          scannerRef.current.clear();
-        }
-      }
-    } catch (err) {
-      console.warn('Camera stop warning:', err);
-    } finally {
-      scannerRef.current = null;
-
-      const qrRegion = document.getElementById(qrRegionId);
-      const videoElements = qrRegion
-        ? qrRegion.querySelectorAll('video')
-        : document.querySelectorAll('video');
-      videoElements.forEach((video) => {
-        if (video.srcObject) {
-          const stream = video.srcObject as MediaStream;
-          if (stream && stream.getTracks) {
-            stream.getTracks().forEach((track) => {
-              track.stop();
-              track.enabled = false;
-            });
-          }
-          video.srcObject = null;
-        }
-      });
-
-      isStoppingRef.current = false;
-      setTorchEnabled(false);
-      setHasTorchCapability(false);
+  const forceStopCamera = useCallback(async () => {
+    if (stopPromiseRef.current) {
+      await stopPromiseRef.current;
+      return;
     }
+
+    const stopTask = (async () => {
+      try {
+        if (scannerRef.current) {
+          const instance = scannerRef.current;
+          scannerRef.current = null;
+          if (instance.isScanning) {
+            try {
+              await instance.stop();
+            } catch {
+              // ignore stop error
+            }
+          }
+          try {
+            instance.clear();
+          } catch {
+            // ignore clear error
+          }
+        }
+      } catch (err) {
+        console.warn('Camera stop warning:', err);
+      } finally {
+        const qrRegion = document.getElementById(qrRegionId);
+        const videoElements = qrRegion
+          ? qrRegion.querySelectorAll('video')
+          : document.querySelectorAll('video');
+        videoElements.forEach((video) => {
+          if (video.srcObject) {
+            const stream = video.srcObject as MediaStream;
+            if (stream && stream.getTracks) {
+              stream.getTracks().forEach((track) => {
+                track.stop();
+                track.enabled = false;
+              });
+            }
+            video.srcObject = null;
+          }
+        });
+
+        setTorchEnabled(false);
+        setHasTorchCapability(false);
+      }
+    })();
+
+    stopPromiseRef.current = stopTask;
+    await stopTask;
+    stopPromiseRef.current = null;
   }, []);
 
   const triggerSuccessAnimation = () => {
@@ -514,10 +488,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       return;
     }
 
-    let html5QrCode: Html5Qrcode | null = null;
     let isCancelled = false;
 
-    const timer = setTimeout(() => {
+    const initScanner = async () => {
+      await forceStopCamera();
+      await new Promise((r) => setTimeout(r, 150));
+      if (isCancelled || isExitingRef.current) return;
+
       const element = document.getElementById(qrRegionId);
       if (!element || isCancelled || isExitingRef.current) return;
 
@@ -535,7 +512,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           Html5QrcodeSupportedFormats.ITF,
         ];
 
-        html5QrCode = new Html5Qrcode(qrRegionId, {
+        const html5QrCode = new Html5Qrcode(qrRegionId, {
           verbose: false,
           formatsToSupport,
           experimentalFeatures: {
@@ -563,85 +540,76 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           }
         };
 
-        html5QrCode
-          .start(
-            cameraConfig,
-            {
-              fps: 30,
-              qrbox: qrboxFunction,
-              videoConstraints: {
-                ...cameraConfig,
-                width: { ideal: 1920, min: 640 },
-                height: { ideal: 1080, min: 480 },
-                facingMode: 'environment',
-              },
-            },
-            async (decodedText) => {
-              if (!isCancelled && !isExitingRef.current) {
-                await handleProcessScan(decodedText.trim());
-              }
-            },
-            () => {}
-          )
-          .then(() => {
-            if (isCancelled) {
-              forceStopCamera();
-              return;
+        await html5QrCode.start(
+          cameraConfig,
+          {
+            fps: 30,
+            qrbox: qrboxFunction,
+          },
+          async (decodedText) => {
+            if (!isCancelled && !isExitingRef.current) {
+              await handleProcessScan(decodedText.trim());
             }
+          },
+          () => {}
+        );
 
-            try {
-              const videoElement = document.querySelector(
-                `#${qrRegionId} video`
-              ) as HTMLVideoElement | null;
-              if (videoElement && videoElement.srcObject) {
-                const stream = videoElement.srcObject as MediaStream;
-                const track = stream.getVideoTracks()[0];
-                if (track && track.getCapabilities) {
-                  const capabilities = track.getCapabilities() as any;
-                  if (capabilities.torch) {
-                    setHasTorchCapability(true);
-                  }
-                  if (
-                    capabilities.focusMode &&
-                    capabilities.focusMode.includes('continuous')
-                  ) {
-                    track
-                      .applyConstraints({
-                        advanced: [{ focusMode: 'continuous' }],
-                      } as any)
-                      .catch(() => {});
-                  }
-                }
-              }
-            } catch (e) {}
+        if (isCancelled || isExitingRef.current) {
+          await forceStopCamera();
+          return;
+        }
+
+        Html5Qrcode.getCameras()
+          .then((devices) => {
+            if (!isCancelled && devices && devices.length > 0) {
+              setCameras(devices);
+            }
           })
-          .catch((err) => {
-            if (!isCancelled) {
-              const reason = getCameraErrorMessage(err);
-              if (cameras.length > 1) {
-                const currentIndex = selectedCameraId
-                  ? cameras.findIndex((c) => c.id === selectedCameraId)
-                  : -1;
-                const nextCamera = cameras[(currentIndex + 1) % cameras.length];
-                forceStopCamera();
-                setSelectedCameraId(nextCamera.id);
-                localStorage.setItem('preferred_camera_id', nextCamera.id);
-                toast.info(
-                  `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                );
-              } else {
-                toast.error(`Camera Error: ${reason}`);
+          .catch(() => {});
+
+        try {
+          const videoElement = document.querySelector(
+            `#${qrRegionId} video`
+          ) as HTMLVideoElement | null;
+          if (videoElement && videoElement.srcObject) {
+            const stream = videoElement.srcObject as MediaStream;
+            const track = stream.getVideoTracks()[0];
+            if (track && track.getCapabilities) {
+              const capabilities = track.getCapabilities() as any;
+              if (capabilities.torch) {
+                setHasTorchCapability(true);
+              }
+              if (
+                capabilities.focusMode &&
+                capabilities.focusMode.includes('continuous')
+              ) {
+                track
+                  .applyConstraints({
+                    advanced: [{ focusMode: 'continuous' }],
+                  } as any)
+                  .catch(() => {});
               }
             }
-          });
-      } catch (e) {
-        console.error('Scanner setup error:', e);
+          }
+        } catch (e) {}
+      } catch (err) {
+        if (!isCancelled) {
+          if (selectedCameraId) {
+            await forceStopCamera();
+            setSelectedCameraId('');
+            localStorage.removeItem('preferred_camera_id');
+            return;
+          }
+          const reason = getCameraErrorMessage(err);
+          toast.error(`Camera Error: ${reason}`);
+        }
       }
-    }, 250);
+    };
+
+    initScanner();
 
     return () => {
       isCancelled = true;
-      clearTimeout(timer);
       forceStopCamera();
     };
   }, [isOpen, selectedCameraId, scanResult?.type, scanMode, forceStopCamera]);
@@ -660,7 +628,16 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
+    let currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
+    if (currentIndex === -1) {
+      const backIdx = cameras.findIndex(
+        (d) =>
+          d.label.toLowerCase().includes('back') ||
+          d.label.toLowerCase().includes('rear') ||
+          d.label.toLowerCase().includes('environment')
+      );
+      currentIndex = backIdx !== -1 ? backIdx : 0;
+    }
     const nextIndex = (currentIndex + 1) % cameras.length;
     handleCameraChange(cameras[nextIndex].id);
   };

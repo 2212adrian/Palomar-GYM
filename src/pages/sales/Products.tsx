@@ -13,6 +13,7 @@ import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
+import { useNotificationStore } from '../../stores/useNotificationStore';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -44,6 +45,7 @@ import {
   Loader2,
   RotateCcw,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 interface Product {
@@ -90,7 +92,7 @@ interface ProductsProps {
 export const Products: React.FC<ProductsProps> = ({
   hideHeaderActions = false,
 }) => {
-  const { user } = useAuthStore() as any;
+  const { user, profile } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
@@ -145,6 +147,9 @@ export const Products: React.FC<ProductsProps> = ({
   );
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
+    useState(false);
+  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
 
   // Selection States for Bulk actions
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -250,13 +255,16 @@ export const Products: React.FC<ProductsProps> = ({
       total: products.length,
       active: products.filter((p) => p.status === 'Active').length,
       inStock: products.filter(
-        (p) => !p.has_stock_limit || p.stock_quantity > 0
+        (p) =>
+          p.status === 'Active' && (!p.has_stock_limit || p.stock_quantity > 0)
       ).length,
       outOfStock: products.filter(
-        (p) => p.has_stock_limit && p.stock_quantity === 0
+        (p) =>
+          p.status === 'Active' && p.has_stock_limit && p.stock_quantity === 0
       ).length,
       lowStock: products.filter(
         (p) =>
+          p.status === 'Active' &&
           p.has_stock_limit &&
           p.low_stock_alert !== null &&
           p.stock_quantity <= p.low_stock_alert &&
@@ -266,14 +274,17 @@ export const Products: React.FC<ProductsProps> = ({
     [products]
   );
 
-  // Broadcast Products Telemetry to Topbar
+  // Broadcast Products Telemetry to Topbar & Sync Notifications
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('products-kpi-update', {
         detail: stats,
       })
     );
-  }, [stats]);
+    useNotificationStore
+      .getState()
+      .fetchNotifications(user?.email, profile?.role, false);
+  }, [stats, user?.email, profile?.role]);
 
   useEffect(() => {
     const handleCreate = () => handleCreateClick();
@@ -1362,6 +1373,30 @@ export const Products: React.FC<ProductsProps> = ({
               No items match your active search configurations.
             </p>
           </div>
+          {!hasAttemptedEmptyRefresh && (
+            <div className="pt-1">
+              <button
+                type="button"
+                disabled={isRefreshingEmpty}
+                onClick={async () => {
+                  setIsRefreshingEmpty(true);
+                  try {
+                    sessionStorage.removeItem('products_sanitized_list');
+                    await fetchProducts(false);
+                  } finally {
+                    setHasAttemptedEmptyRefresh(true);
+                    setIsRefreshingEmpty(false);
+                  }
+                }}
+                className="px-4 py-2 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isRefreshingEmpty ? 'animate-spin' : ''}`}
+                />
+                <span>{isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <>

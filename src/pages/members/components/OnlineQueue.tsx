@@ -74,6 +74,13 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     useState<boolean>(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
+    useState<boolean>(false);
+  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState<boolean>(false);
+  const [hasAttemptedArchivedRefresh, setHasAttemptedArchivedRefresh] =
+    useState<boolean>(false);
+  const [isRefreshingArchived, setIsRefreshingArchived] =
+    useState<boolean>(false);
 
   // Consolidated Multi-Stacked Rejection State
   const [stagedRejections, setStagedRejections] = useState<
@@ -768,6 +775,33 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             No pending pre-registration tickets in the queue. New submissions
             will appear here automatically as they are received.
           </p>
+          {!hasAttemptedEmptyRefresh && (
+            <div className="pt-1">
+              <button
+                type="button"
+                disabled={isRefreshingEmpty || isSyncing}
+                onClick={async () => {
+                  setIsRefreshingEmpty(true);
+                  try {
+                    await fetchQueue();
+                  } finally {
+                    setHasAttemptedEmptyRefresh(true);
+                    setIsRefreshingEmpty(false);
+                  }
+                }}
+                className="px-4 py-2 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${
+                    isRefreshingEmpty || isSyncing ? 'animate-spin' : ''
+                  }`}
+                />
+                <span>
+                  {isRefreshingEmpty || isSyncing ? 'Refreshing...' : 'Refresh'}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-1 bg-(--bg-card) border border-(--border-color) rounded-3xl overflow-hidden shadow-xs">
@@ -921,6 +955,33 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                   <p className="text-[10px] text-slate-400">
                     Tickets manually archived by staff will appear here.
                   </p>
+                  {!hasAttemptedArchivedRefresh && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        disabled={isRefreshingArchived}
+                        onClick={async () => {
+                          setIsRefreshingArchived(true);
+                          try {
+                            await fetchArchived();
+                          } finally {
+                            setHasAttemptedArchivedRefresh(true);
+                            setIsRefreshingArchived(false);
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${
+                            isRefreshingArchived ? 'animate-spin' : ''
+                          }`}
+                        />
+                        <span>
+                          {isRefreshingArchived ? 'Refreshing...' : 'Refresh'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">

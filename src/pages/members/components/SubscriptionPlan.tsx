@@ -459,6 +459,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const stopPromiseRef = useRef<Promise<void> | null>(null);
   const receiptRef = useRef<OfficialReceiptRef | null>(null);
   const qrRegionId = 'fast-intake-qr-reader';
 
@@ -471,29 +472,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   useEffect(() => {
-    if (isOpen && intakeMode === 'Import' && isScanning) {
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            const backCam = devices.find((d) => {
-              const label = d.label.toLowerCase();
-              return (
-                label.includes('back') ||
-                label.includes('rear') ||
-                label.includes('environment') ||
-                label.includes('facing back')
-              );
-            });
-            const defaultCameraId = backCam ? backCam.id : devices[0].id;
-            setSelectedCameraId(defaultCameraId);
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not retrieve camera list:', err);
-        });
+    if (!isSessionOpen && isScanning) {
+      setIsScanning(false);
     }
-  }, [isOpen, intakeMode, isScanning]);
+  }, [isSessionOpen, isScanning]);
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [gcashReference, setGcashReference] = useState('');
@@ -1298,35 +1280,47 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     onClose();
   };
 
-  const forceStopCamera = () => {
-    if (scannerRef.current) {
-      try {
-        if (scannerRef.current.isScanning) {
-          scannerRef.current
-            .stop()
-            .then(() => scannerRef.current?.clear())
-            .catch(() => {});
-        } else {
-          scannerRef.current.clear();
-        }
-      } catch (e) {}
+  const forceStopCamera = useCallback(async () => {
+    if (stopPromiseRef.current) {
+      await stopPromiseRef.current;
     }
 
-    const qrRegion = document.getElementById(qrRegionId);
-    const videoElements = qrRegion
-      ? qrRegion.querySelectorAll('video')
-      : document.querySelectorAll('video');
+    const activeScanner = scannerRef.current;
+    scannerRef.current = null;
 
-    videoElements.forEach((video) => {
-      if (video.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        if (stream && stream.getTracks) {
-          stream.getTracks().forEach((track) => track.stop());
-        }
-        video.srcObject = null;
+    const cleanupTask = (async () => {
+      if (activeScanner) {
+        try {
+          if (activeScanner.isScanning) {
+            await activeScanner.stop().catch(() => {});
+          }
+          activeScanner.clear();
+        } catch {}
       }
-    });
-  };
+
+      const qrRegion = document.getElementById(qrRegionId);
+      const videoElements = qrRegion
+        ? qrRegion.querySelectorAll('video')
+        : document.querySelectorAll('video');
+
+      videoElements.forEach((video) => {
+        if (video.srcObject) {
+          const stream = video.srcObject as MediaStream;
+          if (stream && stream.getTracks) {
+            stream.getTracks().forEach((track) => {
+              track.stop();
+              track.enabled = false;
+            });
+          }
+          video.srcObject = null;
+        }
+      });
+    })();
+
+    stopPromiseRef.current = cleanupTask;
+    await cleanupTask;
+    stopPromiseRef.current = null;
+  }, []);
 
   const handleValidateId = async (input: string) => {
     let cleanId = input.trim();
@@ -1406,63 +1400,89 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   };
 
   useEffect(() => {
-    let html5QrCode: Html5Qrcode | null = null;
     let isCancelled = false;
 
-    if (isOpen && isScanning && step === 1 && intakeMode === 'Import') {
-      const timer = setTimeout(() => {
+    if (
+      isOpen &&
+      isScanning &&
+      isSessionOpen &&
+      step === 1 &&
+      intakeMode === 'Import'
+    ) {
+      const initScanner = async () => {
+        await forceStopCamera();
+        await new Promise((r) => setTimeout(r, 120));
+        if (isCancelled) return;
+
         const element = document.getElementById(qrRegionId);
         if (!element || isCancelled) return;
 
         try {
-          html5QrCode = new Html5Qrcode(qrRegionId);
+          const html5QrCode = new Html5Qrcode(qrRegionId, { verbose: false });
           scannerRef.current = html5QrCode;
           const cameraConfig = selectedCameraId
-            ? selectedCameraId
+            ? { deviceId: { exact: selectedCameraId } }
             : { facingMode: 'environment' };
 
-          html5QrCode
-            .start(
-              cameraConfig,
-              { fps: 25, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
-              (decodedText) => handleValidateId(decodedText.trim()),
-              () => {}
-            )
-            .then(() => {
-              if (isCancelled) forceStopCamera();
-            })
-            .catch((err) => {
+          await html5QrCode.start(
+            cameraConfig,
+            {
+              fps: 25,
+              qrbox: (vw: number, vh: number) => {
+                const edge = Math.floor(Math.min(vw, vh) * 0.8);
+                return { width: edge, height: edge };
+              },
+            },
+            (decodedText) => {
               if (!isCancelled) {
-                const reason = getCameraErrorMessage(err);
-                if (cameras.length > 1) {
-                  const currentIndex = selectedCameraId
-                    ? cameras.findIndex((c) => c.id === selectedCameraId)
-                    : -1;
-                  const nextCamera =
-                    cameras[(currentIndex + 1) % cameras.length];
-                  forceStopCamera();
-                  setSelectedCameraId(nextCamera.id);
-                  toast.info(
-                    `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                  );
-                } else {
-                  toast.error(`Camera Error: ${reason}`);
-                  setIsScanning(false);
-                }
+                handleValidateId(decodedText.trim());
               }
-            });
-        } catch (e) {
-          console.error('Scanner setup error', e);
+            },
+            () => {}
+          );
+
+          if (isCancelled) {
+            await forceStopCamera();
+            return;
+          }
+
+          Html5Qrcode.getCameras()
+            .then((devices) => {
+              if (!isCancelled && devices && devices.length > 0) {
+                setCameras(devices);
+              }
+            })
+            .catch(() => {});
+        } catch (err) {
+          if (!isCancelled) {
+            if (selectedCameraId) {
+              await forceStopCamera();
+              setSelectedCameraId('');
+              return;
+            }
+            const reason = getCameraErrorMessage(err);
+            toast.error(`Camera Error: ${reason}`);
+            setIsScanning(false);
+          }
         }
-      }, 300);
+      };
+
+      initScanner();
 
       return () => {
         isCancelled = true;
-        clearTimeout(timer);
         forceStopCamera();
       };
     }
-  }, [isOpen, isScanning, step, intakeMode, selectedCameraId, cameras]);
+  }, [
+    isOpen,
+    isScanning,
+    isSessionOpen,
+    step,
+    intakeMode,
+    selectedCameraId,
+    forceStopCamera,
+  ]);
 
   const validateStep1 = () => {
     if (enrollmentType === 'existing' && !selectedExistingMember) {
@@ -1989,11 +2009,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <div className="flex p-1 bg-(--bg-input) border border-(--border-color) rounded-2xl max-w-xs mx-auto shadow-inner">
                 <button
                   type="button"
-                  onClick={() => setIsScanning(true)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                    isScanning
-                      ? 'bg-(--color-primary) text-white shadow-md'
-                      : 'text-(--color-text)/60 hover:text-(--color-text)'
+                  disabled={!isSessionOpen}
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Cannot scan QR code: Cash drawer session is closed.'
+                      );
+                      return;
+                    }
+                    setIsScanning(true);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                    !isSessionOpen
+                      ? 'opacity-40 cursor-not-allowed text-(--color-text)/40'
+                      : isScanning
+                        ? 'bg-(--color-primary) text-white shadow-md cursor-pointer'
+                        : 'text-(--color-text)/60 hover:text-(--color-text) cursor-pointer'
                   }`}
                 >
                   <Smartphone className="w-3.5 h-3.5" />
@@ -3613,25 +3644,42 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
       {/* CHOICE 1: SCAN LOBBY QR / SEARCH PRE-REGISTRATION */}
       <motion.div
-        whileHover={{ scale: 1.01 }}
+        whileHover={isSessionOpen ? { scale: 1.01 } : {}}
         transition={{ duration: 0.2 }}
         onClick={() => {
+          if (!isSessionOpen) {
+            toast.warning(
+              'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
+            );
+            return;
+          }
           setModalConfig({
             isOpen: true,
             mode: 'Import',
-            plan: isSessionOpen ? 'Monthly Membership' : 'No Subscription',
+            plan: 'Monthly Membership',
           });
         }}
-        className="p-5 rounded-3xl bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border border-blue-200 dark:border-blue-500/30 hover:border-blue-400 transition-all cursor-pointer flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none"
+        className={`p-5 rounded-3xl border transition-all flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none ${
+          !isSessionOpen
+            ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+            : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400 cursor-pointer'
+        }`}
       >
         <div className="flex items-center gap-4 text-left">
           <div className="p-3 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/30 shrink-0">
             <Smartphone className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
-              Scan QR Code
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
+                Scan QR Code
+              </span>
+              {!isSessionOpen && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                  <Lock className="w-2.5 h-2.5" /> Session Closed
+                </span>
+              )}
+            </div>
             <h4 className="font-heading text-base text-slate-900 dark:text-white uppercase leading-none font-bold">
               use camera to scan qr code
             </h4>
@@ -3641,8 +3689,30 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
             </p>
           </div>
         </div>
-        <button className="py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 cursor-pointer shadow-md">
-          Scan Lobby QR
+        <button
+          type="button"
+          disabled={!isSessionOpen}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isSessionOpen) {
+              toast.warning(
+                'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
+              );
+              return;
+            }
+            setModalConfig({
+              isOpen: true,
+              mode: 'Import',
+              plan: 'Monthly Membership',
+            });
+          }}
+          className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 shadow-md transition-all ${
+            !isSessionOpen
+              ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+              : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+          }`}
+        >
+          {!isSessionOpen ? 'Session Closed' : 'Scan Lobby QR'}
         </button>
       </motion.div>
 

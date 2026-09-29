@@ -24,6 +24,7 @@ import {
   Printer,
   Trash2,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import {
   motion,
@@ -419,6 +420,13 @@ export const LogbookPage: React.FC = () => {
   >('All');
 
   const [visibleCount, setVisibleCount] = useState<number>(25);
+  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
+    useState<boolean>(false);
+  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState<boolean>(false);
+
+  useEffect(() => {
+    setHasAttemptedEmptyRefresh(false);
+  }, [location.pathname, activePage]);
 
   // Reset timeline filters to today's default helper
   const resetTimelineFilters = useCallback(() => {
@@ -545,6 +553,31 @@ export const LogbookPage: React.FC = () => {
               memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
               cash_session_id: row.cash_session_id || null,
             }));
+
+            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online
+            if (typeof navigator === 'undefined' || navigator.onLine) {
+              const startOfDay = new Date(
+                `${dateStr}T00:00:00+08:00`
+              ).toISOString();
+              const endOfDay = new Date(
+                `${dateStr}T23:59:59.999+08:00`
+              ).toISOString();
+              supabase
+                .from('attendance')
+                .select('*')
+                .is('deleted_at', null)
+                .gte('check_in_time', startOfDay)
+                .lte('check_in_time', endOfDay)
+                .order('check_in_time', { ascending: false })
+                .then(() => {});
+              supabase
+                .from('receipts')
+                .select('*')
+                .gte('created_at', startOfDay)
+                .lte('created_at', endOfDay)
+                .order('created_at', { ascending: false })
+                .then(() => {});
+            }
           }
         } catch (rpcErr: any) {
           console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
@@ -1713,6 +1746,33 @@ export const LogbookPage: React.FC = () => {
                           <span>RECORD NEW CHECK-IN</span>
                         </button>
                       ) : null}
+
+                      {!hasAttemptedEmptyRefresh && (
+                        <button
+                          type="button"
+                          disabled={isRefreshingEmpty}
+                          onClick={async () => {
+                            setIsRefreshingEmpty(true);
+                            try {
+                              sessionStorage.removeItem(
+                                `logbook_sanitized_${dateStr}`
+                              );
+                              await fetchAttendanceFromSupabase(false);
+                            } finally {
+                              setHasAttemptedEmptyRefresh(true);
+                              setIsRefreshingEmpty(false);
+                            }
+                          }}
+                          className="mt-3 px-4 py-2 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${isRefreshingEmpty ? 'animate-spin' : ''}`}
+                          />
+                          <span>
+                            {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
+                          </span>
+                        </button>
+                      )}
                     </motion.div>
                   );
                 }

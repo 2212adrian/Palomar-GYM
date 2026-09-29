@@ -228,13 +228,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       const { data: prodData, error: prodErr } = await supabase
         .from('products')
         .select(
-          'id, product_name, stock_quantity, low_stock_alert, has_stock_limit'
+          'id, product_name, stock_quantity, low_stock_alert, has_stock_limit, status'
         )
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .eq('status', 'Active');
 
       if (!prodErr && prodData) {
         prodData.forEach((p) => {
-          if (!p.has_stock_limit) return;
+          if (!p.has_stock_limit || (p.status && p.status !== 'Active')) return;
           const isOut = p.stock_quantity <= 0;
           const isLow =
             !isOut &&

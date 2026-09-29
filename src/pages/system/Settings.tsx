@@ -231,6 +231,11 @@ export default function Settings() {
     if (isChildDirty) {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
+    setTabTransition((prev) => ({
+      tabId: activeTabId,
+      direction: tab === 'permissions' ? 'down' : 'up',
+      animKey: prev.animKey + 1,
+    }));
     setSearchParams(
       tab === 'permissions'
         ? { sub: 'device-permissions' }
@@ -383,6 +388,21 @@ export default function Settings() {
     if (isChildDirty) {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
+
+    const prevIdx = getSettingsTabVerticalIndex(activeTabId);
+    const currIdx = getSettingsTabVerticalIndex(tabId);
+    const dir: 'down' | 'up' =
+      prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx
+        ? currIdx > prevIdx
+          ? 'down'
+          : 'up'
+        : 'down';
+
+    setTabTransition((prev) => ({
+      tabId,
+      direction: dir,
+      animKey: prev.animKey + 1,
+    }));
 
     const pathSegment =
       tabId === 'security-permissions' && !isSuperAdminUser

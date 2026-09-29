@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   Check,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -355,6 +356,13 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   // Listen to navbar floating sub-menu toggle
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
+    useState(false);
+  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
+
+  useEffect(() => {
+    setHasAttemptedEmptyRefresh(false);
+  }, [activeTab, location.pathname]);
 
   useEffect(() => {
     const cacheKey = 'members_sanitized_cache';
@@ -1599,18 +1607,46 @@ export const MembersList: React.FC<MembersListProps> = ({
                           ? 'Try modifying your search keywords or reset chip filters.'
                           : 'No member records enrolled in system databases yet.'}
                       </p>
-                      {(searchQuery || activeChip !== 'all') && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery('');
-                            setActiveChip('all');
-                          }}
-                          className="px-3.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border-blue-500/20"
-                        >
-                          Clear Filters
-                        </button>
-                      )}
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                        {(searchQuery || activeChip !== 'all') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchQuery('');
+                              setActiveChip('all');
+                            }}
+                            className="px-3.5 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-blue-500/20"
+                          >
+                            Clear Filters
+                          </button>
+                        )}
+                        {!hasAttemptedEmptyRefresh && (
+                          <button
+                            type="button"
+                            disabled={isRefreshingEmpty}
+                            onClick={async () => {
+                              setIsRefreshingEmpty(true);
+                              try {
+                                sessionStorage.removeItem(
+                                  'members_sanitized_cache'
+                                );
+                                await fetchMembers(false);
+                              } finally {
+                                setHasAttemptedEmptyRefresh(true);
+                                setIsRefreshingEmpty(false);
+                              }
+                            }}
+                            className="px-4 py-1.5 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          >
+                            <RefreshCw
+                              className={`w-3.5 h-3.5 ${isRefreshingEmpty ? 'animate-spin' : ''}`}
+                            />
+                            <span>
+                              {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <Table<Member>
@@ -1689,18 +1725,46 @@ export const MembersList: React.FC<MembersListProps> = ({
                       <p className="text-xs text-slate-400 max-w-xs mx-auto">
                         Modify search or filter chips to find profiles.
                       </p>
-                      {(searchQuery || activeChip !== 'all') && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery('');
-                            setActiveChip('all');
-                          }}
-                          className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider border border-blue-500/20"
-                        >
-                          Clear Filters
-                        </button>
-                      )}
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                        {(searchQuery || activeChip !== 'all') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchQuery('');
+                              setActiveChip('all');
+                            }}
+                            className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider border border-blue-500/20"
+                          >
+                            Clear Filters
+                          </button>
+                        )}
+                        {!hasAttemptedEmptyRefresh && (
+                          <button
+                            type="button"
+                            disabled={isRefreshingEmpty}
+                            onClick={async () => {
+                              setIsRefreshingEmpty(true);
+                              try {
+                                sessionStorage.removeItem(
+                                  'members_sanitized_cache'
+                                );
+                                await fetchMembers(false);
+                              } finally {
+                                setHasAttemptedEmptyRefresh(true);
+                                setIsRefreshingEmpty(false);
+                              }
+                            }}
+                            className="px-3.5 py-1.5 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          >
+                            <RefreshCw
+                              className={`w-3.5 h-3.5 ${isRefreshingEmpty ? 'animate-spin' : ''}`}
+                            />
+                            <span>
+                              {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <>

@@ -17,12 +17,49 @@ import { AgreementDocumentViewer } from '../../../components/ui/AgreementDocumen
 
 import pkg from '../../../../package.json';
 import { formatBytes } from '../../../lib/appUpdateService';
+import { toast } from 'react-toastify';
+import { useAuthStore } from '../../../stores/authStore';
+import { useNotificationStore } from '../../../stores/useNotificationStore';
+import { useSecurityStore } from '../../../stores/useSecurityStore';
 
 export const SystemInformation: React.FC = () => {
   const APP_VERSION = pkg.version;
   const [activeModal, setActiveModal] = useState<
     'terms' | 'privacy' | 'developer' | null
   >(null);
+  const [isReloadingCore, setIsReloadingCore] = useState<boolean>(false);
+
+  const handleReloadCore = async () => {
+    if (isReloadingCore) return;
+    setIsReloadingCore(true);
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.update().catch(() => {});
+        }
+      }
+      const authState = useAuthStore.getState();
+      await Promise.allSettled([
+        authState.checkSession(),
+        useNotificationStore
+          .getState()
+          .fetchNotifications(
+            authState.user?.email,
+            authState.profile?.role,
+            false
+          ),
+        useSecurityStore.getState().fetchConfig(),
+      ]);
+      toast.success('Application core and system status refreshed.', {
+        toastId: 'reload-core-success',
+      });
+    } catch {
+      toast.info('System status refreshed.');
+    } finally {
+      setIsReloadingCore(false);
+    }
+  };
 
   // Storage and DB Gauges
   const [totalDbBytes] = useState<number>(17.6 * 1024 * 1024);
@@ -89,11 +126,18 @@ export const SystemInformation: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => window.location.reload()}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer"
+              onClick={handleReloadCore}
+              disabled={isReloadingCore}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reload Application Core</span>
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isReloadingCore ? 'animate-spin' : ''}`}
+              />
+              <span>
+                {isReloadingCore
+                  ? 'Reloading Core...'
+                  : 'Reload Application Core'}
+              </span>
             </button>
           </div>
 
