@@ -355,13 +355,19 @@ export const MembersList: React.FC<MembersListProps> = ({
   }, []);
 
   // Listen to navbar floating sub-menu toggle
-  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+  const activeFloating = useNavbarStore((s) => s.activeFloating);
+  const isNavFloatingOpen = Boolean(activeFloating);
   const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
     useState(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
 
   useEffect(() => {
     setHasAttemptedEmptyRefresh(false);
+    if (!location.pathname.startsWith('/members/list')) {
+      setSelectedMemberIds([]);
+      setOpenActionMenuId(null);
+      setMobileActionSheetMember(null);
+    }
   }, [activeTab, location.pathname]);
 
   useEffect(() => {
@@ -1454,7 +1460,11 @@ export const MembersList: React.FC<MembersListProps> = ({
 
           <div className="mt-3 md:mt-4 space-y-3 md:space-y-4">
             {activeTab === 'Directory' && (
-              <div className="space-y-3 md:space-y-4 pb-40 md:pb-24">
+              <div
+                className={`space-y-3 md:space-y-4 ${
+                  isSelectionActive ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
+                }`}
+              >
                 {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
                 <div className="space-y-2.5 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
                   <div className="relative w-full">
@@ -2066,75 +2076,86 @@ export const MembersList: React.FC<MembersListProps> = ({
       )}
 
       {/* 1. DESKTOP / TABLET FLOATING MULTI-SELECT BAR */}
-      {isSelectionActive && (
-        <div className="hidden md:flex fixed md:bottom-25 lg:bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-(--bg-card) text-(--color-text) px-5 py-2.5 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 animate-slide-up select-none">
-          <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
-            <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
-              {selectedMemberIds.length}
-            </span>
-            <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
-              Selected
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (!isSessionOpen) {
-                  toast.warning(
-                    'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                  );
-                  return;
-                }
-                setIsBatchBuyCardModalOpen(true);
-              }}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              <span>
-                Purchase Cards (₱
-                {(
-                  selectedMemberIds.length * (settings.card_printing_fee || 50)
-                ).toLocaleString()}
-                )
+      {location.pathname.startsWith('/members/list') &&
+        activeTab === 'Directory' &&
+        !isPlansPath &&
+        isSelectionActive &&
+        createPortal(
+          <div
+            style={{ position: 'fixed' }}
+            className={`hidden md:flex fixed md:bottom-[6.5rem] lg:bottom-6 left-1/2 -translate-x-1/2 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-5 py-2.5 rounded-2xl shadow-2xl border border-(--border-color) items-center gap-4 select-none transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'max-lg:translate-y-24 max-lg:opacity-0 max-lg:pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
+            <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
+              <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
+                {selectedMemberIds.length}
               </span>
-            </button>
+              <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
+                Selected
+              </span>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setShowBatchCardModal(true)}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Member Cards</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                    );
+                    return;
+                  }
+                  setIsBatchBuyCardModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>
+                  Purchase Cards (₱
+                  {(
+                    selectedMemberIds.length * (settings.card_printing_fee || 50)
+                  ).toLocaleString()}
+                  )
+                </span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setSelectedMemberIds([])}
-              className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
-              title="Clear selection"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={() => setShowBatchCardModal(true)}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Member Cards</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMemberIds([])}
+                className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+                title="Clear selection"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 2. MOBILE MULTI-SELECT BOTTOM BAR */}
-      <AnimatePresence>
-        {location.pathname.startsWith('/members') && isSelectionActive && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{
-              y: isNavFloatingOpen ? 80 : 0,
-              opacity: isNavFloatingOpen ? 0 : 1,
-            }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-2.5 right-2.5 z-[210] bg-(--bg-card) text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none ${
-              isNavFloatingOpen ? 'pointer-events-none' : 'pointer-events-auto'
+      {location.pathname.startsWith('/members/list') &&
+        activeTab === 'Directory' &&
+        !isPlansPath &&
+        isSelectionActive &&
+        createPortal(
+          <div
+            style={{ position: 'fixed' }}
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 min-h-14 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
             }`}
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -2191,17 +2212,19 @@ export const MembersList: React.FC<MembersListProps> = ({
                 <span>Print</span>
               </button>
             </div>
-          </motion.div>
+          </div>,
+          document.body
         )}
-      </AnimatePresence>
 
       {/* 3. MOBILE DIRECT ACTION BOTTOM BAR */}
-      {location.pathname.startsWith('/members') &&
+      {location.pathname.startsWith('/members/list') &&
         activeTab === 'Directory' &&
+        !isPlansPath &&
         !isSelectionActive &&
         createPortal(
           <div
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+            style={{ position: 'fixed' }}
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[195] shadow-2xl transition-all duration-300 ease-in-out ${
               isNavFloatingOpen
                 ? 'translate-y-24 opacity-0 pointer-events-none'
                 : 'translate-y-0 opacity-100 pointer-events-auto'
@@ -2267,14 +2290,14 @@ export const MembersList: React.FC<MembersListProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setMobileActionSheetMember(null)}
-              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-50"
+              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[240]"
             />
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 shadow-2xl space-y-4 pb-20"
+              className="md:hidden fixed bottom-0 left-0 right-0 z-[250] bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4"
             >
               <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto" />
 

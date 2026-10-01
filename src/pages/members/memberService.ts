@@ -846,7 +846,7 @@ export const cardService = {
       member_id: c.member_id,
       card_number: c.card_number,
       card_type: c.card_type as 'QR' | 'Manual' | 'None',
-      status: (new Date(c.expires_at).getTime() < Date.now()
+      status: (new Date(c.expires_at).getTime() < getServerTime()
         ? 'Inactive'
         : c.status) as CardStatus,
       version: c.version || 1,
@@ -883,7 +883,7 @@ export const cardService = {
 
     if (!data) return null;
 
-    const isExpired = new Date(data.expires_at).getTime() < Date.now();
+    const isExpired = new Date(data.expires_at).getTime() < getServerTime();
 
     return {
       id: data.id,

@@ -40,7 +40,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   );
 
   // Global persistent floating sub-menu tracker
-  const { activeFloating, setActiveFloating, closeFloating } = useNavbarStore();
+  const {
+    activeFloating,
+    setActiveFloating,
+    closeFloating,
+    triggerNavReset,
+  } = useNavbarStore();
+
+  const notifyNavigationClick = () => {
+    triggerNavReset();
+    window.dispatchEvent(new CustomEvent('navbar-navigation-click'));
+  };
 
   // Scanner modal controller
   const { openScanner } = useScannerStore();
@@ -72,6 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleScannerClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    notifyNavigationClick();
     closeFloating();
     if (!isSessionOpen) {
       toast.warning(
@@ -86,6 +97,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleSalesClick = (e: React.MouseEvent) => {
     if (!isAdmin) return;
     e.preventDefault();
+    notifyNavigationClick();
     if (activeFloating === 'sales') {
       closeFloating();
     } else {
@@ -99,6 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleLogbookClick = (e: React.MouseEvent) => {
     if (!isAdmin) return;
     e.preventDefault();
+    notifyNavigationClick();
     if (activeFloating === 'logbook') {
       closeFloating();
     } else {
@@ -146,6 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    notifyNavigationClick();
                     navigate('/sales');
                     closeFloating();
                   }}
@@ -162,6 +176,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    notifyNavigationClick();
                     navigate('/sales/products');
                     closeFloating();
                   }}
@@ -196,6 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    notifyNavigationClick();
                     navigate('/logbook');
                     closeFloating();
                   }}
@@ -212,6 +228,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    notifyNavigationClick();
                     navigate('/members/list');
                     closeFloating();
                   }}
@@ -274,6 +291,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <Link
                   to="/sales"
+                  onClick={notifyNavigationClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                     isSalesDomainActive
                       ? 'text-[#123c73] dark:text-[#bf0202] font-black'
@@ -326,6 +344,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <Link
                   to="/logbook"
+                  onClick={notifyNavigationClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                     isLogbookDomainActive
                       ? 'text-[#123c73] dark:text-[#bf0202] font-black'
@@ -380,7 +399,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="w-1/2 flex items-center justify-center pl-7">
               <Link
                 to="/members/plans"
-                onClick={closeFloating}
+                onClick={() => {
+                  notifyNavigationClick();
+                  closeFloating();
+                }}
                 className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                   isPlansActive
                     ? 'text-[#123c73] dark:text-[#bf0202] font-black'

@@ -1367,7 +1367,7 @@ export const Sales: React.FC = () => {
       <div className="relative w-full h-auto overflow-x-hidden grid grid-cols-1 items-start">
         {/* VIEW 1: CASHIER REGISTER */}
         <div
-          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-40 md:pb-12 animate-fade-in ${
+          className={`w-full space-y-6 max-w-4xl mx-auto px-1.5 sm:px-8 pb-1 animate-fade-in ${
             activeView === 'register'
               ? 'h-auto'
               : 'h-0 overflow-hidden pointer-events-none'
@@ -1794,7 +1794,7 @@ export const Sales: React.FC = () => {
         {/* --- VIEW 2: PRODUCTS INVENTORY --- */}
         {role === 'admin' && (
           <div
-            className={`w-full pb-40 md:pb-12 max-w-full ${
+            className={`w-full pb-1 max-w-full ${
               activeView === 'inventory'
                 ? 'h-auto'
                 : 'h-0 overflow-hidden pointer-events-none'
@@ -1891,7 +1891,8 @@ export const Sales: React.FC = () => {
       {activeView === 'register' &&
         createPortal(
           <div
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-190 shadow-2xl transition-all duration-300 ease-in-out ${
+            style={{ position: 'fixed' }}
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[195] shadow-2xl transition-all duration-300 ease-in-out ${
               isNavFloatingOpen
                 ? 'translate-y-24 opacity-0 pointer-events-none'
                 : 'translate-y-0 opacity-100 pointer-events-auto'

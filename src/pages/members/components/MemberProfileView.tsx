@@ -58,6 +58,7 @@ import { supabase } from '../../../lib/supabase/client';
 import { Table, type Column } from '../../../components/ui/Table';
 import { MemberAvatar, MemberPhotoModal } from './MemberAvatar';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { getServerNow } from '../../../lib/serverTime';
 
 interface MemberProfileViewProps {
   member: Member;
@@ -185,10 +186,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const loadProfileCollections = async () => {
     try {
-      const [subsData, cardsData, { data: rcptsData }, { data: attData }] =
+      const [subsData, cardData, { data: rcptsData }, { data: attData }] =
         await Promise.all([
           subscriptionService.getByMemberId(localMember.member_id),
-          cardService.getAll(),
+          cardService.getByMemberId(localMember.member_id),
           supabase
             .from('receipts')
             .select('*')
@@ -203,11 +204,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
       const loadedSubs = subsData || [];
       setSubscriptions(loadedSubs);
-      setCards(
-        (cardsData || []).filter(
-          (c: MemberCard) => c.member_id === localMember.member_id
-        )
-      );
+      setCards(cardData ? [cardData] : []);
       setReceipts((rcptsData || []) as Receipt[]);
       setAttendance((attData || []) as AttendanceRecord[]);
     } catch (err) {
@@ -226,31 +223,57 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   useEffect(() => {
     if (!localMember.member_id) return;
 
+    const memberFilter = `member_id=eq.${localMember.member_id}`;
     const channel = supabase
       .channel(`realtime-member-profile-${localMember.member_id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'receipts' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'receipts',
+          filter: memberFilter,
+        },
         () => loadProfileCollections()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'subscriptions' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: memberFilter,
+        },
         () => loadProfileCollections()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'attendance',
+          filter: memberFilter,
+        },
         () => loadProfileCollections()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'cards' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'cards',
+          filter: memberFilter,
+        },
         () => loadProfileCollections()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'member_cards' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'member_cards',
+          filter: memberFilter,
+        },
         () => loadProfileCollections()
       )
       .subscribe();
@@ -286,7 +309,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   }, []);
 
   const activeContract = useMemo(() => {
-    const now = Date.now();
+    const now = getServerNow().getTime();
     return subscriptions.find((s: Subscription) => {
       if (s.member_id !== localMember.member_id || s.status === 'Voided')
         return false;
@@ -297,7 +320,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   }, [subscriptions, localMember.member_id]);
 
   const queuedContract = useMemo(() => {
-    const now = Date.now();
+    const now = getServerNow().getTime();
     return subscriptions.find((s: Subscription) => {
       if (s.member_id !== localMember.member_id || s.status === 'Voided')
         return false;
@@ -325,7 +348,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const isRecentlyExpired = useMemo(() => {
     if (!targetSubForDisplay || activeContract) return false;
     const endMs = new Date(targetSubForDisplay.end_date).getTime();
-    const now = Date.now();
+    const now = getServerNow().getTime();
     if (isNaN(endMs) || endMs >= now) return false;
 
     const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
@@ -335,7 +358,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const expiredDaysText = useMemo(() => {
     if (!isRecentlyExpired || !targetSubForDisplay) return null;
     const endMs = new Date(targetSubForDisplay.end_date).getTime();
-    const now = Date.now();
+    const now = getServerNow().getTime();
     const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
     return daysExpired === 0 ? '-1 day ago' : `-${daysExpired} days ago`;
   }, [isRecentlyExpired, targetSubForDisplay]);
@@ -407,7 +430,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           .from('cards')
           .update({
             status: 'Deactivated',
-            updated_at: new Date().toISOString(),
+            updated_at: getServerNow().toISOString(),
           })
           .eq('id', currentCard.id);
 
@@ -458,7 +481,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           claimed_at: null,
           claimed_by: null,
           claim_notes: null,
-          updated_at: new Date().toISOString(),
+          updated_at: getServerNow().toISOString(),
         })
         .eq('member_id', localMember.member_id)
         .eq('status', 'Active');
@@ -525,7 +548,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       const t = new Date(sub.start_date).getTime();
       if (!isNaN(t)) return t;
     }
-    return Date.now();
+    return getServerNow().getTime();
   };
 
   const getVoidEligibility = (sub?: Subscription | null) => {
@@ -537,7 +560,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
 
     const createdTime = getSubscriptionCreationTime(sub);
-    const nowTime = Date.now();
+    const nowTime = getServerNow().getTime();
     const hoursDiff = (nowTime - createdTime) / (1000 * 60 * 60);
 
     if (hoursDiff > 24) {
@@ -584,7 +607,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     if (!bday) return 0;
     const birthDate = new Date(bday);
     if (isNaN(birthDate.getTime())) return 0;
-    const today = new Date();
+    const today = getServerNow();
     let calculated = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (
@@ -814,7 +837,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       cardFee: cardFee,
       paymentMethod: payMethod,
       gcashRefNo: gcashRefNo,
-      transactionDate: receipt.created_at || new Date().toISOString(),
+      transactionDate: receipt.created_at || getServerNow().toISOString(),
       processedBy: 'Admin Staff',
     };
     setSelectedReceiptData(data);
@@ -887,7 +910,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         sortable: true,
         render: (r) => (
           <span className="font-mono text-[10px] text-slate-400">
-            {new Date(r.created_at || Date.now()).toLocaleDateString()}
+            {new Date(r.created_at || getServerNow().getTime()).toLocaleDateString()}
           </span>
         ),
       },
@@ -993,7 +1016,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         animate={{ x: 0, y: 0 }}
         exit={{ x: '100%', y: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-        className="w-full sm:max-w-2xl h-[92vh] sm:h-full bg-white dark:bg-[#16181a] border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col justify-between overflow-hidden relative"
+        className="w-full sm:max-w-2xl h-[92dvh] max-h-[92dvh] sm:h-full sm:max-h-full bg-white dark:bg-[#16181a] border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* COMPACT HEADER WITH CLICKABLE AVATAR */}
@@ -1142,7 +1165,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
 
         {/* TAB CONTENTS CONTAINER */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 pb-28 sm:pb-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
@@ -1375,7 +1398,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </div>
 
               {/* PERSONAL BIO & EMERGENCY CONTACT CARDS */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 {/* Personal Bio Card */}
                 <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
                   <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
@@ -1906,7 +1929,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                                   (new Date(
                                     targetSubForDisplay.end_date
                                   ).getTime() -
-                                    Date.now()) /
+                                    getServerNow().getTime()) /
                                     (1000 * 60 * 60 * 24)
                                 )
                               )}{' '}
@@ -2159,12 +2182,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 : '3 YEARS FROM ISSUE';
 
               const isCardExpired = cardExpIso
-                ? new Date(cardExpIso) < new Date()
+                ? new Date(cardExpIso) < getServerNow()
                 : false;
 
               const issueDateStr = currentCard?.issued_at
                 ? new Date(currentCard.issued_at).toLocaleDateString()
-                : new Date().toLocaleDateString();
+                : getServerNow().toLocaleDateString();
 
               const qrPayload =
                 currentCard?.card_number || localMember.member_id;
@@ -2623,7 +2646,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
 
         {/* FOOTER ACTIONS */}
-        <div className="p-3.5 sm:p-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl pb-20 sm:pb-4">
+        <div className="p-3.5 sm:p-4 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl">
           <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-400 font-mono">

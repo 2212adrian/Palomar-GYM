@@ -1,5 +1,12 @@
 // src/pages/sales/Products.tsx
-import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useContext,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -95,7 +102,9 @@ export const Products: React.FC<ProductsProps> = ({
   const { user, profile } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
-  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+  const activeFloating = useNavbarStore((s) => s.activeFloating);
+  const navClickTimestamp = useNavbarStore((s) => s.navClickTimestamp);
+  const isNavFloatingOpen = Boolean(activeFloating);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -365,6 +374,40 @@ export const Products: React.FC<ProductsProps> = ({
   }, [selectedProductIds]);
 
   const location = useLocation();
+
+  // Clear active product selections and hide print, edit, and remove action toolbars on navigation click
+  const resetActionState = useCallback(() => {
+    setSelectedProductIds([]);
+    setSelectedProductId(null);
+    setDeleteConfirmId(null);
+    setShowPrintModal(false);
+    setShowBulkEditModal(false);
+    setShowBulkDeleteModal(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeFloating) {
+      resetActionState();
+    }
+  }, [activeFloating, resetActionState]);
+
+  useEffect(() => {
+    if (navClickTimestamp > 0) {
+      resetActionState();
+    }
+  }, [navClickTimestamp, resetActionState]);
+
+  useEffect(() => {
+    resetActionState();
+  }, [location.pathname, resetActionState]);
+
+  useEffect(() => {
+    const handleNavClick = () => resetActionState();
+    window.addEventListener('navbar-navigation-click', handleNavClick);
+    return () => {
+      window.removeEventListener('navbar-navigation-click', handleNavClick);
+    };
+  }, [resetActionState]);
 
   useEffect(() => {
     if (hideHeaderActions) return;
@@ -1297,7 +1340,11 @@ export const Products: React.FC<ProductsProps> = ({
     }));
 
   return (
-    <div className="space-y-6">
+    <div
+      className={`space-y-6 ${
+        selectedProductIds.length > 0 ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
+      }`}
+    >
       {/* Search and Status Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
@@ -1338,14 +1385,17 @@ export const Products: React.FC<ProductsProps> = ({
       </div>
 
       {/* Bulk actions sticky pin bar */}
-      {selectedProductIds.length > 0 &&
+      {location.pathname.startsWith('/sales/products') &&
+        !isNavFloatingOpen &&
+        selectedProductIds.length > 0 &&
         createPortal(
           <ProductBulkActions
             selectedCount={selectedProductIds.length}
-            onClear={() => setSelectedProductIds([])}
+            onClear={resetActionState}
             onPrint={() => setShowPrintModal(true)}
             onBulkEdit={handleBulkEditClick}
             onBulkDelete={() => setShowBulkDeleteModal(true)}
+            isHidden={isNavFloatingOpen}
           />,
           document.body
         )}
@@ -1953,7 +2003,8 @@ export const Products: React.FC<ProductsProps> = ({
         selectedProductIds.length === 0 &&
         createPortal(
           <div
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[190] shadow-2xl transition-all duration-300 ease-in-out ${
+            style={{ position: 'fixed' }}
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[195] shadow-2xl transition-all duration-300 ease-in-out ${
               isNavFloatingOpen
                 ? 'translate-y-24 opacity-0 pointer-events-none'
                 : 'translate-y-0 opacity-100 pointer-events-auto'

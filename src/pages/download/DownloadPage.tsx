@@ -21,6 +21,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Capacitor } from '@capacitor/core';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { AppFooter } from '../../components/layouts/AppFooter';
@@ -66,6 +67,16 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
   // Live Brand Preview Mode is strictly view-only: no download, install, copy
   // or release-fetch process may run while the brand preview tab is open.
   const isPreviewLocked = previewMode === true;
+
+  const isAlreadyPwaOrCapacitor = useMemo(() => {
+    if (isPreviewLocked) return false;
+    const isStandalone =
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+        (window.navigator as any).standalone === true);
+    return Capacitor.isNativePlatform() || isInstalled || isStandalone;
+  }, [isInstalled, isPreviewLocked]);
 
   const blockPreviewAction = () => {
     if (!isPreviewLocked) return false;
@@ -251,9 +262,14 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
 
       {/* ─── APPS GRID ─── */}
       <section className="px-4 sm:px-8 max-w-4xl mx-auto mt-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-          {/* Card 1: Android App (HIGHLY RECOMMENDED) */}
-          <div className="relative flex flex-col justify-between bg-white dark:bg-[#161920] border-2 border-emerald-500/70 dark:border-emerald-500/60 rounded-3xl p-6 shadow-xl shadow-emerald-500/5 transition-all">
+        <div
+          className={`grid grid-cols-1 ${
+            isAlreadyPwaOrCapacitor ? 'max-w-lg mx-auto' : 'md:grid-cols-2'
+          } gap-6 items-stretch`}
+        >
+          {/* Card 1: Android App (HIGHLY RECOMMENDED) — hidden if already running as PWA or Capacitor app */}
+          {!isAlreadyPwaOrCapacitor && (
+            <div className="relative flex flex-col justify-between bg-white dark:bg-[#161920] border-2 border-emerald-500/70 dark:border-emerald-500/60 rounded-3xl p-6 shadow-xl shadow-emerald-500/5 transition-all">
             {/* Recommendation Ribbon */}
             <div className="absolute -top-3.5 left-6 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[10px] font-heading font-black tracking-widest uppercase px-3 py-1 rounded-full shadow-md flex items-center gap-1.5">
               <Star className="w-3 h-3 fill-white" />
@@ -367,6 +383,7 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
               )}
             </div>
           </div>
+          )}
 
           {/* Card 2: PC & Desktop Web App (PWA) */}
           <div className="flex flex-col justify-between bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-sm hover:border-blue-500/50 dark:hover:border-red-600/50 transition-all">
@@ -552,7 +569,7 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
         </div>
       </Modal>
 
-      {standalone && (
+      {!previewMode && (
         <div className="w-full max-w-5xl mx-auto px-4 pb-8">
           <AppFooter variant="public" />
         </div>

@@ -160,6 +160,11 @@ export const SystemLayout: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const isTabLoading = activeTasks.length > 0;
+  const hasMobileBottomActionBar =
+    location.pathname.startsWith('/sales') ||
+    location.pathname.startsWith('/logbook') ||
+    location.pathname.startsWith('/members/list') ||
+    location.pathname.startsWith('/incidents');
 
   // Scroll reset
   useEffect(() => {
@@ -351,7 +356,11 @@ export const SystemLayout: React.FC = () => {
 
               <main
                 ref={mainScrollRef}
-                className={`flex-1 pt-3 sm:pt-5 md:pt-6 pb-24 lg:pb-8 px-2.5 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-auto min-w-0 [touch-action:pan-x_pan-y] ${
+                className={`flex-1 pt-3 sm:pt-5 md:pt-6 ${
+                  hasMobileBottomActionBar
+                    ? 'pb-[calc(8.25rem+env(safe-area-inset-bottom,0px))]'
+                    : 'pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]'
+                } md:pb-24 lg:pb-6 px-2.5 sm:px-4 md:px-6 xl:px-8 2xl:px-12 overflow-y-auto overflow-x-auto min-w-0 [touch-action:pan-x_pan-y] ${
                   isTabLoading
                     ? 'opacity-0 pointer-events-none'
                     : 'opacity-100 transition-opacity duration-300'

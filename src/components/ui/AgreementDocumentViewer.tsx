@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   CheckCircle2,
+  FileText,
   Mail,
   MapPin,
   Phone,
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 
-export type AgreementDocument = 'terms' | 'privacy';
+export type AgreementDocument = 'agreement' | 'terms' | 'privacy';
 
 interface AgreementDocumentViewerProps {
   isOpen: boolean;
@@ -68,7 +69,7 @@ const Highlight: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 export const AgreementDocumentViewer: React.FC<
   AgreementDocumentViewerProps
-> = ({ isOpen, onClose, initialDocument = 'terms', onAccept }) => {
+> = ({ isOpen, onClose, initialDocument = 'agreement', onAccept }) => {
   const [activeDocument, setActiveDocument] =
     useState<AgreementDocument>(initialDocument);
   const [isMounted, setIsMounted] = useState(false);
@@ -161,7 +162,13 @@ export const AgreementDocumentViewer: React.FC<
 
   const handleAccept = () => {
     try {
-      localStorage.setItem('palomar_user_agreement_accepted', 'true');
+      localStorage.setItem(
+        'palomar_user_agreement_accepted',
+        JSON.stringify({
+          version: '2026-09-29',
+          acceptedAt: new Date().toISOString(),
+        })
+      );
       window.dispatchEvent(new CustomEvent('palomar-agreement-accepted'));
     } catch {
       // Ignore storage errors
@@ -196,7 +203,7 @@ export const AgreementDocumentViewer: React.FC<
                 {gymProfile.gymName}
               </p>
               <h3 className="font-heading text-lg uppercase tracking-wider text-slate-900 dark:text-white">
-                User Agreement
+                Legal &amp; User Agreement
               </h3>
             </div>
 
@@ -217,38 +224,54 @@ export const AgreementDocumentViewer: React.FC<
 
           {/* Navigation Tabs */}
           <div
-            className="flex gap-2"
+            className="flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none"
             role="tablist"
             aria-label="User Agreement sections"
           >
             <button
               type="button"
+              onClick={() => setActiveDocument('agreement')}
+              className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                activeDocument === 'agreement'
+                  ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span>User Agreement</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveDocument('terms')}
-              className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer ${
+              className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 activeDocument === 'terms'
                   ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
             >
-              Terms & Conditions
+              <Scale className="w-3.5 h-3.5 shrink-0" />
+              <span>Terms &amp; Conditions</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveDocument('privacy')}
-              className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer ${
+              className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 activeDocument === 'privacy'
                   ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
             >
-              Privacy Policy
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>Privacy Policy</span>
             </button>
           </div>
         </header>
 
         {/* Scrollable Document Body */}
         <main className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
-          {activeDocument === 'terms' ? (
+          {activeDocument === 'agreement' ? (
+            <UserAgreementContent profile={gymProfile} />
+          ) : activeDocument === 'terms' ? (
             <TermsContent profile={gymProfile} />
           ) : (
             <PrivacyContent profile={gymProfile} />
@@ -258,8 +281,8 @@ export const AgreementDocumentViewer: React.FC<
         {/* Footer Bar */}
         <footer className="sticky bottom-0 flex items-center justify-between gap-3 bg-slate-100/90 dark:bg-[#12141a] border-t border-slate-200 dark:border-white/10 p-4 sm:px-6 shrink-0">
           <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block">
-            By clicking Accept, you acknowledge the Terms &amp; Conditions and
-            Privacy Policy.
+            By clicking Accept, you acknowledge the User Agreement, Terms &amp;
+            Conditions, and Privacy Policy.
           </p>
           <button
             type="button"
@@ -275,6 +298,131 @@ export const AgreementDocumentViewer: React.FC<
     document.body
   );
 };
+
+const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
+  profile,
+}) => (
+  <div className="space-y-4 text-left">
+    <div className="flex gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-red-500/10 border border-indigo-200 dark:border-red-500/20">
+      <FileText className="w-5 h-5 shrink-0 text-indigo-600 dark:text-red-400" />
+      <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+        This User Agreement is a binding electronic agreement between you and{' '}
+        <strong>{profile.gymName}</strong> governing your access to and use of
+        the Gym Management System, including the Online Pre-Registration Portal,
+        Member QR &amp; Physical Access Cards, Attendance Logbook, Point-of-Sale
+        (POS) Register, and the Capacitor Android &amp; Desktop Web (PWA)
+        applications.
+      </p>
+    </div>
+
+    <Highlight>
+      <strong>Binding Electronic Consent (RA 8792):</strong> Under the
+      Electronic Commerce Act of 2000 (RA 8792), checking the agreement box,
+      clicking &quot;Accept&quot;, drawing a digital signature, or signing into
+      an authorized terminal constitutes your valid, binding electronic
+      acknowledgment of this User Agreement, the Terms &amp; Conditions, and the
+      Privacy Policy.
+    </Highlight>
+
+    <Section title="1. Covered Platforms & System Users">
+      <p>
+        This agreement applies to all users interacting with the{' '}
+        {profile.gymName} ecosystem: (a){' '}
+        <strong>Members &amp; Walk-In Guests</strong> using physical access
+        cards or digital passes; (b){' '}
+        <strong>Pre-Registration Applicants &amp; Legal Guardians</strong>{' '}
+        submitting enrollment forms online; and (c){' '}
+        <strong>Authorized Staff, Administrators &amp; Superadmin</strong>{' '}
+        operating the management console, barcode/QR scanner, sales register,
+        and live cash drawer sessions.
+      </p>
+    </Section>
+
+    <Section title="2. Online Pre-Registration, Queue Tickets & Minors">
+      <p>
+        Prospective members may submit online pre-registrations for Monthly
+        (30-Day) or Yearly (365-Day) Membership plans. To prevent queue abuse,
+        each device is limited to a maximum of{' '}
+        <strong>three (3) active pending registration tickets</strong> at a
+        time, with form progress automatically saved locally for up to 24 hours.
+        A pending queue ticket reserves your application in the front-desk queue
+        but does not activate membership privileges until verified and paid in
+        person at {profile.gymName}. Applicants must be at least{' '}
+        <strong>12 years old</strong>; applicants aged{' '}
+        <strong>12 to 17</strong> require verifiable parent/guardian contact
+        details and dual digital signatures (Applicant and Parent/Guardian).
+      </p>
+    </Section>
+
+    <Section title="3. Membership Access Cards, QR Codes & Check-In Verification">
+      <p>
+        Physical membership cards and QR/barcode passes are linked to a single
+        verified member profile and are strictly non-transferable. Members must
+        scan or present their assigned card at the front desk logbook upon every
+        entry. Active Monthly members receive unlimited check-ins with ₱0 daily
+        door fee for 30 consecutive days, while Yearly members hold a 365-day
+        access key with discounted daily check-in rates. Lending cards,
+        tampering with barcodes, or bypassing scanner check-ins is grounds for
+        immediate card revocation. Lost or damaged physical cards require
+        payment of the facility&apos;s card replacement fee.
+      </p>
+    </Section>
+
+    <Section title="4. Terminal Authentication, 2FA & Facility Perimeter Security">
+      <p>
+        Staff and Administrator accounts are protected by 6-digit Email
+        Two-Factor Authentication (2FA), hCaptcha verification, and optional
+        Facility Access Restrictions (GPS geofence radius and authorized
+        Wi-Fi/IP validation). Authorized personnel must never share login
+        credentials, 2FA verification codes, or attempt to spoof geolocation or
+        network restrictions. Administrators and the Superadmin actively monitor
+        terminal sessions and may trigger instant remote session revocation
+        (Force Sign-Out) at any time.
+      </p>
+    </Section>
+
+    <Section title="5. POS Transactions, Cash Drawer Sessions & Audit Trail">
+      <p>
+        Every membership subscription, walk-in check-in fee, product sale,
+        inventory stock adjustment, cash float opening/closing, and incident
+        report is bound to active Cash Drawer Sessions and permanently recorded
+        with server-synchronized Philippine Standard Time (Asia/Manila) in the
+        immutable system audit log. All membership and card fees paid at the
+        front desk are final and non-refundable, except where mandatory consumer
+        rights apply under the Consumer Act of the Philippines (RA 7394).
+      </p>
+    </Section>
+
+    <Section title="6. Device Permissions, Offline Sync & App Updates">
+      <p>
+        When using the Capacitor Android App or Desktop Web App (PWA), camera
+        access is used exclusively for scanning member/product barcodes and
+        capturing profile or inventory photos, and geolocation access is used
+        strictly to verify on-site terminal compliance when security
+        restrictions are enabled. Users agree to keep their installed
+        application updated to the latest release published in System
+        Information or the App Download Portal.
+      </p>
+    </Section>
+
+    <Section title="7. Acceptable System Use & Legal Compliance">
+      <p>
+        Users agree not to submit fraudulent pre-registrations, manipulate POS
+        sales or cash drawer balances, extract member records without
+        authorization, or disrupt database and cloud storage services.
+        Violations are subject to account termination, membership cancellation,
+        and legal action under the Cybercrime Prevention Act of 2012 (RA 10175),
+        Electronic Commerce Act (RA 8792), Data Privacy Act of 2012 (RA 10173),
+        and Safe Spaces Act (RA 11313).
+      </p>
+    </Section>
+
+    <p className="text-[10px] text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-white/10 pt-3">
+      System User Agreement for {profile.gymName} ({profile.gymAddress}). Read
+      together with the Terms &amp; Conditions and Privacy Policy.
+    </p>
+  </div>
+);
 
 const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
   profile,
@@ -322,7 +470,7 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
         without written gym approval. Fees are final and non-refundable after
         payment, except where applicable Philippine consumer law requires
         otherwise. This policy does not remove rights under the Consumer Act of
-        the Philippines (RA 7394) [cite: 7, 8].
+        the Philippines (RA 7394).
       </p>
     </Section>
 
@@ -342,8 +490,8 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
         parent or guardian confirms they are authorized to consent, have read
         this agreement, and will help the minor follow the rules. The gym may
         request proof of identity or authority. Electronic signatures and
-        records are handled in line with the Electronic Commerce Act (RA 8792)
-        [cite: 9, 10], subject to applicable requirements.
+        records are handled in line with the Electronic Commerce Act (RA 8792),
+        subject to applicable requirements.
       </p>
     </Section>
 
@@ -363,9 +511,9 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
         Everyone must be treated with respect. Harassment, discrimination,
         intimidation, and gender-based sexual harassment are not allowed. The
         gym supports the safety principles reflected in the Safe Spaces Act (RA
-        11313) [cite: 1, 2] and occupational safety practices under RA 11058
-        [cite: 5, 6] for its staff and operations. Theft and intentional
-        property damage may be reported under applicable criminal laws.
+        11313) and occupational safety practices under RA 11058 for its staff
+        and operations. Theft and intentional property damage may be reported
+        under applicable criminal laws.
       </p>
     </Section>
 
@@ -400,8 +548,8 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
 
     <Highlight>
       <strong>Your privacy:</strong> The Data Privacy Act of 2012 (RA 10173)
-      [cite: 3, 4] gives you rights over your personal information. You may ask
-      questions or make a request through the gym’s published contact details.
+      gives you rights over your personal information. You may ask questions or
+      make a request through the gym’s published contact details.
     </Highlight>
 
     <Section title="1. Information we collect">
@@ -449,7 +597,7 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
         Do not take or share another person’s image or personal information
         without a lawful basis or permission. The gym follows the privacy
         principles of transparency, legitimate purpose, and proportionality
-        under RA 10173 [cite: 3].
+        under RA 10173.
       </p>
     </Section>
 

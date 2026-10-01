@@ -41,6 +41,7 @@ import {
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../../../lib/supabase/client';
+import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import {
   memberService,
@@ -687,7 +688,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const saved = localStorage.getItem(INTAKE_DRAFT_STORAGE_KEY);
       if (saved) {
         const draft: IntakeDraft = JSON.parse(saved);
-        const isExpired = Date.now() - (draft.savedAt || 0) > DRAFT_MAX_AGE_MS;
+        const isExpired =
+          getServerNow().getTime() - (draft.savedAt || 0) > DRAFT_MAX_AGE_MS;
 
         if (isExpired) {
           localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
@@ -763,7 +765,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       applicantSig,
       parentSig,
       waiverAgreed,
-      savedAt: Date.now(),
+      savedAt: getServerNow().getTime(),
     };
 
     const currentSnapshot = JSON.stringify(draftData);
@@ -904,7 +906,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const calculatedAge = useMemo(() => {
     if (!birthday) return 0;
     const birthDate = new Date(birthday);
-    const today = new Date();
+    const today = getServerNow();
     let calculated = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (
@@ -949,7 +951,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const getMemberSubscriptionMeta = useCallback(
     (m: Member) => {
-      const now = Date.now();
+      const now = getServerNow().getTime();
       const activeSub = allSubscriptions.find((s: Subscription) => {
         if (s.member_id !== m.member_id || s.status === 'Voided') return false;
         const startMs = new Date(s.start_date).getTime();
@@ -1340,7 +1342,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     } catch {}
 
     cleanId = cleanId.toUpperCase().trim();
-    const now = Date.now();
+    const now = getServerNow().getTime();
     if (
       lastScannedIdRef.current === cleanId &&
       now - lastScanTimeRef.current < 2500
@@ -1695,7 +1697,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         parent_email: isMinor ? parentEmail.trim() : null,
         applicant_signature: isMinor ? applicantSig : null,
         parent_signature: isMinor ? parentSig : null,
-        consent_date: isMinor ? consentDate || new Date().toISOString() : null,
+        consent_date: isMinor
+          ? consentDate || getServerNow().toISOString()
+          : null,
       };
 
       if (activeMemberToUse) {
@@ -1730,7 +1734,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       }
 
       const receiptNo =
-        createdSub?.receipt_number || `REG-${Date.now().toString().slice(-6)}`;
+        createdSub?.receipt_number ||
+        `REG-${getServerNow().getTime().toString().slice(-6)}`;
 
       // Record standalone card purchase receipt if registering profile-only with card
       if (selectedPlan === 'No Subscription' && addIdCard && liveCardFee > 0) {
@@ -1788,7 +1793,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         await registrationService.approve(importedQueueReg.id, 'Admin Staff');
       }
 
-      const now = new Date();
+      const now = getServerNow();
       const formattedDate =
         now.toLocaleDateString('en-US', {
           month: 'short',
@@ -2933,6 +2938,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                setAgreementDocument('agreement');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              User Agreement
+                            </button>
+                            ,{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 setAgreementDocument('terms');
                               }}
                               className="text-(--color-primary-light) underline font-bold"
@@ -2957,6 +2974,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           <>
                             I certify that all information provided is accurate
                             and that the member agrees to abide by the{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setAgreementDocument('agreement');
+                              }}
+                              className="text-(--color-primary-light) underline font-bold"
+                            >
+                              User Agreement
+                            </button>
+                            ,{' '}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2995,7 +3024,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <AgreementDocumentViewer
                     isOpen={agreementDocument !== null}
                     onClose={() => setAgreementDocument(null)}
-                    initialDocument={agreementDocument || 'terms'}
+                    initialDocument={agreementDocument || 'agreement'}
                     onAccept={() => {
                       setWaiverAgreed(true);
                       if (errors.waiverAgreed) {

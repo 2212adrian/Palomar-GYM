@@ -1183,7 +1183,7 @@ export const IncidentReports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-36 sm:pb-24 lg:pb-8 animate-fade-in relative min-h-[85vh] w-full">
+    <div className="space-y-6 font-body text-slate-800 dark:text-slate-100 p-0 sm:p-2 pb-1 animate-fade-in relative w-full">
       {/* Main Dashboard Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
         {/* Left Column: Directory List Section */}

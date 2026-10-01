@@ -696,6 +696,23 @@ export const Login: React.FC = () => {
     }
   }, [watchAgreement]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleAgreementAccepted = () => {
+      setLoginValue('agree', true, { shouldValidate: true });
+    };
+    window.addEventListener(
+      'palomar-agreement-accepted',
+      handleAgreementAccepted
+    );
+    return () => {
+      window.removeEventListener(
+        'palomar-agreement-accepted',
+        handleAgreementAccepted
+      );
+    };
+  }, [setLoginValue]);
+
   const dynamicLabel = useMemo(() => {
     if (!watchIdentifier || watchIdentifier.trim().length === 0) {
       return 'Username / Email Address';
@@ -1749,6 +1766,17 @@ export const Login: React.FC = () => {
                 type="button"
                 onClick={(e) => {
                   e.preventDefault();
+                  setAgreementDocument('agreement');
+                }}
+                className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer"
+              >
+                User Agreement
+              </button>
+              ,{' '}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
                   setAgreementDocument('terms');
                 }}
                 className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer"
@@ -1841,7 +1869,7 @@ export const Login: React.FC = () => {
       <AgreementDocumentViewer
         isOpen={agreementDocument !== null}
         onClose={() => setAgreementDocument(null)}
-        initialDocument={agreementDocument || 'terms'}
+        initialDocument={agreementDocument || 'agreement'}
         onAccept={() => {
           setLoginValue('agree', true, { shouldValidate: true });
           localStorage.setItem('palomar_user_agreement_accepted', 'true');

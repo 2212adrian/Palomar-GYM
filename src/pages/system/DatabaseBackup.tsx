@@ -943,7 +943,7 @@ export const DatabaseBackup: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 sm:space-y-8 font-body min-h-screen text-(--color-text) rounded-3xl">
+    <div className="space-y-6 sm:space-y-8 font-body text-(--color-text) rounded-3xl">
       {/* POST-RESTORE SYSTEM VERIFICATION CARD */}
       {safetyBackupPoint && (
         <div className="p-4 sm:p-5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-up shadow-lg">

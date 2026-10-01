@@ -1,6 +1,7 @@
 // src/pages/sales/components/ProductBulkActions.tsx
 import React from 'react';
 import { X, Pencil, Trash2, Printer } from 'lucide-react';
+import { useNavbarStore } from '../../../stores/useNavbarStore';
 
 interface ProductBulkActionsProps {
   selectedCount: number;
@@ -8,6 +9,7 @@ interface ProductBulkActionsProps {
   onPrint: () => void;
   onBulkEdit: () => void;
   onBulkDelete: () => void;
+  isHidden?: boolean;
 }
 
 export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
@@ -16,9 +18,20 @@ export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
   onPrint,
   onBulkEdit,
   onBulkDelete,
+  isHidden = false,
 }) => {
+  const isNavFloatingOpen =
+    Boolean(useNavbarStore((s) => s.activeFloating)) || isHidden;
+
   return (
-    <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:bottom-8 left-1/2 -translate-x-1/2 z-[210] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-3 py-2 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 sm:gap-4 max-w-[calc(100vw-20px)] w-auto animate-slide-up select-none">
+    <div
+      style={{ position: 'fixed' }}
+      className={`fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-[6.5rem] lg:bottom-6 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-3.5 py-2.5 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 sm:gap-4 md:w-auto select-none transition-all duration-300 ease-in-out ${
+        isNavFloatingOpen
+          ? 'translate-y-24 opacity-0 pointer-events-none'
+          : 'translate-y-0 opacity-100 pointer-events-auto'
+      }`}
+    >
       {/* Selected Counter Badge */}
       <div className="flex items-center gap-1.5 pr-2 border-r border-(--border-color) shrink-0">
         <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">

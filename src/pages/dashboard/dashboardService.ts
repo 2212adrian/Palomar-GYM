@@ -11,6 +11,7 @@ import {
   isSameDay,
 } from 'date-fns';
 import { supabase } from '../../lib/supabase/client';
+import { getServerNow } from '../../lib/serverTime';
 import type {
   DashboardMetrics,
   AttendanceHourData,
@@ -67,7 +68,7 @@ const getReceiptFee = (r: any): number => {
 };
 
 export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
-  const now = new Date();
+  const now = getServerNow();
   const nowMs = now.getTime();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);

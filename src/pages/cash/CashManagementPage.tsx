@@ -280,7 +280,7 @@ export const CashManagementPage: React.FC = () => {
   }, [history, mobileHistoryPage]);
 
   return (
-    <div className="space-y-5 sm:space-y-6 pb-16 sm:pb-12 font-body text-slate-900 dark:text-white max-w-7xl mx-auto px-1 sm:px-0">
+    <div className="space-y-5 sm:space-y-6 pb-1 font-body text-slate-900 dark:text-white max-w-7xl mx-auto px-1 sm:px-0">
       {/* Top Banner & Status Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 shadow-xs">
         <div className="flex items-center gap-3">

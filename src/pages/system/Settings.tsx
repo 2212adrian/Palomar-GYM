@@ -437,7 +437,7 @@ export default function Settings() {
 
   return (
     <div
-      className={`mx-auto pt-4 pb-16 ${
+      className={`mx-auto pt-4 pb-1 ${
         activeTabId === 'audit' ? 'px-0 sm:px-3' : 'px-4 sm:px-3'
       } xl:pt-4 xl:px-4 xl:pb-2 max-w-full w-full h-auto xl:h-[calc(100vh-7.5rem)] xl:max-h-[820px] xl:min-h-[580px] flex flex-col overflow-visible xl:overflow-hidden relative`}
     >

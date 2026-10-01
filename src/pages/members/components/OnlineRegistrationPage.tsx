@@ -2397,15 +2397,24 @@ export const OnlineRegistrationPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
                       <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      <span>Member Code & Policies</span>
+                      <span>Member Code &amp; Policies</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setAgreementDocument('terms')}
-                      className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
-                    >
-                      Read Full Terms
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAgreementDocument('agreement')}
+                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                      >
+                        User Agreement
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAgreementDocument('terms')}
+                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                      >
+                        Read Full Terms
+                      </button>
+                    </div>
                   </div>
 
                   {/* 📜 COMPACT INTERNAL SCROLLABLE CONTAINER */}
@@ -2419,8 +2428,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </strong>
                         Once paid at the front desk, all membership passes and
                         card fees are final and non-refundable, except as
-                        provided by Philippine Consumer Law (RA 7394) [cite: 7,
-                        8].
+                        provided by Philippine Consumer Law (RA 7394).
                       </div>
                     </div>
 
@@ -2428,7 +2436,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🏋️ Equipment Care & Racking
+                          🏋️ Equipment Care &amp; Racking
                         </strong>
                         Always return dumbbells, plates, and attachments to
                         their racks. Dropping weights carelessly or mishandling
@@ -2437,16 +2445,16 @@ export const OnlineRegistrationPage: React.FC = () => {
 
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🤝 Respect & Safe Spaces (RA 11313)
+                          🤝 Respect &amp; Safe Spaces (RA 11313)
                         </strong>
                         Treat all members and staff with respect. Harassment,
                         intimidation, foul language, or filming others without
-                        consent leads to immediate revocation [cite: 1, 2].
+                        consent leads to immediate revocation.
                       </div>
 
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🛡️ Safety, Staff Guidance & Health
+                          🛡️ Safety, Staff Guidance &amp; Health
                         </strong>
                         Follow floor instructions and posted notices. Stop
                         immediately and inform staff if you feel sharp pain,
@@ -2508,6 +2516,14 @@ export const OnlineRegistrationPage: React.FC = () => {
                             consent to the{' '}
                             <button
                               type="button"
+                              onClick={() => setAgreementDocument('agreement')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              User Agreement
+                            </button>
+                            ,{' '}
+                            <button
+                              type="button"
                               onClick={() => setAgreementDocument('terms')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
@@ -2528,6 +2544,14 @@ export const OnlineRegistrationPage: React.FC = () => {
                             I verify all details are accurate, acknowledge fees
                             are non-refundable, and agree to obey gym rules
                             under the{' '}
+                            <button
+                              type="button"
+                              onClick={() => setAgreementDocument('agreement')}
+                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                            >
+                              User Agreement
+                            </button>
+                            ,{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
@@ -2561,7 +2585,7 @@ export const OnlineRegistrationPage: React.FC = () => {
             <AgreementDocumentViewer
               isOpen={agreementDocument !== null}
               onClose={() => setAgreementDocument(null)}
-              initialDocument={agreementDocument || 'terms'}
+              initialDocument={agreementDocument || 'agreement'}
               onAccept={() =>
                 setValue('agreement', true, { shouldValidate: true })
               }
