@@ -1,6 +1,10 @@
 // src/App.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { useAuthStore } from './stores/authStore';
+import {
+  useAuthStore,
+  getLocalActiveSessionId,
+  markPendingNewLogin,
+} from './stores/authStore';
 import { AppRoutes } from './routes';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -22,8 +26,9 @@ import pkg from '../package.json';
 
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
+  const validateSession = useAuthStore((state) => state.validateSession);
+  const forceSessionLogout = useAuthStore((state) => state.forceSessionLogout);
   const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
 
   // State to manage the exit confirmation modal
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
@@ -50,42 +55,100 @@ export const App: React.FC = () => {
     }
   }, [user?.id]);
 
-  // ─── Real-Time Session Revocation Listener (Instant Remote Auto-Kick) ───
+  // ─── Real-Time Single Active Session & Revocation Listener ───
   useEffect(() => {
     if (!user?.id) return;
 
-    // Connect to WebSocket broadcast channel for global session control
     const sessionSyncChannel = supabase
       .channel('user-session-sync')
       .on('broadcast', { event: 'FORCE_SIGNOUT_USER' }, async ({ payload }) => {
-        // If the terminated user is this logged-in account, kick immediately
-        if (payload?.userId === user.id) {
-          toast.error('Your session has been terminated by an administrator.', {
+        if (payload?.userId !== user.id) return;
+
+        const localSessionId = getLocalActiveSessionId(user.id);
+
+        // If this broadcast is from a new login claiming a specific sessionId:
+        if (payload?.sessionId) {
+          // Ignore if this device owns the active sessionId
+          if (localSessionId && payload.sessionId === localSessionId) {
+            return;
+          }
+
+          const message =
+            'Your account was signed in on another device or browser. You have been logged out.';
+          toast.error(message, {
             toastId: 'session-terminated',
             autoClose: 5000,
           });
-
-          try {
-            // Sign out from Supabase client and wipe storage
-            await supabase.auth.signOut();
-          } catch (err) {
-            console.warn('SignOut error during forced kick:', err);
-          }
-
-          if (logout) {
-            logout();
-          }
-
-          // Redirect immediately to login screen
-          window.location.href = '/login';
+          await forceSessionLogout(message);
+          return;
         }
+
+        // Administrator manual session termination
+        const adminMessage =
+          'Your session has been terminated by an administrator.';
+        toast.error(adminMessage, {
+          toastId: 'session-terminated',
+          autoClose: 5000,
+        });
+        await forceSessionLogout(adminMessage);
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          const currentLocalSessionId = getLocalActiveSessionId(user.id);
+          if (currentLocalSessionId) {
+            sessionSyncChannel
+              .send({
+                type: 'broadcast',
+                event: 'FORCE_SIGNOUT_USER',
+                payload: {
+                  userId: user.id,
+                  sessionId: currentLocalSessionId,
+                  reason: 'SESSION_REPLACED',
+                },
+              })
+              .catch(() => {});
+          }
+        }
+      });
 
     return () => {
       supabase.removeChannel(sessionSyncChannel);
     };
-  }, [user?.id, logout]);
+  }, [user?.id, forceSessionLogout]);
+
+  // ─── Active Session Validity Heartbeat & Focus Verification ───
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const verifyCurrentSession = async () => {
+      const isValid = await validateSession();
+      if (!isValid) {
+        toast.error(
+          'Your account was signed in on another device or browser. You have been logged out.',
+          {
+            toastId: 'session-terminated',
+            autoClose: 5000,
+          }
+        );
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        verifyCurrentSession();
+      }
+    };
+
+    window.addEventListener('focus', verifyCurrentSession);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const intervalId = setInterval(verifyCurrentSession, 10000);
+
+    return () => {
+      window.removeEventListener('focus', verifyCurrentSession);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(intervalId);
+    };
+  }, [user?.id, validateSession]);
 
   // Global Theme Initialization (Survives hard page refreshes on protected routes)
   useEffect(() => {
@@ -289,6 +352,7 @@ export const App: React.FC = () => {
           // 1. Support PKCE authorization code exchange (Supabase v2 standard)
           const code = url.searchParams.get('code');
           if (code) {
+            markPendingNewLogin();
             const { data: sessionData, error } =
               await supabase.auth.exchangeCodeForSession(code);
             if (!error && sessionData?.session) {
@@ -311,6 +375,7 @@ export const App: React.FC = () => {
             url.searchParams.get('refresh_token');
 
           if (access_token && refresh_token) {
+            markPendingNewLogin();
             // Initialize session tokens in Supabase
             const { error } = await supabase.auth.setSession({
               access_token,

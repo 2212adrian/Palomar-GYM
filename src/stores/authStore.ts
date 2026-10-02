@@ -24,16 +24,121 @@ interface AuthState {
   initialized: boolean;
   error: string | null;
   checkSession: () => Promise<void>;
+  claimActiveSession: (userIdOverride?: string) => Promise<string | null>;
+  validateSession: () => Promise<boolean>;
+  forceSessionLogout: (reasonMessage?: string) => Promise<void>;
+  setLoginInProgress: (inProgress: boolean) => void;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
 
+const ACTIVE_SESSION_KEY_PREFIX = 'palomar_active_session_id_';
+const OAUTH_PENDING_LOGIN_KEY = 'palomar_oauth_login_pending';
+
+const generateSessionId = (): string => {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+};
+
+export const getLocalActiveSessionId = (userId?: string | null): string | null => {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(`${ACTIVE_SESSION_KEY_PREFIX}${userId}`);
+  } catch {
+    return null;
+  }
+};
+
+export const setLocalActiveSessionId = (
+  userId: string,
+  sessionId: string
+): void => {
+  if (!userId || typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(`${ACTIVE_SESSION_KEY_PREFIX}${userId}`, sessionId);
+  } catch {
+    // Ignore storage quota/restriction errors
+  }
+};
+
+export const clearLocalActiveSessionId = (userId?: string | null): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (userId) {
+      localStorage.removeItem(`${ACTIVE_SESSION_KEY_PREFIX}${userId}`);
+    } else {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith(ACTIVE_SESSION_KEY_PREFIX)) {
+          localStorage.removeItem(key);
+        }
+      });
+    }
+  } catch {
+    // Ignore storage errors
+  }
+};
+
+export const markPendingNewLogin = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(OAUTH_PENDING_LOGIN_KEY, 'true');
+  } catch {
+    // Ignore storage errors
+  }
+};
+
+const consumePendingNewLogin = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const pending = localStorage.getItem(OAUTH_PENDING_LOGIN_KEY) === 'true';
+    if (pending) {
+      localStorage.removeItem(OAUTH_PENDING_LOGIN_KEY);
+    }
+    return pending;
+  } catch {
+    return false;
+  }
+};
+
+const isTransientNetworkError = (err: any): boolean => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed') ||
+    msg.includes('no internet connection') ||
+    msg.includes('load failed')
+  );
+};
+
+const isTemporaryAuthFlowRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname;
+  const hash = window.location.hash;
+  return (
+    path.startsWith('/forgot-password') ||
+    path.startsWith('/confirm-signup') ||
+    hash.includes('type=recovery') ||
+    hash.includes('type=signup') ||
+    hash.includes('type=invite')
+  );
+};
+
 // Memory leak protection: Track active object URL to revoke before creating a new one
 let activeAvatarObjectUrl: string | null = null;
 let activeProfileChannel: any = null;
 let activeProfileUserId: string | null = null; // Track currently subscribed User ID to prevent duplicate binds
+let isClaimingSession = false;
+let isForcingLogout = false;
+let isLoginInProgress = false;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
@@ -44,6 +149,162 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setLoginInProgress: (inProgress) => {
+    isLoginInProgress = inProgress;
+  },
+
+  claimActiveSession: async (userIdOverride?: string) => {
+    isClaimingSession = true;
+    try {
+      let targetUserId = userIdOverride || get().user?.id;
+      if (!targetUserId) {
+        const {
+          data: { user: currentUser },
+        } = await supabase.auth.getUser();
+        targetUserId = currentUser?.id;
+      }
+
+      if (!targetUserId) return null;
+
+      const newSessionId = generateSessionId();
+      setLocalActiveSessionId(targetUserId, newSessionId);
+
+      // 1. Revoke all other active sessions & refresh tokens for this user on Supabase Auth server
+      const { error: signOutOthersError } = await supabase.auth.signOut({
+        scope: 'others',
+      });
+      if (signOutOthersError) {
+        console.warn(
+          'Could not revoke other sessions via scope=others:',
+          signOutOthersError.message
+        );
+      }
+
+      // 2. Persist authoritative active_session_id in user_metadata so other devices detect replacement
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { active_session_id: newSessionId },
+      });
+      if (updateError) {
+        console.warn(
+          'Could not update active_session_id metadata:',
+          updateError.message
+        );
+      }
+
+      return newSessionId;
+    } catch (err) {
+      console.warn('Failed to claim single active session:', err);
+      return null;
+    } finally {
+      isClaimingSession = false;
+    }
+  },
+
+  forceSessionLogout: async (
+    reasonMessage = 'Your account was signed in on another device or browser. You have been logged out.'
+  ) => {
+    if (isForcingLogout) return;
+    isForcingLogout = true;
+
+    try {
+      const currentUserId = get().user?.id;
+      clearLocalActiveSessionId(currentUserId);
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('cash_session_closed_banner_dismissed');
+        sessionStorage.removeItem('palomar_greeting_shown');
+      }
+
+      try {
+        // Use scope: 'local' so the invalidated device only clears its own local tokens
+        // without revoking the new device's active session on the server.
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (err) {
+        console.warn('Local signOut error during forced logout:', err);
+      }
+
+      if (activeAvatarObjectUrl) {
+        URL.revokeObjectURL(activeAvatarObjectUrl);
+        activeAvatarObjectUrl = null;
+      }
+      if (activeProfileChannel) {
+        supabase.removeChannel(activeProfileChannel);
+        activeProfileChannel = null;
+      }
+      activeProfileUserId = null;
+
+      set({
+        user: null,
+        profile: null,
+        loading: false,
+        initialized: true,
+        error: reasonMessage,
+      });
+    } finally {
+      isForcingLogout = false;
+    }
+  },
+
+  validateSession: async () => {
+    const currentUser = get().user;
+    if (
+      !currentUser?.id ||
+      isClaimingSession ||
+      isForcingLogout ||
+      isLoginInProgress ||
+      isTemporaryAuthFlowRoute()
+    ) {
+      return true;
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return true;
+    }
+
+    try {
+      const {
+        data: { user: serverUser },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        if (isTransientNetworkError(userError)) {
+          return true;
+        }
+        await get().forceSessionLogout(
+          'Your session is no longer valid because your account was signed in on another device.'
+        );
+        return false;
+      }
+
+      if (!serverUser) {
+        await get().forceSessionLogout(
+          'Your session is no longer valid because your account was signed in on another device.'
+        );
+        return false;
+      }
+
+      const remoteSessionId = serverUser.user_metadata?.active_session_id;
+      const localSessionId = getLocalActiveSessionId(serverUser.id);
+
+      if (
+        remoteSessionId &&
+        (!localSessionId || remoteSessionId !== localSessionId)
+      ) {
+        await get().forceSessionLogout(
+          'Your account was signed in on another device or browser. You have been logged out.'
+        );
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      if (isTransientNetworkError(err)) {
+        return true;
+      }
+      return true;
+    }
+  },
 
   checkSession: async () => {
     try {
@@ -61,8 +322,60 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (sessionError) throw sessionError;
 
       if (session?.user) {
+        let activeUser = session.user;
+
+        // Enforce single active session per user (skip on temporary recovery/invite routes)
+        if (!isTemporaryAuthFlowRoute()) {
+          const isNewOAuthLogin = consumePendingNewLogin();
+
+          if (isNewOAuthLogin) {
+            await get().claimActiveSession(activeUser.id);
+          } else if (
+            !isClaimingSession &&
+            !isLoginInProgress &&
+            (typeof navigator === 'undefined' || navigator.onLine)
+          ) {
+            const {
+              data: { user: verifiedUser },
+              error: verifyError,
+            } = await supabase.auth.getUser();
+
+            if (verifyError) {
+              if (!isTransientNetworkError(verifyError)) {
+                await get().forceSessionLogout(
+                  'Your session is no longer valid because your account was signed in on another device.'
+                );
+                return;
+              }
+            } else if (!verifiedUser) {
+              await get().forceSessionLogout(
+                'Your session is no longer valid because your account was signed in on another device.'
+              );
+              return;
+            } else {
+              activeUser = verifiedUser;
+              const remoteSessionId =
+                verifiedUser.user_metadata?.active_session_id;
+              const localSessionId = getLocalActiveSessionId(verifiedUser.id);
+
+              if (!remoteSessionId) {
+                // First time initializing single-session token for this session
+                await get().claimActiveSession(verifiedUser.id);
+              } else if (
+                !localSessionId ||
+                remoteSessionId !== localSessionId
+              ) {
+                await get().forceSessionLogout(
+                  'Your account was signed in on another device or browser. You have been logged out.'
+                );
+                return;
+              }
+            }
+          }
+        }
+
         // Evaluate using the centralized case-insensitive helper
-        const isSuperAdminUser = isSuperAdmin(session.user.email);
+        const isSuperAdminUser = isSuperAdmin(activeUser.email);
         let dbProfile: any = null;
 
         // 1. Validation: Fetch or fallback profile from public.profiles
@@ -71,7 +384,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             const { data, error: dbError } = await supabase
               .from('profiles')
               .select('*')
-              .eq('id', session.user.id)
+              .eq('id', activeUser.id)
               .maybeSingle();
 
             if (!dbError && data) {
@@ -80,18 +393,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               // Auto-create missing profile row if user was registered via auth directly
               try {
                 const autoRole = (
-                  session.user.app_metadata?.role ||
-                  session.user.user_metadata?.role ||
+                  activeUser.app_metadata?.role ||
+                  activeUser.user_metadata?.role ||
                   'admin'
                 ).toLowerCase();
                 const { data: createdProfile } = await supabase
                   .from('profiles')
                   .insert({
-                    id: session.user.id,
+                    id: activeUser.id,
                     username:
-                      session.user.user_metadata?.full_name ||
-                      session.user.user_metadata?.username ||
-                      session.user.email?.split('@')[0] ||
+                      activeUser.user_metadata?.full_name ||
+                      activeUser.user_metadata?.username ||
+                      activeUser.email?.split('@')[0] ||
                       'User',
                     role: autoRole === 'staff' ? 'staff' : 'admin',
                     status: 'active',
@@ -116,7 +429,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         // If explicitly deactivated in DB profile, sign out
         if (dbProfile?.status === 'inactive') {
-          await supabase.auth.signOut();
+          clearLocalActiveSessionId(activeUser.id);
+          await supabase.auth.signOut({ scope: 'local' });
           if (activeAvatarObjectUrl) {
             URL.revokeObjectURL(activeAvatarObjectUrl);
             activeAvatarObjectUrl = null;
@@ -139,8 +453,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // 2. Resolve account attributes with Superadmin taking absolute priority
         const rawRole = (
           dbProfile?.role ||
-          session.user.app_metadata?.role ||
-          session.user.user_metadata?.role ||
+          activeUser.app_metadata?.role ||
+          activeUser.user_metadata?.role ||
           'admin'
         ).toLowerCase();
         const userRole = isSuperAdminUser
@@ -152,10 +466,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // Superadmin status always resolves to active; other accounts default to active unless specified
         const userStatus = isSuperAdminUser
           ? 'active'
-          : dbProfile?.status || session.user.user_metadata?.status || 'active';
+          : dbProfile?.status || activeUser.user_metadata?.status || 'active';
 
         const metadataAvatarPath =
-          dbProfile?.avatar_url || session.user.user_metadata?.avatar_url || '';
+          dbProfile?.avatar_url || activeUser.user_metadata?.avatar_url || '';
         let localAvatarBlobUrl = '';
 
         // Dynamically resolve private file storage as local blob URLs
@@ -184,21 +498,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         // Only establish Realtime subscription if not superadmin
-        if (!isSuperAdminUser && activeProfileUserId !== session.user.id) {
+        if (!isSuperAdminUser && activeProfileUserId !== activeUser.id) {
           if (activeProfileChannel) {
             supabase.removeChannel(activeProfileChannel);
           }
 
-          activeProfileUserId = session.user.id;
+          activeProfileUserId = activeUser.id;
           activeProfileChannel = supabase
-            .channel(`profile-sync-${session.user.id}`)
+            .channel(`profile-sync-${activeUser.id}`)
             .on(
               'postgres_changes',
               {
                 event: 'UPDATE',
                 schema: 'public',
                 table: 'profiles',
-                filter: `id=eq.${session.user.id}`,
+                filter: `id=eq.${activeUser.id}`,
               },
               async (payload: any) => {
                 const rawAvatar = payload.new.avatar_url || '';
@@ -250,7 +564,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           supabase
             .from('profiles')
             .update({ status: 'active' })
-            .eq('id', session.user.id)
+            .eq('id', activeUser.id)
             .then(({ error }) => {
               if (error) {
                 console.error('Failed to auto-activate pending profile:', error);
@@ -259,22 +573,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         set({
-          user: session.user,
+          user: activeUser,
           profile: {
-            id: session.user.id,
+            id: activeUser.id,
             username: isSuperAdminUser
               ? 'SUPERADMIN'
               : dbProfile?.username ||
-                session.user.user_metadata?.full_name ||
-                session.user.user_metadata?.username ||
-                session.user.email?.split('@')[0] ||
+                activeUser.user_metadata?.full_name ||
+                activeUser.user_metadata?.username ||
+                activeUser.email?.split('@')[0] ||
                 'User',
             role: userRole as 'admin' | 'staff',
             status: effectiveStatus as 'active' | 'pending' | 'inactive',
             avatar_url: localAvatarBlobUrl,
             email_verification_enabled:
               dbProfile?.email_verification_enabled ??
-              session.user.user_metadata?.email_verification_enabled ??
+              activeUser.user_metadata?.email_verification_enabled ??
               false,
           },
           loading: false,
@@ -308,6 +622,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signInWithGoogle: async () => {
     try {
       set({ loading: true, error: null });
+      markPendingNewLogin();
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
@@ -338,11 +653,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    const currentUserId = get().user?.id;
     set({ loading: true });
+    clearLocalActiveSessionId(currentUserId);
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('cash_session_closed_banner_dismissed');
     }
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     if (activeAvatarObjectUrl) {
       URL.revokeObjectURL(activeAvatarObjectUrl);
       activeAvatarObjectUrl = null;
@@ -390,11 +707,29 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       initialized: true,
     });
   } else if (event === 'TOKEN_REFRESHED') {
-    // Background token refresh: update user session quietly without unmounting UI or resetting page state
+    // Background token refresh: verify single active session and update user session quietly
     if (session?.user) {
+      const remoteSessionId = session.user.user_metadata?.active_session_id;
+      const localSessionId = getLocalActiveSessionId(session.user.id);
+      if (
+        !isClaimingSession &&
+        !isLoginInProgress &&
+        remoteSessionId &&
+        (!localSessionId || remoteSessionId !== localSessionId)
+      ) {
+        await useAuthStore
+          .getState()
+          .forceSessionLogout(
+            'Your account was signed in on another device or browser. You have been logged out.'
+          );
+        return;
+      }
       useAuthStore.setState({ user: session.user });
     }
   } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+    if (isLoginInProgress || isClaimingSession) {
+      return;
+    }
     if (session?.user) {
       const currentUser = useAuthStore.getState().user;
       // Only do a heavy check if user ID actually changed or if user explicitly updated profile

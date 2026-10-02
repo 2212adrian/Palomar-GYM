@@ -22,7 +22,7 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { supabase } from '../../lib/supabase/client';
 import { buildAppUrl } from '../../lib/appUrl';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore, markPendingNewLogin } from '../../stores/authStore';
 import { useSecurityStore } from '../../stores/useSecurityStore';
 import {
   type SecurityAccessCheckResult,
@@ -39,7 +39,8 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
   checkResult,
   onRetry,
 }) => {
-  const { user, checkSession } = useAuthStore();
+  const { user, checkSession, claimActiveSession, setLoginInProgress } =
+    useAuthStore();
   const { config, fetchConfig, runVerification } = useSecurityStore();
   const [retrying, setRetrying] = useState(false);
 
@@ -99,6 +100,7 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
       : [`${rawId}@gmail.com`, `${rawId}@palomargym.noemail`];
 
     setSaSubmitting(true);
+    setLoginInProgress(true);
     try {
       let signedInEmail: string | null = null;
       let lastAuthErr: any = null;
@@ -135,6 +137,8 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
         return;
       }
 
+      await claimActiveSession();
+      setLoginInProgress(false);
       await checkSession();
       await runVerification('admin', signedInEmail);
       toast.success('Superadmin verified. Terminal restriction bypassed.');
@@ -143,6 +147,7 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
         err.message || 'Authentication failed. Verify your Superadmin credentials.'
       );
     } finally {
+      setLoginInProgress(false);
       setSaSubmitting(false);
     }
   };
@@ -151,6 +156,7 @@ export const SecurityAccessBlocker: React.FC<SecurityAccessBlockerProps> = ({
     setSaError(null);
     setSaGoogleSubmitting(true);
     try {
+      markPendingNewLogin();
       sessionStorage.setItem('palomar_superadmin_bypass_oauth', 'true');
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative

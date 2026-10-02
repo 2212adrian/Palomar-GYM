@@ -28,6 +28,7 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -36,6 +37,8 @@ import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
+import { useBatterySaver } from '../../../hooks/useBatterySaver';
+import { useOfflineSyncStore } from '../../../stores/useOfflineSyncStore';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { getServerNow } from '../../../lib/serverTime';
@@ -237,7 +240,15 @@ export const LogbookRecordAttendance: React.FC<
   const { user } = useAuthStore() as any;
   const { activeSession, isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
+  const {
+    isBatterySaver,
+    isAutoTriggered,
+    batteryLevel,
+    toggleBatterySaver,
+  } = useBatterySaver();
+  const { enqueueMutation } = useOfflineSyncStore();
   const isSubmittingRef = useRef(false);
+  const lastLoadedDynamicMsRef = useRef<number>(0);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -703,8 +714,19 @@ export const LogbookRecordAttendance: React.FC<
 
   useEffect(() => {
     if (isOpen) {
-      loadRates();
-      loadDynamicMembers();
+      const nowMs = Date.now();
+      // In Battery Saver mode, reuse member/rate data if fetched within the last 2 minutes
+      const shouldSkipHeavyPoll =
+        isBatterySaver &&
+        dynamicMembers.length > 0 &&
+        walkinRegularFee !== null &&
+        nowMs - lastLoadedDynamicMsRef.current < 120000;
+
+      if (!shouldSkipHeavyPoll) {
+        loadRates();
+        loadDynamicMembers();
+        lastLoadedDynamicMsRef.current = nowMs;
+      }
       loadTodayLogs();
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -712,7 +734,15 @@ export const LogbookRecordAttendance: React.FC<
     } else {
       stopAllCameraTracks();
     }
-  }, [isOpen, loadRates, loadDynamicMembers, loadTodayLogs]);
+  }, [
+    isOpen,
+    loadRates,
+    loadDynamicMembers,
+    loadTodayLogs,
+    isBatterySaver,
+    dynamicMembers.length,
+    walkinRegularFee,
+  ]);
 
   useEffect(() => {
     if (!isOpen || !initialSearch || !initialSearch.trim()) return;
@@ -794,7 +824,8 @@ export const LogbookRecordAttendance: React.FC<
             .start(
               cameraConfig,
               {
-                fps: 25,
+                // Reduce camera polling FPS in Battery Saver mode (10 FPS vs 25 FPS)
+                fps: isBatterySaver ? 10 : 25,
                 qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
                   const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                   const edgeSize = Math.floor(minEdge * 0.72);
@@ -802,8 +833,8 @@ export const LogbookRecordAttendance: React.FC<
                 },
                 videoConstraints: {
                   ...cameraConfig,
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
+                  width: { ideal: isBatterySaver ? 640 : 1280 },
+                  height: { ideal: isBatterySaver ? 480 : 720 },
                   facingMode: 'environment',
                 },
               },
@@ -844,7 +875,13 @@ export const LogbookRecordAttendance: React.FC<
         stopAllCameraTracks();
       };
     }
-  }, [showLiveScanner, selectedCameraId, handleBarcodeOrQrScanned, cameras]);
+  }, [
+    showLiveScanner,
+    selectedCameraId,
+    handleBarcodeOrQrScanned,
+    cameras,
+    isBatterySaver,
+  ]);
 
   const handleMemberSearchChange = (val: string) => {
     setMemberSearch(val);
@@ -1052,41 +1089,36 @@ export const LogbookRecordAttendance: React.FC<
       );
     }
 
+    const insertPayload = {
+      member_id: selectedClient.isWalkIn
+        ? null
+        : selectedClient.memberId || null,
+      customer_name: finalCustomerName,
+      customer_type: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+      plan_name: derivedBilling.title,
+      entry_fee: derivedBilling.totalDue,
+      base_price: derivedBilling.subtotal,
+      gcash_fee: gcashFeeVal,
+      card_fee: 0,
+      gcash_ref_no: gcashRefVal || null,
+      payment_method: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
+      staff_name: user?.email || 'Counter Staff',
+      cash_session_id: activeSession?.id || null,
+    };
+
+    const auditDescription = `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Promo/Free'}.`;
+
     try {
       const { data: inserted, error } = await supabase
         .from('attendance')
-        .insert([
-          {
-            member_id: selectedClient.isWalkIn
-              ? null
-              : selectedClient.memberId || null,
-            customer_name: finalCustomerName,
-            customer_type: selectedClient.isWalkIn
-              ? 'Walk-In'
-              : 'Existing Member',
-            plan_name: derivedBilling.title,
-            entry_fee: derivedBilling.totalDue,
-            base_price: derivedBilling.subtotal,
-            gcash_fee: gcashFeeVal,
-            card_fee: 0,
-            gcash_ref_no: gcashRefVal || null,
-            payment_method:
-              derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
-            staff_name: user?.email || 'Counter Staff',
-            cash_session_id: activeSession?.id || null,
-          },
-        ])
+        .insert([insertPayload])
         .select()
         .single();
 
       if (error) throw error;
 
       try {
-        await logAudit(
-          'ATTENDANCE_CHECKIN',
-          `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Promo/Free'}.`,
-          inserted.id
-        );
+        await logAudit('ATTENDANCE_CHECKIN', auditDescription, inserted.id);
       } catch (auditErr) {
         console.warn('Background logbook audit failed:', auditErr);
       }
@@ -1116,14 +1148,77 @@ export const LogbookRecordAttendance: React.FC<
       setIsSuccess(true);
       stopAllCameraTracks();
 
-      setTimeout(() => {
-        onCheckInSuccess(checkInRecord);
-        setIsSuccess(false);
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-        onClose();
-      }, 1500);
+      setTimeout(
+        () => {
+          onCheckInSuccess(checkInRecord);
+          setIsSuccess(false);
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+          onClose();
+        },
+        isBatterySaver ? 600 : 1500
+      );
     } catch (err: any) {
+      const isNetworkIssue =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        String(err?.message || '')
+          .toLowerCase()
+          .includes('internet') ||
+        String(err?.message || '')
+          .toLowerCase()
+          .includes('fetch');
+
+      if (isNetworkIssue) {
+        const queued = enqueueMutation({
+          action: 'attendance_checkin',
+          label: `Check-In: ${finalCustomerName}`,
+          payload: {
+            insertPayload,
+            auditDescription,
+          },
+        });
+
+        const offlineCheckInRecord = {
+          id: queued.id,
+          timestamp: queued.createdAt,
+          memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
+          customerName: finalCustomerName,
+          customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+          categoryOrPlan: derivedBilling.title,
+          paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+          amountPaid: derivedBilling.totalDue,
+          basePrice: derivedBilling.subtotal,
+          gcashFee: gcashFeeVal,
+          cardFee: 0,
+          gcashRefNo: gcashRefVal,
+          referenceNumber: gcashRefVal,
+          paymentRef: gcashRefVal,
+          paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+          status: selectedClient.isWalkIn
+            ? 'Active'
+            : selectedClient.status || 'Active',
+          cash_session_id: activeSession?.id || null,
+        };
+
+        toast.warning(
+          'Saved to local cache — pending upload to Supabase when connection stabilizes.'
+        );
+        setIsSuccess(true);
+        stopAllCameraTracks();
+
+        setTimeout(
+          () => {
+            onCheckInSuccess(offlineCheckInRecord);
+            setIsSuccess(false);
+            isSubmittingRef.current = false;
+            setIsSubmitting(false);
+            onClose();
+          },
+          isBatterySaver ? 600 : 1200
+        );
+        return;
+      }
+
       console.error('Check-in error:', err);
       toast.error(err.message || 'Failed to complete check-in.');
       isSubmittingRef.current = false;
@@ -1205,18 +1300,42 @@ export const LogbookRecordAttendance: React.FC<
         isSuccess ? 'max-w-md p-6 sm:p-8' : 'max-w-lg p-4 sm:p-5'
       } bg-(--bg-card) text-(--color-text) border border-(--border-color) overflow-visible transition-all duration-300 relative text-left`}
     >
-      <button
-        type="button"
-        disabled={isSubmitting}
-        onClick={() => {
-          stopAllCameraTracks();
-          onClose();
-        }}
-        className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-(--color-text)/50 hover:text-(--color-text) hover:bg-(--bg-input) transition-colors cursor-pointer z-50"
-        aria-label="Close Dialog"
-      >
-        <X className="w-5 h-5" />
-      </button>
+      <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-50">
+        <button
+          type="button"
+          onClick={() => toggleBatterySaver()}
+          title={
+            isBatterySaver
+              ? `Battery Saver Active${isAutoTriggered ? ' (Auto Low-Power)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Lowers scanner FPS & animations`
+              : 'Enable Battery Saver Mode (Lowers camera FPS & animations)'
+          }
+          className={`px-2 py-1 rounded-lg border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
+            isBatterySaver
+              ? 'border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400'
+              : 'border-(--border-color) bg-(--bg-input) text-(--color-text)/60 hover:text-(--color-text)'
+          }`}
+        >
+          <Zap
+            className={`w-3 h-3 ${
+              isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
+            }`}
+          />
+          <span>{isBatterySaver ? 'ECO ON' : 'ECO'}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => {
+            stopAllCameraTracks();
+            onClose();
+          }}
+          className="p-1.5 rounded-xl text-(--color-text)/50 hover:text-(--color-text) hover:bg-(--bg-input) transition-colors cursor-pointer"
+          aria-label="Close Dialog"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
       <AnimatePresence mode="wait">
         {/* CASE 1: FETCHING ERROR - STRICTLY FORBID ATTENDANCE ACTION */}
@@ -1425,8 +1544,14 @@ export const LogbookRecordAttendance: React.FC<
 
                     <div className="flex items-center justify-between border-b border-(--border-color) pb-1.5">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                        LIVE CAMERA ACTIVE
+                        <span
+                          className={`w-2 h-2 rounded-full bg-emerald-500 ${
+                            isBatterySaver ? '' : 'animate-ping'
+                          }`}
+                        />
+                        {isBatterySaver
+                          ? 'LIVE CAMERA (ECO 10 FPS)'
+                          : 'LIVE CAMERA ACTIVE'}
                       </span>
                       <button
                         type="button"

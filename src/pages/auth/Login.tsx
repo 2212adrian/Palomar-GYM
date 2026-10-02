@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase/client';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore, markPendingNewLogin } from '../../stores/authStore';
 import { logAudit } from '../../lib/supabase/audit';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 
@@ -267,6 +267,8 @@ export const Login: React.FC = () => {
   const location = useLocation();
   const {
     checkSession,
+    claimActiveSession,
+    setLoginInProgress,
     user,
     initialized,
     error: storeError,
@@ -1035,6 +1037,7 @@ export const Login: React.FC = () => {
     dismissVirtualKeyboard();
     setIsGoogleSubmitting(true);
     try {
+      markPendingNewLogin();
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
@@ -1101,6 +1104,7 @@ export const Login: React.FC = () => {
     setIsSubmitting(true);
     setShakeEmail(false);
     setShakePassword(false);
+    setLoginInProgress(true);
 
     try {
       const finalEmail = data.usernameOrEmail.includes('@')
@@ -1223,6 +1227,8 @@ export const Login: React.FC = () => {
         loggedInUser?.id ?? undefined
       );
 
+      await claimActiveSession(loggedInUser?.id);
+      setLoginInProgress(false);
       await checkSession();
 
       const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
@@ -1267,6 +1273,7 @@ export const Login: React.FC = () => {
       setLoginValue('password', '');
       triggerShake(setShakePassword);
     } finally {
+      setLoginInProgress(false);
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
@@ -1365,6 +1372,7 @@ export const Login: React.FC = () => {
 
     dismissVirtualKeyboard();
     setIsVerifying2FA(true);
+    setLoginInProgress(true);
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email: twoFactorEmail,
@@ -1381,6 +1389,8 @@ export const Login: React.FC = () => {
       );
 
       sessionStorage.removeItem('palomar_2fa_pending');
+      await claimActiveSession(twoFactorUserId || undefined);
+      setLoginInProgress(false);
       await checkSession();
 
       // Launch the greeting modal upon 2FA success
@@ -1412,6 +1422,7 @@ export const Login: React.FC = () => {
       setTwoFactorCode(['', '', '', '', '', '']);
       twoFactorInputRefs.current[0]?.focus();
     } finally {
+      setLoginInProgress(false);
       setIsVerifying2FA(false);
     }
   };

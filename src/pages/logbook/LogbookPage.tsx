@@ -25,6 +25,7 @@ import {
   Trash2,
   Lock,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 import {
   motion,
@@ -65,11 +66,43 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
   trend: 'increasing' | 'decreasing' | 'neutral';
-}> = ({ trend }) => {
+  disableAnimation?: boolean;
+}> = ({ trend, disableAnimation = false }) => {
+  if (disableAnimation) {
+    return (
+      <div
+        className={`shrink-0 flex items-center justify-center ${
+          trend === 'increasing'
+            ? 'text-emerald-500 dark:text-emerald-400'
+            : trend === 'decreasing'
+              ? 'text-rose-500 dark:text-rose-400'
+              : 'text-emerald-500 dark:text-emerald-400'
+        }`}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect width="20" height="12" x="2" y="6" rx="2" />
+          <circle cx="12" cy="12" r="2" />
+          <path d="M6 12h.01M18 12h.01" />
+        </svg>
+      </div>
+    );
+  }
   return (
     <motion.div
       key={trend}
@@ -180,7 +213,8 @@ const DynamicBanknoteIcon: React.FC<{
 const AnimatedCurrency: React.FC<{
   value: number;
   trend?: 'increasing' | 'decreasing' | 'neutral';
-}> = ({ value, trend = 'neutral' }) => {
+  disableAnimation?: boolean;
+}> = ({ value, trend = 'neutral', disableAnimation = false }) => {
   const count = useMotionValue(value);
   const formatted = useTransform(
     count,
@@ -188,12 +222,24 @@ const AnimatedCurrency: React.FC<{
   );
 
   useEffect(() => {
+    if (disableAnimation) {
+      count.set(value);
+      return;
+    }
     const controls = animate(count, value, {
       duration: 1.0,
       ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
-  }, [value, count]);
+  }, [value, count, disableAnimation]);
+
+  if (disableAnimation) {
+    return (
+      <span className="font-heading font-black tracking-tight inline-block text-slate-900 dark:text-white">
+        ₱{Number(value).toFixed(2)}
+      </span>
+    );
+  }
 
   return (
     <motion.span
@@ -229,19 +275,30 @@ const AnimatedCurrency: React.FC<{
 };
 
 // ANIMATED NUMBER TICKER
-const AnimatedNumber: React.FC<{ value: number }> = ({ value }) => {
+const AnimatedNumber: React.FC<{
+  value: number;
+  disableAnimation?: boolean;
+}> = ({ value, disableAnimation = false }) => {
   const count = useMotionValue(value);
   const rounded = useTransform(count, (latest) =>
     Math.round(latest).toString()
   );
 
   useEffect(() => {
+    if (disableAnimation) {
+      count.set(value);
+      return;
+    }
     const controls = animate(count, value, {
       duration: 0.8,
       ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
-  }, [value, count]);
+  }, [value, count, disableAnimation]);
+
+  if (disableAnimation) {
+    return <span>{Math.round(value)}</span>;
+  }
 
   return <motion.span>{rounded}</motion.span>;
 };
@@ -314,6 +371,13 @@ export const LogbookPage: React.FC = () => {
   const { activeSession, isSessionOpen, history, loadHistory } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+  const {
+    isBatterySaver,
+    isAutoTriggered,
+    batteryLevel,
+    toggleBatterySaver,
+  } = useBatterySaver();
+  const { enqueueMutation, markSyncComplete } = useOfflineSyncStore();
 
   const [closedSessionsList, setClosedSessionsList] = useState<
     SessionSummaryInfo[]
@@ -554,8 +618,11 @@ export const LogbookPage: React.FC = () => {
               cash_session_id: row.cash_session_id || null,
             }));
 
-            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online
-            if (typeof navigator === 'undefined' || navigator.onLine) {
+            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online (skip in Battery Saver mode to conserve power)
+            if (
+              !isBatterySaver &&
+              (typeof navigator === 'undefined' || navigator.onLine)
+            ) {
               const startOfDay = new Date(
                 `${dateStr}T00:00:00+08:00`
               ).toISOString();
@@ -698,20 +765,50 @@ export const LogbookPage: React.FC = () => {
           } catch {
             // ignore quota error
           }
+          markSyncComplete(null);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to fetch attendance:', err);
+        markSyncComplete(err?.message || 'Sync interrupted');
       } finally {
         if (!isBackground) {
           setLoadingLogs(false);
         }
       }
     },
-    [dateStr]
+    [dateStr, isBatterySaver, markSyncComplete]
   );
 
   useEffect(() => {
     fetchAttendanceFromSupabase(false);
+
+    let lastRealtimeFetchMs = Date.now();
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const triggerRealtimeSync = (includeHistory = false) => {
+      sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+      if (!isBatterySaver) {
+        if (includeHistory) loadHistory();
+        fetchAttendanceFromSupabase(true);
+        return;
+      }
+
+      // In Battery Saver mode, throttle realtime re-fetches to at most once every 30s
+      const elapsed = Date.now() - lastRealtimeFetchMs;
+      const minIntervalMs = 30000;
+      if (elapsed >= minIntervalMs) {
+        lastRealtimeFetchMs = Date.now();
+        if (includeHistory) loadHistory();
+        fetchAttendanceFromSupabase(true);
+      } else if (!throttleTimer) {
+        throttleTimer = setTimeout(() => {
+          throttleTimer = null;
+          lastRealtimeFetchMs = Date.now();
+          if (includeHistory) loadHistory();
+          fetchAttendanceFromSupabase(true);
+        }, minIntervalMs - elapsed);
+      }
+    };
 
     const channelId = `logbook_rt_${dateStr}_${Date.now()}`;
     const channel = supabase
@@ -719,34 +816,34 @@ export const LogbookPage: React.FC = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance' },
-        () => {
-          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-          fetchAttendanceFromSupabase(true);
-        }
+        () => triggerRealtimeSync(false)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'receipts' },
-        () => {
-          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-          fetchAttendanceFromSupabase(true);
-        }
+        () => triggerRealtimeSync(false)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cash_sessions' },
-        () => {
-          sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-          loadHistory();
-          fetchAttendanceFromSupabase(true);
-        }
+        () => triggerRealtimeSync(true)
       )
       .subscribe();
 
+    // Background polling interval: 45s normal vs 180s (3 min) in Battery Saver mode
+    const pollIntervalMs = isBatterySaver ? 180000 : 45000;
+    const pollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      fetchAttendanceFromSupabase(true);
+    }, pollIntervalMs);
+
     return () => {
+      if (throttleTimer) clearTimeout(throttleTimer);
+      clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
-  }, [dateStr, fetchAttendanceFromSupabase, loadHistory]);
+  }, [dateStr, fetchAttendanceFromSupabase, loadHistory, isBatterySaver]);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -959,16 +1056,27 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
 
+    const updatedAtIso = getServerNow().toISOString();
     try {
-      await supabase
+      const { error } = await supabase
         .from('attendance')
         .update({
           payment_status: 'Paid',
-          updated_at: new Date().toISOString(),
+          updated_at: updatedAtIso,
         })
         .eq('id', log.id);
+      if (error) throw error;
     } catch (dbErr) {
-      console.warn('Failed to update attendance payment status in DB:', dbErr);
+      console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
+      enqueueMutation({
+        action: 'attendance_payment_status',
+        label: `Payment Paid: ${log.customerName}`,
+        payload: {
+          recordId: log.id,
+          paymentStatus: 'Paid',
+          updatedAt: updatedAtIso,
+        },
+      });
     }
 
     toast.success(`Payment logged for ${log.customerName}`);
@@ -993,16 +1101,27 @@ export const LogbookPage: React.FC = () => {
       return updated;
     });
 
+    const updatedAtIso = getServerNow().toISOString();
     try {
-      await supabase
+      const { error } = await supabase
         .from('attendance')
         .update({
           payment_status: 'Unpaid',
-          updated_at: new Date().toISOString(),
+          updated_at: updatedAtIso,
         })
         .eq('id', log.id);
+      if (error) throw error;
     } catch (dbErr) {
-      console.warn('Failed to update attendance payment status in DB:', dbErr);
+      console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
+      enqueueMutation({
+        action: 'attendance_payment_status',
+        label: `Payment Unpaid: ${log.customerName}`,
+        payload: {
+          recordId: log.id,
+          paymentStatus: 'Unpaid',
+          updatedAt: updatedAtIso,
+        },
+      });
     }
 
     toast.info(`Undone payment. Set back to Unpaid.`);
@@ -1384,14 +1503,57 @@ export const LogbookPage: React.FC = () => {
     if (activePage === 'logbook') {
       setActions(
         <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in select-none">
+          {/* ─── BATTERY SAVER MODE TOGGLE ─── */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = toggleBatterySaver();
+              toast.info(
+                next
+                  ? 'Battery Saver enabled: reduced polling frequency & minimized background animations.'
+                  : 'Battery Saver disabled: standard real-time animations active.',
+                { toastId: 'battery-saver-toggle' }
+              );
+            }}
+            title={
+              isBatterySaver
+                ? `Battery Saver Active${isAutoTriggered ? ' (Auto Low-Power)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
+                : `Enable Battery Saver Mode${batteryLevel !== null ? ` (Battery: ${batteryLevel}%)` : ''}`
+            }
+            className={`h-10 px-3 rounded-xl border text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
+              isBatterySaver
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                : 'border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Zap
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isBatterySaver ? 'text-amber-500 fill-amber-500' : 'text-slate-400'
+              }`}
+            />
+            <span className="hidden xl:inline">
+              {isBatterySaver ? 'ECO ON' : 'ECO'}
+            </span>
+            {batteryLevel !== null && isBatterySaver && (
+              <span className="font-mono text-[10px]">{batteryLevel}%</span>
+            )}
+          </button>
+
           {/* ─── REDESIGNED TABLET TELEMETRY CAPSULE ─── */}
           <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
-                <DynamicBanknoteIcon trend={revenueTrend} />
+                <DynamicBanknoteIcon
+                  trend={revenueTrend}
+                  disableAnimation={isBatterySaver}
+                />
               </div>
               <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
-                <AnimatedCurrency value={activeRevenue} trend={revenueTrend} />
+                <AnimatedCurrency
+                  value={activeRevenue}
+                  trend={revenueTrend}
+                  disableAnimation={isBatterySaver}
+                />
               </span>
             </div>
 
@@ -1400,7 +1562,10 @@ export const LogbookPage: React.FC = () => {
             <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
               <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
               <span className="font-heading font-bold text-xs tracking-wide">
-                <AnimatedNumber value={activeCheckinsCount} />
+                <AnimatedNumber
+                  value={activeCheckinsCount}
+                  disableAnimation={isBatterySaver}
+                />
                 <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
                   {activeCheckinsCount === 1 ? 'check-in' : 'check-ins'}
                 </span>
@@ -1565,6 +1730,10 @@ export const LogbookPage: React.FC = () => {
     activeRevenue,
     activeCheckinsCount,
     revenueTrend,
+    isBatterySaver,
+    isAutoTriggered,
+    batteryLevel,
+    toggleBatterySaver,
   ]);
 
   useEffect(() => {
@@ -1696,7 +1865,11 @@ export const LogbookPage: React.FC = () => {
                       exit={{ opacity: 0 }}
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs animate-fade-in"
                     >
-                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
+                      <div
+                        className={`w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 ${
+                          isBatterySaver ? '' : 'animate-pulse'
+                        }`}
+                      >
                         {hasFilter ? (
                           <Search className="w-8 h-8" />
                         ) : (
@@ -1876,48 +2049,65 @@ export const LogbookPage: React.FC = () => {
                   return (
                     <motion.div
                       key={strId}
-                      layout
-                      initial={{
-                        opacity: 0,
-                        y: -15,
-                        scale: 0.96,
-                        boxShadow:
-                          '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
-                      }}
-                      animate={
-                        isDeleting
-                          ? {
-                              opacity: 0,
-                              scale: 0.92,
-                              y: -5,
-                              boxShadow:
-                                '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                              filter: 'brightness(0.9)',
-                            }
+                      layout={!isBatterySaver}
+                      initial={
+                        isBatterySaver
+                          ? false
                           : {
-                              opacity: 1,
-                              y: 0,
-                              scale: 1,
-                              boxShadow: isNew
-                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                              opacity: 0,
+                              y: -15,
+                              scale: 0.96,
+                              boxShadow:
+                                '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
                             }
                       }
-                      exit={{
-                        opacity: 0,
-                        scale: 0.9,
-                        y: -10,
-                        boxShadow:
-                          '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                      }}
-                      transition={{
-                        layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-                        boxShadow: {
-                          duration: isDeleting ? 0.15 : 1.5,
-                          ease: 'easeOut',
-                        },
-                        opacity: { duration: isDeleting ? 0.38 : 0.3 },
-                      }}
+                      animate={
+                        isBatterySaver
+                          ? { opacity: isDeleting ? 0 : 1 }
+                          : isDeleting
+                            ? {
+                                opacity: 0,
+                                scale: 0.92,
+                                y: -5,
+                                boxShadow:
+                                  '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                                filter: 'brightness(0.9)',
+                              }
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                scale: 1,
+                                boxShadow: isNew
+                                  ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                  : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                              }
+                      }
+                      exit={
+                        isBatterySaver
+                          ? { opacity: 0 }
+                          : {
+                              opacity: 0,
+                              scale: 0.9,
+                              y: -10,
+                              boxShadow:
+                                '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                            }
+                      }
+                      transition={
+                        isBatterySaver
+                          ? { duration: 0 }
+                          : {
+                              layout: {
+                                duration: 0.35,
+                                ease: [0.16, 1, 0.3, 1],
+                              },
+                              boxShadow: {
+                                duration: isDeleting ? 0.15 : 1.5,
+                                ease: 'easeOut',
+                              },
+                              opacity: { duration: isDeleting ? 0.38 : 0.3 },
+                            }
+                      }
                       className="rounded-2xl transition-all overflow-hidden"
                     >
                       <TimelineCard
@@ -2226,11 +2416,15 @@ export const LogbookPage: React.FC = () => {
           >
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
               <div className="flex items-center gap-1.5 shrink-0">
-                <DynamicBanknoteIcon trend={revenueTrend} />
+                <DynamicBanknoteIcon
+                  trend={revenueTrend}
+                  disableAnimation={isBatterySaver}
+                />
                 <span className="text-[11px]">
                   <AnimatedCurrency
                     value={activeRevenue}
                     trend={revenueTrend}
+                    disableAnimation={isBatterySaver}
                   />
                 </span>
               </div>
@@ -2238,12 +2432,45 @@ export const LogbookPage: React.FC = () => {
               <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
                 <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-[11px] truncate">
-                  <AnimatedNumber value={activeCheckinsCount} /> Check-ins
+                  <AnimatedNumber
+                    value={activeCheckinsCount}
+                    disableAnimation={isBatterySaver}
+                  />{' '}
+                  Check-ins
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = toggleBatterySaver();
+                  toast.info(
+                    next
+                      ? 'Battery Saver enabled: reduced polling & animations.'
+                      : 'Battery Saver disabled.',
+                    { toastId: 'battery-saver-toggle' }
+                  );
+                }}
+                title={
+                  isBatterySaver
+                    ? 'Battery Saver Active — Tap to disable'
+                    : 'Enable Battery Saver Mode'
+                }
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
+                  isBatterySaver
+                    ? 'bg-amber-500/20 text-amber-500 border-amber-500/40'
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 border-(--border-color)'
+                }`}
+              >
+                <Zap
+                  className={`w-4 h-4 ${
+                    isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
+                  }`}
+                />
+              </button>
+
               {role === 'admin' && (
                 <button
                   type="button"
