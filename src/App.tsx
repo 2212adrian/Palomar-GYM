@@ -24,6 +24,16 @@ import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import pkg from '../package.json';
 
+// Single deduplicated session toast notification helper
+const notifySessionTerminated = (message: string) => {
+  if (!toast.isActive('session-terminated')) {
+    toast.error(message, {
+      toastId: 'session-terminated',
+      autoClose: 5000,
+    });
+  }
+};
+
 export const App: React.FC = () => {
   const checkSession = useAuthStore((state) => state.checkSession);
   const validateSession = useAuthStore((state) => state.validateSession);
@@ -36,7 +46,6 @@ export const App: React.FC = () => {
   // Ref to track modal state inside the persistent listener closure
   const isExitModalOpenRef = useRef(isExitModalOpen);
 
-  // Keep the ref up-to-date with state changes
   useEffect(() => {
     isExitModalOpenRef.current = isExitModalOpen;
   }, [isExitModalOpen]);
@@ -68,29 +77,22 @@ export const App: React.FC = () => {
 
         // If this broadcast is from a new login claiming a specific sessionId:
         if (payload?.sessionId) {
-          // Ignore if this device owns the active sessionId
           if (localSessionId && payload.sessionId === localSessionId) {
             return;
           }
 
-          const message =
-            'Your account was signed in on another device or browser. You have been logged out.';
-          toast.error(message, {
-            toastId: 'session-terminated',
-            autoClose: 5000,
-          });
-          await forceSessionLogout(message);
+          notifySessionTerminated(
+            'Your account was signed in on another device or browser. You have been logged out.'
+          );
+          await forceSessionLogout();
           return;
         }
 
         // Administrator manual session termination
-        const adminMessage =
-          'Your session has been terminated by an administrator.';
-        toast.error(adminMessage, {
-          toastId: 'session-terminated',
-          autoClose: 5000,
-        });
-        await forceSessionLogout(adminMessage);
+        notifySessionTerminated(
+          'Your session has been terminated by an administrator.'
+        );
+        await forceSessionLogout();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -123,12 +125,8 @@ export const App: React.FC = () => {
     const verifyCurrentSession = async () => {
       const isValid = await validateSession();
       if (!isValid) {
-        toast.error(
-          'Your account was signed in on another device or browser. You have been logged out.',
-          {
-            toastId: 'session-terminated',
-            autoClose: 5000,
-          }
+        notifySessionTerminated(
+          'Your account was signed in on another device or browser. You have been logged out.'
         );
       }
     };
@@ -150,7 +148,7 @@ export const App: React.FC = () => {
     };
   }, [user?.id, validateSession]);
 
-  // Global Theme Initialization (Survives hard page refreshes on protected routes)
+  // Global Theme Initialization
   useEffect(() => {
     const saved = localStorage.getItem('theme');
     const systemPrefersDark = window.matchMedia(
@@ -169,29 +167,22 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Automatically retrieve the session state on page load/mount
     checkSession();
   }, [checkSession]);
 
   // ─── PWA Out-of-Date Detection & Refresh Handling ───
   useEffect(() => {
-    // Only applies to PWA / Web browser mode
     if (Capacitor.isNativePlatform()) return;
 
     let isSubscribed = true;
 
-    // 1. Listen for new service worker controlling the page
     const handleControllerChange = async () => {
       if (!isSubscribed) return;
 
       try {
-        // Verify against remote releases before alerting the user
         const remote = await fetchLatestRelease(pkg.version, 'web');
-
-        // If there is no newer version than current pkg.version, do nothing
         if (!remote?.isNewer) return;
 
-        // Dismiss outdated toast if active to avoid duplicate prompts
         toast.dismiss('pwa-version-outdated');
 
         toast.info(
@@ -221,10 +212,7 @@ export const App: React.FC = () => {
           }
         );
       } catch (err) {
-        console.debug(
-          '[PWA] Version check deferred on controller change:',
-          err
-        );
+        console.debug('[PWA] Version check deferred on controller change:', err);
       }
     };
 
@@ -235,7 +223,6 @@ export const App: React.FC = () => {
       );
     }
 
-    // 2. Periodic release check against Supabase app_releases
     const checkPwaVersion = async () => {
       if (!isSubscribed) return;
       try {
@@ -294,7 +281,6 @@ export const App: React.FC = () => {
 
   // ─── Native Back Button Listener with Modal Dialog ───
   useEffect(() => {
-    // Only register the back button listener on native platforms (Android/iOS)
     if (!Capacitor.isNativePlatform()) return;
 
     let activeBackButtonListener: any;
@@ -304,15 +290,11 @@ export const App: React.FC = () => {
         'backButton',
         ({ canGoBack }) => {
           const currentPath = window.location.pathname;
-
-          // Define route paths where hitting the Android back button should prompt an exit dialog
           const rootPaths = ['/', '/login', '/dashboard'];
 
-          // If the confirmation modal is already open, pressing back will close it
           if (isExitModalOpenRef.current) {
             setIsExitModalOpen(false);
           } else if (!canGoBack || rootPaths.includes(currentPath)) {
-            // Open the exit confirmation modal instead of shutting down immediately
             setIsExitModalOpen(true);
           } else {
             window.history.back();
@@ -332,7 +314,6 @@ export const App: React.FC = () => {
 
   // ─── Native Deep Link Listener for Google OAuth ───
   useEffect(() => {
-    // Only register deep-linking if on a native platform (Android/iOS)
     if (!Capacitor.isNativePlatform()) return;
 
     let activeListener: any;
@@ -340,16 +321,13 @@ export const App: React.FC = () => {
     const setupDeepLinkListener = async () => {
       activeListener = await CapApp.addListener('appUrlOpen', async (data) => {
         try {
-          // Close the system browser tab used for OAuth
           try {
             await Browser.close();
           } catch {
-            // Already closed or not applicable
+            // Already closed
           }
 
           const url = new URL(data.url);
-
-          // 1. Support PKCE authorization code exchange (Supabase v2 standard)
           const code = url.searchParams.get('code');
           if (code) {
             markPendingNewLogin();
@@ -361,7 +339,6 @@ export const App: React.FC = () => {
             }
           }
 
-          // 2. Support implicit hash tokens (#access_token=...&refresh_token=...)
           const rawHash = url.hash.startsWith('#')
             ? url.hash.substring(1)
             : url.hash;
@@ -376,14 +353,12 @@ export const App: React.FC = () => {
 
           if (access_token && refresh_token) {
             markPendingNewLogin();
-            // Initialize session tokens in Supabase
             const { error } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
 
             if (!error) {
-              // Redirect your router to the main authenticated dashboard
               window.location.href = '/dashboard';
             }
           }
@@ -405,8 +380,9 @@ export const App: React.FC = () => {
   return (
     <>
       <AppRoutes />
-      {/* Toast Notification Layer */}
+      {/* Toast Notification Layer - limit={1} prevents stacked duplicate notifications */}
       <ToastContainer
+        limit={1}
         position="top-right"
         autoClose={4000}
         hideProgressBar={false}
@@ -419,10 +395,8 @@ export const App: React.FC = () => {
         theme="dark"
       />
 
-      {/* Post-Update Release Notes ("What's New") */}
       <WhatsNewModal />
 
-      {/* Exit Confirmation Modal */}
       <Modal
         isOpen={isExitModalOpen}
         onClose={() => setIsExitModalOpen(false)}

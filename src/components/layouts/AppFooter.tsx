@@ -18,6 +18,7 @@ import {
   LogIn,
   KeyRound,
   CreditCard,
+  Building2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
@@ -76,6 +77,22 @@ interface AppFooterProps {
   className?: string;
 }
 
+// Formal title-casing helper for navigation links
+const toTitleCase = (str: string): string => {
+  if (!str) return '';
+  const minorWords = ['and', '&', 'or', 'of', 'in', 'to', 'for', 'at', 'on'];
+  return str
+    .split(' ')
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index !== 0 && minorWords.includes(lower)) {
+        return lower;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
 export const AppFooter: React.FC<AppFooterProps> = ({
   variant,
   onAcceptAgreement,
@@ -100,7 +117,6 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     return Capacitor.isNativePlatform() || isPwaInstalled || isStandalone;
   }, [isPwaInstalled]);
 
-  // Admin/system footer is collapsed by default and toggable; public footer is always expanded and non-toggable
   const [isFooterExpanded, setIsFooterExpanded] = useState<boolean>(false);
   const showExpandedFooter = !isCollapsible || isFooterExpanded;
 
@@ -123,7 +139,6 @@ export const AppFooter: React.FC<AppFooterProps> = ({
 
   const isAdmin = userRole === 'admin';
 
-  // Theme detection for dynamic logo fallback
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof document === 'undefined') return true;
     return document.documentElement.classList.contains('dark');
@@ -141,13 +156,11 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Live Gym Profile from Supabase + Realtime
   const [gymConfig, setGymConfig] = useState<LiveGymFooterConfig>(
     DEFAULT_FOOTER_GYM_CONFIG
   );
   const [rates, setRates] = useState<MembershipSettings>(DEFAULT_SETTINGS);
 
-  // Modals State
   const [agreementDoc, setAgreementDoc] = useState<AgreementDocument | null>(
     null
   );
@@ -183,7 +196,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         setLatestCloudVersion(releaseCheck.version);
       }
     } catch {
-      // Fallback to package version
+      // Fallback
     }
 
     try {
@@ -230,14 +243,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         }
       }
     } catch {
-      // Fallback to localStorage if offline
+      // Fallback
     }
 
     try {
       const loadedRates = await settingsService.load();
       setRates(loadedRates);
     } catch {
-      // Keep default/previous rates if offline
+      // Offline fallback
     }
   }, [APP_VERSION]);
 
@@ -268,7 +281,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     };
   }, [fetchLiveFooterData]);
 
-  // Dynamically derive Console Navigation Links from SIDEBAR_NAV_STRUCTURE
+  // Derived links with formal Title Case capitalization
   const consoleNavLinks = useMemo(() => {
     const links: { name: string; path: string; description?: string }[] = [];
 
@@ -279,16 +292,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         for (const child of item.children) {
           if (child.roles && !child.roles.includes(userRole)) continue;
           links.push({
-            name: child.name,
+            name: toTitleCase(child.name),
             path: child.path,
             description: child.description,
           });
         }
       } else if (item.path) {
         links.push({
-          name:
-            item.name.charAt(0).toUpperCase() +
-            item.name.slice(1).toLowerCase(),
+          name: toTitleCase(item.name),
           path: item.path,
           description: item.section,
         });
@@ -298,18 +309,16 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     return links;
   }, [userRole]);
 
-  // Dynamically derive System Settings Links from SETTINGS_TABS & TAB_URL_MAP
   const settingsNavLinks = useMemo(() => {
     return SETTINGS_TABS.filter((tab) => !tab.adminOnly || isAdmin).map(
       (tab) => ({
-        name: tab.label,
+        name: toTitleCase(tab.label),
         path: `/settings/${TAB_URL_MAP[tab.id]}`,
         description: tab.description,
       })
     );
   }, [isAdmin]);
 
-  // Dynamically derive Public Portal Links from App Routes
   const publicPortalLinks = useMemo(() => {
     const links = [
       {
@@ -366,9 +375,9 @@ export const AppFooter: React.FC<AppFooterProps> = ({
 
   return (
     <footer
-      className={`w-full mt-5 sm:mt-6 border border-slate-200/80 dark:border-white/10 bg-white/85 dark:bg-[#11141b]/90 backdrop-blur-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 lg:p-6 text-slate-700 dark:text-slate-300 font-body transition-all select-none shadow-xs ${className}`}
+      className={`w-full mt-5 sm:mt-6 border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#11141b]/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 lg:p-6 lg:pb-6 text-slate-700 dark:text-slate-300 font-body transition-all select-none shadow-xs ${className}`}
     >
-      {/* ADMIN / SYSTEM COLLAPSIBLE HEADER BAR (Collapsed by default inside admin pages) */}
+      {/* COLLAPSIBLE HEADER BAR */}
       {isCollapsible && (
         <div
           className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -422,7 +431,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             </button>
           </div>
 
-          {/* Quick Legal Pills (only when collapsed to avoid duplication) + Desktop Toggle Button */}
+          {/* Quick Legal Pills + Toggle Button */}
           <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
             {!isFooterExpanded && (
               <div className="flex flex-wrap items-center gap-1.5">
@@ -472,12 +481,12 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         </div>
       )}
 
-      {/* FULL FOOTER CONTENT (Always shown & non-toggable on public pages; shown when expanded on admin pages) */}
+      {/* EXPANDED CONTENT: Balanced 3-column tablet & 12-column desktop grid */}
       {showExpandedFooter && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8">
-            {/* COLUMN 1: Live Gym Brand & Facility Contacts (4 Cols on Desktop) */}
-            <div className="lg:col-span-4 space-y-3 text-left">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-7">
+            {/* SECTION 1: Facility Information (Full width banner on tablet, col-span-4 on desktop) */}
+            <div className="col-span-1 md:col-span-3 lg:col-span-4 space-y-3 text-left md:p-4 lg:p-0 rounded-2xl md:bg-slate-50/70 md:dark:bg-white/[0.02] lg:bg-transparent lg:dark:bg-transparent md:border md:border-slate-200/70 md:dark:border-white/5 lg:border-none">
               {!isCollapsible ? (
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <img
@@ -496,52 +505,53 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="w-full flex items-center justify-between py-1 md:py-0 text-left">
-                  <h4 className="font-heading text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
+                <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60 dark:border-white/10 lg:border-none">
+                  <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Facility Information
                   </h4>
                 </div>
               )}
 
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                 {gymConfig.gymDescription}
               </p>
 
-              {/* Live Contact Details from gym_profile */}
-              <div className="space-y-1.5 pt-0.5 text-[11px]">
-                <div className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+              {/* Contact Information in a horizontal tablet grid, vertical desktop stack */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-2 pt-1 text-[11px]">
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent text-slate-600 dark:text-slate-300">
                   <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
                   <span className="leading-snug">{gymConfig.gymAddress}</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {gymConfig.contactNumber1 && (
-                    <a
-                      href={`tel:${gymConfig.contactNumber1}`}
-                      className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
-                    >
-                      <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
-                      <span>
-                        {gymConfig.contactName1}: {gymConfig.contactNumber1}
-                      </span>
-                    </a>
-                  )}
+                <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {gymConfig.contactNumber1 && (
+                      <a
+                        href={`tel:${gymConfig.contactNumber1}`}
+                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                      >
+                        <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span>
+                          {gymConfig.contactName1}: {gymConfig.contactNumber1}
+                        </span>
+                      </a>
+                    )}
 
-                  {gymConfig.contactNumber2 && (
-                    <a
-                      href={`tel:${gymConfig.contactNumber2}`}
-                      className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
-                    >
-                      <Phone className="w-3 h-3 text-blue-500 shrink-0" />
-                      <span>
-                        {gymConfig.contactName2}: {gymConfig.contactNumber2}
-                      </span>
-                    </a>
-                  )}
-                </div>
+                    {gymConfig.contactNumber2 && (
+                      <a
+                        href={`tel:${gymConfig.contactNumber2}`}
+                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                      >
+                        <Phone className="w-3 h-3 text-blue-500 shrink-0" />
+                        <span>
+                          {gymConfig.contactName2}: {gymConfig.contactNumber2}
+                        </span>
+                      </a>
+                    )}
+                  </div>
 
-                {gymConfig.emailAddress && (
-                  <div className="flex items-center gap-2">
+                  {gymConfig.emailAddress && (
                     <a
                       href={`mailto:${gymConfig.emailAddress}`}
                       className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px] truncate"
@@ -549,22 +559,23 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       <span className="truncate">{gymConfig.emailAddress}</span>
                     </a>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* COLUMN 2: Primary Navigation (3 Cols on Desktop) */}
-            <div className="lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
-              <div className="w-full flex items-center justify-between py-1 md:py-0 text-left">
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
+            {/* SECTION 2: Primary Console Navigation */}
+            <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                   {resolvedVariant === 'system' && isAuthenticated
                     ? 'Console Navigation'
                     : 'Portal Navigation'}
                 </h4>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-1 gap-1.5 pt-2.5">
+              <div className="flex flex-col gap-1 pt-2.5">
                 {resolvedVariant === 'system' && isAuthenticated
                   ? consoleNavLinks.map((item) => {
                       const isActive = location.pathname === item.path;
@@ -573,14 +584,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                           key={item.path}
                           type="button"
                           onClick={() => handleNavigate(item.path)}
-                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium transition-all cursor-pointer ${
+                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
                             isActive
                               ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
                           }`}
                         >
                           <span className="truncate">{item.name}</span>
-                          <ChevronRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                          <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
                         </button>
                       );
                     })
@@ -606,17 +617,18 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               </div>
             </div>
 
-            {/* COLUMN 3: System Settings OR Live Rates & Public Access (2 Cols on Desktop) */}
-            <div className="lg:col-span-2 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
-              <div className="w-full flex items-center justify-between py-1 md:py-0 text-left">
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
+            {/* SECTION 3: System & Portal OR Live Rates */}
+            <div className="col-span-1 md:col-span-1 lg:col-span-2 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                   {resolvedVariant === 'system' && isAuthenticated
                     ? 'System & Portal'
                     : 'Live Facility Rates'}
                 </h4>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-1 gap-1.5 pt-2.5">
+              <div className="flex flex-col gap-1 pt-2.5">
                 {resolvedVariant === 'system' && isAuthenticated ? (
                   <>
                     {settingsNavLinks.map((tab) => {
@@ -626,14 +638,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                           key={tab.path}
                           type="button"
                           onClick={() => handleNavigate(tab.path)}
-                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium transition-all cursor-pointer ${
+                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
                             isActive
                               ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
                           }`}
                         >
                           <span className="truncate">{tab.name}</span>
-                          <ChevronRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                          <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
                         </button>
                       );
                     })}
@@ -650,7 +662,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                     ))}
                   </>
                 ) : (
-                  <div className="col-span-2 md:col-span-1 space-y-1.5 text-[11px]">
+                  <div className="space-y-1.5 text-[11px]">
                     <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
                       <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                         <CreditCard className="w-3 h-3 text-emerald-500 shrink-0" />
@@ -690,92 +702,89 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               </div>
             </div>
 
-            {/* COLUMN 4: Legal Documentation & Agreement Modal Trigger (3 Cols on Desktop) */}
-            <div className="lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left space-y-2.5">
-              <div className="w-full flex items-center justify-between py-1 md:py-0 text-left">
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
+            {/* SECTION 4: Legal & Documentation */}
+            <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                   Legal &amp; Documentation
                 </h4>
               </div>
 
-              <div className="flex flex-col gap-1.5 pt-1">
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-1 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setAgreementDoc('agreement')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
-                      <span className="truncate">User Agreement</span>
+              <div className="flex flex-col gap-2 pt-2.5">
+                <button
+                  type="button"
+                  onClick={() => setAgreementDoc('agreement')}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                    <span className="truncate">User Agreement</span>
+                  </span>
+                  {isAgreementAccepted ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      Accepted
                     </span>
-                    {isAgreementAccepted ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        Accepted
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
-                        Review
-                      </span>
-                    )}
-                  </button>
+                  ) : (
+                    <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
+                      Review
+                    </span>
+                  )}
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setAgreementDoc('terms')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span className="truncate">Terms &amp; Conditions</span>
-                    </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => setAgreementDoc('terms')}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span className="truncate">Terms &amp; Conditions</span>
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setAgreementDoc('privacy')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-emerald-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span className="truncate">Privacy Policy</span>
-                    </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => setAgreementDoc('privacy')}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-emerald-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="truncate">Privacy Policy</span>
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowDeveloperModal(true)}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-amber-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span className="truncate">About Developer</span>
-                    </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeveloperModal(true)}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-amber-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="truncate">About Developer</span>
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Bottom Copyright & Regulatory Compliance Bar */}
-          <div className="mt-5 pt-3.5 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+          {/* Bottom Copyright & Compliance (Cleanly padded above the floating navigation dock) */}
+          <div className="mt-6 pt-3.5 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
             <div className="text-center sm:text-left">
-              © {new Date().getFullYear()} {gymConfig.gymName} • All Rights
-              Reserved.
+              © {new Date().getFullYear()} {gymConfig.gymName} • All Rights Reserved.
             </div>
             <div className="text-center sm:text-right text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500">
-              RA 10173 (Data Privacy) • RA 7394 (Consumer Act) • RA 11313 (Safe
-              Spaces)
+              RA 10173 (Data Privacy) • RA 7394 (Consumer Act) • RA 11313 (Safe Spaces)
             </div>
           </div>
         </>
       )}
 
-      {/* Shared Agreement Document Modal (Same as Login Checkbox with "Accept" Button) */}
+      {/* Shared Agreement Document Modal */}
       <AgreementDocumentViewer
         isOpen={agreementDoc !== null}
         onClose={() => setAgreementDoc(null)}
@@ -783,7 +792,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         onAccept={handleAcceptFromModal}
       />
 
-      {/* Shared Developer Modal (Sourced from SystemInformation.tsx) */}
+      {/* Shared Developer Modal */}
       <Modal
         isOpen={showDeveloperModal}
         onClose={() => setShowDeveloperModal(false)}

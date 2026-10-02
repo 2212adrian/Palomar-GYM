@@ -30,3 +30,4 @@ dev-dist
 scripts
 scripts/publish-update.mjs
 scripts/release-runner.mjs
+documents

@@ -328,8 +328,10 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   const baseCardStyle =
     'bg-white dark:bg-[#161920] hover:bg-slate-50/80 dark:hover:bg-[#1d222b] border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_-2px_rgba(15,23,42,0.06)] hover:shadow-[0_4px_16px_-4px_rgba(15,23,42,0.1)]';
 
+  // FIX 1: Removed `transition-all duration-200` to prevent CSS from intercepting `transform`.
+  // Targeted transitions only for colors and shadows.
   const containerClasses = useMemo(() => {
-    return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl transition-all duration-200 will-change-transform transform-gpu p-2.5 sm:p-3.5 ${baseCardStyle}`;
+    return `pointer-events-auto flex items-stretch relative overflow-hidden select-none z-10 touch-pan-y min-h-[72px] sm:min-h-[76px] w-full group rounded-2xl transition-[background-color,border-color,box-shadow] duration-150 will-change-transform p-2.5 sm:p-3.5 ${baseCardStyle}`;
   }, []);
 
   const CategoryIcon = attendanceMeta?.theme.icon || User;
@@ -355,17 +357,17 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       </div>
 
       {/* Main card */}
+      {/* FIX 2 & 3: Removed dragDirectionLock and increased dragElastic from 0.08 to 0.2 */}
       <motion.div
         style={{ x }}
         drag="x"
-        dragDirectionLock={true}
         dragConstraints={{
           left: deleteDisabledReason ? 0 : -100,
           right: 100,
         }}
-        dragElastic={0.08}
+        dragElastic={0.2}
         dragSnapToOrigin={true}
-        dragTransition={{ bounceStiffness: 600, bounceDamping: 35 }}
+        dragTransition={{ bounceStiffness: 500, bounceDamping: 32 }}
         onDragEnd={(e, info) => {
           if (deleteDisabledReason && info.offset.x < -40) {
             return;

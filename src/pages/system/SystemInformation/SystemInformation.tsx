@@ -393,7 +393,7 @@ export const SystemInformation: React.FC = () => {
 
               <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
                 <span className="text-slate-400 font-medium">
-                  Latest Release (Supabase)
+                  Latest Release
                 </span>
                 <span className="font-mono font-bold text-emerald-500 flex items-center gap-1.5">
                   {isLoadingRelease ? (
