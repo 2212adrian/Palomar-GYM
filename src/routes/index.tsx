@@ -19,8 +19,7 @@ import { DownloadPage } from '../pages/download/DownloadPage';
 // Security Access Guard and Stores
 import { SecurityAccessBlocker } from '../components/security/SecurityAccessBlocker';
 import { useSecurityStore } from '../stores/useSecurityStore';
-import { useAuthStore } from '../stores/authStore';
-import { isSuperAdmin } from '../constants/auth';
+import { useAuthStore, hasStoredAuthSession } from '../stores/authStore';
 import { checkIsSuperAdminUser } from '../lib/securityAccessService';
 import { supabase } from '../lib/supabase/client';
 import { toast } from 'react-toastify';
@@ -68,9 +67,12 @@ export const isAppOrPWA = (): boolean => {
  * 1. Checks if the incoming URL contains Supabase auth tokens or hash parameters.
  *    If Supabase redirects to "/" instead of the specific path, this intercepts
  *    the hash and routes the user to the correct setup page.
- * 2. Otherwise, defaults to "/login".
+ * 2. Waits for session verification to finish so logged-in users are not bounced to /login.
+ * 3. Directs authenticated users to /dashboard, or unauthenticated users to /login.
  */
 const RootEntry: React.FC = () => {
+  const { user, initialized, loading } = useAuthStore();
+
   if (typeof window !== 'undefined') {
     const hash = window.location.hash;
     const search = window.location.search;
@@ -95,6 +97,19 @@ const RootEntry: React.FC = () => {
     }
   }
 
+  // Wait for session check to complete before any redirection
+  if (!initialized || loading || (hasStoredAuthSession() && !user)) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return <Navigate to="/login" replace />;
 };
 
@@ -110,11 +125,12 @@ const FallbackEntry: React.FC = () => {
  * Security Guard for the /login page:
  * - When Wi-Fi / location restrictions are active, unauthorized terminals and anonymous
  *   users outside the facility cannot access the staff login form.
+ * - Waits for session check to complete: if already authenticated, navigates to /dashboard immediately.
  * - Subscribes to Supabase Realtime so that when an admin turns off the restriction,
  *   the blocker disappears in real-time without reloading the page.
  */
 const LoginRouteGuard: React.FC = () => {
-  const { user } = useAuthStore();
+  const { user, initialized, loading } = useAuthStore();
   const {
     config,
     fetchConfig,
@@ -157,12 +173,26 @@ const LoginRouteGuard: React.FC = () => {
     };
   }, [fetchConfig, runVerification, subscribeRealtime, user, user?.email]);
 
+  // Wait for session check to complete before flashing login form or determining redirection
+  if (!initialized || loading || (hasStoredAuthSession() && !user)) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  // If user is already authenticated, direct them directly to dashboard
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   const hasActiveRestrictions =
     Boolean(config.location_restriction_enabled) ||
     Boolean(config.wifi_restriction_enabled) ||
     Boolean(config.ip_restriction_enabled);
 
-  const isSuperUser = Boolean(user?.email && isSuperAdmin(user.email));
+  const isSuperUser = false;
 
   // If restrictions are active, user is not Superadmin, and terminal is not authorized, render the blocker modal
   if (
@@ -175,7 +205,7 @@ const LoginRouteGuard: React.FC = () => {
       <SecurityAccessBlocker
         checkResult={checkResult}
         onRetry={async () => {
-          await runVerification(user ? 'admin' : 'anonymous', user?.email);
+          await runVerification('anonymous', null);
         }}
       />
     );

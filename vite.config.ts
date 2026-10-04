@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
           'pwa-192x192.png',
           'pwa-512x512.png',
           'pwa-maskable-512x512.png',
+          'sw-sync.js',
         ],
         manifest: {
           id: '/',
@@ -61,6 +62,7 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
+          importScripts: ['/sw-sync.js'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,

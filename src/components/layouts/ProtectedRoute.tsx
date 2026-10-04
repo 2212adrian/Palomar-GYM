@@ -1,7 +1,7 @@
 // src/components/layouts/ProtectedRoute.tsx
 import React, { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore, hasStoredAuthSession } from '../../stores/authStore';
 import { useSecurityStore } from '../../stores/useSecurityStore';
 import { supabase } from '../../lib/supabase/client';
 import { UserX } from 'lucide-react';
@@ -42,7 +42,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     runVerification,
   ]);
 
-  if (!initialized || loading) {
+  if (!initialized || loading || (hasStoredAuthSession() && !user)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent"></div>

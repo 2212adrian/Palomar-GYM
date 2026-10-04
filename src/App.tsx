@@ -21,7 +21,10 @@ import { supabase } from './lib/supabase/client';
 
 import { promptInitialPermissionsOnLogin } from './lib/permissions';
 import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
+import { initBackgroundSyncService } from './lib/backgroundSyncService';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
+import { OfflineStatus } from './components/common/OfflineStatus';
+import { useBatterySaver } from './hooks/useBatterySaver';
 import pkg from '../package.json';
 
 // Single deduplicated session toast notification helper
@@ -39,6 +42,23 @@ export const App: React.FC = () => {
   const validateSession = useAuthStore((state) => state.validateSession);
   const forceSessionLogout = useAuthStore((state) => state.forceSessionLogout);
   const user = useAuthStore((state) => state.user);
+  const { isBatterySaver, isAutoTriggered, batteryLevel } = useBatterySaver();
+  const autoBatteryNotifiedRef = useRef(false);
+
+  // Notify once when Power Saving Mode is automatically turned on at 20% or under battery
+  useEffect(() => {
+    if (isAutoTriggered) {
+      if (!autoBatteryNotifiedRef.current) {
+        autoBatteryNotifiedRef.current = true;
+        toast.info(
+          `Power Saving Mode automatically turned on${batteryLevel !== null ? ` (${batteryLevel}% battery)` : ''}.`,
+          { toastId: 'battery-saver-auto-enabled' }
+        );
+      }
+    } else if (batteryLevel !== null && batteryLevel > 20) {
+      autoBatteryNotifiedRef.current = false;
+    }
+  }, [isAutoTriggered, batteryLevel]);
 
   // State to manage the exit confirmation modal
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
@@ -63,6 +83,14 @@ export const App: React.FC = () => {
       }
     }
   }, [user?.id]);
+
+  // Background Sync & ServiceWorker coordination for offline transactions & daily session consolidation
+  useEffect(() => {
+    const cleanup = initBackgroundSyncService();
+    return () => {
+      cleanup();
+    };
+  }, []);
 
   // ─── Real-Time Single Active Session & Revocation Listener ───
   useEffect(() => {
@@ -139,14 +167,17 @@ export const App: React.FC = () => {
 
     window.addEventListener('focus', verifyCurrentSession);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    const intervalId = setInterval(verifyCurrentSession, 10000);
+    const intervalId = setInterval(
+      verifyCurrentSession,
+      isBatterySaver ? 30000 : 10000
+    );
 
     return () => {
       window.removeEventListener('focus', verifyCurrentSession);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(intervalId);
     };
-  }, [user?.id, validateSession]);
+  }, [user?.id, validateSession, isBatterySaver]);
 
   // Global Theme Initialization
   useEffect(() => {
@@ -396,6 +427,7 @@ export const App: React.FC = () => {
       />
 
       <WhatsNewModal />
+      <OfflineStatus />
 
       <Modal
         isOpen={isExitModalOpen}

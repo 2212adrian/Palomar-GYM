@@ -22,6 +22,7 @@ import { BackupSafetyBanner } from '../ui/BackupSafetyBanner';
 import { CashSessionClosedBanner } from '../ui/CashSessionClosedBanner';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 import { getRouteVerticalIndex } from '../../constants/navigation';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
 
 interface TabLoadingContextType {
   startLoading: (id: string) => void;
@@ -42,6 +43,7 @@ export const SystemLayout: React.FC = () => {
   const location = useLocation();
   const mainScrollRef = useRef<HTMLElement>(null);
   const logout = useAuthStore((state) => state.logout);
+  const { isBatterySaver } = useBatterySaver();
 
   // ─── Intro Curtain Detection Helper ───
   const checkShouldPlayIntro = (): boolean => {
@@ -250,15 +252,21 @@ export const SystemLayout: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    setIsLoggingOut(true);
-    setLogoutStarted(false);
-    setLogoutResting(false);
-    setCurtainHidden(false);
-
     sessionStorage.removeItem('loginIntroPlayed');
     sessionStorage.setItem('loginIntroDone', '0');
     sessionStorage.setItem('playDashboardIntro', 'true');
     sessionStorage.removeItem('cash_session_closed_banner_dismissed');
+
+    if (isBatterySaver) {
+      await logout();
+      navigate('/login', { replace: true, state: { loggedOut: true } });
+      return;
+    }
+
+    setIsLoggingOut(true);
+    setLogoutStarted(false);
+    setLogoutResting(false);
+    setCurtainHidden(false);
 
     setTimeout(() => {
       setLogoutStarted(true);
@@ -369,11 +377,13 @@ export const SystemLayout: React.FC = () => {
                 <div
                   key={navTransition.animKey}
                   className={`max-w-[1600px] w-full mx-auto min-h-full flex flex-col min-w-0 ${
-                    navTransition.direction === 'down'
-                      ? 'page-slide-down'
-                      : navTransition.direction === 'up'
-                        ? 'page-slide-up'
-                        : ''
+                    isBatterySaver
+                      ? ''
+                      : navTransition.direction === 'down'
+                        ? 'page-slide-down'
+                        : navTransition.direction === 'up'
+                          ? 'page-slide-up'
+                          : ''
                   }`}
                 >
                   <div className="flex-1 flex flex-col min-w-0">

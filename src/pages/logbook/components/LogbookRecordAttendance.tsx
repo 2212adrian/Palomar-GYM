@@ -28,7 +28,6 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
-  Zap,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -39,6 +38,7 @@ import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { useOfflineSyncStore } from '../../../stores/useOfflineSyncStore';
+import { isCapacitorApp } from '../../../lib/platform';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { getServerNow } from '../../../lib/serverTime';
@@ -240,12 +240,7 @@ export const LogbookRecordAttendance: React.FC<
   const { user } = useAuthStore() as any;
   const { activeSession, isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
-  const {
-    isBatterySaver,
-    isAutoTriggered,
-    batteryLevel,
-    toggleBatterySaver,
-  } = useBatterySaver();
+  const { isBatterySaver } = useBatterySaver();
   const { enqueueMutation } = useOfflineSyncStore();
   const isSubmittingRef = useRef(false);
   const lastLoadedDynamicMsRef = useRef<number>(0);
@@ -1069,6 +1064,13 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
+      toast.error(
+        'Cannot record check-in while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
+      );
+      return;
+    }
+
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
@@ -1169,6 +1171,15 @@ export const LogbookRecordAttendance: React.FC<
           .includes('fetch');
 
       if (isNetworkIssue) {
+        if (!isCapacitorApp()) {
+          toast.error(
+            'Cannot record check-in while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
+          );
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+          return;
+        }
+
         const queued = enqueueMutation({
           action: 'attendance_checkin',
           label: `Check-In: ${finalCustomerName}`,
@@ -1301,28 +1312,6 @@ export const LogbookRecordAttendance: React.FC<
       } bg-(--bg-card) text-(--color-text) border border-(--border-color) overflow-visible transition-all duration-300 relative text-left`}
     >
       <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-50">
-        <button
-          type="button"
-          onClick={() => toggleBatterySaver()}
-          title={
-            isBatterySaver
-              ? `Battery Saver Active${isAutoTriggered ? ' (Auto Low-Power)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Lowers scanner FPS & animations`
-              : 'Enable Battery Saver Mode (Lowers camera FPS & animations)'
-          }
-          className={`px-2 py-1 rounded-lg border text-[10px] font-heading font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
-            isBatterySaver
-              ? 'border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400'
-              : 'border-(--border-color) bg-(--bg-input) text-(--color-text)/60 hover:text-(--color-text)'
-          }`}
-        >
-          <Zap
-            className={`w-3 h-3 ${
-              isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
-            }`}
-          />
-          <span>{isBatterySaver ? 'ECO ON' : 'ECO'}</span>
-        </button>
-
         <button
           type="button"
           disabled={isSubmitting}

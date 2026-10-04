@@ -54,6 +54,7 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { ImageZoomModal } from './ImageZoomModal';
 import { useSessionLock } from '../../hooks/useSessionLock';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
 import beepSoundUrl from '../../assets/beep-scanner.mp3';
 
 const playBeepSound = () => {
@@ -98,6 +99,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const navigate = useNavigate();
   const { user } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
+  const { isBatterySaver } = useBatterySaver();
 
   // Connect to store if props not passed directly
   const storeIsOpen = useScannerStore((s) => s.isOpen);
@@ -543,8 +545,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         await html5QrCode.start(
           cameraConfig,
           {
-            fps: 30,
+            fps: isBatterySaver ? 10 : 30,
             qrbox: qrboxFunction,
+            videoConstraints: {
+              ...cameraConfig,
+              width: { ideal: isBatterySaver ? 640 : 1280 },
+              height: { ideal: isBatterySaver ? 480 : 720 },
+            },
           },
           async (decodedText) => {
             if (!isCancelled && !isExitingRef.current) {

@@ -293,6 +293,12 @@ export const Login: React.FC = () => {
   const from = (location.state as any)?.from?.pathname || '/dashboard';
   const safeFrom = from === '/login' ? '/dashboard' : from;
 
+  useEffect(() => {
+    if (user) {
+      navigate(safeFrom, { replace: true });
+    }
+  }, [user, navigate, safeFrom]);
+
   const isPreview =
     new URLSearchParams(location.search).get('preview') === 'true';
   const [gymConfig, setGymConfig] = useState<any>(null);

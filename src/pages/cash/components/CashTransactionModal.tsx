@@ -79,6 +79,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     const numAmount = parseFloat(amount);
 
     if (!numAmount || numAmount <= 0) {

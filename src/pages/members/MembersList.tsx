@@ -44,6 +44,7 @@ import { HeaderActionsContext } from '../../routes';
 import { supabase } from '../../lib/supabase/client';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
 
 // Import Shared Types
 import type {
@@ -97,6 +98,7 @@ export const MembersList: React.FC<MembersListProps> = ({
   const { setActions } = useContext(HeaderActionsContext);
   const location = useLocation();
   const navigate = useNavigate();
+  const { isBatterySaver } = useBatterySaver();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const hasTriggeredRenewRef = useRef<boolean>(false);
 
@@ -372,7 +374,19 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   useEffect(() => {
     const cacheKey = 'members_sanitized_cache';
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const invalidateAndRefresh = () => {
+      if (isBatterySaver && document.hidden) return;
+      if (isBatterySaver) {
+        if (debounceTimer) return;
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          sessionStorage.removeItem(cacheKey);
+          fetchMembers(true);
+        }, 10000);
+        return;
+      }
       sessionStorage.removeItem(cacheKey);
       fetchMembers(true);
     };
@@ -413,10 +427,11 @@ export const MembersList: React.FC<MembersListProps> = ({
     window.addEventListener('member-refresh', handleRefresh);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
       window.removeEventListener('member-refresh', handleRefresh);
     };
-  }, [fetchMembers]);
+  }, [fetchMembers, isBatterySaver]);
 
   useEffect(() => {
     fetchMembers();

@@ -21,6 +21,8 @@ import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useNotificationStore } from '../../stores/useNotificationStore';
+import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
+import { isCapacitorApp } from '../../lib/platform';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -702,46 +704,93 @@ export const Products: React.FC<ProductsProps> = ({
             },
           }));
 
-          const { error } = await supabase
-            .from('products')
-            .update(productPayload)
-            .eq('id', selectedProductId);
-
-          if (error) throw error;
-
-          toast.success(`Updated "${nameClean}".`, {
-            autoClose: 4000,
-            onClose: () => clearDiff(editedId),
-          });
-
-          const auditDetails =
-            changes.length > 0
-              ? `Updated product "${nameClean}": ${changes.join(', ')}`
-              : `Updated product details for "${nameClean}".`;
-
+          let updateSuccess = false;
           try {
-            await logAudit('PRODUCT_UPDATED', auditDetails, selectedProductId);
-          } catch (auditError) {
-            console.warn(
-              'Background audit logging failed silently:',
-              auditError
-            );
+            const { error } = await supabase
+              .from('products')
+              .update(productPayload)
+              .eq('id', selectedProductId);
+
+            if (error) throw error;
+            updateSuccess = true;
+          } catch (netErr) {
+            if (isCapacitorApp()) {
+              useOfflineSyncStore.getState().enqueueMutation({
+                action: 'product_update',
+                label: `Update product "${nameClean}"`,
+                payload: {
+                  productId: selectedProductId,
+                  updatePayload: productPayload,
+                },
+              });
+              toast.info(
+                `Updated "${nameClean}" (saved offline). Will sync to Supabase when reconnected.`
+              );
+              updateSuccess = true;
+            } else {
+              throw netErr;
+            }
           }
 
-          setSelectedProductIds((prev) =>
-            prev.filter((id) => id !== selectedProductId)
-          );
+          if (updateSuccess) {
+            toast.success(`Updated "${nameClean}".`, {
+              autoClose: 4000,
+              onClose: () => clearDiff(editedId),
+            });
+
+            const auditDetails =
+              changes.length > 0
+                ? `Updated product "${nameClean}": ${changes.join(', ')}`
+                : `Updated product details for "${nameClean}".`;
+
+            try {
+              await logAudit('PRODUCT_UPDATED', auditDetails, selectedProductId);
+            } catch (auditError) {
+              console.warn(
+                'Background audit logging failed silently:',
+                auditError
+              );
+            }
+
+            setSelectedProductIds((prev) =>
+              prev.filter((id) => id !== selectedProductId)
+            );
+          }
         } else {
-          const { data, error } = await supabase
-            .from('products')
-            .insert(productPayload)
-            .select()
-            .single();
+          let createdProduct: Product | null = null;
+          try {
+            const { data, error } = await supabase
+              .from('products')
+              .insert(productPayload)
+              .select()
+              .single();
 
-          if (error) throw error;
+            if (error) throw error;
+            if (data) createdProduct = data as Product;
+          } catch (netErr) {
+            if (isCapacitorApp()) {
+              const offlineId = `offline-prod-${Date.now()}`;
+              const offlineProduct: Product = {
+                ...productPayload,
+                id: offlineId,
+                created_at: new Date().toISOString(),
+              } as Product;
+              useOfflineSyncStore.getState().enqueueMutation({
+                action: 'product_create',
+                label: `Create product "${nameClean}"`,
+                payload: { productPayload },
+              });
+              createdProduct = offlineProduct;
+              toast.info(
+                `New product "${nameClean}" queued offline. Will sync to Supabase when reconnected.`
+              );
+            } else {
+              throw netErr;
+            }
+          }
 
-          if (data) {
-            const newProduct = data as Product;
+          if (createdProduct) {
+            const newProduct = createdProduct;
             // Prepend new product so it is immediately visible
             setProducts((prev) => [
               newProduct,
@@ -764,13 +813,13 @@ export const Products: React.FC<ProductsProps> = ({
               autoClose: 4000,
               onClose: () => clearDiff(newProduct.id),
             });
-          }
 
-          await logAudit(
-            'PRODUCT_CREATED',
-            `Created new product catalog entry "${nameClean}" priced at ₱${priceNum.toFixed(2)}.`,
-            data?.id
-          );
+            await logAudit(
+              'PRODUCT_CREATED',
+              `Created new product catalog entry "${nameClean}" priced at ₱${priceNum.toFixed(2)}.`,
+              newProduct.id
+            ).catch(() => {});
+          }
         }
       }
 
@@ -803,27 +852,46 @@ export const Products: React.FC<ProductsProps> = ({
     }));
 
     try {
-      const { error } = await supabase.from('products').delete().eq('id', id);
+      let deleteSuccess = false;
+      try {
+        const { error } = await supabase.from('products').delete().eq('id', id);
+        if (error) throw error;
+        deleteSuccess = true;
+      } catch (netErr) {
+        if (isCapacitorApp()) {
+          useOfflineSyncStore.getState().enqueueMutation({
+            action: 'product_delete',
+            label: `Delete product "${targetProduct.product_name}"`,
+            payload: { productId: id },
+          });
+          toast.info(
+            `Moved "${targetProduct.product_name}" to Recycle Bin (saved offline).`
+          );
+          deleteSuccess = true;
+        } else {
+          throw netErr;
+        }
+      }
 
-      if (error) throw error;
+      if (deleteSuccess) {
+        await logAudit(
+          'PRODUCT_DELETED',
+          `Moved product "${targetProduct?.product_name || 'Unknown Item'}" to Recycle Bin.`,
+          id
+        ).catch(() => {});
 
-      await logAudit(
-        'PRODUCT_DELETED',
-        `Moved product "${targetProduct?.product_name || 'Unknown Item'}" to Recycle Bin.`,
-        id
-      );
+        // Once toast dismisses, cleanly purge the row from state
+        toast.success(`Moved "${targetProduct.product_name}" to Recycle Bin.`, {
+          autoClose: 4000,
+          onClose: () => {
+            setProducts((prev) => prev.filter((p) => p.id !== id));
+            setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
+            clearDiff(id);
+          },
+        });
 
-      // Once toast dismisses, cleanly purge the row from state
-      toast.success(`Moved "${targetProduct.product_name}" to Recycle Bin.`, {
-        autoClose: 4000,
-        onClose: () => {
-          setProducts((prev) => prev.filter((p) => p.id !== id));
-          setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
-          clearDiff(id);
-        },
-      });
-
-      fetchProducts(true);
+        fetchProducts(true);
+      }
     } catch {
       clearDiff(id);
       toast.error('Action denied.');

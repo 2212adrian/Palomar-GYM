@@ -1,9 +1,15 @@
 // src/components/ui/OfflinePopup.tsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { isCapacitorApp } from '../../lib/platform';
 
 const RESTORED_DURATION_MS = 3500; // Duration to show "Back Online" before animating out
 
 export const OfflinePopup: React.FC = () => {
+  // Offline sync UI is exclusive to Capacitor app only for security purposes
+  if (!isCapacitorApp()) {
+    return null;
+  }
+
   const [isOffline, setIsOffline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? !navigator.onLine : false;
   });

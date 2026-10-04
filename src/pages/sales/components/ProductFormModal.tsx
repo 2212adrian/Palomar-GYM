@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
+import { useBatterySaver } from '../../../hooks/useBatterySaver';
 
 interface ProductFormModalProps {
   isEditing: boolean;
@@ -127,6 +128,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   editingProductId,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { isBatterySaver } = useBatterySaver();
   const isStartingRef = useRef(false);
   const [apiLoading, setApiLoading] = useState(false);
   const lastFetchedBarcode = useRef<string>('');
@@ -305,15 +307,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       await qrReader.start(
         targetCam.id,
         {
-          fps: 25,
+          fps: isBatterySaver ? 10 : 25,
           qrbox: (w, h) => ({
             width: Math.min(Math.floor(w * 0.88), 360),
             height: Math.min(Math.floor(h * 0.5), 160),
           }),
           videoConstraints: {
             deviceId: { exact: targetCam.id },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: isBatterySaver ? 640 : 1280 },
+            height: { ideal: isBatterySaver ? 480 : 720 },
             facingMode: 'environment',
           },
         },

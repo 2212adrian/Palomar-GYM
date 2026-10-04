@@ -1,11 +1,12 @@
 // src/hooks/useBatterySaver.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { isAppOrPWA } from '../lib/platform';
 
 export type BatterySaverMode = 'auto' | 'on' | 'off';
 
 const STORAGE_KEY = 'palomar_battery_saver_mode';
 const SYNC_EVENT = 'palomar-battery-saver-change';
-const LOW_BATTERY_THRESHOLD = 0.2; // 20%
+const LOW_BATTERY_THRESHOLD_PERCENT = 20; // 20% or under
 
 interface BatteryManager extends EventTarget {
   charging: boolean;
@@ -33,16 +34,22 @@ const getStoredMode = (): BatterySaverMode => {
   return 'auto';
 };
 
+const persistMode = (nextMode: BatterySaverMode) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, nextMode);
+  } catch {
+    // ignore storage error
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: nextMode }));
+  }
+};
+
 export function useBatterySaver() {
   const [mode, setModeState] = useState<BatterySaverMode>(getStoredMode);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [isCharging, setIsCharging] = useState<boolean | null>(null);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
+  const prevBatteryLevelRef = useRef<number | null>(null);
 
   // Sync mode across components in the same tab and across tabs
   useEffect(() => {
@@ -57,16 +64,6 @@ export function useBatterySaver() {
     };
   }, []);
 
-  // Listen to OS reduced motion preference
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: MediaQueryListEvent) =>
-      setPrefersReducedMotion(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
   // Connect to Web Battery Status API where available
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('getBattery' in navigator)) {
@@ -78,8 +75,32 @@ export function useBatterySaver() {
 
     const updateBatteryInfo = () => {
       if (!battery || !isMounted) return;
-      setBatteryLevel(Math.round(battery.level * 100));
+      const levelPercent = Math.round(battery.level * 100);
+      const prevLevel = prevBatteryLevelRef.current;
+      prevBatteryLevelRef.current = levelPercent;
+
+      setBatteryLevel(levelPercent);
       setIsCharging(battery.charging);
+
+      const currentMode = getStoredMode();
+      // If battery is above 20% and mode was 'off' (from a previous manual override), re-arm 'auto'
+      if (
+        levelPercent > LOW_BATTERY_THRESHOLD_PERCENT &&
+        currentMode === 'off'
+      ) {
+        persistMode('auto');
+        setModeState('auto');
+      }
+      // If battery just dropped to 20% or under from above 20%, auto-turn on power saving mode
+      else if (
+        levelPercent <= LOW_BATTERY_THRESHOLD_PERCENT &&
+        prevLevel !== null &&
+        prevLevel > LOW_BATTERY_THRESHOLD_PERCENT &&
+        currentMode === 'off'
+      ) {
+        persistMode('auto');
+        setModeState('auto');
+      }
     };
 
     (navigator as unknown as { getBattery: () => Promise<BatteryManager> })
@@ -104,32 +125,48 @@ export function useBatterySaver() {
     };
   }, []);
 
+  // Power Saving Mode is exclusive for Capacitor App and PWA only
+  const isPlatformSupported = isAppOrPWA();
+
+  // Auto-turn on when battery is 20% or under
   const isLowDevicePower =
-    (batteryLevel !== null &&
-      batteryLevel <= LOW_BATTERY_THRESHOLD * 100 &&
-      isCharging === false) ||
-    prefersReducedMotion;
+    isPlatformSupported &&
+    batteryLevel !== null &&
+    batteryLevel <= LOW_BATTERY_THRESHOLD_PERCENT;
 
   const isBatterySaver =
-    mode === 'on' || (mode === 'auto' && isLowDevicePower);
+    isPlatformSupported &&
+    (mode === 'on' || (mode === 'auto' && isLowDevicePower));
 
-  const isAutoTriggered = mode === 'auto' && isLowDevicePower;
+  const isAutoTriggered =
+    isPlatformSupported && mode === 'auto' && isLowDevicePower;
+
+  // Apply global .battery-saver class to <html> for app-wide CSS/GPU optimization
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.classList.toggle(
+      'battery-saver',
+      isPlatformSupported && isBatterySaver
+    );
+  }, [isBatterySaver, isPlatformSupported]);
 
   const setBatterySaverMode = useCallback((nextMode: BatterySaverMode) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, nextMode);
-    } catch {
-      // ignore storage error
-    }
+    persistMode(nextMode);
     setModeState(nextMode);
-    window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: nextMode }));
   }, []);
 
   const toggleBatterySaver = useCallback(() => {
-    const next: BatterySaverMode = isBatterySaver ? 'off' : 'on';
-    setBatterySaverMode(next);
-    return next === 'on';
-  }, [isBatterySaver, setBatterySaverMode]);
+    if (isBatterySaver) {
+      // Turning OFF: if currently at <=20% battery, set 'off' to override low battery;
+      // otherwise set 'auto' so it stays off now but auto-turns on if battery drops to <=20%.
+      const next: BatterySaverMode = isLowDevicePower ? 'off' : 'auto';
+      setBatterySaverMode(next);
+      return false;
+    } else {
+      setBatterySaverMode('on');
+      return true;
+    }
+  }, [isBatterySaver, isLowDevicePower, setBatterySaverMode]);
 
   return {
     isBatterySaver,

@@ -35,11 +35,17 @@ import { createPortal } from 'react-dom';
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
-import { getServerNow } from '../../lib/serverTime';
+import { getServerNow, getServerISOString } from '../../lib/serverTime';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useSessionLock } from '../../hooks/useSessionLock';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { isSuperAdmin } from '../../constants/auth';
+import {
+  useOfflineSyncStore,
+  validateSalePayload,
+} from '../../stores/useOfflineSyncStore';
+import { isCapacitorApp } from '../../lib/platform';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -266,6 +272,7 @@ export const Sales: React.FC = () => {
 
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
+  const { isBatterySaver } = useBatterySaver();
   const { activeSession, isSessionOpen, history, loadHistory } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
@@ -706,15 +713,28 @@ export const Sales: React.FC = () => {
     fetchTransactions(false);
 
     const channelId = `sales_rt_${dateStr}_${Date.now()}`;
+    let salesThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerSalesRefresh = () => {
+      if (isBatterySaver && document.hidden) return;
+      if (isBatterySaver) {
+        if (salesThrottleTimer) return;
+        salesThrottleTimer = setTimeout(() => {
+          salesThrottleTimer = null;
+          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+          fetchTransactions(true);
+        }, 10000);
+        return;
+      }
+      sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+      fetchTransactions(true);
+    };
+
     const salesChannel = supabase
       .channel(channelId)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        () => {
-          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
-          fetchTransactions(true);
-        }
+        triggerSalesRefresh
       )
       .subscribe();
 
@@ -724,6 +744,7 @@ export const Sales: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
         () => {
+          if (isBatterySaver && document.hidden) return;
           fetchProducts();
         }
       )
@@ -735,19 +756,20 @@ export const Sales: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cash_sessions' },
         () => {
-          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+          if (isBatterySaver && document.hidden) return;
           loadHistory();
-          fetchTransactions(true);
+          triggerSalesRefresh();
         }
       )
       .subscribe();
 
     return () => {
+      if (salesThrottleTimer) clearTimeout(salesThrottleTimer);
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(productsChannel);
       supabase.removeChannel(sessionsChannel);
     };
-  }, [dateStr, fetchTransactions, fetchProducts, loadHistory]);
+  }, [dateStr, fetchTransactions, fetchProducts, loadHistory, isBatterySaver]);
 
   const isTabSelectable = (date: Date) => {
     return startOfDay(date).getTime() <= startOfDay(new Date()).getTime();
@@ -912,10 +934,91 @@ export const Sales: React.FC = () => {
   }, [activeRevenue, activeSalesCount, activeItemsSold, revenueTrend]);
 
   const handleSaleSuccess = async (newTx: any) => {
-    try {
-      const calculatedGcashFee =
-        newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
+    // STRICT SALES VALIDATION: cannot exceed 0 on negative side or be 0
+    const salePayload = {
+      items: newTx.items,
+      product_name: newTx.productName,
+      payment_method: newTx.paymentMethod,
+      amount_received: newTx.amountReceived,
+      change_calculated: newTx.changeCalculated,
+      total_amount: newTx.totalAmount,
+    };
+    const validation = validateSalePayload(salePayload);
+    if (!validation.valid) {
+      toast.error(`Invalid sale: ${validation.reason}`);
+      return;
+    }
 
+    const calculatedGcashFee =
+      newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
+
+    // If offline in Capacitor app, enqueue immediately to offline queue
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (isCapacitorApp()) {
+        const offlineSaleId = `offline-sale-${Date.now()}`;
+        try {
+          useOfflineSyncStore.getState().enqueueMutation({
+            action: 'sale_create',
+            label: `Sale ₱${newTx.totalAmount.toFixed(2)} (${newTx.items?.length || 1} items)`,
+            payload: {
+              items: newTx.items,
+              product_name: newTx.productName,
+              payment_method: newTx.paymentMethod,
+              amount_received: newTx.amountReceived,
+              change_calculated: newTx.changeCalculated,
+              total_amount: newTx.totalAmount,
+              gcash_fee_applied: calculatedGcashFee,
+              reference_number:
+                newTx.referenceNumber || newTx.reference_number || null,
+              cash_session_id: activeSession?.id || null,
+            },
+          });
+
+          const localOfflineSale = {
+            id: offlineSaleId,
+            items: newTx.items,
+            product_name: newTx.productName,
+            payment_method: newTx.paymentMethod,
+            amount_received: newTx.amountReceived,
+            change_calculated: newTx.changeCalculated,
+            total_amount: newTx.totalAmount,
+            gcash_fee_applied: calculatedGcashFee,
+            reference_number:
+              newTx.referenceNumber || newTx.reference_number || null,
+            cash_session_id: activeSession?.id || null,
+            created_at: getServerISOString(),
+          };
+
+          setNewlyAddedId(offlineSaleId);
+          setTimeout(() => setNewlyAddedId(null), 2500);
+
+          setTransactions((prev) => {
+            const updated = [localOfflineSale, ...prev];
+            sessionStorage.setItem(
+              `sales_sanitized_${dateStr}`,
+              JSON.stringify(updated)
+            );
+            return updated;
+          });
+
+          useCashSessionStore.getState().recalculateMetrics();
+          toast.info(
+            'Sale saved to offline queue (Capacitor). Will automatically sync to Supabase when reconnected.'
+          );
+          return;
+        } catch (enqueueErr: any) {
+          toast.error(enqueueErr.message || 'Offline queueing failed.');
+          throw enqueueErr;
+        }
+      } else {
+        toast.error(
+          'Offline sales sync is exclusive to the Capacitor app for security purposes. Browser offline sync is disabled.'
+        );
+        throw new Error('Offline sales are not allowed on browser.');
+      }
+    }
+
+    try {
       const { data: insertedSale, error } = await supabase
         .from('sales')
         .insert([
@@ -935,7 +1038,62 @@ export const Sales: React.FC = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Fallback for transient network error on Capacitor
+        if (isCapacitorApp()) {
+          const offlineSaleId = `offline-sale-${Date.now()}`;
+          useOfflineSyncStore.getState().enqueueMutation({
+            action: 'sale_create',
+            label: `Sale ₱${newTx.totalAmount.toFixed(2)} (${newTx.items?.length || 1} items)`,
+            payload: {
+              items: newTx.items,
+              product_name: newTx.productName,
+              payment_method: newTx.paymentMethod,
+              amount_received: newTx.amountReceived,
+              change_calculated: newTx.changeCalculated,
+              total_amount: newTx.totalAmount,
+              gcash_fee_applied: calculatedGcashFee,
+              reference_number:
+                newTx.referenceNumber || newTx.reference_number || null,
+              cash_session_id: activeSession?.id || null,
+            },
+          });
+
+          const localOfflineSale = {
+            id: offlineSaleId,
+            items: newTx.items,
+            product_name: newTx.productName,
+            payment_method: newTx.paymentMethod,
+            amount_received: newTx.amountReceived,
+            change_calculated: newTx.changeCalculated,
+            total_amount: newTx.totalAmount,
+            gcash_fee_applied: calculatedGcashFee,
+            reference_number:
+              newTx.referenceNumber || newTx.reference_number || null,
+            cash_session_id: activeSession?.id || null,
+            created_at: getServerISOString(),
+          };
+
+          setNewlyAddedId(offlineSaleId);
+          setTimeout(() => setNewlyAddedId(null), 2500);
+
+          setTransactions((prev) => {
+            const updated = [localOfflineSale, ...prev];
+            sessionStorage.setItem(
+              `sales_sanitized_${dateStr}`,
+              JSON.stringify(updated)
+            );
+            return updated;
+          });
+
+          useCashSessionStore.getState().recalculateMetrics();
+          toast.info(
+            'Connection issue detected. Sale queued offline (Capacitor) and will upload once reconnected.'
+          );
+          return;
+        }
+        throw error;
+      }
 
       if (insertedSale) {
         setNewlyAddedId(insertedSale.id);

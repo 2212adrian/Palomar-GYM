@@ -14,6 +14,25 @@ let serverTimeOffsetMs = 0;
 let isInitialized = false;
 let isSyncing = false;
 let lastSyncTimestamp = 0;
+let baselinePerfTime = typeof performance !== 'undefined' ? performance.now() : 0;
+let baselineServerTime = Date.now();
+
+const STORAGE_KEY_OFFSET = 'palomar_server_time_offset_ms';
+const STORAGE_KEY_LAST_SERVER = 'palomar_last_known_server_ms';
+
+// Restore last known server offset from storage if available
+if (typeof localStorage !== 'undefined') {
+  try {
+    const savedOffset = localStorage.getItem(STORAGE_KEY_OFFSET);
+    if (savedOffset !== null) {
+      serverTimeOffsetMs = parseInt(savedOffset, 10) || 0;
+    }
+    const savedServerMs = localStorage.getItem(STORAGE_KEY_LAST_SERVER);
+    if (savedServerMs !== null) {
+      baselineServerTime = parseInt(savedServerMs, 10) || Date.now();
+    }
+  } catch (_) {}
+}
 
 export async function syncServerTime(): Promise<number> {
   if (isSyncing) return serverTimeOffsetMs;
@@ -32,10 +51,19 @@ export async function syncServerTime(): Promise<number> {
     const latency = (clientEndTime - clientStartTime) / 2;
     const serverTimestamp = new Date(data).getTime();
 
-    // Offset is added to Date.now() to get current authoritative server time
-    serverTimeOffsetMs = serverTimestamp + latency - clientEndTime;
+    // Monotonic anchor: immune to local computer or phone clock changes
+    baselinePerfTime = typeof performance !== 'undefined' ? performance.now() : 0;
+    baselineServerTime = serverTimestamp + latency;
+    serverTimeOffsetMs = baselineServerTime - clientEndTime;
     lastSyncTimestamp = Date.now();
     isInitialized = true;
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_OFFSET, serverTimeOffsetMs.toString());
+        localStorage.setItem(STORAGE_KEY_LAST_SERVER, baselineServerTime.toString());
+      } catch (_) {}
+    }
 
     return serverTimeOffsetMs;
   } catch (err) {
@@ -47,17 +75,23 @@ export async function syncServerTime(): Promise<number> {
 }
 
 /**
- * Get authoritative server Date object
+ * Get authoritative server timestamp in milliseconds.
+ * Restricted to be uneditable: uses monotonic elapsed time from performance.now()
+ * so user cannot alter it by changing their computer or phone clock.
  */
-export function getServerNow(): Date {
-  return new Date(Date.now() + serverTimeOffsetMs);
+export function getServerTime(): number {
+  if (isInitialized && typeof performance !== 'undefined') {
+    const elapsedMs = performance.now() - baselinePerfTime;
+    return Math.round(baselineServerTime + elapsedMs);
+  }
+  return Date.now() + serverTimeOffsetMs;
 }
 
 /**
- * Get authoritative server timestamp in milliseconds
+ * Get authoritative server Date object (uneditable by client clock manipulation)
  */
-export function getServerTime(): number {
-  return Date.now() + serverTimeOffsetMs;
+export function getServerNow(): Date {
+  return new Date(getServerTime());
 }
 
 /**

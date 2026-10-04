@@ -1,7 +1,6 @@
 // src/pages/sales/components/SalesDialog.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { format } from 'date-fns';
 import {
   Search,
   Check,
@@ -18,6 +17,12 @@ import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
+import { useBatterySaver } from '../../../hooks/useBatterySaver';
+import { isCapacitorApp } from '../../../lib/platform';
+import {
+  getServerISOString,
+  getServerManilaDateString,
+} from '../../../lib/serverTime';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 
 interface SalesDialogProps {
@@ -61,6 +66,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   // Cash Session State
   const { isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
+  const { isBatterySaver } = useBatterySaver();
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
@@ -259,15 +265,15 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             .start(
               cameraConfig,
               {
-                fps: 25,
+                fps: isBatterySaver ? 10 : 25,
                 qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
                   width: Math.min(Math.floor(viewfinderWidth * 0.88), 380),
                   height: Math.min(Math.floor(viewfinderHeight * 0.45), 160),
                 }),
                 videoConstraints: {
                   ...cameraConfig,
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
+                  width: { ideal: isBatterySaver ? 640 : 1280 },
+                  height: { ideal: isBatterySaver ? 480 : 720 },
                   facingMode: 'environment',
                 },
               },
@@ -400,6 +406,13 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const handleCompleteSale = async () => {
     if (isSubmittingRef.current || isSuccess) return;
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
+      toast.error(
+        'Cannot complete sale in offline mode on web browser. Offline transactions are exclusive to the Capacitor app.'
+      );
+      return;
+    }
+
     if (isLocked || !isSessionOpen) {
       toast.error(
         'Cannot process sale: Cash drawer session is closed. Please open a cash session first in Cash Management.'
@@ -410,6 +423,25 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     if (cart.length === 0) {
       toast.error('Your shopping cart is empty.');
       return;
+    }
+
+    // Strict product quantity validation: cannot be <= 0 or exceed stock
+    for (const item of cart) {
+      const q = Number(item.quantity);
+      if (isNaN(q) || q <= 0) {
+        toast.error(
+          `Invalid quantity for "${getProductName(item.product)}". Quantity cannot be 0 or negative.`
+        );
+        return;
+      }
+      const stock = getProductStock(item.product);
+      const limitActive = hasStockLimit(item.product);
+      if (limitActive && q > stock) {
+        toast.error(
+          `Quantity for "${getProductName(item.product)}" exceeds available stock (${stock}).`
+        );
+        return;
+      }
     }
 
     if (paymentMethod === 'Cash') {
@@ -444,7 +476,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         return p;
       });
 
-      const now = new Date();
+      const serverIso = getServerISOString();
+      const serverDate = getServerManilaDateString();
       const newTx = {
         id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
         items: cart.map((item) => ({
@@ -467,8 +500,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             : null,
         referenceNumber: paymentMethod === 'GCash' ? referenceNumber : null,
         totalAmount: totalPayable,
-        createdAt: now.toISOString(),
-        date: format(now, 'yyyy-MM-dd'),
+        createdAt: serverIso,
+        date: serverDate,
       };
 
       await onSaleSuccess(newTx, updatedProducts);

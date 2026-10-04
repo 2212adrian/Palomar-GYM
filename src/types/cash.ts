@@ -54,6 +54,13 @@ export interface CashSession {
   denominations: Partial<DenominationCounts> | null;
   created_at: string;
   updated_at: string;
+  total_cash_sales?: number;
+  total_digital_sales?: number;
+  total_cash_logbook?: number;
+  total_digital_logbook?: number;
+  total_cash_in?: number;
+  total_cash_out?: number;
+  total_digital_in?: number;
 }
 
 export interface CashTransaction {

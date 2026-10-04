@@ -25,7 +25,6 @@ import {
   Trash2,
   Lock,
   RefreshCw,
-  Zap,
 } from 'lucide-react';
 import {
   motion,
@@ -371,12 +370,7 @@ export const LogbookPage: React.FC = () => {
   const { activeSession, isSessionOpen, history, loadHistory } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
-  const {
-    isBatterySaver,
-    isAutoTriggered,
-    batteryLevel,
-    toggleBatterySaver,
-  } = useBatterySaver();
+  const { isBatterySaver } = useBatterySaver();
   const { enqueueMutation, markSyncComplete } = useOfflineSyncStore();
 
   const [closedSessionsList, setClosedSessionsList] = useState<
@@ -1503,42 +1497,6 @@ export const LogbookPage: React.FC = () => {
     if (activePage === 'logbook') {
       setActions(
         <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in select-none">
-          {/* ─── BATTERY SAVER MODE TOGGLE ─── */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = toggleBatterySaver();
-              toast.info(
-                next
-                  ? 'Battery Saver enabled: reduced polling frequency & minimized background animations.'
-                  : 'Battery Saver disabled: standard real-time animations active.',
-                { toastId: 'battery-saver-toggle' }
-              );
-            }}
-            title={
-              isBatterySaver
-                ? `Battery Saver Active${isAutoTriggered ? ' (Auto Low-Power)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
-                : `Enable Battery Saver Mode${batteryLevel !== null ? ` (Battery: ${batteryLevel}%)` : ''}`
-            }
-            className={`h-10 px-3 rounded-xl border text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
-              isBatterySaver
-                ? 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                : 'border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-800'
-            }`}
-          >
-            <Zap
-              className={`w-3.5 h-3.5 shrink-0 ${
-                isBatterySaver ? 'text-amber-500 fill-amber-500' : 'text-slate-400'
-              }`}
-            />
-            <span className="hidden xl:inline">
-              {isBatterySaver ? 'ECO ON' : 'ECO'}
-            </span>
-            {batteryLevel !== null && isBatterySaver && (
-              <span className="font-mono text-[10px]">{batteryLevel}%</span>
-            )}
-          </button>
-
           {/* ─── REDESIGNED TABLET TELEMETRY CAPSULE ─── */}
           <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
             <div className="flex items-center gap-2">
@@ -1731,9 +1689,6 @@ export const LogbookPage: React.FC = () => {
     activeCheckinsCount,
     revenueTrend,
     isBatterySaver,
-    isAutoTriggered,
-    batteryLevel,
-    toggleBatterySaver,
   ]);
 
   useEffect(() => {
@@ -2442,35 +2397,6 @@ export const LogbookPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = toggleBatterySaver();
-                  toast.info(
-                    next
-                      ? 'Battery Saver enabled: reduced polling & animations.'
-                      : 'Battery Saver disabled.',
-                    { toastId: 'battery-saver-toggle' }
-                  );
-                }}
-                title={
-                  isBatterySaver
-                    ? 'Battery Saver Active — Tap to disable'
-                    : 'Enable Battery Saver Mode'
-                }
-                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
-                  isBatterySaver
-                    ? 'bg-amber-500/20 text-amber-500 border-amber-500/40'
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 border-(--border-color)'
-                }`}
-              >
-                <Zap
-                  className={`w-4 h-4 ${
-                    isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
-                  }`}
-                />
-              </button>
-
               {role === 'admin' && (
                 <button
                   type="button"

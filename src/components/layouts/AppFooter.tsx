@@ -38,6 +38,7 @@ import { Modal } from '../ui/Modal';
 import {
   fetchLatestRelease,
   getInstalledAppVersion,
+  isNewerVersion,
 } from '../../lib/appUpdateService';
 import { Capacitor } from '@capacitor/core';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
@@ -402,7 +403,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 v{displayVersion}
                 {latestCloudVersion &&
-                  latestCloudVersion !== displayVersion && (
+                  isNewerVersion(latestCloudVersion, displayVersion) && (
                     <span className="text-amber-600 dark:text-amber-400 ml-1">
                       (Latest v{latestCloudVersion})
                     </span>

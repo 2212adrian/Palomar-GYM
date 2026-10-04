@@ -94,6 +94,44 @@ export const markPendingNewLogin = (): void => {
   }
 };
 
+/**
+ * Checks whether an active Supabase authentication token exists in storage.
+ * Used to prevent premature redirects to /login while auth credentials are being fetched.
+ */
+export const hasStoredAuthSession = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
+        const val = localStorage.getItem(key);
+        if (val && val !== 'null' && val !== 'undefined') {
+          try {
+            const parsed = JSON.parse(val);
+            if (parsed?.access_token || parsed?.user) {
+              return true;
+            }
+          } catch {
+            return true;
+          }
+        }
+      }
+    }
+    if (typeof document !== 'undefined' && document.cookie) {
+      const cookies = document.cookie.split(';');
+      for (const cookie of cookies) {
+        const trimmed = cookie.trim();
+        if (trimmed.startsWith('sb-') && trimmed.includes('-auth-token')) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return false;
+};
+
 const consumePendingNewLogin = (): boolean => {
   if (typeof window === 'undefined') return false;
   try {
@@ -289,12 +327,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (
         remoteSessionId &&
-        (!localSessionId || remoteSessionId !== localSessionId)
+        localSessionId &&
+        remoteSessionId !== localSessionId
       ) {
         await get().forceSessionLogout(
           'Your account was signed in on another device or browser. You have been logged out.'
         );
         return false;
+      } else if (remoteSessionId && !localSessionId) {
+        setLocalActiveSessionId(serverUser.id, remoteSessionId);
       }
 
       return true;
@@ -314,12 +355,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ loading: true, error: null });
       }
 
-      const {
+      let {
         data: { session },
         error: sessionError,
       } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
+
+      // If initial getSession() returned empty but there is a stored auth token in storage,
+      // wait for Supabase to hydrate or refresh rather than prematurely rejecting the session
+      if (!session && hasStoredAuthSession()) {
+        try {
+          const { data: refreshedData } = await supabase.auth.refreshSession();
+          if (refreshedData?.session) {
+            session = refreshedData.session;
+          }
+        } catch {
+          await new Promise((r) => setTimeout(r, 200));
+          const retry = await supabase.auth.getSession();
+          session = retry.data?.session || null;
+        }
+      }
 
       if (session?.user) {
         let activeUser = session.user;
@@ -361,10 +417,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               if (!remoteSessionId) {
                 // First time initializing single-session token for this session
                 await get().claimActiveSession(verifiedUser.id);
-              } else if (
-                !localSessionId ||
-                remoteSessionId !== localSessionId
-              ) {
+              } else if (!localSessionId) {
+                // Same client session rehydrating after page reload: retain session ID
+                setLocalActiveSessionId(verifiedUser.id, remoteSessionId);
+              } else if (remoteSessionId !== localSessionId) {
                 await get().forceSessionLogout(
                   'Your account was signed in on another device or browser. You have been logged out.'
                 );
@@ -714,30 +770,43 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       if (
         !isClaimingSession &&
         !isLoginInProgress &&
-        remoteSessionId &&
-        (!localSessionId || remoteSessionId !== localSessionId)
+        remoteSessionId
       ) {
-        await useAuthStore
-          .getState()
-          .forceSessionLogout(
-            'Your account was signed in on another device or browser. You have been logged out.'
-          );
-        return;
+        if (!localSessionId) {
+          setLocalActiveSessionId(session.user.id, remoteSessionId);
+        } else if (remoteSessionId !== localSessionId) {
+          await useAuthStore
+            .getState()
+            .forceSessionLogout(
+              'Your account was signed in on another device or browser. You have been logged out.'
+            );
+          return;
+        }
       }
       useAuthStore.setState({ user: session.user });
     }
-  } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+  } else if (
+    event === 'INITIAL_SESSION' ||
+    event === 'SIGNED_IN' ||
+    event === 'USER_UPDATED'
+  ) {
     if (isLoginInProgress || isClaimingSession) {
       return;
     }
     if (session?.user) {
       const currentUser = useAuthStore.getState().user;
       // Only do a heavy check if user ID actually changed or if user explicitly updated profile
-      if (!currentUser || currentUser.id !== session.user.id || event === 'USER_UPDATED') {
+      if (
+        !currentUser ||
+        currentUser.id !== session.user.id ||
+        event === 'USER_UPDATED'
+      ) {
         await useAuthStore.getState().checkSession();
       } else {
-        useAuthStore.setState({ user: session.user });
+        useAuthStore.setState({ user: session.user, loading: false, initialized: true });
       }
+    } else if (event === 'INITIAL_SESSION' && !hasStoredAuthSession()) {
+      useAuthStore.setState({ loading: false, initialized: true });
     }
   }
 });

@@ -35,19 +35,34 @@ export const assertActiveCashSession = async (actionDesc: string = 'process tran
     );
   }
 
-  const { data, error } = await supabase
-    .from('cash_sessions')
-    .select('id')
-    .eq('status', 'open')
-    .is('closed_at', null)
-    .maybeSingle();
-
-  if (error || !data) {
-    storeState.setSessionClosed();
-    throw new Error(
-      `Transaction restricted: No active cash drawer session found in database. Please open a cash session in Cash Management to ${actionDesc}.`
-    );
+  // When offline, allow existing open session in memory / local state
+  if (typeof navigator !== 'undefined' && !navigator.onLine && storeState.activeSessionId) {
+    return storeState.activeSessionId;
   }
 
-  return data.id;
+  try {
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .select('id')
+      .eq('status', 'open')
+      .is('closed_at', null)
+      .maybeSingle();
+
+    if (error || !data) {
+      if (storeState.activeSessionId) {
+        return storeState.activeSessionId;
+      }
+      storeState.setSessionClosed();
+      throw new Error(
+        `Transaction restricted: No active cash drawer session found in database. Please open a cash session in Cash Management to ${actionDesc}.`
+      );
+    }
+
+    return data.id;
+  } catch (err: any) {
+    if (storeState.activeSessionId) {
+      return storeState.activeSessionId;
+    }
+    throw err;
+  }
 };

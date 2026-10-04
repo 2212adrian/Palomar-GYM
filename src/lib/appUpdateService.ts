@@ -86,6 +86,14 @@ export const isNewerVersion = (candidate: string, current: string): boolean => {
 };
 
 /**
+ * Compare semantic versions. Returns true if candidate is strictly older than current.
+ */
+export const isOlderVersion = (candidate: string, current: string): boolean => {
+  if (!candidate || !current) return false;
+  return isNewerVersion(current, candidate);
+};
+
+/**
  * Detect the actual installed/running version on the current device.
  * On Capacitor Android/iOS, queries the native package manager (`CapApp.getInfo()`)
  * so that if an older APK (e.g., v0.18.0) is installed on Android, it reports

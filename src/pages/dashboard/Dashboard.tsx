@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
 import type {
   DashboardMetrics,
   DashboardTab,
@@ -34,6 +35,7 @@ import { ReportsExportModal } from './components/ReportsExportModal';
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { isBatterySaver } = useBatterySaver();
 
   // State Management
   const [isLoading, setIsLoading] = useState(true);
@@ -107,10 +109,14 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleLoadData = () => {
+      if (isBatterySaver && document.hidden) return;
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadData();
-      }, 1500);
+      debounceTimer = setTimeout(
+        () => {
+          loadData();
+        },
+        isBatterySaver ? 10000 : 1500
+      );
     };
 
     const channel = supabase
@@ -136,7 +142,7 @@ export const Dashboard: React.FC = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [loadData]);
+  }, [loadData, isBatterySaver]);
 
   // Quick Navigation Handler
   const handleCardClick = (

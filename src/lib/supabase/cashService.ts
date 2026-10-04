@@ -1,7 +1,8 @@
 // src/lib/supabase/cashService.ts
 import { supabase } from './client';
 import { logAudit } from './audit';
-import { getServerNow } from '../serverTime';
+import { getServerNow, getServerISOString } from '../serverTime';
+import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 import type {
   CashSession,
   CashTransaction,
@@ -9,24 +10,47 @@ import type {
   DenominationCounts,
 } from '../../types/cash';
 
+const OFFLINE_ACTIVE_SESSION_KEY = 'palomar_offline_active_session';
+
 /**
  * Fetches the currently active open cash session.
  */
 export async function fetchActiveCashSession(): Promise<CashSession | null> {
-  const { data, error } = await supabase
-    .from('cash_sessions')
-    .select('*')
-    .eq('status', 'open')
-    .order('opened_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching active cash session from Supabase:', error);
-    throw error;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    try {
+      const saved = localStorage.getItem(OFFLINE_ACTIVE_SESSION_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
   }
 
-  return (data as CashSession) || null;
+  try {
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Error fetching active cash session from Supabase:', error);
+      // Fallback to offline active session if network issue
+      try {
+        const saved = localStorage.getItem(OFFLINE_ACTIVE_SESSION_KEY);
+        if (saved) return JSON.parse(saved);
+      } catch (_) {}
+      return null;
+    }
+
+    return (data as CashSession) || null;
+  } catch (err) {
+    try {
+      const saved = localStorage.getItem(OFFLINE_ACTIVE_SESSION_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
+  }
 }
 
 /**
@@ -76,6 +100,49 @@ export async function openCashSession(params: {
   openedByName?: string;
 }): Promise<CashSession> {
   const openingFloatVal = Math.max(0, Number(params.openingFloat) || 0);
+  const nowIso = getServerISOString();
+  const sessionNum = `CS-${nowIso.slice(0, 10).replace(/-/g, '')}-${Math.floor(
+    100 + Math.random() * 900
+  )}`;
+
+  // If offline, create local session and queue mutation
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const offlineSession: CashSession = {
+      id: `offline-session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      session_number: sessionNum,
+      opened_at: nowIso,
+      closed_at: null,
+      opened_by: params.openedBy || null,
+      opened_by_name: params.openedByName || 'Staff',
+      closed_by: null,
+      closed_by_name: null,
+      status: 'open',
+      opening_float: openingFloatVal,
+      closing_actual_cash: null,
+      closing_expected_cash: null,
+      discrepancy: null,
+      notes: params.notes?.trim() || null,
+      denominations: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    try {
+      localStorage.setItem(OFFLINE_ACTIVE_SESSION_KEY, JSON.stringify(offlineSession));
+    } catch (_) {}
+
+    try {
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_session_open',
+        label: `Open Cash Session #${sessionNum} (₱${openingFloatVal.toFixed(2)})`,
+        payload: { session: offlineSession },
+      });
+    } catch (qErr) {
+      console.warn('Queueing offline cash session notice:', qErr);
+    }
+
+    return offlineSession;
+  }
 
   // 1. Try atomic RPC first
   try {
@@ -91,6 +158,9 @@ export async function openCashSession(params: {
 
     if (!rpcError && rpcData) {
       const session = rpcData as CashSession;
+      try {
+        localStorage.setItem(OFFLINE_ACTIVE_SESSION_KEY, JSON.stringify(session));
+      } catch (_) {}
       await logAudit(
         'CASH_SESSION_OPEN',
         `Opened Cash Session #${session.session_number} with Opening Float of ₱${openingFloatVal.toFixed(2)}${
@@ -106,9 +176,6 @@ export async function openCashSession(params: {
 
   // 2. Direct fallback: close existing open sessions first, then insert
   const now = getServerNow();
-  const sessionNum = `CS-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(
-    100 + Math.random() * 900
-  )}`;
 
   // Close any lingering open session
   await supabase
@@ -138,6 +205,35 @@ export async function openCashSession(params: {
 
   if (error) {
     console.error('Failed to open cash session in Supabase:', error);
+    // Offline / network failure fallback
+    const offlineSession: CashSession = {
+      id: `offline-session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      session_number: sessionNum,
+      opened_at: nowIso,
+      closed_at: null,
+      opened_by: params.openedBy || null,
+      opened_by_name: params.openedByName || 'Staff',
+      closed_by: null,
+      closed_by_name: null,
+      status: 'open',
+      opening_float: openingFloatVal,
+      closing_actual_cash: null,
+      closing_expected_cash: null,
+      discrepancy: null,
+      notes: params.notes?.trim() || null,
+      denominations: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    try {
+      localStorage.setItem(OFFLINE_ACTIVE_SESSION_KEY, JSON.stringify(offlineSession));
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_session_open',
+        label: `Open Cash Session #${sessionNum} (₱${openingFloatVal.toFixed(2)})`,
+        payload: { session: offlineSession },
+      });
+      return offlineSession;
+    } catch (_) {}
     throw new Error(error.message || 'Failed to open cash session in database.');
   }
 
@@ -146,6 +242,9 @@ export async function openCashSession(params: {
   }
 
   const session = data as CashSession;
+  try {
+    localStorage.setItem(OFFLINE_ACTIVE_SESSION_KEY, JSON.stringify(session));
+  } catch (_) {}
 
   await logAudit(
     'CASH_SESSION_OPEN',
@@ -190,6 +289,31 @@ export async function recordCashTransaction(params: {
     performed_by_name: params.performedByName || 'Staff',
   };
 
+  // If offline, queue transaction immediately
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const offlineTx: CashTransaction = {
+      id: `offline-tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      session_id: params.sessionId,
+      type: params.type,
+      amount: amountVal,
+      reason: params.reason.trim(),
+      reference_number: params.referenceNumber?.trim() || null,
+      performed_by: userId || null,
+      performed_by_name: params.performedByName || 'Staff',
+      created_at: getServerISOString(),
+    };
+
+    try {
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_transaction_record',
+        label: `${params.type.toUpperCase()}: ₱${amountVal.toFixed(2)} (${params.reason})`,
+        payload: offlineTx,
+      });
+    } catch (_) {}
+
+    return offlineTx;
+  }
+
   const { data, error } = await supabase
     .from('cash_transactions')
     .insert([payload])
@@ -198,6 +322,27 @@ export async function recordCashTransaction(params: {
 
   if (error) {
     console.error('Failed to record cash transaction:', error);
+    // Offline fallback on network error
+    const offlineTx: CashTransaction = {
+      id: `offline-tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      session_id: params.sessionId,
+      type: params.type,
+      amount: amountVal,
+      reason: params.reason.trim(),
+      reference_number: params.referenceNumber?.trim() || null,
+      performed_by: userId || null,
+      performed_by_name: params.performedByName || 'Staff',
+      created_at: getServerISOString(),
+    };
+
+    try {
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_transaction_record',
+        label: `${params.type.toUpperCase()}: ₱${amountVal.toFixed(2)} (${params.reason})`,
+        payload: offlineTx,
+      });
+      return offlineTx;
+    } catch (_) {}
     throw new Error(error.message || 'Database error inserting cash transaction.');
   }
 
@@ -239,6 +384,57 @@ export async function closeCashSession(params: {
   closedByName?: string;
 }): Promise<CashSession> {
   const now = getServerNow();
+  const nowIso = getServerISOString();
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    let savedSession: CashSession | null = null;
+    try {
+      const saved = localStorage.getItem(OFFLINE_ACTIVE_SESSION_KEY);
+      if (saved) savedSession = JSON.parse(saved);
+    } catch (_) {}
+
+    const closedSession: CashSession = {
+      id: params.sessionId,
+      session_number: savedSession?.session_number || `CS-${nowIso.slice(0, 10).replace(/-/g, '')}`,
+      opened_at: savedSession?.opened_at || nowIso,
+      closed_at: nowIso,
+      opened_by: savedSession?.opened_by || null,
+      opened_by_name: savedSession?.opened_by_name || 'Staff',
+      closed_by: params.closedBy || null,
+      closed_by_name: params.closedByName || 'Admin',
+      status: 'closed',
+      opening_float: savedSession?.opening_float || 0,
+      closing_actual_cash: params.actualCash,
+      closing_expected_cash: params.expectedCash,
+      discrepancy: params.discrepancy,
+      discrepancy_reason: null,
+      notes: params.notes?.trim() || null,
+      denominations: params.denominations || {},
+      created_at: savedSession?.created_at || nowIso,
+      updated_at: nowIso,
+    };
+
+    try {
+      localStorage.removeItem(OFFLINE_ACTIVE_SESSION_KEY);
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_session_close',
+        label: `Close Cash Session: Actual ₱${params.actualCash.toFixed(2)}, Expected ₱${params.expectedCash.toFixed(2)}`,
+        payload: {
+          sessionId: params.sessionId,
+          actualCash: params.actualCash,
+          expectedCash: params.expectedCash,
+          discrepancy: params.discrepancy,
+          notes: params.notes,
+          denominations: params.denominations,
+          closedBy: params.closedBy,
+          closedByName: params.closedByName,
+          closedAt: nowIso,
+        },
+      });
+    } catch (_) {}
+
+    return closedSession;
+  }
 
   // 1. Primary: Atomic RPC close function
   try {
@@ -258,6 +454,9 @@ export async function closeCashSession(params: {
 
     if (!rpcError && rpcData) {
       const closedSession = rpcData as CashSession;
+      try {
+        localStorage.removeItem(OFFLINE_ACTIVE_SESSION_KEY);
+      } catch (_) {}
       const discLabel =
         params.discrepancy === 0
           ? 'BALANCED'
@@ -308,6 +507,46 @@ export async function closeCashSession(params: {
 
   if (error) {
     console.error('Failed to close cash session in Supabase:', error);
+    // Offline / network fallback
+    const closedSession: CashSession = {
+      id: params.sessionId,
+      session_number: `CS-${nowIso.slice(0, 10).replace(/-/g, '')}`,
+      opened_at: nowIso,
+      closed_at: nowIso,
+      opened_by: null,
+      opened_by_name: 'Staff',
+      closed_by: params.closedBy || null,
+      closed_by_name: params.closedByName || 'Admin',
+      status: 'closed',
+      opening_float: 0,
+      closing_actual_cash: params.actualCash,
+      closing_expected_cash: params.expectedCash,
+      discrepancy: params.discrepancy,
+      discrepancy_reason: null,
+      notes: params.notes?.trim() || null,
+      denominations: params.denominations || {},
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    try {
+      localStorage.removeItem(OFFLINE_ACTIVE_SESSION_KEY);
+      useOfflineSyncStore.getState().enqueueMutation({
+        action: 'cash_session_close',
+        label: `Close Cash Session: Actual ₱${params.actualCash.toFixed(2)}, Expected ₱${params.expectedCash.toFixed(2)}`,
+        payload: {
+          sessionId: params.sessionId,
+          actualCash: params.actualCash,
+          expectedCash: params.expectedCash,
+          discrepancy: params.discrepancy,
+          notes: params.notes,
+          denominations: params.denominations,
+          closedBy: params.closedBy,
+          closedByName: params.closedByName,
+          closedAt: nowIso,
+        },
+      });
+      return closedSession;
+    } catch (_) {}
     throw new Error(error.message || 'Database error closing cash session.');
   }
 
@@ -319,6 +558,9 @@ export async function closeCashSession(params: {
   }
 
   const closedSession = data as CashSession;
+  try {
+    localStorage.removeItem(OFFLINE_ACTIVE_SESSION_KEY);
+  } catch (_) {}
 
   const discLabel =
     params.discrepancy === 0

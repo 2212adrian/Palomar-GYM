@@ -12,6 +12,9 @@ import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
 import { SecuritySettings } from './security-and-permission/SecuritySettings';
 import { PermissionsSettings } from './security-and-permission/PermissionsSettings';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { isCapacitorApp } from '../../lib/platform';
+import { toast } from 'react-toastify';
 import {
   User as UserIcon,
   Building,
@@ -29,6 +32,7 @@ import {
   Sun,
   Moon,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 
 export type TabID =
@@ -150,6 +154,13 @@ const URL_TAB_MAP: Record<string, TabID> = {
 
 export default function Settings() {
   const { user, profile } = useAuthStore();
+  const {
+    isBatterySaver,
+    isAutoTriggered,
+    batteryLevel,
+    toggleBatterySaver,
+  } = useBatterySaver();
+  const isNativeCapacitor = useMemo(() => isCapacitorApp(), []);
   const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -563,7 +574,7 @@ export default function Settings() {
             {/* Dynamic Theme Toggle in Mobile List */}
             <button
               onClick={toggleTheme}
-              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all duration-200 cursor-pointer text-left active:scale-95 md:col-span-2"
+              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all duration-200 cursor-pointer text-left active:scale-95"
             >
               <div className="flex items-center gap-4">
                 <div className="p-2 rounded-lg bg-white dark:bg-[#111315] border border-slate-200/50 dark:border-white/5 shadow-xs">
@@ -603,6 +614,66 @@ export default function Settings() {
                 )}
               </div>
             </button>
+
+            {/* Power Saving Mode Toggle in Mobile List - Capacitor App Only */}
+            {isNativeCapacitor && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = toggleBatterySaver();
+                  toast.info(
+                    next
+                      ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
+                      : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
+                    { toastId: 'battery-saver-toggle' }
+                  );
+                }}
+                className={`group/eco flex items-center justify-between p-4 rounded-xl border border-dashed transition-all duration-200 cursor-pointer text-left active:scale-95 ${
+                  isBatterySaver
+                    ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    : 'border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`p-2 rounded-lg border shadow-xs ${
+                      isBatterySaver
+                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-500'
+                        : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-slate-400'
+                    }`}
+                  >
+                    <Zap
+                      className={`w-6 h-6 shrink-0 ${
+                        isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                      POWER SAVING MODE
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {isBatterySaver
+                        ? `Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Tap to disable`
+                        : `Auto-turns on at ≤20% battery${batteryLevel !== null ? ` • ${batteryLevel}%` : ''}`}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider shrink-0 border ${
+                    isBatterySaver
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40'
+                      : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-300/60 dark:border-zinc-700'
+                  }`}
+                >
+                  {isBatterySaver
+                    ? isAutoTriggered
+                      ? 'AUTO ON'
+                      : 'ECO ON'
+                    : 'OFF'}
+                </span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -666,8 +737,8 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Dynamic Theme Toggle in PC Sidebar */}
-          <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 animate-slide-up">
+          {/* Dynamic Theme & Power Saving Toggles in PC Sidebar */}
+          <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 space-y-2.5 animate-slide-up">
             <button
               onClick={toggleTheme}
               className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-red-500 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
@@ -703,6 +774,70 @@ export default function Settings() {
                 )}
               </div>
             </button>
+
+            {/* Power Saving Mode Toggle in PC Sidebar - Capacitor App Only */}
+            {isNativeCapacitor && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = toggleBatterySaver();
+                  toast.info(
+                    next
+                      ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
+                      : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
+                    { toastId: 'battery-saver-toggle' }
+                  );
+                }}
+                title={
+                  isBatterySaver
+                    ? `Power Saving Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
+                    : `Enable Power Saving Mode (Auto-activates at ≤20% battery${batteryLevel !== null ? ` • Current: ${batteryLevel}%` : ''})`
+                }
+                className={`w-full flex items-center justify-between p-3 rounded-xl border border-dashed transition-all cursor-pointer ${
+                  isBatterySaver
+                    ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                    : 'border-slate-200 dark:border-white/10 hover:border-amber-500/60 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`p-2 rounded-lg shadow-xs border ${
+                      isBatterySaver
+                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-500'
+                        : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-slate-400'
+                    }`}
+                  >
+                    <Zap
+                      className={`w-4 h-4 shrink-0 ${
+                        isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
+                      }`}
+                    />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
+                      POWER SAVING
+                    </span>
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400">
+                      {isBatterySaver
+                        ? isAutoTriggered
+                          ? 'Auto ON (≤20%)'
+                          : 'Optimized'
+                        : 'Auto at ≤20%'}{' '}
+                      {batteryLevel !== null ? `• ${batteryLevel}%` : ''}
+                    </span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-heading font-bold uppercase tracking-wider border ${
+                    isBatterySaver
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40'
+                      : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-300/60 dark:border-zinc-700'
+                  }`}
+                >
+                  {isBatterySaver ? 'ECO ON' : 'OFF'}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -737,11 +872,13 @@ export default function Settings() {
             <div
               key={tabTransition.animKey}
               className={`w-full min-h-full flex flex-col ${
-                tabTransition.direction === 'down'
-                  ? 'page-slide-down'
-                  : tabTransition.direction === 'up'
-                    ? 'page-slide-up'
-                    : ''
+                isBatterySaver
+                  ? ''
+                  : tabTransition.direction === 'down'
+                    ? 'page-slide-down'
+                    : tabTransition.direction === 'up'
+                      ? 'page-slide-up'
+                      : ''
               }`}
             >
               {activeTab === 'personal-account' && <PersonalAccount />}

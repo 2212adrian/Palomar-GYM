@@ -23,6 +23,7 @@ import {
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
 import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
+import { isCapacitorApp } from '../../lib/platform';
 
 interface NavbarProps {
   isMobileDrawerOpen?: boolean;
@@ -329,7 +330,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         isLogbookDomainActive ? 'stroke-[2.5]' : 'stroke-2'
                       }`}
                     />
-                    {pendingSyncCount > 0 || !isOnline ? (
+                    {isCapacitorApp() && (pendingSyncCount > 0 || !isOnline) ? (
                       <span
                         title={
                           pendingSyncCount > 0

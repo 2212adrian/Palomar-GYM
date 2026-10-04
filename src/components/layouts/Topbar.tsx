@@ -47,6 +47,8 @@ import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
+import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { isCapacitorApp } from '../../lib/platform';
 import type { CashTransactionType } from '../../types/cash';
 
 interface TopbarProps {
@@ -211,19 +213,30 @@ const DynamicBanknoteIcon: React.FC<{
 };
 
 // Animated Number Ticker
-const AnimatedKpiNumber: React.FC<{ value: number }> = ({ value }) => {
+const AnimatedKpiNumber: React.FC<{
+  value: number;
+  disableAnimation?: boolean;
+}> = ({ value, disableAnimation = false }) => {
   const count = useMotionValue(value);
   const rounded = useTransform(count, (latest) =>
     Math.round(latest).toString()
   );
 
   useEffect(() => {
+    if (disableAnimation) {
+      count.set(value);
+      return;
+    }
     const controls = animate(count, value, {
       duration: 0.8,
       ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
-  }, [value, count]);
+  }, [value, count, disableAnimation]);
+
+  if (disableAnimation) {
+    return <span>{Math.round(value)}</span>;
+  }
 
   return <motion.span>{rounded}</motion.span>;
 };
@@ -232,7 +245,8 @@ const AnimatedKpiNumber: React.FC<{ value: number }> = ({ value }) => {
 const AnimatedKpiCurrency: React.FC<{
   value: number;
   trend?: 'increasing' | 'decreasing' | 'neutral';
-}> = ({ value, trend = 'neutral' }) => {
+  disableAnimation?: boolean;
+}> = ({ value, trend = 'neutral', disableAnimation = false }) => {
   const count = useMotionValue(value);
   const formatted = useTransform(
     count,
@@ -240,12 +254,16 @@ const AnimatedKpiCurrency: React.FC<{
   );
 
   useEffect(() => {
+    if (disableAnimation) {
+      count.set(value);
+      return;
+    }
     const controls = animate(count, value, {
       duration: 1.0,
       ease: [0.16, 1, 0.3, 1],
     });
     return () => controls.stop();
-  }, [value, count]);
+  }, [value, count, disableAnimation]);
 
   return (
     <span
@@ -257,7 +275,11 @@ const AnimatedKpiCurrency: React.FC<{
             : 'text-slate-900 dark:text-white'
       }`}
     >
-      <motion.span>{formatted}</motion.span>
+      {disableAnimation ? (
+        <span>{`₱${Number(value).toFixed(2)}`}</span>
+      ) : (
+        <motion.span>{formatted}</motion.span>
+      )}
     </span>
   );
 };
@@ -268,6 +290,7 @@ export const Topbar: React.FC<TopbarProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isBatterySaver } = useBatterySaver();
   const [currentTimeFull, setCurrentTimeFull] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
   const [timeOffset, setTimeOffset] = useState<number>(0);
@@ -556,7 +579,7 @@ export const Topbar: React.FC<TopbarProps> = ({
         timeZone: 'Asia/Manila',
         hour: 'numeric',
         minute: '2-digit',
-        second: '2-digit',
+        ...(isBatterySaver ? {} : { second: '2-digit' as const }),
         hour12: true,
       });
 
@@ -570,9 +593,9 @@ export const Topbar: React.FC<TopbarProps> = ({
       setCurrentTimeFull(`${dateStr} • ${timeStr}`);
     };
     updateTime();
-    const interval = setInterval(updateTime, 1000);
+    const interval = setInterval(updateTime, isBatterySaver ? 15000 : 1000);
     return () => clearInterval(interval);
-  }, [timeOffset]);
+  }, [timeOffset, isBatterySaver]);
 
   const isLogbookPath = location.pathname.startsWith('/logbook');
   const isSalesPath = location.pathname.startsWith('/sales');
@@ -1076,11 +1099,12 @@ export const Topbar: React.FC<TopbarProps> = ({
 
       {/* 2. RIGHT SECTION: OFFLINE SYNC INDICATOR, CASH PILL & CONTROLS */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
-        {/* OFFLINE SYNC STATUS INDICATOR */}
-        <div ref={syncContainerRef} className="relative">
-          <button
-            type="button"
-            onClick={handleToggleSyncPopover}
+        {/* OFFLINE SYNC STATUS INDICATOR - EXCLUSIVE TO CAPACITOR NATIVE APP */}
+        {isCapacitorApp() && (
+          <div ref={syncContainerRef} className="relative">
+            <button
+              type="button"
+              onClick={handleToggleSyncPopover}
             title={
               !isSyncOnline
                 ? `Offline Mode: ${pendingSyncCount} record(s) cached locally pending upload to Supabase`
@@ -1267,6 +1291,7 @@ export const Topbar: React.FC<TopbarProps> = ({
             )}
           </AnimatePresence>
         </div>
+        )}
 
         {/* LIVE CASH DRAWER CAPSULE */}
         <div ref={cashContainerRef} className="relative">

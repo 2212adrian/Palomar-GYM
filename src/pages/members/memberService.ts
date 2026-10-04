@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
 import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
+import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
+import { isCapacitorApp } from '../../lib/platform';
 
 import type {
   Member,
@@ -578,32 +580,58 @@ export const subscriptionService = {
     const end = new Date(start.getTime());
     end.setDate(end.getDate() + durationDays);
 
-    // Insert new subscription record
-    const { data: insertedSub, error: subErr } = await supabase
-      .from('subscriptions')
-      .insert([
-        {
-          member_id: m.member_id,
-          plan_type: dbPlanType,
-          price: totalAmount,
-          base_price: basePrice,
-          gcash_fee: gcashFee,
-          card_fee: cardFee,
-          gcash_ref_no: gcashRefNo,
-          start_date: start.toISOString(),
-          end_date: end.toISOString(),
-          status: initialStatus,
-          payment_status: 'Paid',
-          payment_method: paymentMethod,
-        },
-      ])
-      .select()
-      .single();
+    const subPayload = {
+      member_id: m.member_id,
+      plan_type: dbPlanType,
+      price: totalAmount,
+      base_price: basePrice,
+      gcash_fee: gcashFee,
+      card_fee: cardFee,
+      gcash_ref_no: gcashRefNo,
+      start_date: start.toISOString(),
+      end_date: end.toISOString(),
+      status: initialStatus,
+      payment_status: 'Paid' as PaymentStatus,
+      payment_method: paymentMethod,
+    };
 
-    if (subErr) {
-      console.error('Error inserting subscription:', subErr);
-      throw new Error(subErr.message);
+    // Insert new subscription record
+    let finalSub: any = null;
+    try {
+      const { data: insertedSub, error: subErr } = await supabase
+        .from('subscriptions')
+        .insert([subPayload])
+        .select()
+        .single();
+
+      if (subErr) throw subErr;
+      finalSub = insertedSub;
+    } catch (netErr: any) {
+      if (isCapacitorApp()) {
+        const offlineSubId = `offline-sub-${Date.now()}`;
+        useOfflineSyncStore.getState().enqueueMutation({
+          action: 'subscription_create',
+          label: `Subscription (${planName}) for member ${m.full_name}`,
+          payload: {
+            memberId: m.member_id,
+            subscriptionPayload: subPayload,
+          },
+        });
+        finalSub = {
+          ...subPayload,
+          id: offlineSubId,
+          receipt_number: `REC-OFFLINE-${Date.now().toString().slice(-6)}`,
+          created_at: new Date().toISOString(),
+        };
+      } else {
+        console.error('Error inserting subscription:', netErr);
+        throw new Error(netErr.message || 'Error inserting subscription.', {
+          cause: netErr,
+        });
+      }
     }
+
+    const insertedSub = finalSub;
 
     // Ensure a valid receipt ID is present
     const receiptNo =
@@ -943,33 +971,51 @@ export const cardService = {
 
     const cardNumber = forcedCardNumber || generateCardTokenUuid();
 
-    const { data: cardRow, error: cardErr } = await supabase
-      .from('cards')
-      .upsert(
-        {
-          member_id: memberId,
-          card_number: cardNumber,
-          card_type: type,
-          status: 'Active',
-          version: 1,
-          payment_status: paymentStatus,
-          claim_status: claimStatus,
-          card_fee_paid: cardFeePaid,
-          receipt_number: receiptNo || null,
-          claimed_at: claimStatus === 'CLAIMED' ? nowIso : null,
-          claimed_by: claimStatus === 'CLAIMED' ? user : null,
-          issued_at: nowIso,
-          expires_at: expiresIso,
-          updated_at: nowIso,
-        },
-        { onConflict: 'member_id' }
-      )
-      .select()
-      .single();
+    const cardPayload = {
+      member_id: memberId,
+      card_number: cardNumber,
+      card_type: type,
+      status: 'Active' as CardStatus,
+      version: 1,
+      payment_status: paymentStatus,
+      claim_status: claimStatus,
+      card_fee_paid: cardFeePaid,
+      receipt_number: receiptNo || null,
+      claimed_at: claimStatus === 'CLAIMED' ? nowIso : null,
+      claimed_by: claimStatus === 'CLAIMED' ? user : null,
+      issued_at: nowIso,
+      expires_at: expiresIso,
+      updated_at: nowIso,
+    };
 
-    if (cardErr) {
-      console.error('Error upserting card record:', cardErr);
-      throw new Error(cardErr.message);
+    let cardRow: any = null;
+    try {
+      const { data, error: cardErr } = await supabase
+        .from('cards')
+        .upsert(cardPayload, { onConflict: 'member_id' })
+        .select()
+        .single();
+
+      if (cardErr) throw cardErr;
+      cardRow = data;
+    } catch (netErr: any) {
+      if (isCapacitorApp()) {
+        useOfflineSyncStore.getState().enqueueMutation({
+          action: 'card_issue',
+          label: `Issue ${type} card for member ${memberId}`,
+          payload: { memberId, cardPayload },
+        });
+        cardRow = {
+          ...cardPayload,
+          id: `offline-card-${Date.now()}`,
+          created_at: nowIso,
+        };
+      } else {
+        console.error('Error upserting card record:', netErr);
+        throw new Error(netErr.message || 'Error upserting card record.', {
+          cause: netErr,
+        });
+      }
     }
 
     await writeAudit(

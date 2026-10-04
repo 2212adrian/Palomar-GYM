@@ -43,6 +43,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../../../lib/supabase/client';
 import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import {
   memberService,
   subscriptionService,
@@ -60,6 +61,7 @@ import {
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
 import { SideNavTab } from '../../../components/ui/SideNavTab';
+import { isCapacitorApp } from '../../../lib/platform';
 import type {
   OnlineRegistration,
   PaymentMethod,
@@ -463,6 +465,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
+  const { isBatterySaver } = useBatterySaver();
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const stopPromiseRef = useRef<Promise<void> | null>(null);
   const receiptRef = useRef<OfficialReceiptRef | null>(null);
@@ -1433,10 +1436,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           await html5QrCode.start(
             cameraConfig,
             {
-              fps: 25,
+              fps: isBatterySaver ? 10 : 25,
               qrbox: (vw: number, vh: number) => {
                 const edge = Math.floor(Math.min(vw, vh) * 0.8);
                 return { width: edge, height: edge };
+              },
+              videoConstraints: {
+                ...cameraConfig,
+                width: { ideal: isBatterySaver ? 640 : 1280 },
+                height: { ideal: isBatterySaver ? 480 : 720 },
               },
             },
             (decodedText) => {
@@ -1592,6 +1600,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleExecuteCheckout = async () => {
     if (isSubmitting) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
+      toast.error(
+        'Cannot complete subscription transaction while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
+      );
+      return;
+    }
 
     // Strict guard: if cash session is closed, strictly prevent financial actions
     const isPaidPlan = selectedPlan !== 'No Subscription';

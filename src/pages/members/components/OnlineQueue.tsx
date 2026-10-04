@@ -41,6 +41,7 @@ import { useResponsiveItemsPerPage } from '../../../lib/useResponsiveItemsPerPag
 import { registrationService, settingsService } from '../memberService';
 import type { OnlineRegistration } from '../../../types/members';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useBatterySaver } from '../../../hooks/useBatterySaver';
 
 interface OnlineQueueProps {
   onApproveLaunchWizard: (reg: OnlineRegistration) => void;
@@ -91,6 +92,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   const itemsPerPage = useResponsiveItemsPerPage();
   const { isSessionOpen } = useCashSessionStore();
+  const { isBatterySaver } = useBatterySaver();
 
   const fetchQueue = useCallback(async () => {
     setIsSyncing(true);
@@ -121,13 +123,16 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   useEffect(() => {
     fetchQueue();
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchQueue();
-      }
-    }, 30000);
+    const interval = setInterval(
+      () => {
+        if (!document.hidden) {
+          fetchQueue();
+        }
+      },
+      isBatterySaver ? 120000 : 30000
+    );
     return () => clearInterval(interval);
-  }, [fetchQueue]);
+  }, [fetchQueue, isBatterySaver]);
 
   // Filter pending tickets excluding those currently staged in the Undo countdown
   const pendingRejectIds = useMemo(() => {

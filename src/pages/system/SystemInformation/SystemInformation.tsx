@@ -107,7 +107,7 @@ export const SystemInformation: React.FC = () => {
               );
             } else {
               toast.success(
-                `System is up to date (v${release.version} in app_releases).`,
+                `System is up to date (Installed: v${currentVer}).`,
                 { toastId: 'sysinfo-up-to-date' }
               );
             }
@@ -170,10 +170,9 @@ export const SystemInformation: React.FC = () => {
   }, [loadSystemReleaseAndTelemetry]);
 
   const remoteVersion = latestRelease?.version || BUNDLED_VERSION;
+  // If latest release is older than installed version then do not validate as update to latest
   const isUpdateAvailable = Boolean(
-    latestRelease &&
-      (isNewerVersion(latestRelease.version, installedVersion) ||
-        latestRelease.version !== installedVersion)
+    latestRelease && isNewerVersion(latestRelease.version, installedVersion)
   );
 
   const hasValidDownloadUrl = Boolean(
@@ -184,6 +183,14 @@ export const SystemInformation: React.FC = () => {
 
   const handleUpdateToLatest = async () => {
     if (isUpdatingApp) return;
+
+    // Guard: If latest release is older than or equal to installed version, do not validate as update
+    if (!latestRelease || !isNewerVersion(latestRelease.version, installedVersion)) {
+      toast.info(`System is already on the latest version (Installed: v${installedVersion}).`, {
+        toastId: 'already-latest-version',
+      });
+      return;
+    }
 
     // On Web / PWA without native Android container:
     // If the user is on web and an update is available, reload PWA caches/service worker
