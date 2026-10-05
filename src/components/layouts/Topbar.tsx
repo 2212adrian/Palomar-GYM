@@ -700,6 +700,12 @@ export const Topbar: React.FC<TopbarProps> = ({
     (isSessionOpen && currentDrawerCash === null) ||
     (isCashLoading && !activeSession);
 
+  // Hide Physical Drawer Cash when a Settings page or subtab is opened
+  const isSettingsPage =
+    Boolean(subTab) ||
+    location.pathname.startsWith('/settings') ||
+    location.pathname.startsWith('/system');
+
   return (
     <header
       className={`w-full h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md relative flex items-center justify-between px-3 sm:px-4 md:px-6 z-30 select-none shrink-0 ${className}`}
@@ -720,9 +726,9 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
 
         {/* BREADCRUMB TITLE */}
-        <div className="flex items-center font-heading text-[11px] sm:text-xs lg:text-sm tracking-[0.6px] sm:tracking-[1.2px] uppercase whitespace-nowrap overflow-hidden text-ellipsis shrink-0">
+        <div className="flex items-center font-heading text-[10px] xs:text-[11px] sm:text-xs lg:text-sm tracking-[0.5px] sm:tracking-[1.2px] uppercase whitespace-nowrap min-w-0">
           {getSectionIcon()}
-          <span className="truncate">{renderStyledBreadcrumbs()}</span>
+          <span>{renderStyledBreadcrumbs()}</span>
         </div>
 
         {/* TELEMETRY CAPSULE - HIDDEN ON MOBILE PORTRAIT (`hidden md:flex`) */}
@@ -804,7 +810,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   isCashChecking ? (
                     <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>CHECKING DRAWER...</span>
+                      <span>CHECKING DRAWER</span>
                     </div>
                   ) : !isSessionOpen ? (
                     <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">
@@ -841,7 +847,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                 ) : isCashChecking ? (
                   <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>CHECKING DRAWER...</span>
+                    <span>CHECKING DRAWER</span>
                   </div>
                 ) : !isSessionOpen ? (
                   <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">

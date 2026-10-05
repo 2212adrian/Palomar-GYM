@@ -456,6 +456,7 @@ export const SecuritySettings: React.FC = () => {
       id: crypto.randomUUID(),
       ssid: newSsid.trim(),
       subnet: newSubnet.trim() || undefined,
+      public_ip: detectedIP && detectedIP !== 'Unavailable' ? detectedIP : undefined,
       notes: newNotes.trim() || undefined,
       added_at: new Date().toISOString(),
       added_by: user?.email || 'Admin',
@@ -487,6 +488,7 @@ export const SecuritySettings: React.FC = () => {
     const networkItem: TrustedWifiNetwork = {
       id: crypto.randomUUID(),
       ssid: detectedSsid,
+      public_ip: detectedIP && detectedIP !== 'Unavailable' ? detectedIP : undefined,
       notes: 'Auto-registered from current terminal',
       added_at: new Date().toISOString(),
       added_by: user?.email || 'Admin',

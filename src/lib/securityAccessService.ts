@@ -9,6 +9,7 @@ export interface TrustedWifiNetwork {
   ssid: string;
   bssid?: string;
   subnet?: string;
+  public_ip?: string;
   notes?: string;
   added_at: string;
   added_by?: string;
@@ -42,11 +43,12 @@ export const DEFAULT_SECURITY_CONFIG: SecurityAccessConfig = {
 };
 
 /**
- * Fetches the client's current public IP address with multiple fallbacks
+ * Fetches the client's current public IP address with multiple fallbacks and cache-busting
  */
 export async function getClientPublicIP(): Promise<string> {
+  const ts = Date.now();
   try {
-    const res = await fetch('https://api.ipify.org?format=json', { cache: 'no-cache' });
+    const res = await fetch(`https://api.ipify.org?format=json&_t=${ts}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data.ip) return data.ip.trim();
@@ -56,7 +58,7 @@ export async function getClientPublicIP(): Promise<string> {
   }
 
   try {
-    const res2 = await fetch('https://api64.ipify.org?format=json', { cache: 'no-cache' });
+    const res2 = await fetch(`https://api64.ipify.org?format=json&_t=${ts}`, { cache: 'no-store' });
     if (res2.ok) {
       const data2 = await res2.json();
       if (data2.ip) return data2.ip.trim();
@@ -66,7 +68,7 @@ export async function getClientPublicIP(): Promise<string> {
   }
 
   try {
-    const res3 = await fetch('https://freeipapi.com/api/json', { cache: 'no-cache' });
+    const res3 = await fetch(`https://freeipapi.com/api/json?_t=${ts}`, { cache: 'no-store' });
     const data3 = await res3.json();
     if (data3.ipAddress) return data3.ipAddress.trim();
   } catch {
@@ -98,11 +100,42 @@ export function calculateDistanceMeters(
   return Math.round(R * c);
 }
 
+/**
+ * Retrieves the user's high-accuracy real-time GPS position.
+ * Uses native Capacitor Geolocation on native apps and highAccuracy Geolocation API in browsers.
+ */
 export async function getCurrentDevicePosition(): Promise<{
   latitude: number;
   longitude: number;
   accuracy: number;
 }> {
+  // 1. Native Capacitor platform support for direct hardware GPS
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Geolocation } = await import('@capacitor/geolocation');
+      const perm = await Geolocation.checkPermissions();
+      if (perm.location !== 'granted') {
+        const req = await Geolocation.requestPermissions();
+        if (req.location !== 'granted') {
+          throw new Error('Location permission was denied on this device.');
+        }
+      }
+      const nativePos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
+      return {
+        latitude: nativePos.coords.latitude,
+        longitude: nativePos.coords.longitude,
+        accuracy: nativePos.coords.accuracy,
+      };
+    } catch (err: any) {
+      console.warn('Capacitor native geolocation error, falling back to navigator:', err);
+    }
+  }
+
+  // 2. High-Accuracy Web Geolocation API
   if (typeof window === 'undefined' || !navigator.geolocation) {
     throw new Error('Geolocation is not supported on this device.');
   }
@@ -116,8 +149,21 @@ export async function getCurrentDevicePosition(): Promise<{
           accuracy: pos.coords.accuracy,
         });
       },
-      (err) => reject(err),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      (err) => {
+        // Fallback retry with slightly higher tolerance if strict hardware GPS takes too long
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            });
+          },
+          (err2) => reject(err2 || err),
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   });
 }
@@ -398,7 +444,13 @@ export async function evaluateTerminalSecurityAccess(
       const clientIP = await getClientPublicIP();
       result.currentIP = clientIP;
 
-      if (config.allowed_public_ips.length > 0) {
+      if (!config.allowed_public_ips || config.allowed_public_ips.length === 0) {
+        result.ipPassed = false;
+        result.allowed = false;
+        result.errors.push(
+          'IP Restriction is enabled, but no authorized gym router IP addresses are listed. Access blocked.'
+        );
+      } else {
         const isWhitelisted = config.allowed_public_ips.some((allowed) => {
           const cleanAllowed = allowed.trim().toLowerCase();
           const cleanClient = clientIP.toLowerCase();
@@ -420,12 +472,12 @@ export async function evaluateTerminalSecurityAccess(
       result.ipPassed = false;
       result.allowed = false;
       result.errors.push(
-        'Unable to verify terminal network IP address. Please check your internet connection.'
+        err.message || 'Unable to verify terminal network IP address. Please check your internet connection.'
       );
     }
   }
 
-  // 2. Physical Wi-Fi Check
+  // 2. Physical Wi-Fi & Trusted Network Check
   if (config.wifi_restriction_enabled) {
     try {
       const net = await getDeviceNetworkStatus();
@@ -433,34 +485,82 @@ export async function evaluateTerminalSecurityAccess(
       result.isWifi = net.isWifi;
       result.activeSsid = net.ssid;
 
-      if (!net.isWifi && Capacitor.isNativePlatform()) {
+      // Prevent cellular bypass across native and web
+      const isCellular =
+        net.connectionType === 'cellular' ||
+        (net.connectionType &&
+          net.connectionType !== 'wifi' &&
+          net.connectionType !== 'unknown');
+
+      if (isCellular || (!net.isWifi && Capacitor.isNativePlatform())) {
         result.wifiPassed = false;
         result.allowed = false;
         result.errors.push(
-          'Terminal is not connected to a physical Wi-Fi network. Cellular mobile data is restricted.'
+          'Terminal is connected via cellular mobile data or a non-Wi-Fi interface. Wi-Fi restriction requires connecting to the gym Wi-Fi network.'
         );
       }
 
-      if (config.require_trusted_network && config.trusted_networks.length > 0) {
-        if (net.ssid) {
-          const matched = config.trusted_networks.some(
-            (tn) => tn.ssid.trim().toLowerCase() === net.ssid?.trim().toLowerCase()
+      // If trusted network is required, verify that the current Wi-Fi matches authorized network(s)
+      if (config.require_trusted_network) {
+        if (!config.trusted_networks || config.trusted_networks.length === 0) {
+          result.wifiPassed = false;
+          result.allowed = false;
+          result.errors.push(
+            'Trusted Wi-Fi requirement is enabled, but no trusted networks are registered in Facility Security settings.'
           );
-          if (!matched) {
+        } else {
+          // Resolve current public IP to verify against trusted network router binding
+          const currentIP =
+            result.currentIP || (await getClientPublicIP().catch(() => null));
+          let isMatched = false;
+
+          for (const tn of config.trusted_networks) {
+            const tnSsid = tn.ssid.trim().toLowerCase();
+            const currentSsid = net.ssid?.trim().toLowerCase();
+
+            const ssidMatches = Boolean(currentSsid && currentSsid === tnSsid);
+            const ipMatches = Boolean(
+              tn.public_ip &&
+                currentIP &&
+                tn.public_ip.trim() === currentIP.trim()
+            );
+
+            if (ssidMatches) {
+              // If network has a registered public IP, ensure current IP also matches
+              if (!tn.public_ip || !currentIP || tn.public_ip.trim() === currentIP.trim()) {
+                isMatched = true;
+                break;
+              }
+            } else if (ipMatches) {
+              // Matching router public IP confirms the terminal is on the authorized gym router
+              isMatched = true;
+              break;
+            }
+          }
+
+          if (!isMatched) {
             result.wifiPassed = false;
             result.allowed = false;
+            const netLabel = net.ssid
+              ? `"${net.ssid}"`
+              : currentIP
+                ? `IP ${currentIP}`
+                : 'current network';
             result.errors.push(
-              `Connected Wi-Fi (${net.ssid}) is not in the facility's registered trusted network list.`
+              `Connected Wi-Fi (${netLabel}) is not in the facility's registered trusted network list. Switching to external Wi-Fi is restricted.`
             );
           }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Wi-Fi verification error:', err);
+      result.wifiPassed = false;
+      result.allowed = false;
+      result.errors.push(err.message || 'Unable to verify terminal Wi-Fi network.');
     }
   }
 
-  // 3. Location Geofence Check
+  // 3. Location Geofence Check (High Accuracy)
   if (config.location_restriction_enabled) {
     try {
       const pos = await getCurrentDevicePosition();
@@ -480,13 +580,16 @@ export async function evaluateTerminalSecurityAccess(
         result.locationPassed = false;
         result.allowed = false;
         result.errors.push(
-          `Device is outside facility perimeter (${dist}m away; permitted: ${config.geofence_radius_meters}m).`
+          `Device is outside facility perimeter (${dist}m away; permitted: ${config.geofence_radius_meters}m). GPS accuracy: ±${Math.round(pos.accuracy)}m.`
         );
       }
     } catch (err: any) {
       result.locationPassed = false;
       result.allowed = false;
-      result.errors.push('Unable to verify GPS location.');
+      result.errors.push(
+        err.message ||
+          'Unable to verify GPS location. High-accuracy location access must be permitted to access this terminal.'
+      );
     }
   }
 

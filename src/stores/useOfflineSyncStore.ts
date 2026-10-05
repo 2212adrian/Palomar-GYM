@@ -30,10 +30,24 @@ export interface PendingSyncItem {
   retryCount: number;
 }
 
+export interface SyncConflictItem {
+  id: string;
+  queueItemId: string;
+  action: PendingSyncActionType;
+  label: string;
+  payload: Record<string, any>;
+  createdAt: string;
+  conflictReason: string;
+  conflictDetectedAt: string;
+  serverState?: Record<string, any> | null;
+  status: 'pending_reconciliation' | 'resolved';
+}
+
 interface OfflineSyncState {
   isOnline: boolean;
   isSyncing: boolean;
   pendingQueue: PendingSyncItem[];
+  conflicts: SyncConflictItem[];
   lastSyncedAt: string | null;
   syncError: string | null;
   setOnlineStatus: (online: boolean) => void;
@@ -45,10 +59,21 @@ interface OfflineSyncState {
   removeQueueItem: (id: string) => void;
   flushQueue: () => Promise<{ synced: number; remaining: number }>;
   refreshQueueFromStorage: () => void;
+  addConflict: (
+    item: Omit<SyncConflictItem, 'id' | 'conflictDetectedAt' | 'status'>
+  ) => void;
+  resolveConflict: (
+    id: string,
+    resolution: 'force_sync' | 'discard',
+    updatedPayload?: Record<string, any>
+  ) => Promise<boolean>;
+  dismissConflict: (id: string) => void;
+  clearResolvedConflicts: () => void;
 }
 
 const QUEUE_STORAGE_KEY = 'palomar_offline_sync_queue_v2';
 const LAST_SYNC_STORAGE_KEY = 'palomar_last_synced_at_v2';
+const CONFLICTS_STORAGE_KEY = 'palomar_offline_sync_conflicts_v2';
 
 /**
  * Strict Sales Validator:
@@ -164,12 +189,112 @@ const saveLastSyncedAt = (iso: string) => {
   }
 };
 
+const loadStoredConflicts = (): SyncConflictItem[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(CONFLICTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveConflictsToStorage = (conflicts: SyncConflictItem[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(CONFLICTS_STORAGE_KEY, JSON.stringify(conflicts));
+  } catch (e) {
+    console.warn('Failed to persist offline sync conflicts:', e);
+  }
+};
+
 export const useOfflineSyncStore = create<OfflineSyncState>((set, get) => ({
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   isSyncing: false,
   pendingQueue: loadStoredQueue(),
+  conflicts: loadStoredConflicts(),
   lastSyncedAt: loadLastSyncedAt(),
   syncError: null,
+
+  addConflict: (item) => {
+    const newConflict: SyncConflictItem = {
+      ...item,
+      id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      conflictDetectedAt: getServerISOString(),
+      status: 'pending_reconciliation',
+    };
+    const updated = [newConflict, ...get().conflicts.filter((c) => c.queueItemId !== item.queueItemId)];
+    saveConflictsToStorage(updated);
+    set({ conflicts: updated });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('palomar_sync_conflict_detected', { detail: newConflict }));
+    }
+  },
+
+  dismissConflict: (id: string) => {
+    const updated = get().conflicts.filter((c) => c.id !== id);
+    saveConflictsToStorage(updated);
+    set({ conflicts: updated });
+  },
+
+  clearResolvedConflicts: () => {
+    const updated = get().conflicts.filter((c) => c.status === 'pending_reconciliation');
+    saveConflictsToStorage(updated);
+    set({ conflicts: updated });
+  },
+
+  resolveConflict: async (id: string, resolution: 'force_sync' | 'discard', updatedPayload?: Record<string, any>) => {
+    const conflict = get().conflicts.find((c) => c.id === id);
+    if (!conflict) return false;
+
+    if (resolution === 'discard') {
+      await logAudit(
+        'SYNC_CONFLICT_DISCARDED',
+        `[Sync Conflict] Offline transaction "${conflict.label}" (${conflict.action}) was manually discarded by user reconciliation. Reason: ${conflict.conflictReason}`,
+        conflict.id
+      ).catch(() => {});
+      get().dismissConflict(id);
+      return true;
+    }
+
+    if (resolution === 'force_sync') {
+      const payloadToSync = updatedPayload || conflict.payload;
+      try {
+        // Re-enqueue as prioritized item
+        const reQueuedItem: PendingSyncItem = {
+          id: `resolved-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          action: conflict.action,
+          label: conflict.label,
+          payload: payloadToSync,
+          createdAt: getServerISOString(),
+          retryCount: 0,
+        };
+        const updatedQueue = [reQueuedItem, ...get().pendingQueue];
+        saveQueueToStorage(updatedQueue);
+        set({ pendingQueue: updatedQueue });
+        get().dismissConflict(id);
+
+        await logAudit(
+          'SYNC_CONFLICT_RESOLVED',
+          `[Sync Conflict] Offline transaction "${conflict.label}" was manually reconciled and queued for force-sync.`,
+          conflict.id
+        ).catch(() => {});
+
+        // Trigger immediate flush if online
+        if (get().isOnline) {
+          get().flushQueue();
+        }
+        return true;
+      } catch (err: any) {
+        console.error('Error force syncing reconciled item:', err);
+        return false;
+      }
+    }
+
+    return false;
+  },
 
   setOnlineStatus: (online: boolean) => {
     // Supabase offline sync is exclusive to Capacitor native app only
@@ -622,10 +747,36 @@ export const useOfflineSyncStore = create<OfflineSyncState>((set, get) => ({
         }
       } catch (err: any) {
         lastErr = err?.message || 'Pending upload to Supabase';
-        remainingItems.push({
-          ...item,
-          retryCount: (item.retryCount || 0) + 1,
-        });
+        const errMsg = String(err?.message || '').toLowerCase();
+        const errDetails = String(err?.details || '').toLowerCase();
+        const isConflict =
+          err?.code === '23505' || // Unique violation (e.g. duplicate reference or barcode)
+          errMsg.includes('duplicate') ||
+          errMsg.includes('already exists') ||
+          errMsg.includes('conflict') ||
+          errMsg.includes('constraint') ||
+          errMsg.includes('insufficient') ||
+          errMsg.includes('out of stock') ||
+          errMsg.includes('already subscribed') ||
+          errMsg.includes('concurrency') ||
+          errDetails.includes('key already exists') ||
+          (item.retryCount && item.retryCount >= 3);
+
+        if (isConflict) {
+          get().addConflict({
+            queueItemId: item.id,
+            action: item.action,
+            label: item.label,
+            payload: item.payload,
+            createdAt: item.createdAt,
+            conflictReason: err?.message || 'Data conflict detected during sync with Supabase.',
+          });
+        } else {
+          remainingItems.push({
+            ...item,
+            retryCount: (item.retryCount || 0) + 1,
+          });
+        }
       }
     }
 

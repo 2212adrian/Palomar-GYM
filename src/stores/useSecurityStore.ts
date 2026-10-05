@@ -1,5 +1,6 @@
 // src/stores/useSecurityStore.ts
 import { create } from 'zustand';
+import { Network } from '@capacitor/network';
 import {
   type SecurityAccessConfig,
   type SecurityAccessCheckResult,
@@ -30,6 +31,8 @@ interface SecurityStoreState {
 }
 
 let activeRealtimeUnsubscribe: (() => void) | null = null;
+let networkListenerAttached = false;
+let periodicCheckInterval: any = null;
 
 export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
   config: DEFAULT_SECURITY_CONFIG,
@@ -153,6 +156,53 @@ export const useSecurityStore = create<SecurityStoreState>((set, get) => ({
     if (activeRealtimeUnsubscribe) {
       activeRealtimeUnsubscribe();
       activeRealtimeUnsubscribe = null;
+    }
+
+    // Attach Network listeners to detect switching Wi-Fi immediately
+    if (!networkListenerAttached && typeof window !== 'undefined') {
+      networkListenerAttached = true;
+
+      const triggerRecheckOnNetworkChange = () => {
+        const currentCfg = get().config;
+        const hasRestrictions =
+          currentCfg.location_restriction_enabled ||
+          currentCfg.wifi_restriction_enabled ||
+          currentCfg.ip_restriction_enabled;
+
+        if (hasRestrictions) {
+          const roleToVerify = get().lastRole || 'anonymous';
+          get().runVerification(roleToVerify, get().lastEmail);
+        }
+      };
+
+      try {
+        Network.addListener('networkStatusChange', () => {
+          triggerRecheckOnNetworkChange();
+        });
+      } catch {}
+
+      window.addEventListener('online', triggerRecheckOnNetworkChange);
+      window.addEventListener('focus', triggerRecheckOnNetworkChange);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          triggerRecheckOnNetworkChange();
+        }
+      });
+
+      // Periodic sanity check every 25 seconds if restrictions active
+      if (!periodicCheckInterval) {
+        periodicCheckInterval = setInterval(() => {
+          const currentCfg = get().config;
+          const hasRestrictions =
+            currentCfg.location_restriction_enabled ||
+            currentCfg.wifi_restriction_enabled ||
+            currentCfg.ip_restriction_enabled;
+          if (hasRestrictions && !get().isChecking) {
+            const roleToVerify = get().lastRole || 'anonymous';
+            get().runVerification(roleToVerify, get().lastEmail);
+          }
+        }, 25000);
+      }
     }
 
     activeRealtimeUnsubscribe = subscribeToSecurityConfig((updatedConfig) => {

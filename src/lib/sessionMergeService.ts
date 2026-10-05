@@ -313,6 +313,9 @@ export async function mergeDailySessionsInSupabase(targetDateStr?: string): Prom
         total_digital_sales: totalDigitalSales,
         total_cash_logbook: totalCashLogbook,
         total_digital_logbook: totalDigitalLogbook,
+        total_cash_in: totalCashIn,
+        total_cash_out: totalCashOut,
+        total_digital_in: totalDigitalIn,
         closing_expected_cash: expectedDrawerCash,
         notes: combinedNotes ? `[Consolidated Day Session] ${combinedNotes}` : '[Consolidated Day Session]',
       })
@@ -323,7 +326,7 @@ export async function mergeDailySessionsInSupabase(targetDateStr?: string): Prom
 
     await logAudit(
       'SESSIONS_MERGED',
-      `Merged ${secondaries.length} offline sessions into single ended session #${primary.session_number} for date ${correlationDate}. Combined sales: ${(salesRes.data || []).length} items.`,
+      `Merged ${secondaries.length} offline sessions into single ended session #${primary.session_number} for date ${correlationDate}. Combined sales: ${(salesRes.data || []).length} items. Cash-In: ₱${totalCashIn.toFixed(2)}, Cash-Out: ₱${totalCashOut.toFixed(2)}, Digital-In: ₱${totalDigitalIn.toFixed(2)}.`,
       primary.id
     ).catch(() => {});
 

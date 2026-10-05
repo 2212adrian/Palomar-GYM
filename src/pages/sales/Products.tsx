@@ -105,7 +105,6 @@ export const Products: React.FC<ProductsProps> = ({
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
   const activeFloating = useNavbarStore((s) => s.activeFloating);
-  const navClickTimestamp = useNavbarStore((s) => s.navClickTimestamp);
   const isNavFloatingOpen = Boolean(activeFloating);
 
   useEffect(() => {
@@ -162,8 +161,24 @@ export const Products: React.FC<ProductsProps> = ({
     useState(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
 
-  // Selection States for Bulk actions
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  // Selection States for Bulk actions (persisted so navigation between sales & logbook retains selections)
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(() => {
+    try {
+      const stored = sessionStorage.getItem('palomar_selected_product_ids');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        'palomar_selected_product_ids',
+        JSON.stringify(selectedProductIds)
+      );
+    } catch {}
+  }, [selectedProductIds]);
 
   // Form States (Single Edit)
   const [formName, setFormName] = useState('');
@@ -377,7 +392,7 @@ export const Products: React.FC<ProductsProps> = ({
 
   const location = useLocation();
 
-  // Clear active product selections and hide print, edit, and remove action toolbars on navigation click
+  // Clear active product selections and hide print, edit, and remove action toolbars on explicit user request
   const resetActionState = useCallback(() => {
     setSelectedProductIds([]);
     setSelectedProductId(null);
@@ -385,31 +400,25 @@ export const Products: React.FC<ProductsProps> = ({
     setShowPrintModal(false);
     setShowBulkEditModal(false);
     setShowBulkDeleteModal(false);
+    try {
+      sessionStorage.removeItem('palomar_selected_product_ids');
+    } catch {}
   }, []);
 
+  // When clicking navbar sales or logbook, do NOT clear selections from the product list!
+  // Only close any open modals.
   useEffect(() => {
-    if (activeFloating) {
-      resetActionState();
-    }
-  }, [activeFloating, resetActionState]);
-
-  useEffect(() => {
-    if (navClickTimestamp > 0) {
-      resetActionState();
-    }
-  }, [navClickTimestamp, resetActionState]);
-
-  useEffect(() => {
-    resetActionState();
-  }, [location.pathname, resetActionState]);
-
-  useEffect(() => {
-    const handleNavClick = () => resetActionState();
+    const handleNavClick = () => {
+      setShowPrintModal(false);
+      setShowBulkEditModal(false);
+      setShowBulkDeleteModal(false);
+      setDeleteConfirmId(null);
+    };
     window.addEventListener('navbar-navigation-click', handleNavClick);
     return () => {
       window.removeEventListener('navbar-navigation-click', handleNavClick);
     };
-  }, [resetActionState]);
+  }, []);
 
   useEffect(() => {
     if (hideHeaderActions) return;
@@ -1452,10 +1461,10 @@ export const Products: React.FC<ProductsProps> = ({
         </div>
       </div>
 
-      {/* Bulk actions sticky pin bar */}
+      {/* Bulk actions sticky pin bar - only shown when more than 1 item is selected */}
       {location.pathname.startsWith('/sales/products') &&
         !isNavFloatingOpen &&
-        selectedProductIds.length > 0 &&
+        selectedProductIds.length > 1 &&
         createPortal(
           <ProductBulkActions
             selectedCount={selectedProductIds.length}

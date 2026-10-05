@@ -23,6 +23,10 @@ export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
   const isNavFloatingOpen =
     Boolean(useNavbarStore((s) => s.activeFloating)) || isHidden;
 
+  if (selectedCount <= 1) {
+    return null;
+  }
+
   return (
     <div
       style={{ position: 'fixed' }}
