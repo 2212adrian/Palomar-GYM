@@ -53,6 +53,10 @@ import {
   RotateCcw,
   Sparkles,
   RefreshCw,
+  Maximize2,
+  Copy,
+  Check,
+  Barcode as BarcodeIcon,
 } from 'lucide-react';
 
 interface Product {
@@ -158,6 +162,15 @@ export const Products: React.FC<ProductsProps> = ({
   const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
     useState(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
+
+  // Quick-Scan Barcode Popout Modal States
+  const [barcodeModalProduct, setBarcodeModalProduct] = useState<Product | null>(
+    null
+  );
+  const [activeBarcodeTab, setActiveBarcodeTab] = useState<'system' | 'mfg'>(
+    'system'
+  );
+  const [hasCopiedBarcode, setHasCopiedBarcode] = useState(false);
 
   // Selection States for Bulk actions (persisted so navigation between sales & logbook retains selections)
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>(() => {
@@ -1064,32 +1077,45 @@ export const Products: React.FC<ProductsProps> = ({
       sortable: true,
       render: (item) => (
         <div className="relative group/tooltip inline-block">
-          <span className="px-2.5 py-1 rounded-lg bg-(--bg-page) text-xs font-mono font-bold border border-(--border-color) text-(--color-text) opacity-90 block cursor-help tracking-wider active:scale-95 transition-transform select-none">
-            {item.barcode_id}
-          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setBarcodeModalProduct(item);
+              setActiveBarcodeTab('system');
+            }}
+            className="px-2.5 py-1 rounded-lg bg-(--bg-page) text-xs font-mono font-bold border border-(--border-color) text-(--color-text) opacity-90 flex items-center gap-1.5 cursor-pointer hover:border-cyan-500 hover:text-cyan-400 tracking-wider active:scale-95 transition-all select-none group/btn shadow-xs"
+            title="Click to view full-size barcode for phone scanning"
+          >
+            <span>{item.barcode_id}</span>
+            <Maximize2 className="w-3 h-3 text-slate-400 group-hover/btn:text-cyan-400 transition-colors shrink-0" />
+          </button>
+
           {item.manufacturer_barcode && (
             <span className="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-mono block">
               MFG: {item.manufacturer_barcode}
             </span>
           )}
 
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl pointer-events-none min-w-[220px] max-w-[280px] animate-scale-up">
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl min-w-[280px] max-w-[340px] p-3 animate-scale-up pointer-events-none">
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-1px] border-[6px] border-transparent border-b-white dark:border-b-slate-900" />
-            <div className="bg-white p-3 rounded-xl border border-slate-100 dark:border-slate-800 w-full flex items-center justify-center overflow-hidden">
+            
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-inner w-full flex items-center justify-center">
               <BarcodeComponent
                 value={item.barcode_id}
                 width={2}
-                height={50}
-                margin={0}
-                displayValue={false}
+                height={68}
+                margin={12}
+                displayValue={true}
               />
             </div>
-            <div className="mt-2 text-center w-full px-1">
+
+            <div className="mt-2 text-center w-full px-1 space-y-0.5">
               <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate">
                 {item.product_name}
               </p>
-              <p className="text-[10px] font-mono text-slate-400 font-semibold tracking-wider mt-0.5">
-                {item.barcode_id}
+              <p className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
+                Click barcode pill to enlarge for phone camera
               </p>
             </div>
           </div>
@@ -1682,12 +1708,20 @@ export const Products: React.FC<ProductsProps> = ({
                       </div>
 
                       {isSelected && (
-                        <div className="bg-white p-2 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center animate-scale-up">
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBarcodeModalProduct(product);
+                            setActiveBarcodeTab('system');
+                          }}
+                          className="bg-white p-2 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center animate-scale-up cursor-pointer hover:ring-2 hover:ring-cyan-500 transition-all"
+                          title="Click to view full screen barcode"
+                        >
                           <BarcodeComponent
                             value={product.barcode_id}
                             width={2}
-                            height={36}
-                            margin={8}
+                            height={52}
+                            margin={12}
                             displayValue={false}
                           />
                         </div>
@@ -2037,6 +2071,131 @@ export const Products: React.FC<ProductsProps> = ({
           fetchProducts(true);
         }}
       />
+
+      {/* QUICK-SCAN FULL SCREEN BARCODE MODAL */}
+      {barcodeModalProduct &&
+        createPortal(
+          <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in text-(--color-text) select-none">
+            <div className="bg-slate-900 border border-white/15 rounded-3xl w-full max-w-md shadow-2xl p-5 text-center space-y-4 animate-scale-up relative">
+              <button
+                type="button"
+                onClick={() => setBarcodeModalProduct(null)}
+                className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2.5 text-left pr-8">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                  <BarcodeIcon className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-heading font-black text-sm text-white uppercase truncate">
+                    {barcodeModalProduct.product_name}
+                  </h3>
+                  <p className="text-xs font-mono font-bold text-emerald-400">
+                    ₱{barcodeModalProduct.selling_price.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {barcodeModalProduct.manufacturer_barcode && (
+                <div className="flex items-center p-1 bg-zinc-950 border border-zinc-800 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveBarcodeTab('system')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                      activeBarcodeTab === 'system'
+                        ? 'bg-cyan-500 text-black shadow-md'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Gym Code ({barcodeModalProduct.barcode_id})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveBarcodeTab('mfg')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                      activeBarcodeTab === 'mfg'
+                        ? 'bg-amber-400 text-black shadow-md'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    MFG Barcode
+                  </button>
+                </div>
+              )}
+
+              {/* HIGH-CONTRAST SCANNING TARGET WITH REQUIRED QUIET ZONES */}
+              <div className="bg-white p-5 rounded-2xl border-4 border-cyan-500/40 shadow-2xl flex flex-col items-center justify-center">
+                <div className="w-full flex items-center justify-center overflow-x-auto py-1">
+                  <BarcodeComponent
+                    value={
+                      activeBarcodeTab === 'mfg' &&
+                      barcodeModalProduct.manufacturer_barcode
+                        ? barcodeModalProduct.manufacturer_barcode
+                        : barcodeModalProduct.barcode_id
+                    }
+                    width={2.2}
+                    height={85}
+                    margin={16}
+                    displayValue={true}
+                  />
+                </div>
+                <span className="text-[10px] font-mono font-black text-slate-700 uppercase tracking-widest mt-1">
+                  {activeBarcodeTab === 'mfg' &&
+                  barcodeModalProduct.manufacturer_barcode
+                    ? `MFG: ${barcodeModalProduct.manufacturer_barcode}`
+                    : barcodeModalProduct.barcode_id}
+                </span>
+              </div>
+
+              <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-[10px] font-bold text-cyan-300 space-y-0.5">
+                <p>⚡ Point your phone camera directly at the white card above.</p>
+                <p className="text-slate-400">Hold phone 15–25cm away for instant autofocus recognition.</p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code =
+                      activeBarcodeTab === 'mfg' &&
+                      barcodeModalProduct.manufacturer_barcode
+                        ? barcodeModalProduct.manufacturer_barcode
+                        : barcodeModalProduct.barcode_id;
+                    navigator.clipboard.writeText(code);
+                    setHasCopiedBarcode(true);
+                    setTimeout(() => setHasCopiedBarcode(false), 2000);
+                  }}
+                  className="flex-1 py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {hasCopiedBarcode ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Copy Code</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBarcodeModalProduct(null)}
+                  className="flex-1 py-2.5 px-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* MOBILE DIRECT ACTION BOTTOM BAR FOR PRODUCTS */}
       {location.pathname.startsWith('/sales/products') &&

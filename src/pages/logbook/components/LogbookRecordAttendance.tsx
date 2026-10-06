@@ -30,7 +30,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
@@ -270,11 +270,16 @@ export const LogbookRecordAttendance: React.FC<
     url: string | null;
   } | null>(null);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>(
+    'environment'
+  );
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
     []
   );
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isProcessingScanRef = useRef(false);
+  const lastScannedTimeRef = useRef(0);
 
   const [selectedEntry, setSelectedEntry] = useState<
     'walkin_regular' | 'walkin_student' | 'member_entry' | null
@@ -567,6 +572,13 @@ export const LogbookRecordAttendance: React.FC<
       const raw = scannedText.trim();
       if (!raw) return;
 
+      const now = Date.now();
+      if (isProcessingScanRef.current || now - lastScannedTimeRef.current < 1200) {
+        return;
+      }
+      isProcessingScanRef.current = true;
+      lastScannedTimeRef.current = now;
+
       const cleanId = extractCleanMemberId(raw);
       const cleanIdUpper = cleanId.toUpperCase();
       const rawUpper = raw.toUpperCase();
@@ -627,8 +639,12 @@ export const LogbookRecordAttendance: React.FC<
         setFilterMode('member');
         handleSelectMember(matchedMember);
         toast.success(
-          `Verified: ${matchedMember.name} (${matchedMember.memberId})`
+          `Verified: ${matchedMember.name} (${matchedMember.memberId})`,
+          { toastId: 'verified-member-toast' }
         );
+        setTimeout(() => {
+          isProcessingScanRef.current = false;
+        }, 800);
         return;
       }
 
@@ -681,7 +697,12 @@ export const LogbookRecordAttendance: React.FC<
             avatarUrl: resolvedPhoto,
           });
 
-          toast.success(`Verified: ${freshMatch.full_name}`);
+          toast.success(`Verified: ${freshMatch.full_name}`, {
+            toastId: 'verified-member-toast',
+          });
+          setTimeout(() => {
+            isProcessingScanRef.current = false;
+          }, 800);
           return;
         }
       } catch (err) {
@@ -692,12 +713,19 @@ export const LogbookRecordAttendance: React.FC<
       setShowLiveScanner(false);
       setFilterMode('non-member');
       setMemberSearch(cleanId);
-      toast.info(`Scanned: "${cleanId}". Select pass type to proceed.`);
+      toast.info(`Scanned: "${cleanId}". Select pass type to proceed.`, {
+        toastId: 'scanned-guest-toast',
+      });
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+      }, 800);
     },
     [dynamicMembers, handleSelectMember, navigate, onClose]
   );
 
   const resetForm = () => {
+    isProcessingScanRef.current = false;
+    lastScannedTimeRef.current = 0;
     setMemberSearch('');
     setSuggestions([]);
     setSelectedClient(null);
@@ -797,11 +825,10 @@ export const LogbookRecordAttendance: React.FC<
   }, [isOpen, showLiveScanner]);
 
   const handleCycleCamera = () => {
-    if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
-    const nextIndex = (currentIndex + 1) % cameras.length;
+    isProcessingScanRef.current = false;
     stopAllCameraTracks();
-    setSelectedCameraId(cameras[nextIndex].id);
+    setSelectedCameraId('');
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
   useEffect(() => {
@@ -813,33 +840,43 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
 
+    isProcessingScanRef.current = false;
+
     const timer = setTimeout(() => {
       const element = document.getElementById('live-qr-reader');
       if (!element || isCancelled) return;
 
       try {
-        html5QrCode = new Html5Qrcode('live-qr-reader');
+        const formatsToSupport = [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.UPC_A,
+        ];
+
+        html5QrCode = new Html5Qrcode('live-qr-reader', {
+          verbose: false,
+          formatsToSupport,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
+        });
         scannerRef.current = html5QrCode;
-        const cameraConfig = selectedCameraId
+
+        const cameraConfig: any = selectedCameraId
           ? { deviceId: { exact: selectedCameraId } }
-          : { facingMode: 'environment' };
+          : { facingMode };
 
         html5QrCode
           .start(
             cameraConfig,
             {
-              // Reduce camera polling FPS in Battery Saver mode (10 FPS vs 25 FPS)
-              fps: isBatterySaver ? 10 : 25,
-              qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                const edgeSize = Math.floor(minEdge * 0.72);
-                return { width: edgeSize, height: edgeSize };
-              },
+              fps: isBatterySaver ? 12 : 20,
               videoConstraints: {
-                ...cameraConfig,
-                width: { ideal: isBatterySaver ? 640 : 1280 },
-                height: { ideal: isBatterySaver ? 480 : 720 },
-                facingMode: 'environment',
+                facingMode: selectedCameraId ? undefined : facingMode,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
               },
             },
             (decodedText) => {
@@ -850,28 +887,15 @@ export const LogbookRecordAttendance: React.FC<
           .catch((err) => {
             if (!isCancelled) {
               const reason = getCameraErrorMessage(err);
-              if (cameras.length > 1) {
-                const currentIndex = selectedCameraId
-                  ? cameras.findIndex((c) => c.id === selectedCameraId)
-                  : -1;
-                const nextCamera =
-                  cameras[(currentIndex + 1) % cameras.length];
-                stopAllCameraTracks();
-                setSelectedCameraId(nextCamera.id);
-                toast.info(
-                  `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                );
-              } else {
-                toast.error(`Camera Error: ${reason}`);
-                setShowLiveScanner(false);
-                stopAllCameraTracks();
-              }
+              toast.error(`Camera Error: ${reason}`);
+              setShowLiveScanner(false);
+              stopAllCameraTracks();
             }
           });
       } catch (e) {
         console.error('Attendance scanner init error:', e);
       }
-    }, 250);
+    }, 200);
 
     return () => {
       isCancelled = true;
@@ -882,8 +906,8 @@ export const LogbookRecordAttendance: React.FC<
     isOpen,
     showLiveScanner,
     selectedCameraId,
+    facingMode,
     handleBarcodeOrQrScanned,
-    cameras,
     isBatterySaver,
   ]);
 
@@ -956,6 +980,8 @@ export const LogbookRecordAttendance: React.FC<
   };
 
   const handleStartScan = () => {
+    isProcessingScanRef.current = false;
+    lastScannedTimeRef.current = 0;
     setMemberSearch('');
     setSuggestions([]);
     setShowLiveScanner((prev) => !prev);
@@ -1492,14 +1518,25 @@ export const LogbookRecordAttendance: React.FC<
                       </button>
                     </div>
 
-                    <div className="relative w-full h-56 sm:h-64 rounded-2xl overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center shadow-inner">
+                    <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center shadow-inner">
                       <div id="live-qr-reader" className="w-full h-full" />
                       <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                        <div className="w-44 h-44 border border-(--color-primary)/40 rounded-2xl relative">
-                          <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-(--color-primary) rounded-tl-lg" />
-                          <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-(--color-primary) rounded-tr-lg" />
-                          <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-(--color-primary) rounded-bl-lg" />
-                          <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-(--color-primary) rounded-br-lg" />
+                        <div className="w-52 h-52 sm:w-56 sm:h-56 border border-(--color-primary)/40 rounded-2xl relative flex items-center justify-center">
+                          <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-[3.5px] border-l-[3.5px] border-(--color-primary) rounded-tl-xl" />
+                          <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-[3.5px] border-r-[3.5px] border-(--color-primary) rounded-tr-xl" />
+                          <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-[3.5px] border-l-[3.5px] border-(--color-primary) rounded-bl-xl" />
+                          <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-[3.5px] border-r-[3.5px] border-(--color-primary) rounded-br-xl" />
+                          
+                          <motion.div
+                            animate={{ y: ['-100%', '100%'] }}
+                            transition={{
+                              repeat: Infinity,
+                              repeatType: 'reverse',
+                              duration: 1.5,
+                              ease: 'easeInOut',
+                            }}
+                            className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#10b981]"
+                          />
                         </div>
                       </div>
                     </div>

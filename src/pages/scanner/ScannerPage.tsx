@@ -132,6 +132,8 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
   // Scan Mode: 'qr' (square reticle) vs 'barcode' (rectangle reticle)
   const [scanMode, setScanMode] = useState<'qr' | 'barcode'>('qr');
+  const scanModeRef = useRef<'qr' | 'barcode'>('qr');
+  scanModeRef.current = scanMode;
 
   // Scanner State & Scan FX Animation State ('idle' | 'scanning' | 'success')
   const [manualCode, setManualCode] = useState('');
@@ -144,6 +146,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   // Flashlight / Torch State
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [hasTorchCapability, setHasTorchCapability] = useState(false);
+
+  // Camera Switching Lock State
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   // Photo Zoom Modal State
   const [zoomImage, setZoomImage] = useState<{
@@ -180,7 +185,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const [yearlyMemberFee, setYearlyMemberFee] = useState(50);
   const [gcashFeeRate, setGcashFeeRate] = useState(10);
 
-  // Camera Devices State & Saved Preference
+  // Camera Facing Mode & Device State
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>(
+    'environment'
+  );
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
     []
   );
@@ -188,35 +196,16 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
   const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
 
-   // Reset states when opened/closed
+  // Reset states when opened/closed
   useEffect(() => {
     if (!isOpen) {
       setProductCart([]);
       setLastScannedProduct(null);
       setScanResult(null);
       setScanFeedback('idle');
+      setIsSwitchingCamera(false);
       isExitingRef.current = false;
     }
-  }, [isOpen]);
-
-  // Query camera devices once on mount/open without interfering with active streams
-  useEffect(() => {
-    if (!isOpen) return;
-    let isCancelled = false;
-
-    Html5Qrcode.getCameras()
-      .then((devices) => {
-        if (!isCancelled && devices && devices.length > 0) {
-          setCameras(devices);
-        }
-      })
-      .catch((err) => {
-        console.warn('Unable to query cameras:', err);
-      });
-
-    return () => {
-      isCancelled = true;
-    };
   }, [isOpen]);
 
   // Fetch rates
@@ -321,8 +310,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
             const stream = video.srcObject as MediaStream;
             if (stream && stream.getTracks) {
               stream.getTracks().forEach((track) => {
-                track.stop();
-                track.enabled = false;
+                try {
+                  track.stop();
+                  track.enabled = false;
+                } catch {}
               });
             }
             video.srcObject = null;
@@ -390,7 +381,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     try {
       const currentCart = productCartRef.current;
       const isCartMode = currentCart.length > 0;
-      const result = await scannerService.processHybridScan(cleanCode);
+      const currentHint = scanModeRef.current;
+      const result = await scannerService.processHybridScan(
+        cleanCode,
+        currentHint
+      );
 
       if (isCartMode && (result.type !== 'product' || !result.product)) {
         toast.error(
@@ -513,63 +508,76 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
     const initScanner = async () => {
       await forceStopCamera();
-      await new Promise((r) => setTimeout(r, 150));
+      // Allow camera driver 200ms to cleanly release sensor lock
+      await new Promise((r) => setTimeout(r, 200));
       if (isCancelled || isExitingRef.current) return;
 
       const element = document.getElementById(qrRegionId);
       if (!element || isCancelled || isExitingRef.current) return;
 
       try {
-       // In QR mode, prioritize QR codes to maximize decode sensitivity on phone screens;
-        // In Barcode mode, include common 1D formats alongside QR
-        const formatsToSupport =
-          scanMode === 'qr'
-            ? [Html5QrcodeSupportedFormats.QR_CODE]
-            : [
-                Html5QrcodeSupportedFormats.QR_CODE,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.CODE_39,
-                Html5QrcodeSupportedFormats.CODE_93,
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.ITF,
-              ];
+        const formatsToSupport = [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.UPC_A,
+        ];
 
         const html5QrCode = new Html5Qrcode(qrRegionId, {
           verbose: false,
           formatsToSupport,
           experimentalFeatures: {
-            useBarCodeDetectorIfSupported: false,
+            useBarCodeDetectorIfSupported: true,
           },
         });
         scannerRef.current = html5QrCode;
 
-        const cameraConfig = selectedCameraId
+        // Use facingMode string constraint to select primary front or rear lens cleanly
+        const cameraConfig: any = selectedCameraId
           ? { deviceId: { exact: selectedCameraId } }
-          : { facingMode: 'environment' };
+          : { facingMode };
 
-        // Do not pass qrbox: passing qrbox crops the canvas based on element bounds,
-        // which misaligns with CSS object-fit: cover and cuts off QR corner finder patterns.
-        // Omitting qrbox sends the full video frame to ZXing for instant detection.
-        await html5QrCode.start(
-          cameraConfig,
-          {
-            fps: isBatterySaver ? 12 : 24,
-            videoConstraints: {
-              width: { min: 640, ideal: 1280, max: 1920 },
-              height: { min: 480, ideal: 720, max: 1080 },
-              facingMode: selectedCameraId ? undefined : 'environment',
+        const scanConfig = {
+          fps: isBatterySaver ? 12 : 20,
+          videoConstraints: {
+            facingMode: selectedCameraId ? undefined : facingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        };
+
+        try {
+          await html5QrCode.start(
+            cameraConfig,
+            scanConfig,
+            async (decodedText) => {
+              if (!isCancelled && !isExitingRef.current) {
+                await handleProcessScan(decodedText.trim());
+              }
             },
-          },
-          async (decodedText) => {
-            if (!isCancelled && !isExitingRef.current) {
-              await handleProcessScan(decodedText.trim());
-            }
-          },
-          () => {}
-        );
+            () => {}
+          );
+        } catch (startErr) {
+          // If a specific deviceId or exact facingMode was rejected, fallback to generic constraint
+          console.warn('Initial camera start failed, retrying fallback:', startErr);
+          await html5QrCode.start(
+            { facingMode },
+            {
+              fps: isBatterySaver ? 12 : 20,
+              videoConstraints: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+              },
+            },
+            async (decodedText) => {
+              if (!isCancelled && !isExitingRef.current) {
+                await handleProcessScan(decodedText.trim());
+              }
+            },
+            () => {}
+          );
+        }
 
         if (isCancelled || isExitingRef.current) {
           await forceStopCamera();
@@ -586,24 +594,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
             if (track && track.getCapabilities) {
               const capabilities = track.getCapabilities() as any;
               setHasTorchCapability(Boolean(capabilities?.torch));
-              if (
-                capabilities?.focusMode &&
-                Array.isArray(capabilities.focusMode) &&
-                capabilities.focusMode.includes('continuous')
-              ) {
-                track
-                  .applyConstraints({
-                    advanced: [{ focusMode: 'continuous' }],
-                  } as any)
-                  .catch(() => {});
-              }
             }
           }
-        } catch (e) {}
+        } catch {}
       } catch (err) {
         if (!isCancelled) {
           if (selectedCameraId) {
-            await forceStopCamera();
             setSelectedCameraId('');
             localStorage.removeItem('preferred_camera_id');
             return;
@@ -611,6 +607,8 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           const reason = getCameraErrorMessage(err);
           toast.error(`Camera Error: ${reason}`);
         }
+      } finally {
+        setIsSwitchingCamera(false);
       }
     };
 
@@ -620,7 +618,14 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       isCancelled = true;
       forceStopCamera();
     };
-  }, [isOpen, selectedCameraId, scanResult?.type, scanMode, forceStopCamera]);
+  }, [
+    isOpen,
+    selectedCameraId,
+    facingMode,
+    scanResult?.type,
+    isBatterySaver,
+    forceStopCamera,
+  ]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -635,19 +640,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   };
 
   const handleCycleCamera = () => {
-    if (cameras.length <= 1) return;
-    let currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
-    if (currentIndex === -1) {
-      const backIdx = cameras.findIndex(
-        (d) =>
-          d.label.toLowerCase().includes('back') ||
-          d.label.toLowerCase().includes('rear') ||
-          d.label.toLowerCase().includes('environment')
-      );
-      currentIndex = backIdx !== -1 ? backIdx : 0;
-    }
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    handleCameraChange(cameras[nextIndex].id);
+    if (isSwitchingCamera) return;
+    setIsSwitchingCamera(true);
+    setSelectedCameraId('');
+    localStorage.removeItem('preferred_camera_id');
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
   const handleUpdateCartQty = (idx: number, delta: number) => {
@@ -1498,7 +1495,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                 </div>
 
                 {/* CENTER VIEWPORT */}
-                <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-1 gap-3">
+                <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-1 gap-2.5 min-h-0">
                   <motion.div
                     layout
                     initial={{ opacity: 0, scale: 0.95 }}
@@ -1513,13 +1510,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             : '0 0 40px rgba(6, 182, 212, 0.25)',
                     }}
                     transition={{
-                      layout: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-                      duration: 0.3,
+                      layout: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+                      duration: 0.25,
                     }}
-                    className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 ${
+                    className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 w-full ${
                       isCartExpanded
-                        ? 'w-36 sm:w-44 h-36 sm:h-44'
-                        : 'w-full max-w-105 sm:max-w-115 h-85 sm:h-95'
+                        ? 'h-36 sm:h-44 max-w-44'
+                        : 'flex-1 min-h-[350px] max-h-[64vh] sm:max-h-[70vh]'
                     } ${
                       scanFeedback === 'success'
                         ? 'border-emerald-400 ring-4 ring-emerald-500/30'
@@ -1535,15 +1532,25 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                         layout
                         initial={false}
                         animate={{
-                          width: scanMode === 'qr' ? '220px' : '90%',
-                          height: scanMode === 'qr' ? '220px' : '110px',
-                          borderRadius: scanMode === 'qr' ? '24px' : '16px',
+                          width:
+                            scanMode === 'qr'
+                              ? 'min(280px, 75vw)'
+                              : 'min(360px, 92vw)',
+                          height:
+                            scanMode === 'qr'
+                              ? 'min(280px, 75vw)'
+                              : 'min(150px, 24vh)',
+                          borderRadius: scanMode === 'qr' ? '28px' : '18px',
                         }}
-                        transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-                        className="relative flex items-center justify-center border border-white/15"
+                        transition={{
+                          type: 'spring',
+                          stiffness: 350,
+                          damping: 28,
+                        }}
+                        className="relative flex items-center justify-center border border-white/20 shadow-2xl"
                       >
                         <div
-                          className={`absolute -top-1 -left-1 w-6 h-6 border-t-[3.5px] border-l-[3.5px] rounded-tl-xl transition-colors duration-300 ${
+                          className={`absolute -top-1.5 -left-1.5 w-7 h-7 border-t-[4px] border-l-[4px] rounded-tl-xl transition-colors duration-300 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1552,7 +1559,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -top-1 -right-1 w-6 h-6 border-t-[3.5px] border-r-[3.5px] rounded-tr-xl transition-colors duration-300 ${
+                          className={`absolute -top-1.5 -right-1.5 w-7 h-7 border-t-[4px] border-r-[4px] rounded-tr-xl transition-colors duration-300 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1561,7 +1568,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -bottom-1 -left-1 w-6 h-6 border-b-[3.5px] border-l-[3.5px] rounded-bl-xl transition-colors duration-300 ${
+                          className={`absolute -bottom-1.5 -left-1.5 w-7 h-7 border-b-[4px] border-l-[4px] rounded-bl-xl transition-colors duration-300 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1570,7 +1577,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -bottom-1 -right-1 w-6 h-6 border-b-[3.5px] border-r-[3.5px] rounded-br-xl transition-colors duration-300 ${
+                          className={`absolute -bottom-1.5 -right-1.5 w-7 h-7 border-b-[4px] border-r-[4px] rounded-br-xl transition-colors duration-300 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1580,12 +1587,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                         />
 
                         {scanMode === 'qr' ? (
-                          <div className="w-8 h-8 relative opacity-35 flex items-center justify-center">
-                            <div className="w-full h-[1.5px] bg-cyan-300 absolute" />
-                            <div className="h-full w-[1.5px] bg-cyan-300 absolute" />
+                          <div className="w-10 h-10 relative opacity-40 flex items-center justify-center">
+                            <div className="w-full h-[2px] bg-cyan-300 absolute" />
+                            <div className="h-full w-[2px] bg-cyan-300 absolute" />
                           </div>
                         ) : (
-                          <div className="w-full h-px bg-amber-400/25 absolute" />
+                          <div className="w-full h-px bg-amber-400/40 absolute" />
                         )}
 
                         {scanFeedback !== 'success' && (
@@ -1594,22 +1601,22 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             transition={{
                               repeat: Infinity,
                               repeatType: 'reverse',
-                              duration: scanMode === 'barcode' ? 1.0 : 1.6,
+                              duration: scanMode === 'barcode' ? 1.0 : 1.5,
                               ease: 'easeInOut',
                             }}
                             className={`absolute left-2 right-2 h-0.5 rounded-full ${
                               scanMode === 'barcode'
-                                ? 'bg-linear-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_18px_#f59e0b]'
-                                : 'bg-linear-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_18px_#22d3ee]'
+                                ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_20px_#f59e0b]'
+                                : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_20px_#22d3ee]'
                             }`}
                           />
                         )}
                       </motion.div>
                     </div>
 
-                    {cameras.length > 0 && !isCartExpanded && (
+                    {!isCartExpanded && (
                       <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0">
+                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0 shadow-lg">
                           <span
                             className={`w-2 h-2 rounded-full ${
                               isProcessing
@@ -1627,47 +1634,54 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                         </div>
 
                         <div className="pointer-events-auto flex items-center gap-1.5">
-                          {cameras.length > 1 ? (
-                            <>
-                              <div className="hidden sm:flex items-center bg-black/75 backdrop-blur-md border border-white/15 rounded-xl px-2 py-1 shadow-md">
-                                <Camera className="w-3.5 h-3.5 text-cyan-400 mr-1.5 shrink-0" />
-                                <select
-                                  value={selectedCameraId}
-                                  onChange={(e) =>
-                                    handleCameraChange(e.target.value)
-                                  }
-                                  className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer max-w-40 truncate"
-                                >
-                                  {cameras.map((cam, idx) => (
-                                    <option
-                                      key={cam.id}
-                                      value={cam.id}
-                                      className="bg-zinc-900 text-white"
-                                    >
-                                      {cam.label || `Camera ${idx + 1}`}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={handleCycleCamera}
-                                className="sm:hidden px-3 py-1 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md text-white border border-white/15 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md"
-                                title="Switch Camera"
+                          {cameras.length > 1 && (
+                            <div className="hidden sm:flex items-center bg-black/75 backdrop-blur-md border border-white/15 rounded-xl px-2 py-1 shadow-md">
+                              <Camera className="w-3.5 h-3.5 text-cyan-400 mr-1.5 shrink-0" />
+                              <select
+                                value={selectedCameraId}
+                                onChange={(e) =>
+                                  handleCameraChange(e.target.value)
+                                }
+                                className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer max-w-40 truncate"
                               >
-                                <SwitchCamera className="w-3.5 h-3.5 text-cyan-400" />
-                                <span>Switch</span>
-                              </button>
-                            </>
-                          ) : (
-                            <div className="px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-slate-300 border border-white/10 text-[10px] font-bold flex items-center gap-1">
-                              <Camera className="w-3.5 h-3.5 text-slate-400" />
-                              <span className="truncate max-w-25">
-                                {cameras[0]?.label || 'Camera'}
-                              </span>
+                                {cameras.map((cam, idx) => (
+                                  <option
+                                    key={cam.id}
+                                    value={cam.id}
+                                    className="bg-zinc-900 text-white"
+                                  >
+                                    {cam.label || `Camera ${idx + 1}`}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
                           )}
+
+                          <button
+                            type="button"
+                            disabled={isSwitchingCamera}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCycleCamera();
+                            }}
+                            className={`px-3 py-1 rounded-full bg-black/75 hover:bg-black/90 backdrop-blur-md text-white border border-white/15 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
+                              isSwitchingCamera ? 'opacity-50 cursor-wait' : ''
+                            }`}
+                            title="Flip / Switch Camera"
+                          >
+                            <SwitchCamera
+                              className={`w-3.5 h-3.5 text-cyan-400 ${
+                                isSwitchingCamera ? 'animate-spin' : ''
+                              }`}
+                            />
+                            <span>
+                              {isSwitchingCamera
+                                ? 'Switching...'
+                                : facingMode === 'user'
+                                  ? 'Front'
+                                  : 'Back'}
+                            </span>
+                          </button>
                         </div>
                       </div>
                     )}

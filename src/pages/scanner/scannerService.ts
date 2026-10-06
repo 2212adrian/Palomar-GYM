@@ -190,13 +190,79 @@ export const parseScannedMemberCode = (
 };
 
 export const scannerService = {
-  async processHybridScan(rawCode: string): Promise<HybridScanResult> {
+  async processHybridScan(
+    rawCode: string,
+    hintMode?: 'qr' | 'barcode'
+  ): Promise<HybridScanResult> {
     const { fullCode, memberIdPart } = parseScannedMemberCode(rawCode);
     if (!fullCode && !memberIdPart) return { type: 'unknown', rawCode };
 
     const searchIdUpper = memberIdPart.toUpperCase();
     const fullCodeUpper = fullCode.toUpperCase();
     const now = new Date();
+
+    const isProbableProduct =
+      hintMode === 'barcode' ||
+      fullCodeUpper.startsWith('PR-') ||
+      searchIdUpper.startsWith('PR-') ||
+      fullCodeUpper.startsWith('MFG') ||
+      /^\d{6,14}$/.test(fullCode.trim());
+
+    // =========================================================================
+    // FAST PATH: LOOKUP PRODUCT IF HINTED OR TYPICAL 1D/EAN/PR CODE
+    // =========================================================================
+    if (isProbableProduct) {
+      try {
+        const codeRaw = fullCode.trim();
+        let cleanMfg = codeRaw;
+        if (cleanMfg.toUpperCase().startsWith('MFG:')) {
+          cleanMfg = cleanMfg.substring(4).trim();
+        } else if (cleanMfg.toUpperCase().startsWith('MFG-')) {
+          cleanMfg = cleanMfg.substring(4).trim();
+        } else if (cleanMfg.toUpperCase().startsWith('MFG')) {
+          cleanMfg = cleanMfg.substring(3).trim();
+        }
+
+        const idPart = memberIdPart.trim();
+        const sanitizeVal = (val: string) => val.replace(/[,()"]/g, '').trim();
+
+        const sCodeRaw = sanitizeVal(codeRaw);
+        const sCleanMfg = sanitizeVal(cleanMfg);
+        const sIdPart = sanitizeVal(idPart);
+
+        const { data: product } = await supabase
+          .from('products')
+          .select('*')
+          .is('deleted_at', null)
+          .or(
+            `barcode_id.ilike.${sCodeRaw},manufacturer_barcode.ilike.${sCodeRaw},barcode_id.ilike.${sCleanMfg},manufacturer_barcode.ilike.${sCleanMfg},barcode_id.ilike.${sIdPart},manufacturer_barcode.ilike.${sIdPart}`
+          )
+          .maybeSingle();
+
+        if (product) {
+          const isHidden =
+            product.status === 'Inactive' || Boolean(product.is_hidden);
+          return {
+            type: 'product',
+            rawCode,
+            product: {
+              id: product.id,
+              barcodeId: product.barcode_id,
+              manufacturerBarcode: product.manufacturer_barcode || null,
+              productName: product.product_name,
+              sellingPrice: Number(product.selling_price || 0),
+              stockQuantity: Number(product.stock_quantity ?? 0),
+              hasStockLimit: Boolean(product.has_stock_limit),
+              status: product.status || (isHidden ? 'Inactive' : 'Active'),
+              isHidden,
+              imageUrl: product.image_url || null,
+            },
+          };
+        }
+      } catch (e) {
+        console.warn('Product fast-lookup warning:', e);
+      }
+    }
 
     // =========================================================================
     // 1. STRICT RECEIPT VALIDATION (REC-XXXXXXXXXX)
