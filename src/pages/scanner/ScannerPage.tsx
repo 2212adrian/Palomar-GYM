@@ -189,7 +189,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>(
     'environment'
   );
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
+  const [cameras,] = useState<Array<{ id: string; label: string }>>(
     []
   );
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
