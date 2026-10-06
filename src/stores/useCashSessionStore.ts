@@ -34,12 +34,15 @@ interface CashSessionStoreState {
   isLoading: boolean;
   isSessionOpen: boolean;
   currentDrawerCash: number | null;
+  wasSuspendedByOffline: boolean;
 
   loadActiveSession: () => Promise<void>;
   loadHistory: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   recalculateMetrics: () => Promise<void>;
   setSessionClosed: () => void;
+  suspendSessionForOffline: () => void;
+  restoreSessionAfterOnline: () => Promise<void>;
   subscribeRealtime: () => () => void;
 }
 
@@ -71,6 +74,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
   isLoading: true,
   isSessionOpen: false,
   currentDrawerCash: null,
+  wasSuspendedByOffline: false,
 
   setSessionClosed: () => {
     set({
@@ -81,7 +85,35 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       transactions: [],
       metrics: INITIAL_METRICS,
       currentDrawerCash: null,
+      wasSuspendedByOffline: false,
     });
+  },
+
+  /**
+   * Suspends and locks the active session immediately when the network disconnects.
+   */
+  suspendSessionForOffline: () => {
+    const { activeSession, isSessionOpen } = get();
+    if (isSessionOpen && activeSession) {
+      set({
+        isSessionOpen: false,
+        wasSuspendedByOffline: true,
+        activeSession: null,
+        activeSessionId: null,
+        currentDrawerCash: null,
+      });
+    }
+  },
+
+  /**
+   * Resumes the active session to its original state once internet is restored.
+   */
+  restoreSessionAfterOnline: async () => {
+    const { wasSuspendedByOffline } = get();
+    await get().loadActiveSession();
+    if (wasSuspendedByOffline) {
+      set({ wasSuspendedByOffline: false });
+    }
   },
 
   loadActiveSession: async () => {
@@ -109,6 +141,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         activeSession: session,
         activeSessionId: session.id,
         isSessionOpen: true,
+        wasSuspendedByOffline: false,
         currentDrawerCash: get().currentDrawerCash ?? initialFloat,
       });
 

@@ -22,8 +22,6 @@ import {
   useNotificationStore,
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
-import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
-import { isCapacitorApp } from '../../lib/platform';
 
 interface NavbarProps {
   isMobileDrawerOpen?: boolean;
@@ -60,8 +58,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Real-time notification counters
   const { stockAlertsCount, expiringSubsCount } = useNotificationStore();
-  const { pendingQueue, isOnline, isSyncing } = useOfflineSyncStore();
-  const pendingSyncCount = pendingQueue.length;
 
   const isSalesRegisterActive = location.pathname === '/sales';
   const isProductsActive = location.pathname.startsWith('/sales/products');
@@ -330,28 +326,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                         isLogbookDomainActive ? 'stroke-[2.5]' : 'stroke-2'
                       }`}
                     />
-                    {isCapacitorApp() && (pendingSyncCount > 0 || !isOnline) ? (
-                      <span
-                        title={
-                          pendingSyncCount > 0
-                            ? `${pendingSyncCount} local record(s) pending upload to Supabase`
-                            : 'Offline Mode: Local cache active'
-                        }
-                        className={`absolute -top-1.5 -right-2.5 min-w-[15px] h-[15px] px-1 rounded-full text-[8px] font-mono font-black text-white flex items-center justify-center ring-2 ring-white dark:ring-[#12151c] ${
-                          isSyncing
-                            ? 'bg-blue-500 animate-spin'
-                            : !isOnline
-                              ? 'bg-rose-600 animate-pulse'
-                              : 'bg-amber-500 animate-pulse'
-                        }`}
-                      >
-                        {pendingSyncCount > 0 ? pendingSyncCount : '!'}
-                      </span>
-                    ) : (
-                      expiringSubsCount > 0 && (
-                        <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-red-600 ring-2 ring-white dark:ring-[#12151c] animate-pulse" />
-                      )
-                    )}
                   </div>
                   <span className="text-[10px] font-heading tracking-wider uppercase leading-none flex items-center gap-0.5">
                     Logbook

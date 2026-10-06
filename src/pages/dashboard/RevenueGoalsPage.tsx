@@ -14,6 +14,7 @@ import {
   Calendar,
   Trophy,
   Save,
+  WifiOff,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
@@ -182,6 +183,24 @@ export const RevenueGoalsPage: React.FC = () => {
     refreshRevenue,
   } = useRevenueGoals();
 
+  // Reactive Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [editValues, setEditValues] = useState(goalsConfig);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -191,8 +210,13 @@ export const RevenueGoalsPage: React.FC = () => {
     setEditValues(goalsConfig);
   }, [goalsConfig]);
 
-  const handleSaveAll = async (e: React.FormEvent) => {
+const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffline) {
+      setSaveError('Cannot save revenue targets: No internet connection.');
+      return;
+    }
+
     setIsSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
@@ -231,14 +255,19 @@ export const RevenueGoalsPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto select-none text-slate-900 dark:text-slate-100">
-      {/* ─── SLEEK ACTION TOOLBAR (Eliminates redundant double header) ─── */}
+{/* ─── SLEEK ACTION TOOLBAR (Eliminates redundant double header) ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div className="flex items-center gap-2"></div>
 
         <button
           onClick={refreshRevenue}
-          disabled={isLoading}
-          className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-2 shadow-2xs hover:bg-slate-50 dark:hover:bg-[#1e232d] hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 cursor-pointer transition-all disabled:opacity-60"
+          disabled={isLoading || isOffline}
+          className={`self-start sm:self-auto px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 shadow-2xs transition-all ${
+            isOffline
+              ? 'bg-slate-100 dark:bg-[#12151c] text-slate-400 border-slate-200 dark:border-slate-800 opacity-60 cursor-not-allowed'
+              : 'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1e232d] hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 cursor-pointer disabled:opacity-60'
+          }`}
+          title={isOffline ? 'Offline - Totals sync restricted' : 'Refresh Totals'}
         >
           <RotateCcw
             className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`}
@@ -397,7 +426,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                   <Ticket className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                   <span className="text-xs font-bold uppercase tracking-wider">
-                    Passes & Members
+                    Logbook Via Members
                   </span>
                 </div>
                 <div className="text-xl font-black font-heading text-slate-900 dark:text-white">
@@ -421,7 +450,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                   <ShoppingBag className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span className="text-xs font-bold uppercase tracking-wider">
-                    Store & Retail
+                    Sales via Products
                   </span>
                 </div>
                 <div className="text-xl font-black font-heading text-slate-900 dark:text-white">
@@ -442,8 +471,20 @@ export const RevenueGoalsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── SET TARGET AMOUNTS (CLEAN & 4-COLOR THEMED EDITOR) ─── */}
+{/* ─── SET TARGET AMOUNTS (CLEAN & 4-COLOR THEMED EDITOR) ─── */}
       <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xs space-y-5">
+        {isOffline && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs select-none">
+            <div className="flex items-center gap-2">
+              <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>Offline Mode: Targets are in view-only mode. Editing and updating benchmarks are disabled.</span>
+            </div>
+            <span className="text-[10px] uppercase font-mono font-bold bg-amber-500/20 px-2 py-0.5 rounded-md">
+              View Only
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <h2 className="text-base font-black font-heading uppercase text-slate-900 dark:text-white flex items-center gap-2">
@@ -476,12 +517,12 @@ export const RevenueGoalsPage: React.FC = () => {
           </div>
         )}
 
-        <form
+      <form
           onSubmit={handleSaveAll}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
         >
           {/* Daily Input (Emerald) */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-emerald-500 dark:focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all space-y-2">
+          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-emerald-500 dark:focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
               <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
                 <Clock className="w-3.5 h-3.5" />
@@ -501,6 +542,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 type="number"
                 min="100"
                 step="100"
+                disabled={isOffline}
                 value={editValues.daily}
                 onChange={(e) =>
                   setEditValues({
@@ -508,13 +550,13 @@ export const RevenueGoalsPage: React.FC = () => {
                     daily: Number(e.target.value) || 0,
                   })
                 }
-                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-emerald-500"
+                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
 
           {/* Weekly Input (Sky) */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-sky-500 dark:focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all space-y-2">
+          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-sky-500 dark:focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
               <div className="flex items-center gap-1.5 text-sky-700 dark:text-sky-400">
                 <CalendarDays className="w-3.5 h-3.5" />
@@ -534,6 +576,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 type="number"
                 min="500"
                 step="500"
+                disabled={isOffline}
                 value={editValues.weekly}
                 onChange={(e) =>
                   setEditValues({
@@ -541,13 +584,13 @@ export const RevenueGoalsPage: React.FC = () => {
                     weekly: Number(e.target.value) || 0,
                   })
                 }
-                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-sky-500"
+                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
 
           {/* Monthly Input (Violet) */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-violet-500 dark:focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all space-y-2">
+          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-violet-500 dark:focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
               <div className="flex items-center gap-1.5 text-violet-700 dark:text-violet-400">
                 <Calendar className="w-3.5 h-3.5" />
@@ -567,6 +610,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 type="number"
                 min="1000"
                 step="1000"
+                disabled={isOffline}
                 value={editValues.monthly}
                 onChange={(e) =>
                   setEditValues({
@@ -574,13 +618,13 @@ export const RevenueGoalsPage: React.FC = () => {
                     monthly: Number(e.target.value) || 0,
                   })
                 }
-                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-violet-500"
+                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-violet-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
 
           {/* Yearly Input (Amber) */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-amber-500 dark:focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all space-y-2">
+          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-amber-500 dark:focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
               <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
                 <Trophy className="w-3.5 h-3.5" />
@@ -600,6 +644,7 @@ export const RevenueGoalsPage: React.FC = () => {
                 type="number"
                 min="10000"
                 step="10000"
+                disabled={isOffline}
                 value={editValues.yearly}
                 onChange={(e) =>
                   setEditValues({
@@ -607,7 +652,7 @@ export const RevenueGoalsPage: React.FC = () => {
                     yearly: Number(e.target.value) || 0,
                   })
                 }
-                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-amber-500"
+                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -616,8 +661,12 @@ export const RevenueGoalsPage: React.FC = () => {
           <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end pt-2">
             <button
               type="submit"
-              disabled={isSaving}
-              className="px-6 py-2.5 rounded-xl bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white text-xs font-bold tracking-wider uppercase transition-all shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+              disabled={isSaving || isOffline}
+              className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold tracking-wider uppercase transition-all shadow-xs flex items-center gap-2 ${
+                isOffline
+                  ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
+                  : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] cursor-pointer active:scale-95 disabled:opacity-50'
+              }`}
             >
               {isSaving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

@@ -33,6 +33,7 @@ import {
   Moon,
   RefreshCw,
   Zap,
+  WifiOff,
 } from 'lucide-react';
 
 export type TabID =
@@ -160,6 +161,24 @@ export default function Settings() {
     batteryLevel,
     toggleBatterySaver,
   } = useBatterySaver();
+
+  // Reactive Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const isNativeCapacitor = useMemo(() => isCapacitorApp(), []);
   const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -860,7 +879,7 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs and Info */}
+{/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs and Info */}
           <div
             ref={settingsScrollRef}
             className={`flex-1 h-full overflow-y-auto scroll-smooth ${
@@ -869,9 +888,23 @@ export default function Settings() {
                 : 'p-3 sm:p-4 md:p-5'
             }`}
           >
+            {isOffline && (
+              <div className="mb-4 mx-1 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs shrink-0 select-none">
+                <div className="flex items-center gap-2">
+                  <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Offline Mode: Settings are in view-only mode. Form inputs, edits, and saving are disabled.</span>
+                </div>
+                <span className="text-[10px] uppercase font-mono font-bold bg-amber-500/20 px-2 py-0.5 rounded-md">
+                  View Only
+                </span>
+              </div>
+            )}
+
             <div
               key={tabTransition.animKey}
               className={`w-full min-h-full flex flex-col ${
+                isOffline ? 'pointer-events-none select-none opacity-85' : ''
+              } ${
                 isBatterySaver
                   ? ''
                   : tabTransition.direction === 'down'
@@ -947,8 +980,8 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* FLOATING ACTION BAR */}
-      {isChildDirty && (
+{/* FLOATING ACTION BAR */}
+      {isChildDirty && !isOffline && (
         <div className="fixed bottom-24 xl:bottom-10 left-1/2 -translate-x-1/2 z-200 flex items-center gap-3 animate-slide-up">
           <button
             onClick={handleTriggerChildCancel}

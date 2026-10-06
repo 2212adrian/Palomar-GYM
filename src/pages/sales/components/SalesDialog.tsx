@@ -406,13 +406,6 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const handleCompleteSale = async () => {
     if (isSubmittingRef.current || isSuccess) return;
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
-      toast.error(
-        'Cannot complete sale in offline mode on web browser. Offline transactions are exclusive to the Capacitor app.'
-      );
-      return;
-    }
-
     if (isLocked || !isSessionOpen) {
       toast.error(
         'Cannot process sale: Cash drawer session is closed. Please open a cash session first in Cash Management.'

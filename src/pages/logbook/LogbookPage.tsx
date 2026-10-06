@@ -66,7 +66,6 @@ import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
-import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
@@ -371,7 +370,6 @@ export const LogbookPage: React.FC = () => {
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
   const { isBatterySaver } = useBatterySaver();
-  const { enqueueMutation, markSyncComplete } = useOfflineSyncStore();
 
   const [closedSessionsList, setClosedSessionsList] = useState<
     SessionSummaryInfo[]
@@ -759,18 +757,16 @@ export const LogbookPage: React.FC = () => {
           } catch {
             // ignore quota error
           }
-          markSyncComplete(null);
         }
       } catch (err: any) {
         console.error('Failed to fetch attendance:', err);
-        markSyncComplete(err?.message || 'Sync interrupted');
       } finally {
         if (!isBackground) {
           setLoadingLogs(false);
         }
       }
     },
-    [dateStr, isBatterySaver, markSyncComplete]
+    [dateStr, isBatterySaver]
   );
 
   useEffect(() => {
@@ -1062,15 +1058,6 @@ export const LogbookPage: React.FC = () => {
       if (error) throw error;
     } catch (dbErr) {
       console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
-      enqueueMutation({
-        action: 'attendance_payment_status',
-        label: `Payment Paid: ${log.customerName}`,
-        payload: {
-          recordId: log.id,
-          paymentStatus: 'Paid',
-          updatedAt: updatedAtIso,
-        },
-      });
     }
 
     toast.success(`Payment logged for ${log.customerName}`);
@@ -1107,15 +1094,6 @@ export const LogbookPage: React.FC = () => {
       if (error) throw error;
     } catch (dbErr) {
       console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
-      enqueueMutation({
-        action: 'attendance_payment_status',
-        label: `Payment Unpaid: ${log.customerName}`,
-        payload: {
-          recordId: log.id,
-          paymentStatus: 'Unpaid',
-          updatedAt: updatedAtIso,
-        },
-      });
     }
 
     toast.info(`Undone payment. Set back to Unpaid.`);

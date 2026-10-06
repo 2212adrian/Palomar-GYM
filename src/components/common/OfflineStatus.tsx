@@ -16,7 +16,7 @@ interface OfflineStatusProps {
  */
 export const OfflineStatus: React.FC<OfflineStatusProps> = ({
   className = '',
-  position = 'bottom-left',
+  position = 'top-center',
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;

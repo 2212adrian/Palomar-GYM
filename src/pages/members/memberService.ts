@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
 import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
-import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 import { isCapacitorApp } from '../../lib/platform';
 
 import type {
@@ -607,28 +606,10 @@ export const subscriptionService = {
       if (subErr) throw subErr;
       finalSub = insertedSub;
     } catch (netErr: any) {
-      if (isCapacitorApp()) {
-        const offlineSubId = `offline-sub-${Date.now()}`;
-        useOfflineSyncStore.getState().enqueueMutation({
-          action: 'subscription_create',
-          label: `Subscription (${planName}) for member ${m.full_name}`,
-          payload: {
-            memberId: m.member_id,
-            subscriptionPayload: subPayload,
-          },
-        });
-        finalSub = {
-          ...subPayload,
-          id: offlineSubId,
-          receipt_number: `REC-OFFLINE-${Date.now().toString().slice(-6)}`,
-          created_at: new Date().toISOString(),
-        };
-      } else {
-        console.error('Error inserting subscription:', netErr);
-        throw new Error(netErr.message || 'Error inserting subscription.', {
-          cause: netErr,
-        });
-      }
+      console.error('Error inserting subscription:', netErr);
+      throw new Error(netErr.message || 'Error inserting subscription.', {
+        cause: netErr,
+      });
     }
 
     const insertedSub = finalSub;
@@ -999,23 +980,10 @@ export const cardService = {
       if (cardErr) throw cardErr;
       cardRow = data;
     } catch (netErr: any) {
-      if (isCapacitorApp()) {
-        useOfflineSyncStore.getState().enqueueMutation({
-          action: 'card_issue',
-          label: `Issue ${type} card for member ${memberId}`,
-          payload: { memberId, cardPayload },
-        });
-        cardRow = {
-          ...cardPayload,
-          id: `offline-card-${Date.now()}`,
-          created_at: nowIso,
-        };
-      } else {
-        console.error('Error upserting card record:', netErr);
-        throw new Error(netErr.message || 'Error upserting card record.', {
-          cause: netErr,
-        });
-      }
+      console.error('Error issuing card:', netErr);
+      throw new Error(netErr.message || 'Error issuing card.', {
+        cause: netErr,
+      });
     }
 
     await writeAudit(

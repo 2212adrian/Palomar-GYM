@@ -1601,13 +1601,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleExecuteCheckout = async () => {
     if (isSubmitting) return;
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
-      toast.error(
-        'Cannot complete subscription transaction while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
-      );
-      return;
-    }
-
     // Strict guard: if cash session is closed, strictly prevent financial actions
     const isPaidPlan = selectedPlan !== 'No Subscription';
     const isPaidCard = addIdCard && cardFee > 0;

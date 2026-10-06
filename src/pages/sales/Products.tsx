@@ -21,7 +21,6 @@ import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useNotificationStore } from '../../stores/useNotificationStore';
-import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 import { isCapacitorApp } from '../../lib/platform';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
@@ -723,22 +722,10 @@ export const Products: React.FC<ProductsProps> = ({
             if (error) throw error;
             updateSuccess = true;
           } catch (netErr) {
-            if (isCapacitorApp()) {
-              useOfflineSyncStore.getState().enqueueMutation({
-                action: 'product_update',
-                label: `Update product "${nameClean}"`,
-                payload: {
-                  productId: selectedProductId,
-                  updatePayload: productPayload,
-                },
-              });
-              toast.info(
-                `Updated "${nameClean}" (saved offline). Will sync to Supabase when reconnected.`
-              );
-              updateSuccess = true;
-            } else {
-              throw netErr;
-            }
+            console.error('Error updating product:', netErr);
+            throw new Error('Error updating product.', {
+              cause: netErr,
+            });
           }
 
           if (updateSuccess) {
@@ -777,25 +764,10 @@ export const Products: React.FC<ProductsProps> = ({
             if (error) throw error;
             if (data) createdProduct = data as Product;
           } catch (netErr) {
-            if (isCapacitorApp()) {
-              const offlineId = `offline-prod-${Date.now()}`;
-              const offlineProduct: Product = {
-                ...productPayload,
-                id: offlineId,
-                created_at: new Date().toISOString(),
-              } as Product;
-              useOfflineSyncStore.getState().enqueueMutation({
-                action: 'product_create',
-                label: `Create product "${nameClean}"`,
-                payload: { productPayload },
-              });
-              createdProduct = offlineProduct;
-              toast.info(
-                `New product "${nameClean}" queued offline. Will sync to Supabase when reconnected.`
-              );
-            } else {
-              throw netErr;
-            }
+            console.error('Error creating product:', netErr);
+            throw new Error('Error creating product.', {
+              cause: netErr,
+            });
           }
 
           if (createdProduct) {
@@ -867,19 +839,10 @@ export const Products: React.FC<ProductsProps> = ({
         if (error) throw error;
         deleteSuccess = true;
       } catch (netErr) {
-        if (isCapacitorApp()) {
-          useOfflineSyncStore.getState().enqueueMutation({
-            action: 'product_delete',
-            label: `Delete product "${targetProduct.product_name}"`,
-            payload: { productId: id },
-          });
-          toast.info(
-            `Moved "${targetProduct.product_name}" to Recycle Bin (saved offline).`
-          );
-          deleteSuccess = true;
-        } else {
-          throw netErr;
-        }
+        console.error('Error deleting product:', netErr);
+        throw new Error('Error deleting product.', {
+          cause: netErr,
+        });
       }
 
       if (deleteSuccess) {

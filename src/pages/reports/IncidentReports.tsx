@@ -49,6 +49,7 @@ import {
   ShieldAlert,
   Lock,
   Building2,
+  WifiOff,
 } from 'lucide-react';
 import type { Member } from '../../types/members';
 
@@ -117,6 +118,24 @@ export const IncidentReports: React.FC = () => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+    };
+  }, []);
+
+// Reactive Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -193,7 +212,13 @@ export const IncidentReports: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const openCreateModal = useCallback(() => {
+const openCreateModal = useCallback(() => {
+    if (isOffline) {
+      toast.error(
+        'Cannot draft report: No internet connection. Incident filing is restricted.'
+      );
+      return;
+    }
     if (isAdmin) {
       toast.info(
         'Only staff personnel are authorized to submit incident reports.'
@@ -206,7 +231,7 @@ export const IncidentReports: React.FC = () => {
     setFormPriority('Medium');
     setFormTags([]);
     setShowModal(true);
-  }, [isAdmin]);
+  }, [isAdmin, isOffline]);
 
   // Load members for emergency lookup
   const fetchMembersForLookup = async () => {
@@ -284,10 +309,15 @@ export const IncidentReports: React.FC = () => {
           <span>Emergency Hub</span>
         </button>
 
-        {!isAdmin && (
+{!isAdmin && (
           <button
             onClick={openCreateModal}
-            className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading tracking-widest uppercase shadow-md hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shrink-0 font-bold"
+            disabled={isOffline}
+            className={`hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading tracking-widest uppercase shadow-md transition-all shrink-0 font-bold ${
+              isOffline
+                ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
+                : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white hover:scale-[1.02] active:scale-95 cursor-pointer'
+            }`}
           >
             <Plus className="w-4 h-4" />
             New Report
@@ -296,7 +326,7 @@ export const IncidentReports: React.FC = () => {
       </div>
     );
     return () => setActions(null);
-  }, [isAdmin, setActions, openCreateModal]);
+  }, [isAdmin, setActions, openCreateModal, isOffline]);
 
   useEffect(() => {
     if (location.state?.openIncidentId && reports.length > 0) {
@@ -561,8 +591,13 @@ export const IncidentReports: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleSaveReport = async (e: React.FormEvent) => {
+const handleSaveReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffline) {
+      toast.error('Cannot submit report: No internet connection.');
+      return;
+    }
+
     const titleClean = formTitle.trim();
     const descClean = formDescription.trim();
 
@@ -655,7 +690,11 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
+const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
+    if (isOffline) {
+      toast.error('Cannot update status: No internet connection.');
+      return;
+    }
     try {
       const target = reports.find((r) => r.id === id);
       const { error } = await supabase
@@ -797,7 +836,11 @@ export const IncidentReports: React.FC = () => {
     toast.info(`Restored all ${itemsToRestore.length} incident reports.`);
   };
 
-  const startPendingDelete = (report: IncidentReport) => {
+const startPendingDelete = (report: IncidentReport) => {
+    if (isOffline) {
+      toast.error('Cannot delete report: No internet connection.');
+      return;
+    }
     if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
       toast.error('Reviewed or archived incidents cannot be deleted.');
       return;
@@ -822,7 +865,11 @@ export const IncidentReports: React.FC = () => {
     };
   }, []);
 
-  const toggleArchive = async (id: string, archiveState: boolean) => {
+const toggleArchive = async (id: string, archiveState: boolean) => {
+    if (isOffline) {
+      toast.error('Cannot archive reports: No internet connection.');
+      return;
+    }
     try {
       const target = reports.find((r) => r.id === id);
       const { error } = await supabase
@@ -854,9 +901,13 @@ export const IncidentReports: React.FC = () => {
     }
   };
 
-  const handleBulkAction = async (
+const handleBulkAction = async (
     action: 'Read' | 'Unread' | 'Archive' | 'Delete'
   ) => {
+    if (isOffline) {
+      toast.error('Cannot perform bulk actions while offline.');
+      return;
+    }
     if (selectedIds.length === 0) return;
 
     const targetReports = reports.filter((r) => selectedIds.includes(r.id));
@@ -1073,7 +1124,7 @@ export const IncidentReports: React.FC = () => {
           </p>
         </div>
 
-        {/* Actions panel according to Role */}
+     {/* Actions panel according to Role */}
         <div className="border-t border-slate-100 dark:border-white/5 pt-4">
           {isAdmin ? (
             <div className="space-y-3">
@@ -1085,8 +1136,13 @@ export const IncidentReports: React.FC = () => {
                 {report.status === 'Unread' ? (
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => updateStatus(report.id, 'Read')}
-                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-emerald-500/20 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 cursor-pointer'
+                    }`}
                   >
                     <Check className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Reviewed</span>
@@ -1094,8 +1150,13 @@ export const IncidentReports: React.FC = () => {
                 ) : (
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => updateStatus(report.id, 'Unread')}
-                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer'
+                    }`}
                   >
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Unread</span>
@@ -1105,8 +1166,13 @@ export const IncidentReports: React.FC = () => {
                 {!report.is_archived ? (
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => toggleArchive(report.id, true)}
-                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-blue-500/20 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-blue-500/20 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 cursor-pointer'
+                    }`}
                   >
                     <Archive className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Archive</span>
@@ -1114,8 +1180,13 @@ export const IncidentReports: React.FC = () => {
                 ) : (
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => toggleArchive(report.id, false)}
-                    className="flex items-center justify-center gap-1.5 py-2 px-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer'
+                    }`}
                   >
                     <Archive className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Restore</span>
@@ -1124,8 +1195,13 @@ export const IncidentReports: React.FC = () => {
 
                 <button
                   type="button"
+                  disabled={isOffline}
                   onClick={() => startPendingDelete(report)}
-                  className="flex items-center justify-center gap-1.5 py-2 px-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
+                    isOffline
+                      ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                      : 'border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 cursor-pointer'
+                  }`}
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">Delete</span>
@@ -1149,18 +1225,28 @@ export const IncidentReports: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => {
                       if (isModalContext) setIsDetailModalOpen(false);
                       openEditModal(report);
                     }}
-                    className="flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className={`flex items-center justify-center px-4 py-2 border rounded-xl text-xs font-bold uppercase tracking-wider ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:opacity-90 cursor-pointer'
+                    }`}
                   >
                     Edit Details
                   </button>
                   <button
                     type="button"
+                    disabled={isOffline}
                     onClick={() => startPendingDelete(report)}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-bold uppercase tracking-wider ${
+                      isOffline
+                        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                        : 'border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 cursor-pointer'
+                    }`}
                   >
                     <Trash2 className="w-4 h-4 shrink-0" />
                     <span>Delete Report</span>
@@ -1187,11 +1273,23 @@ export const IncidentReports: React.FC = () => {
       {/* Main Dashboard Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
         {/* Left Column: Directory List Section */}
-        <div
+<div
           className={`transition-all duration-300 ease-in-out space-y-4 w-full ${
             selectedReport ? 'lg:w-[42%] shrink-0' : 'w-full max-w-5xl mx-auto'
           }`}
         >
+          {isOffline && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs select-none">
+              <div className="flex items-center gap-2">
+                <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Offline Mode: Incident reports are view-only. Filing, edits, and status changes are disabled.</span>
+              </div>
+              <span className="text-[10px] uppercase font-mono font-bold bg-amber-500/20 px-2 py-0.5 rounded-md">
+                View Only
+              </span>
+            </div>
+          )}
+
           {/* Queue Alert for Admins if >= 10 unread */}
           {isAdmin && stats.unread >= 10 && (
             <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-[11px] flex items-center gap-2 font-medium animate-slide-up">
@@ -1288,7 +1386,7 @@ export const IncidentReports: React.FC = () => {
             </div>
           </div>
 
-          {/* Bulk Select Action Bar */}
+         {/* Bulk Select Action Bar */}
           {selectedIds.length > 0 && (
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold animate-scale-up">
               <span className="text-blue-600 dark:text-blue-400 font-mono">
@@ -1298,32 +1396,52 @@ export const IncidentReports: React.FC = () => {
                 {isAdmin && (
                   <>
                     <button
+                      disabled={isOffline}
                       onClick={() => handleBulkAction('Read')}
                       title="Mark as Read"
-                      className="px-2 py-1 bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-green-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                      className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-colors ${
+                        isOffline
+                          ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                          : 'bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-green-500/20 cursor-pointer'
+                      }`}
                     >
                       Read
                     </button>
                     <button
+                      disabled={isOffline}
                       onClick={() => handleBulkAction('Unread')}
                       title="Reopen selected"
-                      className="px-2 py-1 bg-slate-500/10 text-slate-600 border border-slate-500/20 hover:bg-slate-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                      className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-colors ${
+                        isOffline
+                          ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                          : 'bg-slate-500/10 text-slate-600 border border-slate-500/20 hover:bg-slate-500/20 cursor-pointer'
+                      }`}
                     >
                       Unread
                     </button>
                     <button
+                      disabled={isOffline}
                       onClick={() => handleBulkAction('Archive')}
                       title="Archive selected"
-                      className="px-2 py-1 bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                      className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-colors ${
+                        isOffline
+                          ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                          : 'bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 cursor-pointer'
+                      }`}
                     >
                       Archive
                     </button>
                   </>
                 )}
                 <button
+                  disabled={isOffline}
                   onClick={() => handleBulkAction('Delete')}
                   title="Delete selected"
-                  className="px-2 py-1 bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 rounded-lg text-[9px] cursor-pointer font-bold uppercase transition-colors"
+                  className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-colors ${
+                    isOffline
+                      ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                      : 'bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 cursor-pointer'
+                  }`}
                 >
                   Delete
                 </button>
@@ -1367,11 +1485,16 @@ export const IncidentReports: React.FC = () => {
                   : "You haven't submitted any incident reports matching the active filters."}
               </p>
 
-              {!isAdmin && (
+{!isAdmin && (
                 <button
                   type="button"
+                  disabled={isOffline}
                   onClick={openCreateModal}
-                  className="mt-3 px-4 py-2 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider cursor-pointer shadow-md hover:opacity-90 transition-all inline-flex items-center gap-2 active:scale-95"
+                  className={`mt-3 px-4 py-2 rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-2 shadow-md transition-all ${
+                    isOffline
+                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
+                      : 'bg-[#123c73] dark:bg-[#bf0202] text-white hover:opacity-90 cursor-pointer active:scale-95'
+                  }`}
                 >
                   <Plus className="w-4 h-4" />
                   <span>FILE NEW REPORT</span>
@@ -2492,13 +2615,18 @@ export const IncidentReports: React.FC = () => {
               <span>Emergency</span>
             </button>
 
-            {/* New Report (Staff Only) */}
+           {/* New Report (Staff Only) */}
             {!isAdmin && (
               <button
                 type="button"
+                disabled={isOffline}
                 onClick={openCreateModal}
-                className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-all shrink-0"
-                title="Create New Report"
+                className={`h-9 px-3 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-all shrink-0 ${
+                  isOffline
+                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
+                    : 'bg-[#123c73] dark:bg-[#bf0202] text-white cursor-pointer active:scale-95'
+                }`}
+                title={isOffline ? 'Offline - Report filing restricted' : 'Create New Report'}
               >
                 <Plus className="w-4 h-4 shrink-0" />
                 <span className="hidden sm:inline">REPORT</span>

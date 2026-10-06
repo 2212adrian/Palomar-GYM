@@ -5,39 +5,48 @@ import { supabase } from '../lib/supabase/client';
 export const SESSION_LOCKED_REASON =
   'Cash session is closed. Open a cash session in Cash Management to perform transactions or modify revenue.';
 
-export const getSessionLockedMessage = (action: string = 'perform this action'): string =>
-  `Cash session is closed. Open a cash session in Cash Management to ${action}.`;
+export const getSessionLockedMessage = (action: string = 'perform this action'): string => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return 'No internet connection. Cash session is closed until internet is restored.';
+  }
+  return `Cash session is closed. Open a cash session in Cash Management to ${action}.`;
+};
 
 export const useSessionLock = () => {
-  const { isSessionOpen, activeSessionId, isInitializing } = useCashSessionStore();
-  const isLocked = !isSessionOpen;
+  const { isSessionOpen, activeSessionId, isInitializing, wasSuspendedByOffline } =
+    useCashSessionStore();
+
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const isLocked = !isSessionOpen || isOffline;
 
   return {
     isSessionOpen,
     isLocked,
     isInitializing,
     activeSessionId,
-    lockReason: SESSION_LOCKED_REASON,
+    wasSuspendedByOffline,
+    lockReason: isOffline
+      ? 'No internet connection. Cash session is closed until internet is restored.'
+      : SESSION_LOCKED_REASON,
     getLockReason: getSessionLockedMessage,
   };
 };
 
 /**
- * Backend / Service layer guard to prevent transactions when cash session is closed.
- * Validates that an active cash session exists both in memory and in the database.
- * Throws an Error if the session is closed.
+ * Backend / Service layer guard to prevent transactions when cash session is closed or offline.
  */
 export const assertActiveCashSession = async (actionDesc: string = 'process transaction'): Promise<string> => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error(
+      `Transaction restricted: No internet connection. Cash session is closed until connection is restored.`
+    );
+  }
+
   const storeState = useCashSessionStore.getState();
   if (!storeState.isSessionOpen) {
     throw new Error(
       `Transaction restricted: Cash session is closed. Please open a cash session in Cash Management to ${actionDesc}.`
     );
-  }
-
-  // When offline, allow existing open session in memory / local state
-  if (typeof navigator !== 'undefined' && !navigator.onLine && storeState.activeSessionId) {
-    return storeState.activeSessionId;
   }
 
   try {
@@ -49,9 +58,6 @@ export const assertActiveCashSession = async (actionDesc: string = 'process tran
       .maybeSingle();
 
     if (error || !data) {
-      if (storeState.activeSessionId) {
-        return storeState.activeSessionId;
-      }
       storeState.setSessionClosed();
       throw new Error(
         `Transaction restricted: No active cash drawer session found in database. Please open a cash session in Cash Management to ${actionDesc}.`
@@ -60,9 +66,6 @@ export const assertActiveCashSession = async (actionDesc: string = 'process tran
 
     return data.id;
   } catch (err: any) {
-    if (storeState.activeSessionId) {
-      return storeState.activeSessionId;
-    }
     throw err;
   }
 };

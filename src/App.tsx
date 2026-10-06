@@ -411,9 +411,9 @@ export const App: React.FC = () => {
   return (
     <>
       <AppRoutes />
-      {/* Toast Notification Layer - limit={1} prevents stacked duplicate notifications */}
+      {/* Toast Notification Layer - limit={6} prevents stacked duplicate notifications */}
       <ToastContainer
-        limit={1}
+        limit={6}
         position="top-right"
         autoClose={4000}
         hideProgressBar={false}

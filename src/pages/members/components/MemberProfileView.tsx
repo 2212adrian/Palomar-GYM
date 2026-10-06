@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   Check,
   Undo2,
+  WifiOff,
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import {
@@ -85,11 +86,36 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   // Local state to keep UI updated dynamically
   const [localMember, setLocalMember] = useState<Member>(member);
 
-  // Suspended & Session Check
+// Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Suspended, Session & Network Check
   const isSuspended = localMember.status === 'Suspended';
-  const isEnrollDisabled = !isSessionOpen || isSuspended;
+  const isEnrollDisabled = !isSessionOpen || isSuspended || isOffline;
 
   const handleEnrollOrRenewClick = () => {
+    if (isOffline) {
+      toast.error(
+        'Cannot enroll or renew subscription: No internet connection. Transactions and updates are restricted.',
+        { toastId: 'offline-enroll-block' }
+      );
+      return;
+    }
     if (isSuspended) {
       toast.error(
         'Cannot enroll or renew subscription: Member account is currently suspended. Activate member first.',
@@ -920,14 +946,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         headerClassName: 'text-right',
         cellClassName: 'text-right',
         render: (r) => (
-          <button
+<button
             type="button"
+            disabled={isOffline}
             onClick={(e) => {
               e.stopPropagation();
               handleOpenReceipt(r);
             }}
-            className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1"
-            title="View Official Receipt"
+            className={`px-2.5 py-1 border rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider inline-flex items-center gap-1 transition-colors ${
+              isOffline
+                ? 'bg-slate-500/10 text-slate-400 border-slate-500/20 cursor-not-allowed opacity-50'
+                : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20 cursor-pointer'
+            }`}
+            title={isOffline ? 'Offline - Receipt viewing restricted' : 'View Official Receipt'}
           >
             <Eye className="w-3 h-3" />
             <span>View</span>
@@ -1036,6 +1067,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </button>
           </div>
 
+{isOffline && (
+            <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
+              <WifiOff className="w-4 h-4 shrink-0" />
+              <span>No internet connection. Actions and updates are restricted.</span>
+            </div>
+          )}
+
           <div className="flex items-center gap-3 text-left">
             <div className="relative group">
               <MemberAvatar
@@ -1043,15 +1081,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 name={localMember.full_name}
                 size={60}
                 roundedClassName="rounded-2xl shadow-md border-2 border-white/20"
-                isEditable={true}
-                onEditClick={() => setIsPhotoModalOpen(true)}
-                badgeTooltip="Click to view and change member photo"
+                isEditable={!isOffline}
+                onEditClick={() => {
+                  if (!isOffline) setIsPhotoModalOpen(true);
+                }}
+                badgeTooltip={isOffline ? 'Offline - Photo editing restricted' : 'Click to view and change member photo'}
               />
               <button
                 type="button"
+                disabled={isOffline}
                 onClick={() => setIsPhotoModalOpen(true)}
-                className="absolute -bottom-1 -right-1 p-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-md cursor-pointer border border-white/20 transition-transform active:scale-95"
-                title="Change photo"
+                className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-md border border-white/20 transition-transform ${
+                  isOffline
+                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 cursor-not-allowed opacity-50'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-95'
+                }`}
+                title={isOffline ? 'Offline - Photo editing restricted' : 'Change photo'}
               >
                 <Camera className="w-3 h-3" />
               </button>
@@ -1141,7 +1186,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           </div>
         </div>
 
-        {/* STICKY HORIZONTAL TABS BAR */}
+ {/* STICKY HORIZONTAL TABS BAR */}
         <div className="sticky top-0 z-20 border-b border-(--border-color) bg-(--bg-card) px-3 sm:px-4 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none py-2 select-none shrink-0">
           {[
             'Overview',
@@ -1152,11 +1197,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           ].map((tab) => (
             <button
               key={tab}
+              disabled={isOffline}
               onClick={() => setActiveTab(tab as any)}
-              className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
-                activeTab === tab
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
-                  : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
+              className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 ${
+                isOffline
+                  ? 'opacity-50 cursor-not-allowed bg-slate-500/5 border border-(--border-color) text-slate-400'
+                  : activeTab === tab
+                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs cursor-pointer'
+                    : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer'
               }`}
             >
               {tab}
@@ -1343,14 +1391,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap">
+<div className="flex items-center gap-2 flex-wrap">
                         {currentCard.payment_status === 'PAID' &&
                           currentCard.claim_status === 'UNCLAIMED' && (
                             <button
                               type="button"
-                              disabled={isClaimingInProfile}
+                              disabled={isClaimingInProfile || isOffline}
                               onClick={handleConfirmMarkClaimed}
-                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                              className={`px-3.5 py-2 text-white rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 shadow-xs ${
+                                isOffline
+                                  ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer disabled:opacity-50'
+                              }`}
                             >
                               <Check className="w-3.5 h-3.5" />
                               <span>
@@ -1364,8 +1416,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         {currentCard.claim_status === 'CLAIMED' && (
                           <button
                             type="button"
+                            disabled={isOffline}
                             onClick={() => setIsUndoClaimModalOpen(true)}
-                            className="px-3 py-2 bg-slate-500/10 hover:bg-amber-500/20 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 border border-(--border-color) rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 transition-colors"
+                            className={`px-3 py-2 border rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 transition-colors ${
+                              isOffline
+                                ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                                : 'bg-slate-500/10 hover:bg-amber-500/20 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 border-(--border-color) cursor-pointer'
+                            }`}
                             title="Accidentally marked as claimed? Revert back to Unclaimed state"
                           >
                             <Undo2 className="w-3.5 h-3.5 text-amber-500" />
@@ -1376,8 +1433,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         {currentCard.payment_status !== 'PAID' && (
                           <button
                             type="button"
+                            disabled={isOffline}
                             onClick={() => setIsPayCardModalOpen(true)}
-                            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            className={`px-3.5 py-2 text-white rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 shadow-xs ${
+                              isOffline
+                                ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
+                            }`}
                           >
                             <CreditCard className="w-3.5 h-3.5" /> Pay Card Fee
                             (₱{cardFeeAmount})
@@ -1386,8 +1448,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                         <button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => setActiveTab('Cards')}
-                          className="px-3 py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                          className={`px-3 py-2 rounded-xl text-xs font-heading font-bold uppercase ${
+                            isOffline
+                              ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 opacity-50 cursor-not-allowed'
+                              : 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 cursor-pointer'
+                          }`}
                         >
                           Manage Card
                         </button>
@@ -1643,7 +1710,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 </div>
               </div>
 
-              {/* SAVE EDITS BANNER */}
+{/* SAVE EDITS BANNER */}
               {isEditing && (
                 <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
                   <span className="text-xs font-semibold text-blue-500">
@@ -1652,15 +1719,25 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={() => setIsEditing(false)}
-                      className="flex-1 sm:flex-initial px-4 py-2 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase cursor-pointer border-none"
+                      className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase border-none ${
+                        isOffline
+                          ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 opacity-50 cursor-not-allowed'
+                          : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 cursor-pointer'
+                      }`}
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={handleSaveProfileChanges}
-                      className="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer border-none shadow-md flex items-center justify-center gap-1.5"
+                      className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase border-none shadow-md flex items-center justify-center gap-1.5 ${
+                        isOffline
+                          ? 'bg-slate-400 dark:bg-zinc-700 text-white opacity-50 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                      }`}
                     >
                       <Save className="w-3.5 h-3.5" /> Save Changes
                     </button>
@@ -1717,10 +1794,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                         <span className="text-xs text-slate-400 font-bold">
                           Digital Signatures
                         </span>
-                        <button
+<button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => setShowSignatures(!showSignatures)}
-                          className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors"
+                          className={`px-3 py-1.5 border rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
+                            isOffline
+                              ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20 cursor-pointer'
+                          }`}
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>
@@ -2118,13 +2200,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             safe.
                           </span>
                         </div>
-                        <button
+<button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => {
                             setTargetVoidSub(subToVoid || null);
                             setIsVoidModalOpen(true);
                           }}
-                          className="w-full sm:w-auto min-h-11 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5"
+                          className={`w-full sm:w-auto min-h-11 px-4 py-2.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border-none shadow-sm transition-colors shrink-0 flex items-center justify-center gap-1.5 ${
+                            isOffline
+                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                              : 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                          }`}
                         >
                           <span>Void Contract</span>
                         </button>
@@ -2214,15 +2301,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
               return (
                 <div className="space-y-4 text-left animate-fade-in">
-                  {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
+               {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
                   <div className="grid grid-cols-2 gap-2 bg-(--bg-page) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={() => setSelectedCardFormat('QR')}
-                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                        selectedCardFormat === 'QR'
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md'
-                          : 'text-slate-400 hover:text-(--color-text)'
+                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                        isOffline
+                          ? 'opacity-50 cursor-not-allowed text-slate-400'
+                          : selectedCardFormat === 'QR'
+                            ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md cursor-pointer'
+                            : 'text-slate-400 hover:text-(--color-text) cursor-pointer'
                       }`}
                     >
                       <QrCode className="w-4 h-4" />
@@ -2231,11 +2321,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={() => setSelectedCardFormat('Manual')}
-                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                        selectedCardFormat === 'Manual'
-                          ? 'bg-amber-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-(--color-text)'
+                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                        isOffline
+                          ? 'opacity-50 cursor-not-allowed text-slate-400'
+                          : selectedCardFormat === 'Manual'
+                            ? 'bg-amber-600 text-white shadow-md cursor-pointer'
+                            : 'text-slate-400 hover:text-(--color-text) cursor-pointer'
                       }`}
                     >
                       <CreditCard className="w-4 h-4" />
@@ -2260,14 +2353,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           </p>
                         </div>
 
-                        <div className="flex gap-2 w-full sm:w-auto">
+                   <div className="flex gap-2 w-full sm:w-auto">
                           {currentCard.card_type !== selectedCardFormat && (
                             <button
                               type="button"
+                              disabled={isOffline}
                               onClick={() =>
                                 handleSwitchCardTypeInDb(selectedCardFormat)
                               }
-                              className="flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none"
+                              className={`flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none ${
+                                isOffline
+                                  ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                              }`}
                               title="Update registered card type in database"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
@@ -2277,8 +2375,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                           <button
                             type="button"
+                            disabled={isOffline}
                             onClick={() => setIsDigitalQrModalOpen(true)}
-                            className="flex-1 sm:flex-initial min-h-11 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-heading text-xs font-bold uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0"
+                            className={`flex-1 sm:flex-initial min-h-11 px-4 py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0 ${
+                              isOffline
+                                ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                                : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                            }`}
                           >
                             <Eye className="w-4 h-4" />
                             <span>Print Card</span>
@@ -2386,12 +2489,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <p>
                         No active security card assigned to this client yet.
                       </p>
-                      <button
+                 <button
                         type="button"
+                        disabled={isOffline}
                         onClick={() =>
                           handleSwitchCardTypeInDb(selectedCardFormat)
                         }
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase cursor-pointer"
+                        className={`px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase ${
+                          isOffline
+                            ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                        }`}
                       >
                         Issue {selectedCardFormat} Security Card
                       </button>
@@ -2510,16 +2618,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </div>
                   )}
 
-                  {/* ACTION BUTTONS: CLAIM, UNDO CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
+                {/* ACTION BUTTONS: CLAIM, UNDO CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
                   {currentCard && (
                     <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                       {currentCard.payment_status === 'PAID' &&
                       currentCard.claim_status === 'UNCLAIMED' ? (
                         <button
                           type="button"
-                          disabled={isClaimingInProfile}
+                          disabled={isClaimingInProfile || isOffline}
                           onClick={handleConfirmMarkClaimed}
-                          className="min-h-[44px] px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md transition-all"
+                          className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-1.5 shadow-md transition-all ${
+                            isOffline
+                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer disabled:opacity-50'
+                          }`}
                         >
                           <Check className="w-4 h-4" />
                           <span>
@@ -2531,8 +2643,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       ) : currentCard.claim_status === 'CLAIMED' ? (
                         <button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => setIsUndoClaimModalOpen(true)}
-                          className="min-h-[44px] px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                          className={`min-h-[44px] px-3.5 py-2.5 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+                            isOffline
+                              ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 cursor-pointer'
+                          }`}
                           title="Revert claim state back to Unclaimed"
                         >
                           <Undo2 className="w-4 h-4 text-amber-500" />
@@ -2541,8 +2658,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       ) : currentCard.payment_status !== 'PAID' ? (
                         <button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => setIsPayCardModalOpen(true)}
-                          className="min-h-[44px] px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center gap-1.5 shadow-md transition-all"
+                          className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center gap-1.5 shadow-md transition-all ${
+                            isOffline
+                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+                          }`}
                         >
                           <CreditCard className="w-4 h-4" />
                           <span>Pay Card Fee (₱{cardFeeAmount})</span>
@@ -2556,8 +2678,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                       <button
                         type="button"
+                        disabled={isOffline}
                         onClick={() => setIsReissueModalOpen(true)}
-                        className="min-h-[44px] px-3.5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
+                        className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md transition-all ${
+                          isOffline
+                            ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                            : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer'
+                        }`}
                       >
                         <RefreshCw className="w-4 h-4" />
                         <span>Reissue Token</span>
@@ -2565,8 +2692,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
                       <button
                         type="button"
+                        disabled={isOffline}
                         onClick={() => setIsUnbindModalOpen(true)}
-                        className="min-h-[44px] px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 transition-all shadow-xs"
+                        className={`min-h-[44px] px-3.5 py-2.5 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-2 transition-all shadow-xs ${
+                          isOffline
+                            ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                            : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20 cursor-pointer'
+                        }`}
                       >
                         <Trash2 className="w-4 h-4" />
                         <span>Unbind Card</span>
@@ -2635,9 +2767,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 className="w-full p-3.5 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed"
                 placeholder="Enter internal notes visible to reception staff..."
               />
-              <button
+<button
+                disabled={isOffline}
                 onClick={handleUpdateNotes}
-                className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none cursor-pointer flex items-center justify-center gap-2 shadow-md"
+                className={`w-full sm:w-auto min-h-[44px] px-6 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md ${
+                  isOffline
+                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                    : 'bg-[#123c73] dark:bg-[#bf0202] text-white cursor-pointer'
+                }`}
               >
                 <span>Save Notes</span>
               </button>
@@ -2663,13 +2800,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </span>
             </div>
 
-            <button
+       <button
               type="button"
+              disabled={isOffline}
               onClick={() => setIsStatusModalOpen(true)}
-              className={`min-h-[44px] px-4 py-2.5 rounded-xl cursor-pointer flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md active:scale-95 ${
-                localMember.status === 'Active'
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                  : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+              className={`min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md ${
+                isOffline
+                  ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                  : localMember.status === 'Active'
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
+                    : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
               }`}
             >
               {localMember.status === 'Active' ? (
@@ -2690,14 +2830,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
+                disabled={isOffline}
                 onClick={() => {
                   setActiveTab('Overview');
                   setIsEditing(!isEditing);
                 }}
-                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none cursor-pointer ${
-                  isEditing
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
+                  isOffline
+                    ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
+                    : isEditing
+                      ? 'bg-blue-600 text-white shadow-md cursor-pointer'
+                      : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
                 }`}
               >
                 {isEditing ? (
@@ -2717,15 +2860,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             <div className="relative group flex-1 sm:flex-initial">
               <button
                 type="button"
-                disabled={hasActiveSubscription}
+                disabled={hasActiveSubscription || isOffline}
                 onClick={() => setIsDeleteModalOpen(true)}
                 className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                  hasActiveSubscription
+                  hasActiveSubscription || isOffline
                     ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
                     : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
                 }`}
               >
-                {hasActiveSubscription ? (
+                {hasActiveSubscription || isOffline ? (
                   <Lock className="w-4 h-4" />
                 ) : (
                   <Trash2 className="w-4 h-4" />

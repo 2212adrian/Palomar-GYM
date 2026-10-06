@@ -37,8 +37,6 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
-import { useOfflineSyncStore } from '../../../stores/useOfflineSyncStore';
-import { isCapacitorApp } from '../../../lib/platform';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { getServerNow } from '../../../lib/serverTime';
@@ -241,7 +239,6 @@ export const LogbookRecordAttendance: React.FC<
   const { activeSession, isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
   const { isBatterySaver } = useBatterySaver();
-  const { enqueueMutation } = useOfflineSyncStore();
   const isSubmittingRef = useRef(false);
   const lastLoadedDynamicMsRef = useRef<number>(0);
 
@@ -1064,13 +1061,6 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine && !isCapacitorApp()) {
-      toast.error(
-        'Cannot record check-in while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
-      );
-      return;
-    }
-
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
@@ -1161,74 +1151,6 @@ export const LogbookRecordAttendance: React.FC<
         isBatterySaver ? 600 : 1500
       );
     } catch (err: any) {
-      const isNetworkIssue =
-        (typeof navigator !== 'undefined' && !navigator.onLine) ||
-        String(err?.message || '')
-          .toLowerCase()
-          .includes('internet') ||
-        String(err?.message || '')
-          .toLowerCase()
-          .includes('fetch');
-
-      if (isNetworkIssue) {
-        if (!isCapacitorApp()) {
-          toast.error(
-            'Cannot record check-in while offline in web browser. Offline transactions are exclusive to the Capacitor app.'
-          );
-          isSubmittingRef.current = false;
-          setIsSubmitting(false);
-          return;
-        }
-
-        const queued = enqueueMutation({
-          action: 'attendance_checkin',
-          label: `Check-In: ${finalCustomerName}`,
-          payload: {
-            insertPayload,
-            auditDescription,
-          },
-        });
-
-        const offlineCheckInRecord = {
-          id: queued.id,
-          timestamp: queued.createdAt,
-          memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
-          customerName: finalCustomerName,
-          customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
-          categoryOrPlan: derivedBilling.title,
-          paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
-          amountPaid: derivedBilling.totalDue,
-          basePrice: derivedBilling.subtotal,
-          gcashFee: gcashFeeVal,
-          cardFee: 0,
-          gcashRefNo: gcashRefVal,
-          referenceNumber: gcashRefVal,
-          paymentRef: gcashRefVal,
-          paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
-          status: selectedClient.isWalkIn
-            ? 'Active'
-            : selectedClient.status || 'Active',
-          cash_session_id: activeSession?.id || null,
-        };
-
-        toast.warning(
-          'Saved to local cache — pending upload to Supabase when connection stabilizes.'
-        );
-        setIsSuccess(true);
-        stopAllCameraTracks();
-
-        setTimeout(
-          () => {
-            onCheckInSuccess(offlineCheckInRecord);
-            setIsSuccess(false);
-            isSubmittingRef.current = false;
-            setIsSubmitting(false);
-            onClose();
-          },
-          isBatterySaver ? 600 : 1200
-        );
-        return;
-      }
 
       console.error('Check-in error:', err);
       toast.error(err.message || 'Failed to complete check-in.');

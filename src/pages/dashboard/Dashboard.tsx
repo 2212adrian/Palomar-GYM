@@ -6,6 +6,8 @@ import {
   Calendar as CalendarIcon,
   FileSpreadsheet,
   Dumbbell,
+  WifiOff,
+  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -39,9 +41,28 @@ export const Dashboard: React.FC = () => {
 
   // State Management
   const [isLoading, setIsLoading] = useState(true);
+  const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('combined');
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('month');
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
+
+  // Reactive Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Data States
   const [metrics, setMetrics] = useState<DashboardMetrics>({
@@ -94,10 +115,11 @@ export const Dashboard: React.FC = () => {
       setActivityItems(data.activityItems);
       setBirReportItems(data.birReportItems);
       setSubscriptionBreakdown(data.subscriptionBreakdown);
-    } catch (error) {
+} catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setIsLoading(false);
+      setHasInitialLoaded(true);
     }
   }, [timeRange]);
 
@@ -105,11 +127,12 @@ export const Dashboard: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Realtime Supabase Subscription with Debounce
+// Realtime Supabase Subscription with Debounce
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleLoadData = () => {
       if (isBatterySaver && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(
         () => {
@@ -167,7 +190,27 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
+const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
+
+  if (isLoading && !hasInitialLoaded) {
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center p-6 text-slate-900 dark:text-slate-100 select-none">
+        <div className="flex flex-col items-center gap-3.5 max-w-sm text-center">
+          <div className="w-12 h-12 rounded-2xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center shadow-xs">
+            <Loader2 className="w-6 h-6 animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              Calculating Analytics Telemetry
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+              Synchronizing check-in attendance, revenue metrics, subscriptions, and stock telemetry...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen text-slate-900 dark:text-slate-100 transition-colors duration-300">
@@ -202,8 +245,15 @@ export const Dashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Quick Toolbar */}
+        {/* Quick Toolbar */}
           <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+            {isOffline && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                <span>Offline Telemetry</span>
+              </span>
+            )}
+
             <button
               id="btn-open-bir-reports"
               onClick={() => setIsReportsModalOpen(true)}
@@ -216,9 +266,13 @@ export const Dashboard: React.FC = () => {
             <button
               id="btn-refresh-dashboard"
               onClick={loadData}
-              disabled={isLoading}
-              className="p-2.5 rounded-xl bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all shadow-2xs active:scale-95 disabled:opacity-60 cursor-pointer"
-              title="Refresh Dashboard Feed"
+              disabled={isLoading || isOffline}
+              className={`p-2.5 rounded-xl border transition-all shadow-2xs ${
+                isOffline
+                  ? 'bg-slate-100 dark:bg-zinc-800/50 text-slate-400 border-slate-200 dark:border-zinc-700/50 opacity-50 cursor-not-allowed'
+                  : 'bg-white dark:bg-[#1e232d] border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 active:scale-95 disabled:opacity-60 cursor-pointer'
+              }`}
+              title={isOffline ? 'Offline - Refresh disabled' : 'Refresh Dashboard Feed'}
             >
               <RotateCcw
                 className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}

@@ -41,10 +41,6 @@ import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useSessionLock } from '../../hooks/useSessionLock';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { isSuperAdmin } from '../../constants/auth';
-import {
-  useOfflineSyncStore,
-  validateSalePayload,
-} from '../../stores/useOfflineSyncStore';
 import { isCapacitorApp } from '../../lib/platform';
 
 // UI Helpers
@@ -943,80 +939,9 @@ export const Sales: React.FC = () => {
       change_calculated: newTx.changeCalculated,
       total_amount: newTx.totalAmount,
     };
-    const validation = validateSalePayload(salePayload);
-    if (!validation.valid) {
-      toast.error(`Invalid sale: ${validation.reason}`);
-      return;
-    }
-
+    
     const calculatedGcashFee =
       newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
-
-    // If offline in Capacitor app, enqueue immediately to offline queue
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      if (isCapacitorApp()) {
-        const offlineSaleId = `offline-sale-${Date.now()}`;
-        try {
-          useOfflineSyncStore.getState().enqueueMutation({
-            action: 'sale_create',
-            label: `Sale ₱${newTx.totalAmount.toFixed(2)} (${newTx.items?.length || 1} items)`,
-            payload: {
-              items: newTx.items,
-              product_name: newTx.productName,
-              payment_method: newTx.paymentMethod,
-              amount_received: newTx.amountReceived,
-              change_calculated: newTx.changeCalculated,
-              total_amount: newTx.totalAmount,
-              gcash_fee_applied: calculatedGcashFee,
-              reference_number:
-                newTx.referenceNumber || newTx.reference_number || null,
-              cash_session_id: activeSession?.id || null,
-            },
-          });
-
-          const localOfflineSale = {
-            id: offlineSaleId,
-            items: newTx.items,
-            product_name: newTx.productName,
-            payment_method: newTx.paymentMethod,
-            amount_received: newTx.amountReceived,
-            change_calculated: newTx.changeCalculated,
-            total_amount: newTx.totalAmount,
-            gcash_fee_applied: calculatedGcashFee,
-            reference_number:
-              newTx.referenceNumber || newTx.reference_number || null,
-            cash_session_id: activeSession?.id || null,
-            created_at: getServerISOString(),
-          };
-
-          setNewlyAddedId(offlineSaleId);
-          setTimeout(() => setNewlyAddedId(null), 2500);
-
-          setTransactions((prev) => {
-            const updated = [localOfflineSale, ...prev];
-            sessionStorage.setItem(
-              `sales_sanitized_${dateStr}`,
-              JSON.stringify(updated)
-            );
-            return updated;
-          });
-
-          useCashSessionStore.getState().recalculateMetrics();
-          toast.info(
-            'Sale saved to offline queue (Capacitor). Will automatically sync to Supabase when reconnected.'
-          );
-          return;
-        } catch (enqueueErr: any) {
-          toast.error(enqueueErr.message || 'Offline queueing failed.');
-          throw enqueueErr;
-        }
-      } else {
-        toast.error(
-          'Offline sales sync is exclusive to the Capacitor app for security purposes. Browser offline sync is disabled.'
-        );
-        throw new Error('Offline sales are not allowed on browser.');
-      }
-    }
 
     try {
       const { data: insertedSale, error } = await supabase
@@ -1039,59 +964,7 @@ export const Sales: React.FC = () => {
         .single();
 
       if (error) {
-        // Fallback for transient network error on Capacitor
-        if (isCapacitorApp()) {
-          const offlineSaleId = `offline-sale-${Date.now()}`;
-          useOfflineSyncStore.getState().enqueueMutation({
-            action: 'sale_create',
-            label: `Sale ₱${newTx.totalAmount.toFixed(2)} (${newTx.items?.length || 1} items)`,
-            payload: {
-              items: newTx.items,
-              product_name: newTx.productName,
-              payment_method: newTx.paymentMethod,
-              amount_received: newTx.amountReceived,
-              change_calculated: newTx.changeCalculated,
-              total_amount: newTx.totalAmount,
-              gcash_fee_applied: calculatedGcashFee,
-              reference_number:
-                newTx.referenceNumber || newTx.reference_number || null,
-              cash_session_id: activeSession?.id || null,
-            },
-          });
-
-          const localOfflineSale = {
-            id: offlineSaleId,
-            items: newTx.items,
-            product_name: newTx.productName,
-            payment_method: newTx.paymentMethod,
-            amount_received: newTx.amountReceived,
-            change_calculated: newTx.changeCalculated,
-            total_amount: newTx.totalAmount,
-            gcash_fee_applied: calculatedGcashFee,
-            reference_number:
-              newTx.referenceNumber || newTx.reference_number || null,
-            cash_session_id: activeSession?.id || null,
-            created_at: getServerISOString(),
-          };
-
-          setNewlyAddedId(offlineSaleId);
-          setTimeout(() => setNewlyAddedId(null), 2500);
-
-          setTransactions((prev) => {
-            const updated = [localOfflineSale, ...prev];
-            sessionStorage.setItem(
-              `sales_sanitized_${dateStr}`,
-              JSON.stringify(updated)
-            );
-            return updated;
-          });
-
-          useCashSessionStore.getState().recalculateMetrics();
-          toast.info(
-            'Connection issue detected. Sale queued offline (Capacitor) and will upload once reconnected.'
-          );
-          return;
-        }
+        console.error('Error inserting sale transaction:', error);
         throw error;
       }
 

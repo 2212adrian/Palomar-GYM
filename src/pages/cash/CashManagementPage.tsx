@@ -16,6 +16,7 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  WifiOff,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
@@ -39,6 +40,24 @@ const SESSIONS_PER_PAGE = 5;
 export const CashManagementPage: React.FC = () => {
   const { user, profile } = useAuthStore();
   const isAdmin = profile?.role === 'admin' || isSuperAdmin(user?.email);
+
+  // Reactive Network Connection State
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const {
     activeSession,
@@ -104,8 +123,12 @@ export const CashManagementPage: React.FC = () => {
     }
   }, [lastCountedCash, isSessionOpen]);
 
-  const handleStartSession = async (e: React.FormEvent) => {
+const handleStartSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffline) {
+      toast.error('Cannot open cash session: No internet connection.');
+      return;
+    }
     if (!isAdmin) {
       toast.error('Only administrators can open cash sessions.');
       return;
@@ -283,15 +306,21 @@ export const CashManagementPage: React.FC = () => {
     <div className="space-y-5 sm:space-y-6 pb-1 font-body text-slate-900 dark:text-white max-w-7xl mx-auto px-1 sm:px-0">
       {/* Top Banner & Status Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 shadow-xs">
-        <div className="flex items-center gap-3">
+       <div className="flex items-center gap-3">
           <div
             className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform ${
-              isSessionOpen
-                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+              isOffline
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                : isSessionOpen
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
             }`}
           >
-            <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
+            {isOffline ? (
+              <WifiOff className="w-5 h-5 sm:w-6 sm:h-6" />
+            ) : (
+              <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
+            )}
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -300,22 +329,34 @@ export const CashManagementPage: React.FC = () => {
               </h2>
               <span
                 className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
-                  isSessionOpen
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                  isOffline
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                    : isSessionOpen
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                 }`}
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    isSessionOpen
-                      ? 'bg-emerald-500 animate-pulse'
-                      : 'bg-rose-500'
+                    isOffline
+                      ? 'bg-amber-500'
+                      : isSessionOpen
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-rose-500'
                   }`}
                 />
-                {isSessionOpen ? 'DRAWER OPEN' : 'SESSION CLOSED'}
+                {isOffline
+                  ? 'OFFLINE • SESSIONS RESTRICTED'
+                  : isSessionOpen
+                    ? 'DRAWER OPEN'
+                    : 'SESSION CLOSED'}
               </span>
             </div>
-            {isSessionOpen && activeSession ? (
+            {isOffline ? (
+              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                No internet connection. Drawer sessions and money transactions require live cloud sync.
+              </p>
+            ) : isSessionOpen && activeSession ? (
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                 Session{' '}
                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
@@ -391,10 +432,30 @@ export const CashManagementPage: React.FC = () => {
             />
           </div>
         </div>
-      ) : (
+    ) : (
         /* Closed State */
         <div className="bg-white dark:bg-[#12151c] border border-slate-200 dark:border-white/10 rounded-2xl p-5 sm:p-8 shadow-xs">
-          {isAdmin ? (
+          {isOffline ? (
+            <div className="max-w-md mx-auto text-center py-8 space-y-4">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
+                <WifiOff className="w-7 h-7 sm:w-8 sm:h-8" />
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-base sm:text-lg font-heading font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                  CASH DRAWER IS OFFLINE
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                  Opening a cash session requires an active internet connection to authenticate cashier credentials, verify float balances, and sync live ledger records.
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#0c0e12] border border-slate-200/80 dark:border-white/10 text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>Internet connection required to start session</span>
+              </div>
+            </div>
+          ) : isAdmin ? (
             <div className="max-w-xl mx-auto text-center space-y-6">
               <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center mx-auto transition-transform hover:scale-105">
                 <Wallet className="w-7 h-7 sm:w-8 sm:h-8" />

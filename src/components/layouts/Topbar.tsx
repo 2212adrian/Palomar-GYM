@@ -44,7 +44,6 @@ import {
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
-import { useOfflineSyncStore } from '../../stores/useOfflineSyncStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
@@ -313,16 +312,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   );
   const cashContainerRef = useRef<HTMLDivElement>(null);
   const syncContainerRef = useRef<HTMLDivElement>(null);
-
-  const {
-    isOnline: isSyncOnline,
-    isSyncing,
-    pendingQueue,
-    lastSyncedAt,
-    syncError,
-    flushQueue,
-  } = useOfflineSyncStore();
-  const pendingSyncCount = pendingQueue.length;
 
   // Logbook Telemetry (Active Session Only)
   const [logbookKpiData, setLogbookKpiData] = useState<LogbookKpiData>({
@@ -699,12 +688,6 @@ export const Topbar: React.FC<TopbarProps> = ({
     isInitializing ||
     (isSessionOpen && currentDrawerCash === null) ||
     (isCashLoading && !activeSession);
-
-  // Hide Physical Drawer Cash when a Settings page or subtab is opened
-  const isSettingsPage =
-    Boolean(subTab) ||
-    location.pathname.startsWith('/settings') ||
-    location.pathname.startsWith('/system');
 
   return (
     <header
@@ -1105,199 +1088,6 @@ export const Topbar: React.FC<TopbarProps> = ({
 
       {/* 2. RIGHT SECTION: OFFLINE SYNC INDICATOR, CASH PILL & CONTROLS */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
-        {/* OFFLINE SYNC STATUS INDICATOR - EXCLUSIVE TO CAPACITOR NATIVE APP */}
-        {isCapacitorApp() && (
-          <div ref={syncContainerRef} className="relative">
-            <button
-              type="button"
-              onClick={handleToggleSyncPopover}
-            title={
-              !isSyncOnline
-                ? `Offline Mode: ${pendingSyncCount} record(s) cached locally pending upload to Supabase`
-                : pendingSyncCount > 0
-                  ? `${pendingSyncCount} local cache record(s) pending upload to Supabase`
-                  : isSyncing
-                    ? 'Uploading cached records to Supabase...'
-                    : 'Local cache is synchronized with Supabase'
-            }
-            className={`flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none ${
-              !isSyncOnline
-                ? 'border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400'
-                : pendingSyncCount > 0
-                  ? 'border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300'
-                  : isSyncing
-                    ? 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                    : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100/80 hover:bg-slate-200/70 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300'
-            }`}
-          >
-            {isSyncing ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500 shrink-0" />
-            ) : !isSyncOnline ? (
-              <CloudOff className="w-3.5 h-3.5 text-rose-500 animate-pulse shrink-0" />
-            ) : pendingSyncCount > 0 ? (
-              <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
-            ) : (
-              <CloudCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            )}
-
-            <div className="flex items-center gap-1 font-mono font-bold">
-              {isSyncing ? (
-                <span className="text-[10px] uppercase tracking-wider">
-                  SYNCING{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : '...'}
-                </span>
-              ) : !isSyncOnline ? (
-                <span className="text-[10px] uppercase tracking-wider font-extrabold">
-                  {pendingSyncCount > 0
-                    ? `OFFLINE (${pendingSyncCount})`
-                    : 'OFFLINE'}
-                </span>
-              ) : pendingSyncCount > 0 ? (
-                <span className="text-[10px] uppercase tracking-wider font-extrabold">
-                  {pendingSyncCount} PENDING
-                </span>
-              ) : (
-                <span className="hidden sm:inline text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                  SYNCED
-                </span>
-              )}
-            </div>
-          </button>
-
-          {/* OFFLINE SYNC & LOCAL CACHE POPOVER */}
-          <AnimatePresence>
-            {isSyncPopoverOpen && (
-              <div className="absolute top-[calc(100%+8px)] right-0 w-[calc(100vw-24px)] max-w-xs sm:w-80 z-50 pointer-events-auto">
-                <motion.div
-                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                  transition={{ duration: 0.15 }}
-                  className="w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 backdrop-blur-xl select-none space-y-3 text-left"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                    <div className="flex items-center gap-1.5">
-                      {!isSyncOnline ? (
-                        <CloudOff className="w-4 h-4 text-rose-500" />
-                      ) : pendingSyncCount > 0 ? (
-                        <RefreshCw className="w-4 h-4 text-amber-500" />
-                      ) : (
-                        <CloudCheck className="w-4 h-4 text-emerald-500" />
-                      )}
-                      <span className="text-[11px] font-heading font-black tracking-wider uppercase text-slate-800 dark:text-white">
-                        SUPABASE OFFLINE SYNC
-                      </span>
-                    </div>
-                    <span
-                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        !isSyncOnline
-                          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                          : pendingSyncCount > 0
-                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {!isSyncOnline
-                        ? 'OFFLINE CACHE'
-                        : pendingSyncCount > 0
-                          ? `${pendingSyncCount} PENDING`
-                          : 'ALL SYNCED'}
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-bold">
-                      <span className="text-slate-500 dark:text-slate-400 uppercase text-[10px]">
-                        Pending Local Queue
-                      </span>
-                      <span
-                        className={`font-mono font-black ${
-                          pendingSyncCount > 0
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        {pendingSyncCount}{' '}
-                        {pendingSyncCount === 1 ? 'Record' : 'Records'}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                      {pendingSyncCount > 0
-                        ? 'Local check-in or ledger changes are safely stored in device cache and will upload to Supabase as soon as connection is stable.'
-                        : !isSyncOnline
-                          ? 'Internet connection lost. Check-ins recorded now will be saved to the local queue and uploaded automatically when back online.'
-                          : 'All local cache records are uploaded and synchronized with Supabase.'}
-                    </p>
-
-                    {lastSyncedAt && (
-                      <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200/60 dark:border-zinc-700/50">
-                        Last Synced:{' '}
-                        {new Date(lastSyncedAt).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </p>
-                    )}
-
-                    {syncError && (
-                      <p className="text-[10px] text-rose-500 font-semibold pt-1">
-                        ⚠️ {syncError}
-                      </p>
-                    )}
-                  </div>
-
-                  {pendingQueue.length > 0 && (
-                    <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
-                      {pendingQueue.map((item) => (
-                        <div
-                          key={item.id}
-                          className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2 text-[10px]"
-                        >
-                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                            {item.label}
-                          </span>
-                          <span className="font-mono text-amber-600 dark:text-amber-400 shrink-0 uppercase">
-                            Queued
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={isSyncing || !isSyncOnline}
-                    onClick={async () => {
-                      await flushQueue();
-                    }}
-                    className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-                      isSyncing || !isSyncOnline
-                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-60'
-                        : pendingSyncCount > 0
-                          ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-slate-200 cursor-pointer'
-                    }`}
-                  >
-                    <RefreshCw
-                      className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`}
-                    />
-                    <span>
-                      {isSyncing
-                        ? 'Uploading to Supabase...'
-                        : !isSyncOnline
-                          ? 'Waiting for Internet...'
-                          : pendingSyncCount > 0
-                            ? `Upload ${pendingSyncCount} Pending Record(s) Now`
-                            : 'Verify & Sync Cache Now'}
-                    </span>
-                  </button>
-                </motion.div>
-              </div>
-            )}
-          </AnimatePresence>
-        </div>
-        )}
 
         {/* LIVE CASH DRAWER CAPSULE */}
         <div ref={cashContainerRef} className="relative">
