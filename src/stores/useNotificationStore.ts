@@ -2,9 +2,7 @@
 import { create } from 'zustand';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { supabase } from '../lib/supabase/client';
-import { isSuperAdmin } from '../constants/auth';
 import { isCapacitorApp } from '../lib/platform';
-import { useAuthStore } from './authStore';
 
 const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
@@ -261,16 +259,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
-  fetchNotifications: async (userEmail, userRole, isRealtimeEvent = false) => {
-    const authUser = useAuthStore.getState().user;
-    const authProfile = useAuthStore.getState().profile;
-    const activeEmail = userEmail ?? authUser?.email;
-    const activeRole =
-      userRole ??
-      authProfile?.role ??
-      (authUser?.user_metadata?.role as string);
-    const isAdmin =
-      isSuperAdmin(activeEmail) || activeRole?.toLowerCase() === 'admin';
+  fetchNotifications: async (
+    _userEmail?: string | null,
+    _userRole?: string | null,
+    isRealtimeEvent = false
+  ) => {
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
