@@ -163,41 +163,42 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       setShowLiveScanner(false);
       setSearchTerm('');
     } else {
+      setShowLiveScanner(false);
       stopAllCameraTracks();
     }
   }, [isOpen]);
 
-  // Fetch camera list and default to back/rear camera when scanner becomes active
+  // Fetch camera list and default to back/rear camera only when live scanner is turned on
   useEffect(() => {
-    if (showLiveScanner) {
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-
-            // Find back/rear camera by label keywords
-            const backCam = devices.find((d) => {
-              const label = d.label.toLowerCase();
-              return (
-                label.includes('back') ||
-                label.includes('rear') ||
-                label.includes('environment') ||
-                label.includes('facing back')
-              );
-            });
-
-            // Default to back camera if found, otherwise fallback to first available
-            const defaultCameraId = backCam ? backCam.id : devices[0].id;
-            setSelectedCameraId(defaultCameraId);
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not list cameras:', err);
-        });
-    } else {
+    if (!isOpen || !showLiveScanner) {
       stopAllCameraTracks();
+      return;
     }
-  }, [showLiveScanner]);
+
+    Html5Qrcode.getCameras()
+      .then((devices) => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+
+          const backCam = devices.find((d) => {
+            const label = d.label.toLowerCase();
+            return (
+              label.includes('back') ||
+              label.includes('rear') ||
+              label.includes('environment') ||
+              label.includes('facing back')
+            );
+          });
+
+          const defaultCameraId = backCam ? backCam.id : devices[0].id;
+          setSelectedCameraId(defaultCameraId);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not list cameras:', err);
+      });
+  }, [isOpen, showLiveScanner]);
+
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
     const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
@@ -235,87 +236,90 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     let html5QrCode: Html5Qrcode | null = null;
     let isCancelled = false;
 
-    if (showLiveScanner) {
-      const timer = setTimeout(() => {
-        const element = document.getElementById('sales-qr-reader');
-        if (!element || isCancelled) return;
+    if (!isOpen || !showLiveScanner) {
+      stopAllCameraTracks();
+      return;
+    }
 
-        try {
-          html5QrCode = new Html5Qrcode('sales-qr-reader', {
-            verbose: false,
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.QR_CODE,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODE_39,
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.UPC_A,
-            ],
-            experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true,
-            },
-          });
-          scannerRef.current = html5QrCode;
+    const timer = setTimeout(() => {
+      const element = document.getElementById('sales-qr-reader');
+      if (!element || isCancelled) return;
 
-          const cameraConfig = selectedCameraId
-            ? { deviceId: { exact: selectedCameraId } }
-            : { facingMode: 'environment' };
+      try {
+        html5QrCode = new Html5Qrcode('sales-qr-reader', {
+          verbose: false,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.UPC_A,
+          ],
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
+        });
+        scannerRef.current = html5QrCode;
 
-          html5QrCode
-            .start(
-              cameraConfig,
-              {
-                fps: isBatterySaver ? 10 : 25,
-                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
-                  width: Math.min(Math.floor(viewfinderWidth * 0.88), 380),
-                  height: Math.min(Math.floor(viewfinderHeight * 0.45), 160),
-                }),
-                videoConstraints: {
-                  ...cameraConfig,
-                  width: { ideal: isBatterySaver ? 640 : 1280 },
-                  height: { ideal: isBatterySaver ? 480 : 720 },
-                  facingMode: 'environment',
-                },
+        const cameraConfig = selectedCameraId
+          ? { deviceId: { exact: selectedCameraId } }
+          : { facingMode: 'environment' };
+
+        html5QrCode
+          .start(
+            cameraConfig,
+            {
+              fps: isBatterySaver ? 10 : 25,
+              qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
+                width: Math.min(Math.floor(viewfinderWidth * 0.88), 380),
+                height: Math.min(Math.floor(viewfinderHeight * 0.45), 160),
+              }),
+              videoConstraints: {
+                ...cameraConfig,
+                width: { ideal: isBatterySaver ? 640 : 1280 },
+                height: { ideal: isBatterySaver ? 480 : 720 },
+                facingMode: 'environment',
               },
-              (decodedText) => {
-                handleBarcodeScanned(decodedText);
+            },
+            (decodedText) => {
+              handleBarcodeScanned(decodedText);
+              setShowLiveScanner(false);
+              stopAllCameraTracks();
+            },
+            () => {}
+          )
+          .catch((err) => {
+            if (!isCancelled) {
+              const reason = getCameraErrorMessage(err);
+              if (cameras.length > 1) {
+                const currentIndex = selectedCameraId
+                  ? cameras.findIndex((c) => c.id === selectedCameraId)
+                  : -1;
+                const nextCamera =
+                  cameras[(currentIndex + 1) % cameras.length];
+                stopAllCameraTracks();
+                setSelectedCameraId(nextCamera.id);
+                toast.info(
+                  `Switching camera: ${nextCamera.label || 'Next Camera'}`
+                );
+              } else {
+                toast.error(`Camera Error: ${reason}`);
                 setShowLiveScanner(false);
                 stopAllCameraTracks();
-              },
-              () => {}
-            )
-            .catch((err) => {
-              if (!isCancelled) {
-                const reason = getCameraErrorMessage(err);
-                if (cameras.length > 1) {
-                  const currentIndex = selectedCameraId
-                    ? cameras.findIndex((c) => c.id === selectedCameraId)
-                    : -1;
-                  const nextCamera =
-                    cameras[(currentIndex + 1) % cameras.length];
-                  stopAllCameraTracks();
-                  setSelectedCameraId(nextCamera.id);
-                  toast.info(
-                    `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                  );
-                } else {
-                  toast.error(`Camera Error: ${reason}`);
-                  setShowLiveScanner(false);
-                  stopAllCameraTracks();
-                }
               }
-            });
-        } catch (e) {
-          console.error('Sales scanner init error:', e);
-        }
-      }, 250);
+            }
+          });
+      } catch (e) {
+        console.error('Sales scanner init error:', e);
+      }
+    }, 250);
 
-      return () => {
-        isCancelled = true;
-        clearTimeout(timer);
-        stopAllCameraTracks();
-      };
-    }
-  }, [showLiveScanner, selectedCameraId]);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+      stopAllCameraTracks();
+    };
+  }, [isOpen, showLiveScanner, selectedCameraId]);
 
   const handleStartScan = () => {
     setShowLiveScanner((prev) => !prev);
@@ -518,10 +522,13 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     }
   };
 
+  if (!isOpen) return null;
+
   return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={() => {
+        setShowLiveScanner(false);
         stopAllCameraTracks();
         onClose();
       }}
@@ -534,6 +541,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         type="button"
         disabled={isSubmitting}
         onClick={() => {
+          setShowLiveScanner(false);
           stopAllCameraTracks();
           onClose();
         }}

@@ -44,6 +44,7 @@ import { supabase } from '../../../lib/supabase/client';
 import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
+import { useAuthStore } from '../../../stores/authStore';
 import {
   memberService,
   subscriptionService,
@@ -347,6 +348,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillData,
   prefillMember,
 }) => {
+  const { profile } = useAuthStore();
+  const isStaff = profile?.role === 'staff';
+
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();
 
@@ -355,9 +359,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
-  const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(
-    initialIntakeMode || 'Manual'
-  );
+  const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(() => {
+    if (isStaff && !prefillData && !prefillMember) return 'Import';
+    return initialIntakeMode || 'Manual';
+  });
   const [selectedPlan, setSelectedPlan] = useState<
     'Monthly Membership' | 'Yearly Membership' | 'No Subscription'
   >(initialPlan || 'Monthly Membership');
@@ -495,6 +500,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     sub_id: string;
     receipt_no: string;
     transaction_date: string;
+    customer_name: string;
+    plan_name: 'Monthly Membership' | 'Yearly Membership' | 'No Subscription';
+    base_price: number;
+    gcash_fee: number;
+    card_fee: number;
+    payment_method: PaymentMethod;
+    gcash_ref_no: string;
+    had_card: boolean;
+    had_subscription: boolean;
   } | null>(null);
 
   const activeMember = selectedExistingMember || prefillMember;
@@ -646,6 +660,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleClearSelectedExistingMember = () => {
     setSelectedExistingMember(null);
+    setImportedQueueReg(null);
     setMemberSearchQuery('');
     setLastName('');
     setFirstName('');
@@ -668,6 +683,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setWaiverAgreed(false);
     setSubscriptionAgreement(false);
     setErrors({});
+    if (isStaff) {
+      setIntakeMethod('Import');
+      setIsScanning(true);
+    }
   };
 
   const handleChooseCreateNewMember = () => {
@@ -682,7 +701,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   // Auto-Save Draft System with 24-Hour TTL
   useEffect(() => {
-    if (!isOpen || prefillData || prefillMember || intakeMode === 'Import')
+    if (
+      !isOpen ||
+      isStaff ||
+      prefillData ||
+      prefillMember ||
+      intakeMode === 'Import'
+    )
       return;
 
     isRestoringDraftRef.current = true;
@@ -732,12 +757,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }
   }, [isOpen, prefillData, prefillMember, intakeMode]);
 
+  const resetFormFields = useCallback(() => {
+    localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
+    lastDraftSnapshotRef.current = '';
+    setSelectedExistingMember(null);
+    setMemberSearchQuery('');
+    setLastName('');
+    setFirstName('');
+    setMiddleInitials('');
+    setSuffix('');
+    setEmail('');
+    setPhone('');
+    setGender('Male');
+    setBirthday('');
+    setAddress('');
+    setEmergencyName('');
+    setRelationship('');
+    setEmergencyPhone('');
+    setParentName('');
+    setParentRelationship('Father');
+    setParentPhone('');
+    setParentEmail('');
+    setSameAsParent(true);
+    setApplicantSig(null);
+    setParentSig(null);
+    setConsentDate(null);
+    setWaiverAgreed(false);
+    setSubscriptionAgreement(false);
+    setCashTendered('');
+    setGcashReference('');
+    setAddIdCard(false);
+    setImportedQueueReg(null);
+    setEnrollmentType('existing');
+    setDraftState('idle');
+    setErrors({});
+  }, []);
+
   // Real-time character auto-save listener
   useEffect(() => {
     if (
       !isOpen ||
       isRestoringDraftRef.current ||
       isSubmitting ||
+      step === 3 ||
       intakeMode !== 'Manual' ||
       prefillData ||
       prefillMember
@@ -811,6 +873,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   }, [
     isOpen,
     isSubmitting,
+    step,
     intakeMode,
     prefillData,
     prefillMember,
@@ -839,31 +902,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   ]);
 
   const handleClearDraft = () => {
-    localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
-    setSelectedExistingMember(null);
-    setMemberSearchQuery('');
-    setLastName('');
-    setFirstName('');
-    setMiddleInitials('');
-    setSuffix('');
-    setEmail('');
-    setPhone('');
-    setGender('Male');
-    setBirthday('');
-    setAddress('');
-    setEmergencyName('');
-    setRelationship('');
-    setEmergencyPhone('');
-    setParentName('');
-    setParentRelationship('Father');
-    setParentPhone('');
-    setParentEmail('');
-    setSameAsParent(true);
-    setApplicantSig(null);
-    setParentSig(null);
-    setWaiverAgreed(false);
-    setDraftState('idle');
-    setErrors({});
+    resetFormFields();
     toast.info('Intake draft cleared.', { toastId: 'draft-cleared-toast' });
   };
 
@@ -1255,11 +1294,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setShowStatusDetails(false);
       setErrors({});
       setMemberSearchQuery('');
-      lastScannedIdRef.current = '';
+    lastScannedIdRef.current = '';
       lastScanTimeRef.current = 0;
       setIntakeMethod(
-        initialIntakeMode ||
-          (prefillData || prefillMember ? 'Manual' : 'Manual')
+        isStaff &&
+          !prefillData &&
+          !prefillMember &&
+          !importedQueueReg &&
+          !selectedExistingMember
+          ? 'Import'
+          : initialIntakeMode ||
+            (prefillData || prefillMember ? 'Manual' : 'Manual')
       );
 
       if (initialPlan) {
@@ -1285,6 +1330,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleModalClose = () => {
     forceStopCamera();
     setIsScanning(false);
+    if (step === 3) {
+      setStep(1);
+      setFinishedIds(null);
+      setSelectedPlan('Monthly Membership');
+    }
     onClose();
   };
 
@@ -1815,17 +1865,35 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           hour12: true,
         });
 
+      const receiptCustomerName = targetMember.full_name || combinedName;
+      const receiptPlanName = selectedPlan;
+      const receiptBasePrice = livePlanBasePrice;
+      const receiptGcashFee = liveGcashFee;
+      const receiptCardFee = liveCardFee;
+      const receiptPaymentMethod = mappedPayment;
+      const receiptGcashRef = gcashReference.trim();
+      const receiptHadCard = addIdCard;
+      const receiptHadSub = selectedPlan !== 'No Subscription';
+
       setFinishedIds({
         member_id: targetMember.member_id,
         sub_id: createdSub?.id || 'PROFILE-ONLY',
         receipt_no: receiptNo,
         transaction_date: formattedDate,
+        customer_name: receiptCustomerName,
+        plan_name: receiptPlanName,
+        base_price: receiptBasePrice,
+        gcash_fee: receiptGcashFee,
+        card_fee: receiptCardFee,
+        payment_method: receiptPaymentMethod,
+        gcash_ref_no: receiptGcashRef,
+        had_card: receiptHadCard,
+        had_subscription: receiptHadSub,
       });
 
       window.dispatchEvent(new Event('palomar_logbook_updated'));
 
-      localStorage.removeItem(INTAKE_DRAFT_STORAGE_KEY);
-      setDraftState('idle');
+      resetFormFields();
 
       toast.success(
         selectedPlan === 'No Subscription'
@@ -1884,11 +1952,16 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     isRestrictedUnder12 ||
     membershipStatusSummary.isBlocked;
 
+    const hasLoadedPerson = Boolean(
+    selectedExistingMember ||
+    importedQueueReg ||
+    prefillMember ||
+    prefillData
+  );
+
   const shouldShowDetailsForm =
-    enrollmentType === 'new' ||
-    Boolean(selectedExistingMember) ||
-    Boolean(prefillMember) ||
-    Boolean(prefillData);
+    hasLoadedPerson ||
+    (!isStaff && enrollmentType === 'new');
 
   if (!isOpen) return null;
 
@@ -2060,18 +2133,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </button>
               </div>
 
-              {!isScanning ? (
+        {!isScanning ? (
                 <div className="max-w-sm mx-auto py-4 space-y-3">
                   <div className="p-5 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl shadow-xs space-y-3">
                     <div className="space-y-1">
                       <label className="text-[10px] uppercase font-bold text-(--color-text)/80 tracking-wider block">
-                        Registration Ticket ID *
+                        Registration Ticket or Member Code *
                       </label>
                       <input
                         type="text"
                         value={manualIdInput}
                         onChange={(e) => setManualIdInput(e.target.value)}
-                        placeholder="e.g. REG-000001"
+                        placeholder="e.g. REG-000001 or MEM-2026-0001"
                         className="w-full px-3.5 py-2.5 border border-(--border-color) bg-(--bg-card) text-(--color-text) rounded-xl text-xs font-mono uppercase tracking-widest placeholder:text-(--color-text)/30 outline-none focus:border-(--color-primary)"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && manualIdInput.trim()) {
@@ -2088,7 +2161,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       className="w-full py-3 bg-(--color-primary) hover:bg-(--color-primary-hover) disabled:opacity-40 text-white font-bold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-md transition-all flex items-center justify-center gap-2"
                     >
                       <CheckCircle className="w-4 h-4" />
-                      <span>Verify & Retrieve Ticket</span>
+                      <span>Verify & Retrieve Code</span>
                     </button>
                   </div>
                 </div>
@@ -2135,8 +2208,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {/* STEP 1: MANUAL INTAKE */}
           {step === 1 && intakeMode === 'Manual' && (
             <div className="space-y-4 animate-fade-in">
-              {/* ACTION TILES: EXISTING VS NEW */}
-              {!prefillMember && !prefillData && (
+              {/* ACTION TILES: EXISTING VS NEW (ADMIN ONLY, HIDDEN IF PERSON IS LOADED) */}
+              {!isStaff && !hasLoadedPerson && (
                 <div className="space-y-1.5">
                   <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
                     Select Intake Mode
@@ -2212,8 +2285,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               )}
 
-              {/* SEARCH BOX FOR EXISTING MEMBER */}
-              {enrollmentType === 'existing' &&
+              {/* SEARCH BOX FOR EXISTING MEMBER (ADMIN ONLY, HIDDEN IF PERSON IS LOADED) */}
+              {!isStaff &&
+                !hasLoadedPerson &&
+                enrollmentType === 'existing' &&
                 !selectedExistingMember &&
                 !prefillData && (
                   <div className="space-y-3 animate-fade-in">
@@ -2337,6 +2412,36 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </div>
                 )}
 
+              {/* ATTACHED IMPORTED TICKET BADGE */}
+              {importedQueueReg && !selectedExistingMember && (
+                <div className="p-3.5 bg-(--color-primary)/10 border-2 border-(--color-primary)/40 rounded-2xl text-(--color-text) flex items-center justify-between gap-3 shadow-xs animate-fade-in">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-(--color-primary) text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                      {importedQueueReg.full_name[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-black text-xs text-(--color-text) uppercase block truncate">
+                        {importedQueueReg.full_name}
+                      </span>
+                      <span className="text-[10px] font-mono text-(--color-text)/60 block">
+                        Ticket: {importedQueueReg.id} • Phone:{' '}
+                        {importedQueueReg.phone || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {!prefillData && (
+                    <button
+                      type="button"
+                      onClick={handleClearSelectedExistingMember}
+                      className="px-3 py-1.5 bg-(--bg-card) text-(--color-text) border border-(--border-color) hover:bg-(--bg-input) rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer shrink-0 shadow-xs"
+                    >
+                      Change
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* ATTACHED EXISTING MEMBER BADGE */}
               {selectedExistingMember && (
                 <div className="p-3.5 bg-(--color-primary)/10 border-2 border-(--color-primary)/40 rounded-2xl text-(--color-text) flex items-center justify-between gap-3 shadow-xs animate-fade-in">
@@ -2403,7 +2508,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
                       </div>
 
-                      {applicantStatusSummary.actionMember && (
+                      {applicantStatusSummary.actionMember && !isStaff && (
                         <button
                           type="button"
                           onClick={() =>
@@ -2599,7 +2704,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           placeholder="0917XXXXXXX"
                         />
 
-                        {phoneMatchMember && !selectedExistingMember && (
+                       {phoneMatchMember && !selectedExistingMember && !isStaff && (
                           <div className="flex items-center justify-between text-[9px] text-amber-500 mt-1 font-medium">
                             <span className="truncate">
                               Used by {phoneMatchMember.full_name}
@@ -3402,7 +3507,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </p>
               </div>
 
-              {selectedPlan !== 'No Subscription' || addIdCard ? (
+              {finishedIds.had_subscription || finishedIds.had_card ? (
                 <div className="w-full flex justify-center pt-2">
                   <OfficialReceipt
                     ref={receiptRef}
@@ -3410,13 +3515,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     data={{
                       receiptType: 'subscription',
                       receiptNo: finishedIds.receipt_no,
-                      customerName: getCombinedFullName(),
-                      planType: selectedPlan,
-                      basePrice: planBasePrice,
-                      gcashFee: appliedGcashFee,
-                      cardFee: appliedCardFee,
-                      paymentMethod: paymentMethod,
-                      gcashRefNo: gcashReference,
+                      customerName: finishedIds.customer_name,
+                      planType: finishedIds.plan_name,
+                      basePrice: finishedIds.base_price,
+                      gcashFee: finishedIds.gcash_fee,
+                      cardFee: finishedIds.card_fee,
+                      paymentMethod: finishedIds.payment_method,
+                      gcashRefNo: finishedIds.gcash_ref_no,
                       transactionDate: finishedIds.transaction_date,
                       processedBy: 'FRONTDESK STAFF',
                       qrValue: finishedIds.receipt_no,
@@ -3488,7 +3593,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <span>Next: Choose Plan</span>
                   <ChevronLeft className="w-4 h-4 rotate-180" />
                 </button>
-              ) : (
+               ) : !isStaff ? (
                 <button
                   type="button"
                   onClick={() => setIntakeMethod('Manual')}
@@ -3496,7 +3601,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 >
                   Manual Intake
                 </button>
-              )}
+              ) : null}
             </>
           ) : (
             <div className="w-full flex items-center justify-between gap-3">
@@ -3551,6 +3656,9 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   onOnboardingSuccess,
 }) => {
   const navigate = useNavigate();
+
+  const { profile } = useAuthStore();
+  const isStaff = profile?.role === 'staff';
 
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();
@@ -3642,13 +3750,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   return (
     <div className="relative space-y-6">
       {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
-      <SideNavTab
-        side="left"
-        label="MEMBERS"
-        title="View Member Directory"
-        sidebarOffset={true}
-        onClick={() => navigate('/members/list')}
-      />
+      {!isStaff && (
+        <SideNavTab
+          side="left"
+          label="MEMBERS"
+          title="View Member Directory"
+          sidebarOffset={true}
+          onClick={() => navigate('/members/list')}
+        />
+      )}
 
       {/* CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>
@@ -3915,7 +4025,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                   if (isMonthlyValid) {
                     setModalConfig({
                       isOpen: true,
-                      mode: 'Manual',
+                      mode: isStaff ? 'Import' : 'Manual',
                       plan: 'Monthly Membership',
                     });
                   }
@@ -3953,7 +4063,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               if (isYearlyValid) {
                 setModalConfig({
                   isOpen: true,
-                  mode: 'Manual',
+                  mode: isStaff ? 'Import' : 'Manual',
                   plan: 'Yearly Membership',
                 });
               }
@@ -4054,7 +4164,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               <button
                 type="button"
                 disabled={!isYearlyValid || !isSessionOpen}
-                onClick={(e) => {
+               onClick={(e) => {
                   e.stopPropagation();
                   if (!isSessionOpen) {
                     toast.warning(
@@ -4065,7 +4175,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                   if (isYearlyValid) {
                     setModalConfig({
                       isOpen: true,
-                      mode: 'Manual',
+                      mode: isStaff ? 'Import' : 'Manual',
                       plan: 'Yearly Membership',
                     });
                   }

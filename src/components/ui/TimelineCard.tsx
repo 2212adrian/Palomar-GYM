@@ -73,6 +73,8 @@ interface TimelineCardProps {
   mode: 'attendance' | 'sale';
   data: any;
   canDelete: boolean;
+  canPrint?: boolean;
+  printDisabledReason?: string;
   deleteDisabledReason?: string;
   onSelectReceipt: (data: any) => void;
   onTriggerDelete: (data: any) => void;
@@ -210,6 +212,8 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   mode,
   data,
   canDelete,
+  canPrint = true,
+  printDisabledReason,
   deleteDisabledReason,
   onSelectReceipt,
   onTriggerDelete,
@@ -341,35 +345,44 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
     <div className="relative overflow-hidden rounded-2xl w-full">
       {/* Swipe background tracks */}
       <div className="absolute inset-0 rounded-2xl pointer-events-none select-none z-0 overflow-hidden bg-slate-200 dark:bg-[#0c0e12]">
-        <motion.div
-          style={{ opacity: receiptOpacity }}
-          className="absolute inset-y-0 left-0 bg-blue-600 flex items-center pl-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
-        >
-          RECEIPT
-        </motion.div>
+        {canPrint && (
+          <motion.div
+            style={{ opacity: receiptOpacity }}
+            className="absolute inset-y-0 left-0 bg-blue-600 flex items-center pl-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
+          >
+            RECEIPT
+          </motion.div>
+        )}
 
-        <motion.div
-          style={{ opacity: removeOpacity }}
-          className="absolute inset-y-0 right-0 bg-rose-600 flex items-center justify-end pr-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
-        >
-          REMOVE
-        </motion.div>
+        {(canDelete || !deleteDisabledReason) && (
+          <motion.div
+            style={{ opacity: removeOpacity }}
+            className="absolute inset-y-0 right-0 bg-rose-600 flex items-center justify-end pr-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
+          >
+            REMOVE
+          </motion.div>
+        )}
       </div>
 
       {/* Main card */}
-      {/* FIX 2 & 3: Removed dragDirectionLock and increased dragElastic from 0.08 to 0.2 */}
       <motion.div
         style={{ x }}
-        drag="x"
+        drag={canPrint || (canDelete && !deleteDisabledReason) ? 'x' : false}
         dragConstraints={{
-          left: deleteDisabledReason ? 0 : -100,
-          right: 100,
+          left: canDelete && !deleteDisabledReason ? -100 : 0,
+          right: canPrint ? 100 : 0,
         }}
-        dragElastic={0.2}
+        dragElastic={{
+          left: canDelete && !deleteDisabledReason ? 0.2 : 0,
+          right: canPrint ? 0.2 : 0,
+        }}
         dragSnapToOrigin={true}
         dragTransition={{ bounceStiffness: 500, bounceDamping: 32 }}
         onDragEnd={(e, info) => {
-          if (deleteDisabledReason && info.offset.x < -40) {
+          if ((!canDelete || deleteDisabledReason) && info.offset.x < -40) {
+            return;
+          }
+          if (!canPrint && info.offset.x > 40) {
             return;
           }
           onDragEnd(e, info, data);
@@ -500,12 +513,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                 <div className="hidden sm:flex items-center gap-1 pl-1">
                   <button
                     type="button"
+                    disabled={!canPrint}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (!canPrint) return;
                       onSelectReceipt(attendanceMeta.log);
                     }}
-                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0 shadow-xs"
-                    title="View Receipt"
+                    className={`p-1.5 rounded-lg transition-all border shrink-0 shadow-xs ${
+                      !canPrint
+                        ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
+                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 cursor-pointer'
+                    }`}
+                    title={
+                      !canPrint
+                        ? (printDisabledReason || 'Receipt viewing is disabled for closed sessions.')
+                        : 'View Receipt'
+                    }
                   >
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>
@@ -636,12 +659,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                 <div className="hidden sm:flex items-center gap-1 pl-1">
                   <button
                     type="button"
+                    disabled={!canPrint}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (!canPrint) return;
                       onSelectReceipt(saleMeta.tx);
                     }}
-                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 rounded-lg transition-all border cursor-pointer shrink-0 shadow-xs"
-                    title="View Receipt"
+                    className={`p-1.5 rounded-lg transition-all border shrink-0 shadow-xs ${
+                      !canPrint
+                        ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
+                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50 border-slate-200 hover:border-blue-300 dark:text-slate-300 dark:hover:text-blue-400 dark:hover:bg-blue-950/80 dark:border-slate-700 cursor-pointer'
+                    }`}
+                    title={
+                      !canPrint
+                        ? (printDisabledReason || 'Receipt viewing is disabled for closed sessions.')
+                        : 'View Receipt'
+                    }
                   >
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>

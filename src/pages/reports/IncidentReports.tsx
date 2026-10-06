@@ -18,6 +18,7 @@ import { isSuperAdmin } from '../../constants/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HeaderActionsContext } from '../../routes';
 import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
+import { useNotificationStore } from '../../stores/useNotificationStore';
 import {
   Activity,
   Trash2,
@@ -683,6 +684,9 @@ const handleSaveReport = async (e: React.FormEvent) => {
         `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`
       );
       fetchIncidentReports();
+      useNotificationStore
+        .getState()
+        .fetchNotifications(user?.email, roleString, true);
     } catch {
       toast.error('Submission failed. Please verify your data.');
     } finally {

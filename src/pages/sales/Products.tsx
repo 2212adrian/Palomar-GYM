@@ -803,11 +803,12 @@ export const Products: React.FC<ProductsProps> = ({
         }
       }
 
-      setShowFormModal(false);
       fetchProducts(true); // Silent sync in background
+      return true;
     } catch {
       toast.error('Failed to save parameters.');
       fetchProducts(true);
+      return false;
     } finally {
       setSaving(false);
     }

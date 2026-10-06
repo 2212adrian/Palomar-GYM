@@ -57,15 +57,42 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   onConfirmAll,
 }) => {
   const totalMs = duration * 1000;
-  const [mounted, setMounted] = useState(false);
+const [mounted, setMounted] = useState(false);
   const [remainingMs, setRemainingMs] = useState(totalMs);
   const [isPaused, setIsPaused] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingItemIds, setProcessingItemIds] = useState<string[]>([]);
 
   const prevItemsLength = useRef(items.length);
   const onConfirmAllRef = useRef(onConfirmAll);
   onConfirmAllRef.current = onConfirmAll;
+
+  const handleConfirmAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onConfirmAll();
+  };
+
+  const handleUndoAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onUndoAll();
+  };
+
+  const handleConfirmItem = (id: string) => {
+    if (isProcessing || processingItemIds.includes(id)) return;
+    setProcessingItemIds((prev) => [...prev, id]);
+    onConfirmItem(id);
+  };
+
+  const handleUndoItem = (id: string) => {
+    if (isProcessing || processingItemIds.includes(id)) return;
+    setProcessingItemIds((prev) => [...prev, id]);
+    onUndoItem(id);
+  };
 
   // Mount to body via portal once ready
   useEffect(() => {
@@ -81,15 +108,20 @@ export const UndoToast: React.FC<UndoToastProps> = ({
     prevItemsLength.current = items.length;
   }, [items.length, totalMs]);
 
-  // Reset states when empty
+  // Reset states when empty or prune removed item ids
   useEffect(() => {
     if (items.length === 0) {
       setIsProcessing(false);
       setIsExpanded(false);
       setIsPaused(false);
       setRemainingMs(totalMs);
+      setProcessingItemIds([]);
+    } else {
+      setProcessingItemIds((prev) =>
+        prev.filter((id) => items.some((item) => item.id === id))
+      );
     }
-  }, [items.length, totalMs]);
+  }, [items, totalMs]);
 
   // High-precision ticker (pauses on hover, touch, or when explicitly expanded)
   useEffect(() => {
@@ -227,11 +259,8 @@ export const UndoToast: React.FC<UndoToastProps> = ({
               <button
                 type="button"
                 disabled={isProcessing}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUndoAll();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 font-heading font-bold text-xs rounded-xl bg-amber-500/10 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-400 border border-amber-500/30 cursor-pointer shadow-xs transition-all"
+                onClick={handleUndoAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 font-heading font-bold text-xs rounded-xl bg-amber-500/10 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-400 border border-amber-500/30 cursor-pointer shadow-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>
@@ -245,11 +274,8 @@ export const UndoToast: React.FC<UndoToastProps> = ({
               <button
                 type="button"
                 disabled={isProcessing}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConfirmAll();
-                }}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                onClick={handleConfirmAll}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                 title="Dismiss and delete all immediately"
               >
                 <X className="w-4 h-4" />
@@ -306,8 +332,9 @@ export const UndoToast: React.FC<UndoToastProps> = ({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => onUndoItem(item.id)}
-                              className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 font-heading font-bold text-[10px] uppercase flex items-center gap-1 border border-amber-500/20 active:scale-95 transition-all cursor-pointer"
+                              disabled={isProcessing || processingItemIds.includes(item.id)}
+                              onClick={() => handleUndoItem(item.id)}
+                              className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 font-heading font-bold text-[10px] uppercase flex items-center gap-1 border border-amber-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                               title="Undo this item only"
                             >
                               <RotateCcw className="w-2.5 h-2.5" />
@@ -316,8 +343,9 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
                             <button
                               type="button"
-                              onClick={() => onConfirmItem(item.id)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                              disabled={isProcessing || processingItemIds.includes(item.id)}
+                              onClick={() => handleConfirmItem(item.id)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                               title="Delete this item now"
                             >
                               <X className="w-3.5 h-3.5" />

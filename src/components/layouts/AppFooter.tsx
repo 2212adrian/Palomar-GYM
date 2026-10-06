@@ -73,7 +73,7 @@ const DEFAULT_FOOTER_GYM_CONFIG: LiveGymFooterConfig = {
 };
 
 interface AppFooterProps {
-  variant?: 'system' | 'public';
+  variant?: 'system' | 'public' | 'register';
   onAcceptAgreement?: () => void;
   className?: string;
 }
@@ -106,7 +106,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   const APP_VERSION = pkg.version;
   const isAuthenticated = Boolean(user);
   const resolvedVariant = variant || (isAuthenticated ? 'system' : 'public');
-  const isCollapsible = resolvedVariant === 'system';
+  const isRegister = resolvedVariant === 'register';
+  const isCollapsible = resolvedVariant === 'system' || isRegister;
 
   const { isInstalled: isPwaInstalled } = usePWAInstall();
   const isAlreadyPwaOrCapacitor = useMemo(() => {
@@ -436,14 +437,16 @@ export const AppFooter: React.FC<AppFooterProps> = ({
           <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
             {!isFooterExpanded && (
               <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setAgreementDoc('agreement')}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-[10px] font-bold text-blue-700 dark:text-red-300 transition-colors cursor-pointer"
-                >
-                  <FileText className="w-3 h-3 shrink-0" />
-                  <span>User Agreement</span>
-                </button>
+                {!isRegister && (
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('agreement')}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-[10px] font-bold text-blue-700 dark:text-red-300 transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3 shrink-0" />
+                    <span>User Agreement</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setAgreementDoc('terms')}
@@ -482,77 +485,26 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         </div>
       )}
 
-      {/* EXPANDED CONTENT: Balanced 3-column tablet & 12-column desktop grid */}
+     {/* EXPANDED CONTENT: Balanced 3-column tablet & 12-column desktop grid */}
       {showExpandedFooter && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-7">
-            {/* SECTION 1: Facility Information (Full width banner on tablet, col-span-4 on desktop) */}
-            <div className="col-span-1 md:col-span-3 lg:col-span-4 space-y-3 text-left md:p-4 lg:p-0 rounded-2xl md:bg-slate-50/70 md:dark:bg-white/[0.02] lg:bg-transparent lg:dark:bg-transparent md:border md:border-slate-200/70 md:dark:border-white/5 lg:border-none">
-              {!isCollapsible ? (
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <img
-                    src={activeLogo}
-                    alt={gymConfig.gymName}
-                    className="h-8 sm:h-9 w-auto object-contain shrink-0"
-                  />
-                  {hasCustomLogo && (
-                    <h3 className="font-heading text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white truncate">
-                      {gymConfig.gymName}
-                    </h3>
-                  )}
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    v{latestCloudVersion || displayVersion}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60 dark:border-white/10 lg:border-none">
+          {isRegister ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
+              {/* SECTION 1: Facility Information (Register: No contact numbers & No address) */}
+              <div className="space-y-3 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
                   <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Facility Information
                   </h4>
                 </div>
-              )}
 
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                {gymConfig.gymDescription}
-              </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {gymConfig.gymDescription}
+                </p>
 
-              {/* Contact Information in a horizontal tablet grid, vertical desktop stack */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-2 pt-1 text-[11px]">
-                <div className="flex items-start gap-2 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent text-slate-600 dark:text-slate-300">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
-                  <span className="leading-snug">{gymConfig.gymAddress}</span>
-                </div>
-
-                <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    {gymConfig.contactNumber1 && (
-                      <a
-                        href={`tel:${gymConfig.contactNumber1}`}
-                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
-                      >
-                        <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
-                        <span>
-                          {gymConfig.contactName1}: {gymConfig.contactNumber1}
-                        </span>
-                      </a>
-                    )}
-
-                    {gymConfig.contactNumber2 && (
-                      <a
-                        href={`tel:${gymConfig.contactNumber2}`}
-                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
-                      >
-                        <Phone className="w-3 h-3 text-blue-500 shrink-0" />
-                        <span>
-                          {gymConfig.contactName2}: {gymConfig.contactNumber2}
-                        </span>
-                      </a>
-                    )}
-                  </div>
-
-                  {gymConfig.emailAddress && (
+                {gymConfig.emailAddress && (
+                  <div className="pt-0.5">
                     <a
                       href={`mailto:${gymConfig.emailAddress}`}
                       className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px] truncate"
@@ -560,218 +512,382 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       <span className="truncate">{gymConfig.emailAddress}</span>
                     </a>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* SECTION 2: Primary Console Navigation */}
-            <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
-              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  {resolvedVariant === 'system' && isAuthenticated
-                    ? 'Console Navigation'
-                    : 'Portal Navigation'}
-                </h4>
-              </div>
-
-              <div className="flex flex-col gap-1 pt-2.5">
-                {resolvedVariant === 'system' && isAuthenticated
-                  ? consoleNavLinks.map((item) => {
-                      const isActive = location.pathname === item.path;
-                      return (
-                        <button
-                          key={item.path}
-                          type="button"
-                          onClick={() => handleNavigate(item.path)}
-                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
-                          }`}
-                        >
-                          <span className="truncate">{item.name}</span>
-                          <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
-                        </button>
-                      );
-                    })
-                  : publicPortalLinks.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = location.pathname === item.path;
-                      return (
-                        <button
-                          key={item.path}
-                          type="button"
-                          onClick={() => handleNavigate(item.path)}
-                          className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          <Icon className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-red-400" />
-                          <span className="truncate">{item.name}</span>
-                        </button>
-                      );
-                    })}
-              </div>
-            </div>
-
-            {/* SECTION 3: System & Portal OR Live Rates */}
-            <div className="col-span-1 md:col-span-1 lg:col-span-2 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
-              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  {resolvedVariant === 'system' && isAuthenticated
-                    ? 'System & Portal'
-                    : 'Live Facility Rates'}
-                </h4>
-              </div>
-
-              <div className="flex flex-col gap-1 pt-2.5">
-                {resolvedVariant === 'system' && isAuthenticated ? (
-                  <>
-                    {settingsNavLinks.map((tab) => {
-                      const isActive = location.pathname === tab.path;
-                      return (
-                        <button
-                          key={tab.path}
-                          type="button"
-                          onClick={() => handleNavigate(tab.path)}
-                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
-                          }`}
-                        >
-                          <span className="truncate">{tab.name}</span>
-                          <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
-                        </button>
-                      );
-                    })}
-                    {publicPortalLinks.map((pub) => (
-                      <button
-                        key={pub.path}
-                        type="button"
-                        onClick={() => handleNavigate(pub.path)}
-                        className="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
-                      >
-                        <span className="truncate">{pub.name}</span>
-                        <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
-                      </button>
-                    ))}
-                  </>
-                ) : (
-                  <div className="space-y-1.5 text-[11px]">
-                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
-                      <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                        <CreditCard className="w-3 h-3 text-emerald-500 shrink-0" />
-                        Monthly Plan
-                      </span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        ₱{rates.monthly_plan_price.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
-                      <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                        <CreditCard className="w-3 h-3 text-blue-500 shrink-0" />
-                        Yearly Plan
-                      </span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        ₱{rates.yearly_plan_price.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
-                      <span className="text-slate-500 dark:text-slate-400">
-                        Walk-In / Student
-                      </span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        ₱{rates.regular_walkin_fee} / ₱{rates.student_walkin_fee}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
-                      <span className="text-slate-500 dark:text-slate-400">
-                        Yearly Check-In
-                      </span>
-                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        ₱{rates.yearly_member_checkin_fee}
-                      </span>
-                    </div>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* SECTION 4: Legal & Documentation */}
-            <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
-              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
-                <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  Legal &amp; Documentation
-                </h4>
+              {/* SECTION 2: Live Facility Rates */}
+              <div className="border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Live Facility Rates
+                  </h4>
+                </div>
+
+                <div className="flex flex-col gap-1.5 pt-2.5 text-[11px]">
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                    <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      Monthly Plan
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      ₱{rates.monthly_plan_price.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                    <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      Yearly Plan
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      ₱{rates.yearly_plan_price.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      Walk-In / Student
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      ₱{rates.regular_walkin_fee} / ₱{rates.student_walkin_fee}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      Yearly Check-In
+                    </span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      ₱{rates.yearly_member_checkin_fee}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-2 pt-2.5">
-                <button
-                  type="button"
-                  onClick={() => setAgreementDoc('agreement')}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
-                    <span className="truncate">User Agreement</span>
-                  </span>
-                  {isAgreementAccepted ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                      Accepted
+              {/* SECTION 3: Legal & Documentation (Register: No User Agreement & No About Developer) */}
+              <div className="border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Legal &amp; Documentation
+                  </h4>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('terms')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span className="truncate">Terms &amp; Conditions</span>
                     </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('privacy')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-emerald-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="truncate">Privacy Policy</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-7">
+              {/* SECTION 1: Facility Information (Full width banner on tablet, col-span-4 on desktop) */}
+              <div className="col-span-1 md:col-span-3 lg:col-span-4 space-y-3 text-left md:p-4 lg:p-0 rounded-2xl md:bg-slate-50/70 md:dark:bg-white/[0.02] lg:bg-transparent lg:dark:bg-transparent md:border md:border-slate-200/70 md:dark:border-white/5 lg:border-none">
+                {!isCollapsible ? (
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <img
+                      src={activeLogo}
+                      alt={gymConfig.gymName}
+                      className="h-8 sm:h-9 w-auto object-contain shrink-0"
+                    />
+                    {hasCustomLogo && (
+                      <h3 className="font-heading text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white truncate">
+                        {gymConfig.gymName}
+                      </h3>
+                    )}
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      v{latestCloudVersion || displayVersion}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60 dark:border-white/10 lg:border-none">
+                    <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                    <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                      Facility Information
+                    </h4>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {gymConfig.gymDescription}
+                </p>
+
+                {/* Contact Information in a horizontal tablet grid, vertical desktop stack */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-2 pt-1 text-[11px]">
+                  <div className="flex items-start gap-2 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent text-slate-600 dark:text-slate-300">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    <span className="leading-snug">{gymConfig.gymAddress}</span>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {gymConfig.contactNumber1 && (
+                        <a
+                          href={`tel:${gymConfig.contactNumber1}`}
+                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                        >
+                          <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <span>
+                            {gymConfig.contactName1}: {gymConfig.contactNumber1}
+                          </span>
+                        </a>
+                      )}
+
+                      {gymConfig.contactNumber2 && (
+                        <a
+                          href={`tel:${gymConfig.contactNumber2}`}
+                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                        >
+                          <Phone className="w-3 h-3 text-blue-500 shrink-0" />
+                          <span>
+                            {gymConfig.contactName2}: {gymConfig.contactNumber2}
+                          </span>
+                        </a>
+                      )}
+                    </div>
+
+                    {gymConfig.emailAddress && (
+                      <a
+                        href={`mailto:${gymConfig.emailAddress}`}
+                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px] truncate"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="truncate">{gymConfig.emailAddress}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Primary Console Navigation */}
+              <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    {resolvedVariant === 'system' && isAuthenticated
+                      ? 'Console Navigation'
+                      : 'Portal Navigation'}
+                  </h4>
+                </div>
+
+                <div className="flex flex-col gap-1 pt-2.5">
+                  {resolvedVariant === 'system' && isAuthenticated
+                    ? consoleNavLinks.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <button
+                            key={item.path}
+                            type="button"
+                            onClick={() => handleNavigate(item.path)}
+                            className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
+                              isActive
+                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
+                            }`}
+                          >
+                            <span className="truncate">{item.name}</span>
+                            <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
+                          </button>
+                        );
+                      })
+                    : publicPortalLinks.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <button
+                            key={item.path}
+                            type="button"
+                            onClick={() => handleNavigate(item.path)}
+                            className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all cursor-pointer ${
+                              isActive
+                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <Icon className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-red-400" />
+                            <span className="truncate">{item.name}</span>
+                          </button>
+                        );
+                      })}
+                </div>
+              </div>
+
+              {/* SECTION 3: System & Portal OR Live Rates */}
+              <div className="col-span-1 md:col-span-1 lg:col-span-2 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    {resolvedVariant === 'system' && isAuthenticated
+                      ? 'System & Portal'
+                      : 'Live Facility Rates'}
+                  </h4>
+                </div>
+
+                <div className="flex flex-col gap-1 pt-2.5">
+                  {resolvedVariant === 'system' && isAuthenticated ? (
+                    <>
+                      {settingsNavLinks.map((tab) => {
+                        const isActive = location.pathname === tab.path;
+                        return (
+                          <button
+                            key={tab.path}
+                            type="button"
+                            onClick={() => handleNavigate(tab.path)}
+                            className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
+                              isActive
+                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
+                            }`}
+                          >
+                            <span className="truncate">{tab.name}</span>
+                            <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
+                          </button>
+                        );
+                      })}
+                      {publicPortalLinks.map((pub) => (
+                        <button
+                          key={pub.path}
+                          type="button"
+                          onClick={() => handleNavigate(pub.path)}
+                          className="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
+                        >
+                          <span className="truncate">{pub.name}</span>
+                          <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
+                        </button>
+                      ))}
+                    </>
                   ) : (
-                    <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
-                      Review
-                    </span>
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          Monthly Plan
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">
+                          ₱{rates.monthly_plan_price.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          Yearly Plan
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">
+                          ₱{rates.yearly_plan_price.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Walk-In / Student
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">
+                          ₱{rates.regular_walkin_fee} / ₱{rates.student_walkin_fee}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Yearly Check-In
+                        </span>
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          ₱{rates.yearly_member_checkin_fee}
+                        </span>
+                      </div>
+                    </div>
                   )}
-                </button>
+                </div>
+              </div>
 
-                <button
-                  type="button"
-                  onClick={() => setAgreementDoc('terms')}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <span className="truncate">Terms &amp; Conditions</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                </button>
+              {/* SECTION 4: Legal & Documentation */}
+              <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Legal &amp; Documentation
+                  </h4>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setAgreementDoc('privacy')}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-emerald-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="truncate">Privacy Policy</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                </button>
+                <div className="flex flex-col gap-2 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('agreement')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                      <span className="truncate">User Agreement</span>
+                    </span>
+                    {isAgreementAccepted ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        Accepted
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
+                        Review
+                      </span>
+                    )}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowDeveloperModal(true)}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-amber-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span className="truncate">About Developer</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('terms')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span className="truncate">Terms &amp; Conditions</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDoc('privacy')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-emerald-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="truncate">Privacy Policy</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowDeveloperModal(true)}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-amber-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span className="truncate">About Developer</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Bottom Copyright & Compliance (Cleanly padded above the floating navigation dock) */}
           <div className="mt-6 pt-3.5 border-t border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">

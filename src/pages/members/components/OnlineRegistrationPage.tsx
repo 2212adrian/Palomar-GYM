@@ -2649,7 +2649,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       </div>
 
       <AppFooter
-        variant="public"
+        variant="register"
         className="max-w-4xl"
         onAcceptAgreement={() =>
           setValue('agreement', true, { shouldValidate: true })

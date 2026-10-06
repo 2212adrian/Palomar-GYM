@@ -168,14 +168,33 @@ export const OfficialReceipt = forwardRef<
       data.receiptNo || 'RCPT-PREVIEW-001'
     );
 
-    useEffect(() => {
+useEffect(() => {
       setActualReceiptNo(data.receiptNo || 'RCPT-PREVIEW-001');
     }, [data.receiptNo]);
 
-    // Auto-fetch each recipient member if it's a card purchase
-    useEffect(() => {
-      if (!isOpen) return;
+    const receiptType = useMemo(() => {
+      const cType = (data.customerType || '').toLowerCase();
+      if (
+        data.receiptType === 'card' ||
+        cType === 'physical card' ||
+        cType === 'card'
+      ) {
+        return 'card';
+      }
+      if (data.receiptType) return data.receiptType;
+      if (data.items && data.items.length > 0) return 'sales';
+      if (cType.includes('walk-in')) return 'walkin';
+      if (cType.includes('attendance')) return 'attendance';
+      return 'subscription';
+    }, [data.receiptType, data.items, data.customerType]);
 
+    // Auto-fetch each recipient member only if it's a dedicated card purchase receipt
+    useEffect(() => {
+      if (!isOpen || receiptType !== 'card') {
+        setCardItems([]);
+        return;
+      }
+      
       const fetchCardRecipients = async () => {
         const searchKey = data.paymentRef || data.receiptNo;
         if (!searchKey) return;
@@ -228,10 +247,11 @@ export const OfficialReceipt = forwardRef<
       fetchCardRecipients();
     }, [isOpen, data.receiptNo, data.paymentRef, data.cardFee]);
 
-    const displayItems = useMemo(() => {
+const displayItems = useMemo(() => {
       if (data.items && data.items.length > 0) return data.items;
-      return cardItems;
-    }, [data.items, cardItems]);
+      if (receiptType === 'card') return cardItems;
+      return [];
+    }, [data.items, cardItems, receiptType]);
 
     const timerRef = useRef<any>(null);
     const isNative = Capacitor.isNativePlatform();
@@ -288,16 +308,13 @@ export const OfficialReceipt = forwardRef<
       [contact1, contact2].filter(Boolean).join(' / ') || DEFAULT_CONTACTS;
     const gymLogo = gymProfile?.gym_logo || DEFAULT_LOGO;
 
-    const vatEnabled = ratesConfig?.vat_enabled ?? true;
+const vatEnabled = ratesConfig?.vat_enabled ?? true;
     const vatPercentage = Number(ratesConfig?.vat_percentage ?? 12);
 
-    const receiptType =
-      data.receiptType ||
-      (data.items && data.items.length > 0 ? 'sales' : 'subscription');
     const receiptTitle = RECEIPT_TITLES[receiptType] || 'Official Receipt';
     const hasQr =
       receiptType === 'subscription' || receiptType === 'attendance';
-
+      
     const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
     const isGCash = paymentMethod.includes('GCASH');
 
@@ -333,17 +350,30 @@ export const OfficialReceipt = forwardRef<
       return 0;
     }, [rawBasePrice, isGCash, gcashFee, cardFee, data.items, data.gcashFee]);
 
-    const itemsSubtotal = useMemo(() => {
+const itemsSubtotal = useMemo(() => {
       if (data.items && data.items.length > 0) {
         return data.items.reduce(
           (acc, item) => acc + item.price * item.quantity,
           0
         );
       }
+      if (receiptType === 'card' && cardItems.length > 0) {
+        return cardItems.reduce(
+          (acc, item) => acc + item.price * item.quantity,
+          0
+        );
+      }
       return basePrice;
-    }, [data.items, basePrice]);
+    }, [data.items, cardItems, receiptType, basePrice]);
 
-    const subtotal = itemsSubtotal + cardFee + gcashFee;
+    const effectiveCardFee = useMemo(() => {
+      if (receiptType === 'card' && cardItems.length > 0) {
+        return 0;
+      }
+      return cardFee;
+    }, [receiptType, cardItems.length, cardFee]);
+
+    const subtotal = itemsSubtotal + effectiveCardFee + gcashFee;
     const totalDue = subtotal;
 
     const vatableSales = vatEnabled ? totalDue / (1 + vatPercentage / 100) : 0;
@@ -373,12 +403,12 @@ export const OfficialReceipt = forwardRef<
         const width = 400;
         const scale = 2;
 
-        let itemCount = 0;
-        if (data.items && data.items.length > 0)
-          itemCount += data.items.length + 1;
+let itemCount = 0;
+        if (displayItems.length > 0)
+          itemCount += displayItems.length + 1;
         let extraRows = 14;
         if (data.paymentRef && !isGCash) extraRows++;
-        if (cardFee > 0) extraRows++;
+        if (effectiveCardFee > 0) extraRows++;
         if (gcashFee > 0) extraRows++;
         if (isGCash || data.gcashRefNo) extraRows++;
         if (vatEnabled) extraRows += 2;
@@ -526,8 +556,8 @@ export const OfficialReceipt = forwardRef<
           );
         }
 
-        if (cardFee > 0)
-          renderRow('CARD FEE', `+₱${cardFee.toFixed(2)}`, false, '#2563eb');
+if (effectiveCardFee > 0)
+          renderRow('CARD FEE', `+₱${effectiveCardFee.toFixed(2)}`, false, '#2563eb');
         if (gcashFee > 0)
           renderRow(
             'GCASH CONVENIENCE FEE',
@@ -1166,10 +1196,10 @@ export const OfficialReceipt = forwardRef<
             </div>
           )}
 
-          {cardFee > 0 && (
+{effectiveCardFee > 0 && (
             <div className="flex justify-between text-blue-500">
               <span>CARD FEE</span>
-              <span className="font-semibold">+₱{cardFee.toFixed(2)}</span>
+              <span className="font-semibold">+₱${effectiveCardFee.toFixed(2)}</span>
             </div>
           )}
 

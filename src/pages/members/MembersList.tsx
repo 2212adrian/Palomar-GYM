@@ -2296,125 +2296,143 @@ export const MembersList: React.FC<MembersListProps> = ({
           document.body
         )}
 
-      {/* 4. MOBILE SLIDE-UP ACTION SHEET */}
-      <AnimatePresence>
-        {mobileActionSheetMember && (
-          <>
+{/* 4. MOBILE SLIDE-UP ACTION SHEET */}
+      {createPortal(
+        <AnimatePresence>
+          {mobileActionSheetMember && (
             <motion.div
+              key="mobile-action-sheet-portal"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setMobileActionSheetMember(null)}
-              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-[240]"
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="md:hidden fixed bottom-0 left-0 right-0 z-[250] bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4"
+              className="md:hidden fixed inset-0 z-[300]"
             >
-              <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto" />
+              <div
+                onClick={() => setMobileActionSheetMember(null)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+              />
+              <motion.div
+                key="mobile-action-sheet-panel"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="fixed bottom-0 left-0 right-0 z-[310] bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+              >
+                <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto shrink-0" />
 
-              <div className="flex items-center gap-3 border-b border-(--border-color) pb-4">
-                <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
-                  {(mobileActionSheetMember.full_name || 'M')[0]}
+                <div className="flex items-center gap-3 border-b border-(--border-color) pb-4">
+                  <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
+                    {(mobileActionSheetMember.full_name || 'M')[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-heading font-bold text-base text-(--color-text) truncate">
+                      {mobileActionSheetMember.full_name}
+                    </h3>
+                    <span className="text-xs font-mono text-slate-400 block">
+                      {mobileActionSheetMember.member_id} •{' '}
+                      {mobileActionSheetMember.phone}
+                    </span>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-heading font-bold text-base text-(--color-text) truncate">
-                    {mobileActionSheetMember.full_name}
-                  </h3>
-                  <span className="text-xs font-mono text-slate-400 block">
-                    {mobileActionSheetMember.member_id} •{' '}
-                    {mobileActionSheetMember.phone}
-                  </span>
+
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      setSelectedProfileMember(target);
+                    }}
+                    className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
+                  >
+                    <Eye className="w-4 h-4 text-blue-500" />
+                    <span>View Profile</span>
+                  </button>
+
+                  {(() => {
+                    const card = getActiveCard(mobileActionSheetMember.member_id);
+                    if (!card || card.card_type === 'None') return null;
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = mobileActionSheetMember;
+                          setMobileActionSheetMember(null);
+                          if (card.card_type === 'Manual') {
+                            setManualModalMember(target);
+                          } else {
+                            setQrModalMember(target);
+                          }
+                        }}
+                        className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
+                      >
+                        <QrCode className="w-4 h-4 text-blue-500" />
+                        <span>View Member Card</span>
+                      </button>
+                    );
+                  })()}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      const subInfo = getSubscriptionDetails(target.member_id);
+                      handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
+                      !isSessionOpen ||
+                      mobileActionSheetMember.status === 'Suspended'
+                        ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
+                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                    }`}
+                  >
+                    {!isSessionOpen ||
+                    mobileActionSheetMember.status === 'Suspended' ? (
+                      <Lock className="w-4 h-4" />
+                    ) : (
+                      <CreditCard className="w-4 h-4" />
+                    )}
+                    <span>Enroll or Renew Subscription</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      handleToggleSuspend(target);
+                    }}
+                    className="w-full p-3.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                  >
+                    {mobileActionSheetMember.status === 'Active' ? (
+                      <UserX className="w-4 h-4" />
+                    ) : (
+                      <UserCheck className="w-4 h-4" />
+                    )}
+                    <span>
+                      {mobileActionSheetMember.status === 'Active'
+                        ? 'Suspend Member Access'
+                        : 'Reactivate Member Access'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMobileActionSheetMember(null)}
+                    className="w-full p-3.5 bg-slate-500/10 text-slate-400 rounded-2xl text-xs font-heading font-bold uppercase tracking-wider text-center mt-2"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = mobileActionSheetMember;
-                    setMobileActionSheetMember(null);
-                    setSelectedProfileMember(target);
-                  }}
-                  className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
-                >
-                  <Eye className="w-4 h-4 text-blue-500" />
-                  <span>View Member Profile Workspace</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = mobileActionSheetMember;
-                    setMobileActionSheetMember(null);
-                    setQrModalMember(target);
-                  }}
-                  className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
-                >
-                  <QrCode className="w-4 h-4 text-blue-500" />
-                  <span>Digital QR Card</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const target = mobileActionSheetMember;
-                    setMobileActionSheetMember(null);
-                    const subInfo = getSubscriptionDetails(target.member_id);
-                    handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
-                  }}
-                  className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
-                    !isSessionOpen ||
-                    mobileActionSheetMember.status === 'Suspended'
-                      ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
-                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                  }`}
-                >
-                  {!isSessionOpen ||
-                  mobileActionSheetMember.status === 'Suspended' ? (
-                    <Lock className="w-4 h-4" />
-                  ) : (
-                    <CreditCard className="w-4 h-4" />
-                  )}
-                  <span>Enroll or Renew Subscription</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = mobileActionSheetMember;
-                    setMobileActionSheetMember(null);
-                    handleToggleSuspend(target);
-                  }}
-                  className="w-full p-3.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
-                >
-                  {mobileActionSheetMember.status === 'Active' ? (
-                    <UserX className="w-4 h-4" />
-                  ) : (
-                    <UserCheck className="w-4 h-4" />
-                  )}
-                  <span>
-                    {mobileActionSheetMember.status === 'Active'
-                      ? 'Suspend Member Access'
-                      : 'Reactivate Member Access'}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMobileActionSheetMember(null)}
-                  className="w-full p-3.5 bg-slate-500/10 text-slate-400 rounded-2xl text-xs font-heading font-bold uppercase tracking-wider text-center mt-2"
-                >
-                  Cancel
-                </button>
-              </div>
+              </motion.div>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* MODALS */}
       {isWizardOpen && (

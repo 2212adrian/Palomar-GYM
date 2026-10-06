@@ -210,7 +210,7 @@ export const memberService = {
   ): Promise<Member> => {
     const d = data as any;
     const payload = {
-      full_name: d.full_name,
+      full_name: (d.full_name || '').trim().toUpperCase(),
       phone: d.phone,
       email: d.email || null,
       gender: d.gender || 'Male',
@@ -275,6 +275,10 @@ export const memberService = {
     const { data: previousData } = await findQuery.maybeSingle();
 
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
+
+    if (payload.full_name) {
+      payload.full_name = String(payload.full_name).trim().toUpperCase();
+    }
 
     if ('avatar_url' in payload) {
       if (!payload.image_url && payload.avatar_url) {
@@ -714,7 +718,47 @@ export const subscriptionService = {
       }
     }
 
-    // 2. Mark subscription as Voided
+   // 2. Check and void member card if it was part of this subscription
+    const hasCardFeeInSub = Number(target.card_fee || 0) > 0;
+    const { data: memberCard } = await supabase
+      .from('cards')
+      .select('*')
+      .eq('member_id', target.member_id)
+      .maybeSingle();
+
+    const isCardPartOfSubscription = Boolean(
+      memberCard &&
+        ((target.receipt_number &&
+          memberCard.receipt_number === target.receipt_number) ||
+          (hasCardFeeInSub &&
+            (!memberCard.receipt_number ||
+              memberCard.receipt_number === target.receipt_number)))
+    );
+
+    if (isCardPartOfSubscription && memberCard) {
+      const { error: cardDeleteErr } = await supabase
+        .from('cards')
+        .delete()
+        .eq('member_id', target.member_id);
+
+      if (cardDeleteErr) {
+        console.error(
+          'Error deleting member card on subscription void:',
+          cardDeleteErr.message
+        );
+      } else {
+        await writeAudit(
+          'CARD_VOIDED',
+          'Cards',
+          user,
+          target.member_id,
+          reason,
+          `Voided physical member card (${memberCard.card_number}) included in subscription receipt ${target.receipt_number || 'N/A'}.`
+        );
+      }
+    }
+
+    // 3. Mark subscription as Voided
     const { error: voidErr } = await supabase
       .from('subscriptions')
       .update({
@@ -733,16 +777,23 @@ export const subscriptionService = {
       throw new Error(voidErr.message);
     }
 
+    const auditDetail = `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}${
+      isCardPartOfSubscription && memberCard
+        ? ` (including member card ${memberCard.card_number})`
+        : ''
+    }. Notes: ${notes || 'None'}.`;
+
     await writeAudit(
       'SUBSCRIPTION_VOIDED',
       'Subscriptions',
       user,
       target.member_id,
       reason,
-      `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}. Notes: ${notes || 'None'}.`
+      auditDetail
     );
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
+    window.dispatchEvent(new Event('member-refresh'));
   },
 };
 
@@ -776,52 +827,49 @@ export const cardService = {
       throw new Error(error.message);
     }
 
-    // Fetch member names to create individual receipts for Cash Management ledger
-    const { data: membersList } = await supabase
-      .from('members')
-      .select('member_id, full_name')
-      .in('member_id', memberIds);
+    try {
+      const recentWindow = new Date(Date.now() - 30000).toISOString();
+      const { data: attRows } = await supabase
+        .from('attendance')
+        .select('id, member_id, check_in_time')
+        .in('member_id', memberIds)
+        .is('deleted_at', null)
+        .gte('check_in_time', recentWindow)
+        .order('id', { ascending: true });
 
-    const memberMap = new Map(
-      (membersList || []).map((m: any) => [m.member_id, m.full_name])
-    );
-
-    const now = Date.now();
-    const receiptRows = memberIds.map((mId, idx) => {
-      const rcptId = `REC-CARD-${now.toString().slice(-6)}-${idx + 1}`;
-      return {
-        id: rcptId,
-        member_id: mId,
-        customer_name: memberMap.get(mId) || mId,
-        customer_type: 'Physical Card',
-        amount: feePerCard,
-        base_price: 0,
-        gcash_fee: 0,
-        card_fee: feePerCard,
-        gcash_ref_no: gcashRefNo || null,
-        payment_method: paymentMethod,
-        payment_status: 'Paid',
-        item_description: 'Physical Membership Card Fee',
-      };
-    });
-
-    if (receiptRows.length > 0) {
-      const { error: rcptErr } = await supabase
-        .from('receipts')
-        .insert(receiptRows);
-
-      if (rcptErr) {
-        console.warn('Could not insert batch receipts for cards:', rcptErr);
-      } else {
-        // Link receipt_number to each card record
-        for (const r of receiptRows) {
-          await supabase
-            .from('cards')
-            .update({ receipt_number: r.id })
-            .eq('member_id', r.member_id)
-            .eq('status', 'Active');
-        }
+      if (attRows && attRows.length > 1) {
+        const duplicateIds = attRows.slice(1).map((r) => r.id);
+        await supabase
+          .from('attendance')
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: user,
+          })
+          .in('id', duplicateIds);
       }
+    } catch (cleanupErr) {
+      console.warn('Batch attendance deduplication notice:', cleanupErr);
+    }
+
+    // The database RPC batch_purchase_member_cards already created the consolidated batch receipt.
+    // Ensure all cards in the batch point to the single batch receipt number.
+    const batchReceiptNo =
+      (data as any)?.receipt_number || (data as any)?.receipt_id;
+
+    if (batchReceiptNo) {
+      await supabase
+        .from('cards')
+        .update({ receipt_number: batchReceiptNo })
+        .in('member_id', memberIds)
+        .eq('status', 'Active');
+
+      const recentWindow = new Date(Date.now() - 60000).toISOString();
+      await supabase
+        .from('attendance')
+        .update({ receipt_number: batchReceiptNo })
+        .in('member_id', memberIds)
+        .is('deleted_at', null)
+        .gte('check_in_time', recentWindow);
     }
 
     await writeAudit(
@@ -1231,12 +1279,12 @@ export const cardService = {
     const nowIso = new Date().toISOString();
 
     // 2. Insert receipt so Cash Management ledger and drawer record the transaction
-    const { error: rErr } = await supabase.from('receipts').insert([
+   const { error: rErr } = await supabase.from('receipts').insert([
       {
         id: finalReceiptNo,
         member_id: memberId,
         customer_name: member.full_name,
-        customer_type: 'Existing Member',
+        customer_type: 'Card',
         amount: amount,
         base_price: 0,
         gcash_fee: 0,

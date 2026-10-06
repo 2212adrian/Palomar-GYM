@@ -61,6 +61,97 @@ import { MemberAvatar, MemberPhotoModal } from './MemberAvatar';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { getServerNow } from '../../../lib/serverTime';
 
+const parseFullName = (fullName: string) => {
+  const clean = (fullName || '').trim();
+  if (!clean) {
+    return { lastName: '', firstName: '', middleInitial: '', suffix: '' };
+  }
+
+  const commonSuffixes = new Set([
+    'JR',
+    'JR.',
+    'SR',
+    'SR.',
+    'II',
+    'III',
+    'IV',
+    'V',
+    'VI',
+    'VII',
+    'VIII',
+    'IX',
+    'X',
+  ]);
+
+  if (clean.includes(',')) {
+    const parts = clean.split(',');
+    const lastName = parts[0]?.trim() || '';
+    const remainder = parts.slice(1).join(',').trim();
+    const tokens = remainder.split(/\s+/).filter(Boolean);
+
+    let suffix = '';
+    if (
+      tokens.length > 1 &&
+      commonSuffixes.has(tokens[tokens.length - 1].toUpperCase())
+    ) {
+      suffix = tokens.pop() || '';
+    }
+
+    let middleInitial = '';
+    if (
+      tokens.length > 1 &&
+      (tokens[tokens.length - 1].length <= 2 || tokens[tokens.length - 1].endsWith('.'))
+    ) {
+      middleInitial = tokens.pop()?.replace(/\./g, '') || '';
+    }
+
+    const firstName = tokens.join(' ');
+    return { lastName, firstName, middleInitial, suffix };
+  } else {
+    const tokens = clean.split(/\s+/).filter(Boolean);
+    let suffix = '';
+    if (
+      tokens.length > 1 &&
+      commonSuffixes.has(tokens[tokens.length - 1].toUpperCase())
+    ) {
+      suffix = tokens.pop() || '';
+    }
+
+    let middleInitial = '';
+    if (
+      tokens.length > 2 &&
+      (tokens[tokens.length - 1].length <= 2 || tokens[tokens.length - 1].endsWith('.'))
+    ) {
+      middleInitial = tokens.pop()?.replace(/\./g, '') || '';
+    }
+
+    let lastName = '';
+    if (tokens.length > 1) {
+      lastName = tokens.pop() || '';
+    }
+
+    const firstName = tokens.join(' ');
+    return { lastName, firstName, middleInitial, suffix };
+  }
+};
+
+const formatFullName = (
+  lastName: string,
+  firstName: string,
+  middleInitial?: string,
+  suffix?: string
+): string => {
+  const l = lastName.trim().toUpperCase();
+  const f = firstName.trim().toUpperCase();
+  const miClean = middleInitial?.trim().replace(/\./g, '').toUpperCase();
+  const mi = miClean ? ` ${miClean}.` : '';
+  const suff = suffix?.trim().toUpperCase() ? ` ${suffix.trim().toUpperCase()}` : '';
+  if (!l && !f) return '';
+  if (!l) return `${f}${mi}${suff}`;
+  if (!f) return `${l}${mi}${suff}`;
+  return `${l}, ${f}${mi}${suff}`;
+};
+
 interface MemberProfileViewProps {
   member: Member;
   onClose: () => void;
@@ -183,8 +274,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   }, [settings.card_printing_fee]);
 
   // Inline Profile Edit State
+  const parsedName = useMemo(
+    () => parseFullName(localMember.full_name || ''),
+    [localMember.full_name]
+  );
   const [isEditing, setIsEditing] = useState(false);
-  const [editFullName, setEditFullName] = useState(member.full_name || '');
+  const [editLastName, setEditLastName] = useState(parsedName.lastName);
+  const [editFirstName, setEditFirstName] = useState(parsedName.firstName);
+  const [editMiddleInitial, setEditMiddleInitial] = useState(parsedName.middleInitial);
+  const [editSuffix, setEditSuffix] = useState(parsedName.suffix);
   const [editPhone, setEditPhone] = useState(member.phone || '');
   const [editEmail, setEditEmail] = useState(member.email || '');
   const [editGender, setEditGender] = useState(member.gender || 'Male');
@@ -311,7 +409,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   useEffect(() => {
     setLocalMember(member);
-    setEditFullName(member.full_name || '');
+    const parsed = parseFullName(member.full_name || '');
+    setEditLastName(parsed.lastName);
+    setEditFirstName(parsed.firstName);
+    setEditMiddleInitial(parsed.middleInitial);
+    setEditSuffix(parsed.suffix);
     setEditPhone(member.phone || '');
     setEditEmail(member.email || '');
     setEditGender(member.gender || 'Male');
@@ -621,12 +723,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   };
 
   const hasActiveSubscription = !!activeContract;
-
-  useEffect(() => {
-    if (hasActiveSubscription) {
-      setIsEditing(false);
-    }
-  }, [hasActiveSubscription]);
+  const [isEditConfirmModalOpen, setIsEditConfirmModalOpen] = useState(false);
 
   const calculatedAge = useMemo(() => {
     const bday = isEditing ? editBirthday : localMember.birthday;
@@ -666,20 +763,34 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     }
   };
 
-  const handleSaveProfileChanges = async () => {
-    if (hasActiveSubscription) {
-      toast.error('Cannot edit profile while an active subscription exists.');
-      return;
-    }
+  const handleCancelEditing = () => {
+    const parsed = parseFullName(localMember.full_name || '');
+    setEditLastName(parsed.lastName);
+    setEditFirstName(parsed.firstName);
+    setEditMiddleInitial(parsed.middleInitial);
+    setEditSuffix(parsed.suffix);
+    setEditPhone(localMember.phone || '');
+    setEditEmail(localMember.email || '');
+    setEditGender(localMember.gender || 'Male');
+    setEditBirthday(localMember.birthday || '');
+    setEditAddress(localMember.address || '');
+    setEditEmergencyName(localMember.emergency_contact_name || '');
+    setEditRelationship(localMember.relationship || '');
+    setEditEmergencyPhone(localMember.emergency_contact_phone || '');
+    setIsEditing(false);
+  };
 
-    if (!editFullName.trim() || !editPhone.trim()) {
-      toast.warning('Full Name and Contact Phone are required.');
-      return;
-    }
+  const executeProfileUpdate = async () => {
+    const formattedFullName = formatFullName(
+      editLastName,
+      editFirstName,
+      editMiddleInitial,
+      editSuffix
+    );
 
     try {
       const updatedFields = {
-        full_name: editFullName.trim(),
+        full_name: formattedFullName,
         phone: editPhone.trim(),
         email: editEmail.trim(),
         gender: editGender,
@@ -694,10 +805,25 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       setLocalMember((prev) => ({ ...prev, ...updatedFields }));
       toast.success('Member profile details updated successfully.');
       setIsEditing(false);
+      setIsEditConfirmModalOpen(false);
       onMutationSuccess();
     } catch (err: any) {
       toast.error(err.message || 'Failed to update member profile.');
     }
+  };
+
+  const handleSaveProfileChanges = async () => {
+    if (!editLastName.trim() || !editFirstName.trim() || !editPhone.trim()) {
+      toast.warning('Last Name, First Name, and Contact Phone are required.');
+      return;
+    }
+
+    if (hasActiveSubscription) {
+      setIsEditConfirmModalOpen(true);
+      return;
+    }
+
+    await executeProfileUpdate();
   };
 
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
@@ -789,6 +915,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         }
       }
 
+const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
+
       await subscriptionService.void(
         targetVoidSub.id,
         voidReason,
@@ -796,7 +924,11 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         user?.email || profile?.full_name || 'Administrator'
       );
 
-      toast.success('Subscription successfully voided.');
+      toast.success(
+        hadCardInSub
+          ? 'Subscription and associated member card successfully voided.'
+          : 'Subscription successfully voided.'
+      );
       setIsVoidModalOpen(false);
       setTargetVoidSub(null);
       setAdminPassword('');
@@ -1104,7 +1236,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex flex-wrap items-center gap-1.5">
-                <h3 className="text-base sm:text-lg font-bold text-(--color-text) leading-tight truncate">
+                <h3 className="text-base sm:text-lg font-bold text-(--color-text) leading-tight truncate uppercase">
                   {localMember.full_name}
                 </h3>
                 <span
@@ -1484,10 +1616,47 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     <div className="space-y-2.5 text-xs">
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Full Name</span>
-                        <span className="text-(--color-text) font-bold">
+                        <span className="text-(--color-text) font-bold uppercase">
                           {localMember.full_name || 'N/A'}
                         </span>
                       </div>
+
+                      {/* Name Breakdown: Last Name, First Name, M.I., Suffix */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2 px-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                            Last Name
+                          </span>
+                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                            {parsedName.lastName || '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                            First Name
+                          </span>
+                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                            {parsedName.firstName || '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                            M.I.
+                          </span>
+                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                            {parsedName.middleInitial ? `${parsedName.middleInitial}.` : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                            Suffix
+                          </span>
+                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                            {parsedName.suffix || '—'}
+                          </span>
+                        </div>
+                      </div>
+
                       <div className="flex justify-between items-center py-1 border-b border-dashed border-(--border-color)">
                         <span className="text-slate-400">Gender / Age</span>
                         <span className="text-(--color-text) font-medium">
@@ -1526,16 +1695,59 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-3 text-xs">
-                      <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">
-                          Full Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={editFullName}
-                          onChange={(e) => setEditFullName(e.target.value)}
-                          className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            Last Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={editLastName}
+                            onChange={(e) => setEditLastName(e.target.value.toUpperCase())}
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
+                            placeholder="e.g. DELA CRUZ"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            First Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={editFirstName}
+                            onChange={(e) => setEditFirstName(e.target.value.toUpperCase())}
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
+                            placeholder="e.g. JUAN"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            M.I. <span className="text-[10px] text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={2}
+                            value={editMiddleInitial}
+                            onChange={(e) => setEditMiddleInitial(e.target.value.toUpperCase())}
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
+                            placeholder="e.g. M."
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-xs font-medium block mb-1">
+                            Suffix <span className="text-[10px] text-slate-400">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editSuffix}
+                            onChange={(e) => setEditSuffix(e.target.value.toUpperCase())}
+                            className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
+                            placeholder="e.g. JR."
+                          />
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -1705,45 +1917,10 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           placeholder="09181234567"
                         />
                       </div>
-                    </div>
+                </div>
                   )}
                 </div>
               </div>
-
-{/* SAVE EDITS BANNER */}
-              {isEditing && (
-                <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-wrap justify-between items-center gap-2">
-                  <span className="text-xs font-semibold text-blue-500">
-                    Editing member profile details.
-                  </span>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      disabled={isOffline}
-                      onClick={() => setIsEditing(false)}
-                      className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase border-none ${
-                        isOffline
-                          ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 opacity-50 cursor-not-allowed'
-                          : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 cursor-pointer'
-                      }`}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isOffline}
-                      onClick={handleSaveProfileChanges}
-                      className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase border-none shadow-md flex items-center justify-center gap-1.5 ${
-                        isOffline
-                          ? 'bg-slate-400 dark:bg-zinc-700 text-white opacity-50 cursor-not-allowed'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
-                      }`}
-                    >
-                      <Save className="w-3.5 h-3.5" /> Save Changes
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* PARENT / GUARDIAN VERIFICATION PANEL */}
               {(isMinor || extMember.parent_name) && (
@@ -2782,108 +2959,150 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           )}
         </div>
 
-        {/* FOOTER ACTIONS */}
-        <div className="p-3.5 sm:p-4 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none z-30 shadow-2xl">
-          <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 font-mono">
-                Status:
-              </span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
-                  localMember.status === 'Active'
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                }`}
-              >
-                {localMember.status || 'Active'}
-              </span>
+       {/* FOOTER ACTIONS */}
+        <div className="p-3.5 sm:p-4 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-(--border-color) bg-(--bg-card) shrink-0 select-none z-30 shadow-2xl">
+          {isEditing ? (
+            /* EDITING MODE: Hide status and suspend, show indicator and Cancel / Save Changes */
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold text-xs">
+                <Pencil className="w-4 h-4 shrink-0" />
+                <span className="truncate">Editing member profile details</span>
+                {hasActiveSubscription && (
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0 font-bold">
+                    Active Subscription
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  disabled={isOffline}
+                  onClick={handleCancelEditing}
+                  className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
+                    isOffline
+                      ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
+                      : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-zinc-700 cursor-pointer'
+                  }`}
+                >
+                  <X className="w-4 h-4" />
+                  <span>CANCEL EDITING</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isOffline}
+                  onClick={handleSaveProfileChanges}
+                  className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-heading font-bold uppercase border-none shadow-md flex items-center justify-center gap-2 transition-all ${
+                    isOffline
+                      ? 'bg-slate-400 dark:bg-zinc-700 text-white opacity-50 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-95'
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  <span>SAVE CHANGES</span>
+                </button>
+              </div>
             </div>
+          ) : (
+            /* NORMAL MODE: Show status, suspend, Edit Details, and Delete Member */
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400 font-mono">
+                    Status:
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
+                      localMember.status === 'Active'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                    }`}
+                  >
+                    {localMember.status || 'Active'}
+                  </span>
+                </div>
 
-       <button
-              type="button"
-              disabled={isOffline}
-              onClick={() => setIsStatusModalOpen(true)}
-              className={`min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md ${
-                isOffline
-                  ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                  : localMember.status === 'Active'
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
-                    : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
-              }`}
-            >
-              {localMember.status === 'Active' ? (
-                <>
-                  <UserX className="w-4 h-4" />
-                  <span>Suspend Member</span>
-                </>
-              ) : (
-                <>
-                  <UserCheck className="w-4 h-4" />
-                  <span>Activate Member</span>
-                </>
-              )}
-            </button>
-          </div>
+                <button
+                  type="button"
+                  disabled={isOffline}
+                  onClick={() => setIsStatusModalOpen(true)}
+                  className={`min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md ${
+                    isOffline
+                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                      : localMember.status === 'Active'
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
+                        : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
+                  }`}
+                >
+                  {localMember.status === 'Active' ? (
+                    <>
+                      <UserX className="w-4 h-4" />
+                      <span>Suspend Member</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="w-4 h-4" />
+                      <span>Activate Member</span>
+                    </>
+                  )}
+                </button>
+              </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
-            <div className="relative group flex-1 sm:flex-initial">
-              <button
-                type="button"
-                disabled={isOffline}
-                onClick={() => {
-                  setActiveTab('Overview');
-                  setIsEditing(!isEditing);
-                }}
-                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                  isOffline
-                    ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
-                    : isEditing
-                      ? 'bg-blue-600 text-white shadow-md cursor-pointer'
-                      : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
-                }`}
-              >
-                {isEditing ? (
-                  <>
-                    <X className="w-4 h-4" />
-                    <span>CANCEL EDITING</span>
-                  </>
-                ) : (
-                  <>
+              <div className="flex items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
+                <div className="relative group flex-1 sm:flex-initial">
+                  <button
+                    type="button"
+                    disabled={isOffline}
+                    onClick={() => {
+                      setActiveTab('Overview');
+                      const parsed = parseFullName(localMember.full_name || '');
+                      setEditLastName(parsed.lastName);
+                      setEditFirstName(parsed.firstName);
+                      setEditMiddleInitial(parsed.middleInitial);
+                      setEditSuffix(parsed.suffix);
+                      setIsEditing(true);
+                    }}
+                    className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
+                      isOffline
+                        ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
+                        : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
+                    }`}
+                  >
                     <Pencil className="w-4 h-4" />
                     <span>EDIT DETAILS</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="relative group flex-1 sm:flex-initial">
-              <button
-                type="button"
-                disabled={hasActiveSubscription || isOffline}
-                onClick={() => setIsDeleteModalOpen(true)}
-                className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                  hasActiveSubscription || isOffline
-                    ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
-                    : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
-                }`}
-              >
-                {hasActiveSubscription || isOffline ? (
-                  <Lock className="w-4 h-4" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                <span>Delete Member</span>
-              </button>
-
-              {hasActiveSubscription && (
-                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
-                  🔒 Member cannot be deleted while an active subscription
-                  contract exists.
+                  </button>
                 </div>
-              )}
+
+                <div className="relative group flex-1 sm:flex-initial">
+                  <button
+                    type="button"
+                    disabled={hasActiveSubscription || isOffline}
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
+                      hasActiveSubscription || isOffline
+                        ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
+                        : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
+                    }`}
+                  >
+                    {hasActiveSubscription || isOffline ? (
+                      <Lock className="w-4 h-4" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    <span>Delete Member</span>
+                  </button>
+
+                  {hasActiveSubscription && (
+                    <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
+                      🔒 Member cannot be deleted while an active subscription
+                      contract exists.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* PROFILE PICTURE VIEW & CHANGE MODAL */}
@@ -2908,6 +3127,48 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             showDownloadButton={true}
           />
         )}
+
+        {/* CONFIRM PROFILE CHANGES WITH ACTIVE SUBSCRIPTION MODAL */}
+        <Modal
+          isOpen={isEditConfirmModalOpen}
+          onClose={() => setIsEditConfirmModalOpen(false)}
+          title="CONFIRM PROFILE UPDATE"
+        >
+          <div className="space-y-4 text-left font-body">
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>Active Subscription Warning</span>
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                <strong>{localMember.full_name}</strong> currently holds an active subscription contract (
+                <strong>{activeContract?.plan_name || 'Active Membership'}</strong>). Updating this member's details will immediately apply to their account records.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Are you sure you want to proceed with saving changes to this profile?
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setIsEditConfirmModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeProfileUpdate}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md flex items-center gap-1.5"
+              >
+                <Save className="w-4 h-4" />
+                <span>Confirm &amp; Save Changes</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
 
         {/* STATUS CHANGE CONFIRMATION MODAL */}
         <Modal
@@ -3107,7 +3368,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             }}
             className="space-y-4 text-left font-body"
           >
-            <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs space-y-1">
+<div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs space-y-1">
               <p className="font-bold flex items-center gap-1.5">
                 <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>
@@ -3116,6 +3377,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                   receipts will not be affected.
                 </span>
               </p>
+              {Number(targetVoidSub?.card_fee || 0) > 0 && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium pt-0.5">
+                  The physical member card fee (₱
+                  {Number(targetVoidSub?.card_fee).toFixed(2)}) was part of this
+                  subscription and will also be voided.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1">

@@ -1610,9 +1610,20 @@ export const Sales: React.FC = () => {
                   }
                 });
 
-                const handleDragEnd = (_event: any, info: any, tx: any) => {
+                const handleDragEnd = (
+                  _event: any,
+                  info: any,
+                  tx: any,
+                  isClosedSession: boolean = false
+                ) => {
                   const swipeThreshold = 80;
                   if (info.offset.x > swipeThreshold) {
+                    if (isClosedSession && role === 'staff') {
+                      toast.warning(
+                        'Receipt is locked: Closed session records are read-only for staff.'
+                      );
+                      return;
+                    }
                     setSelectedReceiptTx(tx);
                   } else if (info.offset.x < -swipeThreshold) {
                     if (isTransactionDeletable(tx)) {
@@ -1626,9 +1637,13 @@ export const Sales: React.FC = () => {
                   }
                 };
 
-                const renderTimelineCard = (tx: any) => {
+                const renderTimelineCard = (
+                  tx: any,
+                  isClosedSession: boolean = false
+                ) => {
                   const isNew = tx.id === newlyAddedId;
                   const isDeleting = deletingIds.includes(tx.id);
+                  const isStaffReadOnlyClosed = isClosedSession && role === 'staff';
 
                   return (
                     <motion.div
@@ -1684,10 +1699,26 @@ export const Sales: React.FC = () => {
                         mode="sale"
                         data={tx}
                         canDelete={isTransactionDeletable(tx) && !isDeleting}
+                        canPrint={!isStaffReadOnlyClosed}
+                        printDisabledReason={
+                          isStaffReadOnlyClosed
+                            ? 'Receipt viewing is restricted for closed session records.'
+                            : undefined
+                        }
                         deleteDisabledReason={getDeleteDisabledReason(tx)}
-                        onSelectReceipt={setSelectedReceiptTx}
+                        onSelectReceipt={(rec) => {
+                          if (isStaffReadOnlyClosed) {
+                            toast.warning(
+                              'Receipt is locked: Closed session records are read-only for staff.'
+                            );
+                            return;
+                          }
+                          setSelectedReceiptTx(rec);
+                        }}
                         onTriggerDelete={handleDeleteTransaction}
-                        onDragEnd={handleDragEnd}
+                        onDragEnd={(e, info, record) =>
+                          handleDragEnd(e, info, record, isClosedSession)
+                        }
                       />
                     </motion.div>
                   );
@@ -1707,7 +1738,9 @@ export const Sales: React.FC = () => {
 
                         <div className="space-y-2.5">
                           <AnimatePresence mode="popLayout" initial={false}>
-                            {group.txs.map(renderTimelineCard)}
+                            {group.txs.map((tx) =>
+                              renderTimelineCard(tx, false)
+                            )}
                           </AnimatePresence>
                         </div>
                       </div>
@@ -1742,7 +1775,9 @@ export const Sales: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.txs.length}
                         >
-                          {group.txs.map(renderTimelineCard)}
+                          {group.txs.map((tx) =>
+                            renderTimelineCard(tx, true)
+                          )}
                         </ClosedSessionGroup>
                       );
                     })}

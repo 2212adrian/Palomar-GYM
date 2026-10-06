@@ -25,6 +25,7 @@ import { initBackgroundSyncService } from './lib/backgroundSyncService';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import { OfflineStatus } from './components/common/OfflineStatus';
 import { useBatterySaver } from './hooks/useBatterySaver';
+import { useNotificationStore } from './stores/useNotificationStore';
 import pkg from '../package.json';
 
 // Single deduplicated session toast notification helper
@@ -343,6 +344,35 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // ─── Real-Time Notifications Subscription ───
+  useEffect(() => {
+    if (!user) return;
+    const profile = useAuthStore.getState().profile;
+    const cleanup = useNotificationStore
+      .getState()
+      .subscribeRealtime(user.email, profile?.role);
+    return () => {
+      cleanup();
+    };
+  }, [user]);
+
+  // ─── Web OAuth Relay Fallback for Mobile Web Browsers ───
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isMobileDevice) return;
+
+    const currentUrl = new URL(window.location.href);
+    const code = currentUrl.searchParams.get('code');
+    const hasHashTokens =
+      window.location.hash.includes('access_token=') ||
+      window.location.hash.includes('refresh_token=');
+
+    if (code || hasHashTokens) {
+      window.location.href = `com.wolfpalomar.gymmanagement://login${window.location.search}${window.location.hash}`;
+    }
+  }, []);
+
   // ─── Native Deep Link Listener for Google OAuth ───
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -365,7 +395,11 @@ export const App: React.FC = () => {
             const { data: sessionData, error } =
               await supabase.auth.exchangeCodeForSession(code);
             if (!error && sessionData?.session) {
-              window.location.href = '/dashboard';
+              await checkSession();
+              const profile = useAuthStore.getState().profile;
+              const target =
+                profile?.role === 'staff' ? '/sales' : '/dashboard';
+              window.location.href = target;
               return;
             }
           }
@@ -390,7 +424,11 @@ export const App: React.FC = () => {
             });
 
             if (!error) {
-              window.location.href = '/dashboard';
+              await checkSession();
+              const profile = useAuthStore.getState().profile;
+              const target =
+                profile?.role === 'staff' ? '/sales' : '/dashboard';
+              window.location.href = target;
             }
           }
         } catch (err) {
@@ -406,7 +444,7 @@ export const App: React.FC = () => {
         activeListener.remove();
       }
     };
-  }, []);
+  }, [checkSession]);
 
   return (
     <>

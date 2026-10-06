@@ -105,6 +105,12 @@ export const parseScannedMemberCode = (
         parsed.cardNumber ||
         parsed.card_number ||
         parsed.registrationId ||
+        parsed.registration_id ||
+        parsed.reg_id ||
+        parsed.regId ||
+        parsed.ticket ||
+        parsed.ticket_id ||
+        parsed.ticketNumber ||
         parsed.memberId ||
         parsed.member_id ||
         parsed.id ||
@@ -124,6 +130,14 @@ export const parseScannedMemberCode = (
         url.searchParams.get('rec') ||
         url.searchParams.get('receipt') ||
         url.searchParams.get('receipt_no') ||
+        url.searchParams.get('reg') ||
+        url.searchParams.get('regId') ||
+        url.searchParams.get('reg_id') ||
+        url.searchParams.get('registration') ||
+        url.searchParams.get('registrationId') ||
+        url.searchParams.get('registration_id') ||
+        url.searchParams.get('ticket') ||
+        url.searchParams.get('code') ||
         url.searchParams.get('id') ||
         url.searchParams.get('memberId') ||
         url.searchParams.get('token');
@@ -158,9 +172,18 @@ export const parseScannedMemberCode = (
     memberIdPart = fullCode.substring(6).trim();
   } else if (fullCode.toUpperCase().startsWith('REG:')) {
     memberIdPart = fullCode.substring(4).trim();
+    if (!memberIdPart.toUpperCase().startsWith('REG-')) {
+      memberIdPart = `REG-${memberIdPart}`;
+    }
   } else if (fullCode.includes(':')) {
     const parts = fullCode.split(':');
     memberIdPart = parts[parts.length - 1].trim();
+  }
+
+  // Ensure REG format normalization (e.g. REG-KIWL5SCN)
+  const regPatternMatch = (fullCode + ' ' + memberIdPart).match(/REG-[A-Za-z0-9_-]+/i);
+  if (regPatternMatch) {
+    memberIdPart = regPatternMatch[0].toUpperCase();
   }
 
   return { fullCode, memberIdPart };
@@ -360,15 +383,20 @@ export const scannerService = {
     // 2. LOOKUP ONLINE LOBBY PRE-REGISTRATION TICKET (REG-XXXXXXXXX)
     // =========================================================================
     try {
+      const regMatch = (searchIdUpper + ' ' + fullCodeUpper).match(/REG-[A-Z0-9_-]+/i);
+      const targetRegId = regMatch ? regMatch[0].toUpperCase() : null;
+
       if (
-        searchIdUpper.startsWith('REG-') ||
-        fullCodeUpper.startsWith('REG-')
+        targetRegId ||
+        searchIdUpper.startsWith('REG') ||
+        fullCodeUpper.startsWith('REG')
       ) {
+        const idToSearch = targetRegId || searchIdUpper;
+
         const { data: regData } = await supabase
           .from('online_registrations')
           .select('*')
-          .is('deleted_at', null)
-          .or(`id.ilike.${searchIdUpper},id.ilike.${fullCodeUpper}`)
+          .or(`id.ilike.${idToSearch},id.ilike.${fullCodeUpper}`)
           .maybeSingle();
 
         if (regData) {
@@ -376,6 +404,25 @@ export const scannerService = {
             type: 'registration',
             rawCode,
             registration: regData,
+          };
+        }
+      }
+
+      // Fallback: If typed into manual input, also allow finding lobby registration by phone number or name
+      if (memberIdPart.trim().length >= 4) {
+        const cleanInput = memberIdPart.trim();
+        const { data: regByNameOrPhone } = await supabase
+          .from('online_registrations')
+          .select('*')
+          .or(`phone.ilike.%${cleanInput}%,full_name.ilike.%${cleanInput}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (regByNameOrPhone) {
+          return {
+            type: 'registration',
+            rawCode,
+            registration: regByNameOrPhone,
           };
         }
       }

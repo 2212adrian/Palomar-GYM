@@ -1,7 +1,10 @@
 // src/stores/useNotificationStore.ts
 import { create } from 'zustand';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { supabase } from '../lib/supabase/client';
 import { isSuperAdmin } from '../constants/auth';
+import { isCapacitorApp } from '../lib/platform';
+import { useAuthStore } from './authStore';
 
 const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
@@ -27,11 +30,45 @@ const saveStoredIds = (key: string, ids: string[]) => {
   }
 };
 
-// Push native browser notification if granted
-const triggerBrowserNotification = (
+// Push native browser notification or Capacitor local notification if granted
+const triggerBrowserNotification = async (
   title: string,
   options?: NotificationOptions
 ) => {
+  if (isCapacitorApp()) {
+    try {
+      const { display } = await LocalNotifications.checkPermissions();
+      if (display === 'granted') {
+        try {
+          await LocalNotifications.createChannel({
+            id: 'wolf_notifications',
+            name: 'Gym Notifications',
+            importance: 4,
+            visibility: 1,
+            vibration: true,
+          });
+        } catch {
+          // ignore channel creation error if already exists or unsupported
+        }
+
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title,
+              body: options?.body || '',
+              id: Math.floor(Math.random() * 2147483647),
+              channelId: 'wolf_notifications',
+              schedule: { at: new Date(Date.now() + 100) },
+            },
+          ],
+        });
+      }
+    } catch (e) {
+      console.warn('Could not spawn capacitor local notification:', e);
+    }
+    return;
+  }
+
   if (
     typeof window !== 'undefined' &&
     'Notification' in window &&
@@ -93,6 +130,7 @@ interface NotificationState {
   toggleNotificationOpen: () => void;
   markBadgeSeen: () => void;
 
+  checkBrowserPermission: () => Promise<NotificationPermission>;
   requestBrowserPermission: () => Promise<NotificationPermission>;
   fetchNotifications: (
     userEmail?: string | null,
@@ -152,7 +190,59 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     set({ unreadBadgeCount: 0 });
   },
 
+  checkBrowserPermission: async () => {
+    if (isCapacitorApp()) {
+      try {
+        const { display } = await LocalNotifications.checkPermissions();
+        const permission: NotificationPermission =
+          display === 'granted'
+            ? 'granted'
+            : display === 'denied'
+              ? 'denied'
+              : 'default';
+        set({ browserPermission: permission });
+        return permission;
+      } catch (err) {
+        console.warn('Error checking capacitor notification permission:', err);
+        return 'default';
+      }
+    }
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const permission = Notification.permission;
+      set({ browserPermission: permission });
+      return permission;
+    }
+
+    return 'denied';
+  },
+
   requestBrowserPermission: async () => {
+    if (isCapacitorApp()) {
+      try {
+        const result = await LocalNotifications.requestPermissions();
+        const permission: NotificationPermission =
+          result.display === 'granted'
+            ? 'granted'
+            : result.display === 'denied'
+              ? 'denied'
+              : 'default';
+        set({ browserPermission: permission });
+        if (permission === 'granted') {
+          await triggerBrowserNotification(
+            'Wolf Palomar Gym Notifications Enabled',
+            {
+              body: 'You will receive real-time notifications for incidents, inventory stock alerts, and expiring subscriptions.',
+            }
+          );
+        }
+        return permission;
+      } catch (err) {
+        console.warn('Error requesting capacitor notification permission:', err);
+        return 'denied';
+      }
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window)) {
       return 'denied';
     }
@@ -172,8 +262,15 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   fetchNotifications: async (userEmail, userRole, isRealtimeEvent = false) => {
+    const authUser = useAuthStore.getState().user;
+    const authProfile = useAuthStore.getState().profile;
+    const activeEmail = userEmail ?? authUser?.email;
+    const activeRole =
+      userRole ??
+      authProfile?.role ??
+      (authUser?.user_metadata?.role as string);
     const isAdmin =
-      isSuperAdmin(userEmail) || userRole?.toLowerCase() === 'admin';
+      isSuperAdmin(activeEmail) || activeRole?.toLowerCase() === 'admin';
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
@@ -182,41 +279,38 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     let incidentCount = 0;
     let unreadList: UnreadIncident[] = [];
 
-    if (isAdmin) {
-      try {
-        const { data, error } = await supabase
-          .from('incident_reports')
-          .select(
-            'id, title, priority, created_at, staff_name, status, is_archived'
-          )
-          .eq('status', 'Unread')
-          .eq('is_archived', false)
-          .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('incident_reports')
+        .select(
+          'id, title, priority, created_at, staff_name, status, is_archived'
+        )
+        .eq('status', 'Unread')
+        .eq('is_archived', false)
+        .order('created_at', { ascending: false });
 
-        if (!error && data) {
-          incidentCount = data.length;
-          unreadList = data.map((d) => ({
-            id: d.id,
-            title: d.title,
-            priority: d.priority,
-            created_at: d.created_at,
-            staff_name: d.staff_name || 'Staff',
-          }));
+      if (!error && data) {
+        incidentCount = data.length;
+        unreadList = data.map((d) => ({
+          id: d.id,
+          title: d.title,
+          priority: d.priority,
+          created_at: d.created_at,
+          staff_name: d.staff_name || 'Staff',
+        }));
 
-          // Trigger native desktop alert for unseen incident if from realtime event
-          if (isRealtimeEvent) {
-            unreadList.forEach((inc) => {
-              if (!seenIdsSet.has(`incident_${inc.id}`)) {
-                triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
-                  body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
-                });
-              }
-            });
-          }
+        if (isRealtimeEvent) {
+          unreadList.forEach((inc) => {
+            if (!seenIdsSet.has(`incident_${inc.id}`)) {
+              triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
+                body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
+              });
+            }
+          });
         }
-      } catch (err) {
-        console.warn('Failed to load incident reports for notification:', err);
       }
+    } catch (err) {
+      console.warn('Failed to load incident reports for notification:', err);
     }
 
     // 2. PRODUCT STOCK ALERTS
@@ -506,6 +600,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   subscribeRealtime: (userEmail, userRole) => {
     // 1. Perform initial data fetch
+    get().checkBrowserPermission();
     get().fetchNotifications(userEmail, userRole, false);
 
     // 2. Use a unique channel ID per subscription session to avoid channel collisions

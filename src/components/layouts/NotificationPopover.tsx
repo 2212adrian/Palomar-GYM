@@ -54,6 +54,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     stockAlertProducts,
     expiringMembers,
     browserPermission,
+    checkBrowserPermission,
     requestBrowserPermission,
     markIncidentRead,
     dismissAlert,
@@ -61,11 +62,17 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   } = useNotificationStore();
 
   const totalNotifications =
-    (isAdmin ? incidentUnreadCount : 0) + stockAlertsCount + expiringSubsCount;
+    incidentUnreadCount + stockAlertsCount + expiringSubsCount;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      checkBrowserPermission();
+    }
+  }, [isOpen, checkBrowserPermission]);
 
   // Compute anchor position for desktop screens
   useEffect(() => {
@@ -137,7 +144,6 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   };
 
   const showIncidents =
-    isAdmin &&
     (activeTab === 'all' || activeTab === 'incidents') &&
     unreadIncidents.length > 0;
   const showStock =
@@ -242,7 +248,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                   All ({totalNotifications})
                 </button>
 
-                {isAdmin && incidentUnreadCount > 0 && (
+                {incidentUnreadCount > 0 && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('incidents')}
@@ -522,7 +528,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
               {browserPermission !== 'granted' ? (
                 <button
                   type="button"
-                  onClick={requestBrowserPermission}
+                  onClick={() => requestBrowserPermission()}
                   className="text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider flex items-center gap-1.5 hover:underline cursor-pointer"
                 >
                   <BellRing className="w-3.5 h-3.5" />

@@ -139,9 +139,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
             <input
               type="text"
               value={formFullName}
-              onChange={(e) => setFormFullName(e.target.value)}
-              className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none"
-              placeholder="e.g. John Doe"
+              onChange={(e) => setFormFullName(e.target.value.toUpperCase())}
+              className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none uppercase"
+              placeholder="e.g. DELA CRUZ, JUAN M."
               required
             />
           </div>

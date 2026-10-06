@@ -1,6 +1,7 @@
 // src/pages/sales/components/ProductFormModal.tsx
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Tag,
@@ -8,6 +9,7 @@ import {
   Camera,
   Loader2,
   CheckCircle2,
+  Check,
   AlertTriangle,
   Plus,
   Trash2,
@@ -54,7 +56,7 @@ interface ProductFormModalProps {
   saving: boolean;
   uploading: boolean;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSave: (e: React.FormEvent, bulkItems?: any[]) => void;
+  onSave: (e: React.FormEvent, bulkItems?: any[]) => Promise<boolean | void> | void | any;
   onClose: () => void;
   existingProducts: {
     id: string;
@@ -149,6 +151,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const [isMultiAddMode, setIsMultiAddMode] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
+  const isSubmittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -161,13 +166,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const isInfiniteStock = !formHasStockLimit;
 
   const isDuplicateName = useMemo(() => {
+    if (saving || isSubmitting || isSuccess) return false;
     const nameClean = formName.trim().toLowerCase();
     if (!nameClean) return false;
     return existingProducts.some(
       (p) =>
         p.product_name.toLowerCase() === nameClean && p.id !== editingProductId
     );
-  }, [formName, existingProducts, editingProductId]);
+  }, [formName, existingProducts, editingProductId, saving, isSubmitting, isSuccess]);
 
   const applyOFFData = (data: any, barcode: string) => {
     setFormManufacturerBarcode(barcode);
@@ -397,6 +403,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   };
 
   const handleAttemptClose = () => {
+    if (saving || isSubmitting || isSuccess) return;
+
     if (stagedItems.length > 0) {
       setConfirmDialog({
         isOpen: true,
@@ -414,6 +422,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   };
 
   const handleAddCurrentToQueue = () => {
+    if (saving || isSubmitting || isSuccess) return;
     const nameClean = formName.trim();
     const priceNum = parseFloat(formPrice);
 
@@ -459,8 +468,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     setFormManufacturerSource('manual');
   };
 
-  const handleFormSubmission = (e: React.FormEvent) => {
+  const handleFormSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmittingRef.current || isSubmitting || saving || isSuccess) return;
+
+    if (!isEditing && isDuplicateName) {
+      toast.error('A product with this name already exists in inventory.');
+      return;
+    }
 
     if (isMultiAddMode) {
       const currentName = formName.trim();
@@ -495,17 +511,67 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         return;
       }
 
-      onSave(e, itemsToSave);
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+
+      try {
+        const res = await onSave(e, itemsToSave);
+        if (res !== false) {
+          setIsSuccess(true);
+          setShowLiveScanner(false);
+          setTimeout(
+            () => {
+              setIsSuccess(false);
+              isSubmittingRef.current = false;
+              setIsSubmitting(false);
+              onClose();
+            },
+            isBatterySaver ? 600 : 1500
+          );
+        } else {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
+      } catch {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
     } else {
-      onSave(e);
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+
+      try {
+        const res = await onSave(e);
+        if (res !== false) {
+          setIsSuccess(true);
+          setShowLiveScanner(false);
+          setTimeout(
+            () => {
+              setIsSuccess(false);
+              isSubmittingRef.current = false;
+              setIsSubmitting(false);
+              onClose();
+            },
+            isBatterySaver ? 600 : 1500
+          );
+        } else {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
+      } catch {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 
   return createPortal(
     <div className="fixed inset-0 z-500 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none overflow-x-hidden">
       <div
-        className={`bg-(--bg-card) border rounded-3xl w-full max-w-lg min-w-0 shadow-2xl overflow-hidden relative flex flex-col max-h-[94vh] transition-all duration-300 ${
-          isLocked
+        className={`bg-(--bg-card) border rounded-3xl w-full ${
+          isSuccess ? 'max-w-md p-6 sm:p-8' : 'max-w-lg'
+        } min-w-0 shadow-2xl overflow-hidden relative flex flex-col max-h-[94vh] transition-all duration-300 ${
+          isLocked && !isSuccess
             ? 'border-slate-500/30 dark:border-slate-700/60 shadow-slate-900/20'
             : 'border-(--border-color)'
         }`}
@@ -548,7 +614,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         {/* TOP HEADER */}
         <div
           className={`px-3.5 sm:px-5 py-3 border-b flex items-center justify-between gap-2 min-w-0 shrink-0 transition-colors duration-300 ${
-            isLocked
+            isLocked && !isSuccess
               ? 'bg-slate-100 dark:bg-slate-900/60 border-slate-300 dark:border-slate-800'
               : 'bg-(--bg-card) border-(--border-color)'
           }`}
@@ -557,12 +623,16 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <div
               className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shadow-xs shrink-0 transition-colors duration-300 ${
-                isLocked
-                  ? 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
-                  : 'bg-[#123c73]/10 dark:bg-[#bf0202]/15 border border-[#123c73]/20 dark:border-[#bf0202]/30 text-[#123c73] dark:text-[#bf0202]'
+                isSuccess
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-500'
+                  : isLocked
+                    ? 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
+                    : 'bg-[#123c73]/10 dark:bg-[#bf0202]/15 border border-[#123c73]/20 dark:border-[#bf0202]/30 text-[#123c73] dark:text-[#bf0202]'
               }`}
             >
-              {isLocked ? (
+              {isSuccess ? (
+                <Check className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500 stroke-[3]" />
+              ) : isLocked ? (
                 <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
               ) : (
                 <Package className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -572,9 +642,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
                 <h3 className="font-black text-xs sm:text-sm uppercase tracking-wide text-(--color-text) truncate">
-                  {isEditing ? 'Edit Product' : 'Add Product'}
+                  {isSuccess
+                    ? isEditing
+                      ? 'PRODUCT UPDATED'
+                      : 'PRODUCT CONFIRMED'
+                    : isEditing
+                      ? 'Edit Product'
+                      : 'Add Product'}
                 </h3>
-                {!isEditing && !isLocked && (
+                {!isEditing && !isLocked && !isSuccess && (
                   <button
                     type="button"
                     onClick={() => setIsMultiAddMode(!isMultiAddMode)}
@@ -589,56 +665,60 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 )}
               </div>
               <p className="text-[10px] sm:text-[11px] text-(--color-text)/60 truncate block">
-                {isLocked
-                  ? 'Item inactive and locked from sales'
-                  : 'Item name, price, stock & barcode'}
+                {isSuccess
+                  ? 'Product catalog updated successfully'
+                  : isLocked
+                    ? 'Item inactive and locked from sales'
+                    : 'Item name, price, stock & barcode'}
               </p>
             </div>
           </div>
 
           {/* RIGHT HEADER ACTIONS: ACTIVE/INACTIVE TOGGLE + CLOSE BUTTON */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Active for Sale Switch */}
-            <button
-              type="button"
-              onClick={handleToggleStatus}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border cursor-pointer transition-all duration-300 select-none ${
-                formStatus === 'Active'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15'
-                  : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-300/60'
-              }`}
-              title={
-                formStatus === 'Active'
-                  ? 'Item is Active. Click to deactivate & lock.'
-                  : 'Item is Inactive. Click to reactivate.'
-              }
-            >
-              {formStatus === 'Active' ? (
-                <Unlock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              ) : (
-                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              )}
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">
-                {formStatus === 'Active' ? 'Active' : 'Inactive'}
-              </span>
-
-              {/* Pill Switch */}
-              <div
-                className={`w-6 sm:w-7 h-3.5 sm:h-4 rounded-full flex items-center p-0.5 transition-colors duration-200 shrink-0 ${
+            {!isSuccess && (
+              <button
+                type="button"
+                onClick={handleToggleStatus}
+                disabled={saving || isSubmitting}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border cursor-pointer transition-all duration-300 select-none ${
                   formStatus === 'Active'
-                    ? 'bg-emerald-500 justify-end'
-                    : 'bg-slate-400 dark:bg-slate-600 justify-start'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15'
+                    : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-300/60'
                 }`}
+                title={
+                  formStatus === 'Active'
+                    ? 'Item is Active. Click to deactivate & lock.'
+                    : 'Item is Inactive. Click to reactivate.'
+                }
               >
-                <div className="w-2.5 sm:w-3 h-2.5 sm:h-3 rounded-full bg-white shadow-xs" />
-              </div>
-            </button>
+                {formStatus === 'Active' ? (
+                  <Unlock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                ) : (
+                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                )}
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">
+                  {formStatus === 'Active' ? 'Active' : 'Inactive'}
+                </span>
+
+                <div
+                  className={`w-6 sm:w-7 h-3.5 sm:h-4 rounded-full flex items-center p-0.5 transition-colors duration-200 shrink-0 ${
+                    formStatus === 'Active'
+                      ? 'bg-emerald-500 justify-end'
+                      : 'bg-slate-400 dark:bg-slate-600 justify-start'
+                  }`}
+                >
+                  <div className="w-2.5 sm:w-3 h-2.5 sm:h-3 rounded-full bg-white shadow-xs" />
+                </div>
+              </button>
+            )}
 
             {/* Modal Close Button */}
             <button
               type="button"
+              disabled={saving || isSubmitting || isSuccess}
               onClick={handleAttemptClose}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text)/60 hover:text-(--color-text) border border-(--border-color) flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text)/60 hover:text-(--color-text) border border-(--border-color) flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
               title="Close"
             >
               <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -646,11 +726,71 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </div>
         </div>
 
-        {/* SCROLLABLE FORM BODY (MOBILE FRIENDLY & NO HORIZONTAL OVERFLOW) */}
-        <form
-          onSubmit={handleFormSubmission}
-          className="p-3 sm:p-5 space-y-3 sm:space-y-4 overflow-y-auto overflow-x-hidden max-h-[calc(94vh-130px)] text-left min-w-0 w-full"
-        >
+        <AnimatePresence mode="wait">
+          {isSuccess ? (
+            <motion.div
+              key="product-success-banner"
+              initial={{ opacity: 0, scale: 0.85, y: 16 }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                y: 0,
+                transition: {
+                  type: 'spring',
+                  damping: 24,
+                  stiffness: 280,
+                  duration: 0.4,
+                },
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.9,
+                y: -16,
+                transition: { duration: 0.25, ease: 'easeInOut' },
+              }}
+              className="py-12 px-6 flex flex-col items-center justify-center space-y-4 text-center select-none"
+            >
+              <motion.div
+                initial={{ scale: 0, rotate: -30 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{
+                  type: 'spring',
+                  damping: 18,
+                  stiffness: 300,
+                  delay: 0.08,
+                }}
+                className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/25 ring-4 ring-emerald-500/20"
+              >
+                <Check className="w-8 h-8 stroke-[3]" />
+              </motion.div>
+              <motion.h2
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15, duration: 0.3 }}
+                className="font-black text-xl text-(--color-text) uppercase tracking-wider font-heading text-center"
+              >
+                {isEditing
+                  ? 'PRODUCT UPDATED'
+                  : isMultiAddMode
+                    ? 'PRODUCTS ADDED'
+                    : 'PRODUCT ADDED'}
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.22, duration: 0.3 }}
+                className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-xs text-center uppercase tracking-wide"
+              >
+                {isEditing
+                  ? 'Changes filed in the store inventory catalog.'
+                  : 'Product record filed in the store inventory catalog.'}
+              </motion.p>
+            </motion.div>
+          ) : (
+            <form
+              onSubmit={handleFormSubmission}
+              className="p-3 sm:p-5 space-y-3 sm:space-y-4 overflow-y-auto overflow-x-hidden max-h-[calc(94vh-130px)] text-left min-w-0 w-full"
+            >
           {/* INACTIVE / LOCKED BANNER */}
           {isLocked && (
             <div className="p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-center gap-2 animate-fade-in text-amber-600 dark:text-amber-400 min-w-0">
@@ -737,7 +877,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full px-3.5 py-2.5 sm:py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-bold text-(--color-text) placeholder:text-(--color-text)/30 outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20 transition-all uppercase min-w-0"
                 />
-                {isDuplicateName && (
+                {!saving && !isSubmitting && !isSuccess && isDuplicateName && (
                   <div className="flex items-center gap-1.5 pt-0.5 text-[10px] font-bold text-amber-500">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
                     <span>Product already exists in inventory</span>
@@ -1114,8 +1254,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           <div className="flex items-center justify-between gap-2 border-t border-(--border-color) bg-(--bg-card) pt-3 sm:pt-4 shrink-0 rounded-b-3xl min-w-0 w-full">
             <button
               type="button"
+              disabled={saving || isSubmitting || isSuccess}
               onClick={handleAttemptClose}
-              className="flex-1 sm:flex-none px-3.5 sm:px-5 py-2.5 border border-(--border-color) bg-(--bg-input) hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors text-center"
+              className="flex-1 sm:flex-none px-3.5 sm:px-5 py-2.5 border border-(--border-color) bg-(--bg-input) hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -1124,8 +1265,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               {isMultiAddMode && !isLocked && (
                 <button
                   type="button"
+                  disabled={saving || isSubmitting || isSuccess}
                   onClick={handleAddCurrentToQueue}
-                  className="px-3 sm:px-4 py-2.5 bg-[#123c73]/10 dark:bg-[#bf0202]/15 hover:bg-[#123c73]/20 text-[#123c73] dark:text-red-400 border border-[#123c73]/30 dark:border-[#bf0202]/30 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-1 active:scale-95 shrink-0"
+                  className="px-3 sm:px-4 py-2.5 bg-[#123c73]/10 dark:bg-[#bf0202]/15 hover:bg-[#123c73]/20 text-[#123c73] dark:text-red-400 border border-[#123c73]/30 dark:border-[#bf0202]/30 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-1 active:scale-95 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Queue</span>
@@ -1134,31 +1276,47 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
               <button
                 type="submit"
-                disabled={saving}
-                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 font-heading font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-1.5 active:scale-95 border border-white/10 cursor-pointer min-w-0 truncate ${
+                disabled={
+                  saving ||
+                  isSubmitting ||
+                  isSuccess ||
+                  (!isEditing && isDuplicateName)
+                }
+                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 font-heading font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-1.5 active:scale-95 border border-white/10 min-w-0 truncate ${
+                  saving ||
+                  isSubmitting ||
+                  isSuccess ||
+                  (!isEditing && isDuplicateName)
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'
+                } ${
                   isLocked
                     ? 'bg-slate-600 hover:bg-slate-700 text-white shadow-slate-600/20'
                     : 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white shadow-[#123c73]/20 dark:shadow-[#bf0202]/20'
                 }`}
               >
-                {saving && (
+                {(saving || isSubmitting) && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                 )}
                 <span className="truncate">
-                  {isEditing
-                    ? isLocked
-                      ? 'Save as Inactive'
-                      : 'Save Changes'
-                    : isMultiAddMode
-                      ? `Save All (${
-                          stagedItems.length + (formName.trim() ? 1 : 0)
-                        })`
-                      : 'Add Product'}
+                  {saving || isSubmitting
+                    ? 'Saving...'
+                    : isEditing
+                      ? isLocked
+                        ? 'Save as Inactive'
+                        : 'Save Changes'
+                      : isMultiAddMode
+                        ? `Save All (${
+                            stagedItems.length + (formName.trim() ? 1 : 0)
+                          })`
+                        : 'Add Product'}
                 </span>
               </button>
             </div>
           </div>
         </form>
+          )}
+        </AnimatePresence>
       </div>
     </div>,
     document.body

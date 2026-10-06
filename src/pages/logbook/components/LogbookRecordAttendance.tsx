@@ -248,6 +248,9 @@ export const LogbookRecordAttendance: React.FC<
   const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>([]);
   const [todayLogs, setTodayLogs] = useState<any[]>([]);
 
+  const dynamicMembersRef = useRef<MemberProfile[]>([]);
+  const walkinRegularFeeRef = useRef<number | null>(null);
+
   const [memberSearch, setMemberSearch] = useState('');
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(
@@ -354,7 +357,9 @@ export const LogbookRecordAttendance: React.FC<
         ratesData.student_walk_in !== null &&
         ratesData.student_walk_in !== undefined
       ) {
-        setWalkinRegularFee(Number(ratesData.regular_walk_in));
+        const regFee = Number(ratesData.regular_walk_in);
+        walkinRegularFeeRef.current = regFee;
+        setWalkinRegularFee(regFee);
         setWalkinStudentFee(Number(ratesData.student_walk_in));
         setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
         setGcashFeeRate(Number(ratesData.gcash_fee ?? 0));
@@ -368,7 +373,9 @@ export const LogbookRecordAttendance: React.FC<
           throw new Error('Pricing data is missing or incomplete in Supabase.');
         }
 
-        setWalkinRegularFee(Number(activeSettings.regular_walkin_fee));
+        const regFee = Number(activeSettings.regular_walkin_fee);
+        walkinRegularFeeRef.current = regFee;
+        setWalkinRegularFee(regFee);
         setWalkinStudentFee(Number(activeSettings.student_walkin_fee));
         setYearlyMemberFee(
           Number(activeSettings.yearly_member_checkin_fee ?? 0)
@@ -377,6 +384,7 @@ export const LogbookRecordAttendance: React.FC<
       }
     } catch (err: any) {
       console.error('Failed to load rates configuration:', err);
+      walkinRegularFeeRef.current = null;
       setWalkinRegularFee(null);
       setWalkinStudentFee(null);
       setYearlyMemberFee(null);
@@ -466,7 +474,7 @@ export const LogbookRecordAttendance: React.FC<
 
         const resolvedPhoto = resolveAvatarUrl(m.image_url || m.avatar_url);
 
-        return {
+      return {
           id: m.id,
           name: m.full_name,
           memberId: m.member_id,
@@ -490,6 +498,7 @@ export const LogbookRecordAttendance: React.FC<
         };
       });
 
+      dynamicMembersRef.current = mappedProfiles;
       setDynamicMembers(mappedProfiles);
     } catch (e) {
       console.error('Failed to load dynamic member records:', e);
@@ -710,8 +719,8 @@ export const LogbookRecordAttendance: React.FC<
       // In Battery Saver mode, reuse member/rate data if fetched within the last 2 minutes
       const shouldSkipHeavyPoll =
         isBatterySaver &&
-        dynamicMembers.length > 0 &&
-        walkinRegularFee !== null &&
+        dynamicMembersRef.current.length > 0 &&
+        walkinRegularFeeRef.current !== null &&
         nowMs - lastLoadedDynamicMsRef.current < 120000;
 
       if (!shouldSkipHeavyPoll) {
@@ -724,17 +733,10 @@ export const LogbookRecordAttendance: React.FC<
       setIsSubmitting(false);
       resetForm();
     } else {
+      setShowLiveScanner(false);
       stopAllCameraTracks();
     }
-  }, [
-    isOpen,
-    loadRates,
-    loadDynamicMembers,
-    loadTodayLogs,
-    isBatterySaver,
-    dynamicMembers.length,
-    walkinRegularFee,
-  ]);
+  }, [isOpen, isBatterySaver, loadRates, loadDynamicMembers, loadTodayLogs]);
 
   useEffect(() => {
     if (!isOpen || !initialSearch || !initialSearch.trim()) return;
@@ -765,7 +767,13 @@ export const LogbookRecordAttendance: React.FC<
     }
   }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
+  // Fetch camera list only when modal is open and the camera scanner is explicitly activated
   useEffect(() => {
+    if (!isOpen || !showLiveScanner) {
+      stopAllCameraTracks();
+      return;
+    }
+
     Html5Qrcode.getCameras()
       .then((devices) => {
         if (devices && devices.length > 0) {
@@ -786,7 +794,7 @@ export const LogbookRecordAttendance: React.FC<
         }
       })
       .catch((err) => console.warn('Camera list error:', err));
-  }, []);
+  }, [isOpen, showLiveScanner]);
 
   const handleCycleCamera = () => {
     if (cameras.length <= 1) return;
@@ -800,74 +808,78 @@ export const LogbookRecordAttendance: React.FC<
     let html5QrCode: Html5Qrcode | null = null;
     let isCancelled = false;
 
-    if (showLiveScanner) {
-      const timer = setTimeout(() => {
-        const element = document.getElementById('live-qr-reader');
-        if (!element || isCancelled) return;
-
-        try {
-          html5QrCode = new Html5Qrcode('live-qr-reader');
-          scannerRef.current = html5QrCode;
-          const cameraConfig = selectedCameraId
-            ? { deviceId: { exact: selectedCameraId } }
-            : { facingMode: 'environment' };
-
-          html5QrCode
-            .start(
-              cameraConfig,
-              {
-                // Reduce camera polling FPS in Battery Saver mode (10 FPS vs 25 FPS)
-                fps: isBatterySaver ? 10 : 25,
-                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                  const edgeSize = Math.floor(minEdge * 0.72);
-                  return { width: edgeSize, height: edgeSize };
-                },
-                videoConstraints: {
-                  ...cameraConfig,
-                  width: { ideal: isBatterySaver ? 640 : 1280 },
-                  height: { ideal: isBatterySaver ? 480 : 720 },
-                  facingMode: 'environment',
-                },
-              },
-              (decodedText) => {
-                handleBarcodeOrQrScanned(decodedText);
-              },
-              () => {}
-            )
-            .catch((err) => {
-              if (!isCancelled) {
-                const reason = getCameraErrorMessage(err);
-                if (cameras.length > 1) {
-                  const currentIndex = selectedCameraId
-                    ? cameras.findIndex((c) => c.id === selectedCameraId)
-                    : -1;
-                  const nextCamera =
-                    cameras[(currentIndex + 1) % cameras.length];
-                  stopAllCameraTracks();
-                  setSelectedCameraId(nextCamera.id);
-                  toast.info(
-                    `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                  );
-                } else {
-                  toast.error(`Camera Error: ${reason}`);
-                  setShowLiveScanner(false);
-                  stopAllCameraTracks();
-                }
-              }
-            });
-        } catch (e) {
-          console.error('Attendance scanner init error:', e);
-        }
-      }, 250);
-
-      return () => {
-        isCancelled = true;
-        clearTimeout(timer);
-        stopAllCameraTracks();
-      };
+    if (!isOpen || !showLiveScanner) {
+      stopAllCameraTracks();
+      return;
     }
+
+    const timer = setTimeout(() => {
+      const element = document.getElementById('live-qr-reader');
+      if (!element || isCancelled) return;
+
+      try {
+        html5QrCode = new Html5Qrcode('live-qr-reader');
+        scannerRef.current = html5QrCode;
+        const cameraConfig = selectedCameraId
+          ? { deviceId: { exact: selectedCameraId } }
+          : { facingMode: 'environment' };
+
+        html5QrCode
+          .start(
+            cameraConfig,
+            {
+              // Reduce camera polling FPS in Battery Saver mode (10 FPS vs 25 FPS)
+              fps: isBatterySaver ? 10 : 25,
+              qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                const edgeSize = Math.floor(minEdge * 0.72);
+                return { width: edgeSize, height: edgeSize };
+              },
+              videoConstraints: {
+                ...cameraConfig,
+                width: { ideal: isBatterySaver ? 640 : 1280 },
+                height: { ideal: isBatterySaver ? 480 : 720 },
+                facingMode: 'environment',
+              },
+            },
+            (decodedText) => {
+              handleBarcodeOrQrScanned(decodedText);
+            },
+            () => {}
+          )
+          .catch((err) => {
+            if (!isCancelled) {
+              const reason = getCameraErrorMessage(err);
+              if (cameras.length > 1) {
+                const currentIndex = selectedCameraId
+                  ? cameras.findIndex((c) => c.id === selectedCameraId)
+                  : -1;
+                const nextCamera =
+                  cameras[(currentIndex + 1) % cameras.length];
+                stopAllCameraTracks();
+                setSelectedCameraId(nextCamera.id);
+                toast.info(
+                  `Switching camera: ${nextCamera.label || 'Next Camera'}`
+                );
+              } else {
+                toast.error(`Camera Error: ${reason}`);
+                setShowLiveScanner(false);
+                stopAllCameraTracks();
+              }
+            }
+          });
+      } catch (e) {
+        console.error('Attendance scanner init error:', e);
+      }
+    }, 250);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+      stopAllCameraTracks();
+    };
   }, [
+    isOpen,
     showLiveScanner,
     selectedCameraId,
     handleBarcodeOrQrScanned,
@@ -937,6 +949,7 @@ export const LogbookRecordAttendance: React.FC<
   };
 
   const handleRedirectToSubscription = () => {
+    setShowLiveScanner(false);
     stopAllCameraTracks();
     onClose();
     navigate('/members/plans');
@@ -1225,6 +1238,7 @@ export const LogbookRecordAttendance: React.FC<
     <Modal
       isOpen={isOpen}
       onClose={() => {
+        setShowLiveScanner(false);
         stopAllCameraTracks();
         onClose();
       }}
@@ -1238,6 +1252,7 @@ export const LogbookRecordAttendance: React.FC<
           type="button"
           disabled={isSubmitting}
           onClick={() => {
+            setShowLiveScanner(false);
             stopAllCameraTracks();
             onClose();
           }}
@@ -1285,6 +1300,7 @@ export const LogbookRecordAttendance: React.FC<
               <button
                 type="button"
                 onClick={() => {
+                  setShowLiveScanner(false);
                   stopAllCameraTracks();
                   onClose();
                 }}

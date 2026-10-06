@@ -360,6 +360,40 @@ const isCardRecord = (log: LogRecord): boolean => {
   );
 };
 
+const deduplicateBatchCards = (records: LogRecord[]): LogRecord[] => {
+  const seenKeys = new Set<string>();
+  const seenTimestamps: { time: number; name: string; amount: number }[] = [];
+
+  return records.filter((log) => {
+    const isCard = isCardRecord(log);
+    if (!isCard) return true;
+
+    if (log.receiptNumber) {
+      const rKey = `rcpt:${log.receiptNumber}`;
+      if (seenKeys.has(rKey)) return false;
+      seenKeys.add(rKey);
+    }
+
+    const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+    const cleanName = (log.customerName || '').trim().toLowerCase();
+    const amount = Number(log.amountPaid || 0);
+
+    const isDuplicate = seenTimestamps.some(
+      (entry) =>
+        entry.name === cleanName &&
+        entry.amount === amount &&
+        Math.abs(entry.time - logTime) < 60000
+    );
+
+    if (isDuplicate) {
+      return false;
+    }
+
+    seenTimestamps.push({ time: logTime, name: cleanName, amount });
+    return true;
+  });
+};
+
 export const LogbookPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -373,7 +407,23 @@ export const LogbookPage: React.FC = () => {
 
   const [closedSessionsList, setClosedSessionsList] = useState<
     SessionSummaryInfo[]
-  >([]);
+  >(() => {
+    const sessionsCacheKey = 'logbook_closed_sessions_cache';
+    try {
+      const cached =
+        localStorage.getItem(sessionsCacheKey) ||
+        localStorage.getItem('sales_closed_sessions_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
 
   useEffect(() => {
     loadHistory();
@@ -389,9 +439,11 @@ export const LogbookPage: React.FC = () => {
   // Session-based deletability check
   const isLogDeletable = useCallback(
     (log: LogRecord) => {
+      const isCard = isCardRecord(log);
+
       if (
-        log.isSubscription ||
-        (log as any).deletable === false ||
+        (!isCard && log.isSubscription) ||
+        (!isCard && (log as any).deletable === false) ||
         log.customerType === 'New Membership'
       ) {
         return false;
@@ -419,7 +471,8 @@ export const LogbookPage: React.FC = () => {
 
   const getLogDeleteDisabledReason = useCallback(
     (log: LogRecord) => {
-      if (log.isSubscription || log.customerType === 'New Membership') {
+      const isCard = isCardRecord(log);
+      if (!isCard && (log.isSubscription || log.customerType === 'New Membership')) {
         return 'Subscription contracts cannot be deleted from Logbook.';
       }
       if (!isSessionOpen) {
@@ -539,15 +592,30 @@ export const LogbookPage: React.FC = () => {
   const fetchAttendanceFromSupabase = useCallback(
     async (isBackground: boolean = false) => {
       const cacheKey = `logbook_sanitized_${dateStr}`;
+      const sessionsCacheKey = 'logbook_closed_sessions_cache';
 
       if (!isBackground) {
+        const cachedClosed =
+          localStorage.getItem(sessionsCacheKey) ||
+          localStorage.getItem('sales_closed_sessions_cache');
+        if (cachedClosed) {
+          try {
+            const parsedClosed = JSON.parse(cachedClosed);
+            if (Array.isArray(parsedClosed)) {
+              setClosedSessionsList(parsedClosed);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         const cachedSession =
           sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
         if (cachedSession) {
           try {
             const parsed = JSON.parse(cachedSession);
             if (Array.isArray(parsed)) {
-              setLogs(parsed);
+              setLogs(deduplicateBatchCards(parsed));
             }
           } catch (e) {
             console.error('Failed to parse cached logbook session:', e);
@@ -570,6 +638,14 @@ export const LogbookPage: React.FC = () => {
 
           if (closedSessionsData) {
             setClosedSessionsList(closedSessionsData);
+            try {
+              localStorage.setItem(
+                sessionsCacheKey,
+                JSON.stringify(closedSessionsData)
+              );
+            } catch {
+              // ignore storage error
+            }
           }
         } catch {
           // ignore offline error for closed sessions
@@ -749,8 +825,9 @@ export const LogbookPage: React.FC = () => {
         }
 
         if (mappedLogs) {
-          setLogs(mappedLogs);
-          const serialized = JSON.stringify(mappedLogs);
+          const consolidatedLogs = deduplicateBatchCards(mappedLogs);
+          setLogs(consolidatedLogs);
+          const serialized = JSON.stringify(consolidatedLogs);
           sessionStorage.setItem(cacheKey, serialized);
           try {
             localStorage.setItem(cacheKey, serialized);
@@ -820,6 +897,12 @@ export const LogbookPage: React.FC = () => {
       )
       .subscribe();
 
+    const handleBatchUpdated = () => {
+      sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+      fetchAttendanceFromSupabase(true);
+    };
+    window.addEventListener('palomar_logbook_updated', handleBatchUpdated);
+
     // Background polling interval: 45s normal vs 180s (3 min) in Battery Saver mode
     const pollIntervalMs = isBatterySaver ? 180000 : 45000;
     const pollTimer = setInterval(() => {
@@ -831,6 +914,7 @@ export const LogbookPage: React.FC = () => {
     return () => {
       if (throttleTimer) clearTimeout(throttleTimer);
       clearInterval(pollTimer);
+      window.removeEventListener('palomar_logbook_updated', handleBatchUpdated);
       supabase.removeChannel(channel);
     };
   }, [dateStr, fetchAttendanceFromSupabase, loadHistory, isBatterySaver]);
@@ -852,7 +936,7 @@ export const LogbookPage: React.FC = () => {
     }
   }, [location.state, location.pathname, navigate]);
 
-  const dayLogs = useMemo(() => logs, [logs]);
+  const dayLogs = useMemo(() => deduplicateBatchCards(logs), [logs]);
 
   const filteredLogs = useMemo(() => {
     return dayLogs.filter((l: LogRecord) => {
@@ -1298,15 +1382,110 @@ export const LogbookPage: React.FC = () => {
       if (!stagedLog) return;
 
       try {
-        const { error } = await supabase
-          .from('attendance')
-          .update({
-            deleted_at: new Date().toISOString(),
-            deleted_by: user?.id || null,
-          })
-          .eq('id', stagedLog.id);
+        const isCard = isCardRecord(stagedLog);
+        let rawReceiptId =
+          stagedLog.receiptNumber ||
+          (stagedLog.id.startsWith('rcpt-')
+            ? stagedLog.id.replace(/^rcpt-/, '')
+            : null);
 
+        if (isCard && !rawReceiptId && stagedLog.memberId) {
+          const { data: cardRow } = await supabase
+            .from('cards')
+            .select('receipt_number')
+            .eq('member_id', stagedLog.memberId)
+            .maybeSingle();
+          if (cardRow?.receipt_number) {
+            rawReceiptId = cardRow.receipt_number;
+          }
+        }
+
+        if (isCard && !rawReceiptId && (stagedLog.memberId || stagedLog.customerName)) {
+          const targetIds = stagedLog.memberId ? [stagedLog.memberId] : (stagedLog.memberIds || []);
+          let rcptQ = supabase.from('receipts').select('id');
+          if (targetIds.length > 0) {
+            rcptQ = rcptQ.in('member_id', targetIds);
+          } else {
+            rcptQ = rcptQ.eq('customer_name', stagedLog.customerName);
+          }
+          const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+          const winStart = new Date(logMs - 1800000).toISOString();
+          const winEnd = new Date(logMs + 1800000).toISOString();
+          const { data: rMatches } = await rcptQ
+            .gte('created_at', winStart)
+            .lte('created_at', winEnd)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (rMatches && rMatches.length > 0) {
+            rawReceiptId = rMatches[0].id;
+          }
+        }
+
+        let deleteQuery = supabase.from('attendance').update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user?.id || null,
+        });
+
+        if (isCard && rawReceiptId) {
+          deleteQuery = deleteQuery.or(
+            `receipt_number.eq.${rawReceiptId},id.eq.${stagedLog.id}`
+          );
+        } else {
+          deleteQuery = deleteQuery.eq('id', stagedLog.id);
+        }
+
+        const { error } = await deleteQuery;
         if (error) throw error;
+
+        if (isCard) {
+          const targetMemberIds: string[] = [];
+          if (stagedLog.memberId) targetMemberIds.push(stagedLog.memberId);
+          if (Array.isArray(stagedLog.memberIds)) {
+            stagedLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
+          }
+          if (targetMemberIds.length > 0) {
+            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+            const winStart = new Date(logMs - 1800000).toISOString();
+            const winEnd = new Date(logMs + 1800000).toISOString();
+            await supabase
+              .from('attendance')
+              .update({
+                deleted_at: new Date().toISOString(),
+                deleted_by: user?.id || null,
+              })
+              .in('member_id', targetMemberIds)
+              .or(`customer_type.eq.Card,plan_name.ilike.%card%`)
+              .gte('check_in_time', winStart)
+              .lte('check_in_time', winEnd);
+          }
+        }
+
+        if (isCard) {
+          if (rawReceiptId) {
+            await supabase
+              .from('receipts')
+              .delete()
+              .or(`id.eq.${rawReceiptId},id.eq.rcpt-${rawReceiptId}`);
+          }
+
+          const targetMemberIds: string[] = [];
+          if (stagedLog.memberId) targetMemberIds.push(stagedLog.memberId);
+          if (Array.isArray(stagedLog.memberIds)) {
+            stagedLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
+          }
+          if (targetMemberIds.length > 0) {
+            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+            const winStart = new Date(logMs - 1800000).toISOString();
+            const winEnd = new Date(logMs + 1800000).toISOString();
+            await supabase
+              .from('receipts')
+              .delete()
+              .in('member_id', targetMemberIds)
+              .or(`customer_type.eq.Card,item_description.ilike.%card%`)
+              .gte('created_at', winStart)
+              .lte('created_at', winEnd);
+          }
+        }
 
         await deactivateCardsForLogRecord(stagedLog);
 
@@ -1434,9 +1613,29 @@ export const LogbookPage: React.FC = () => {
     setTimeout(() => {
       setStagedDeletions((prev) => [...prev, log]);
       setLogs((prev) => {
-        const updated: LogRecord[] = prev.filter(
-          (item) => String(item.id) !== strId
-        );
+        const isCard = isCardRecord(log);
+        const rNo =
+          log.receiptNumber ||
+          (strId.startsWith('rcpt-') ? strId.replace(/^rcpt-/, '') : null);
+        const mId = log.memberId;
+
+        const updated: LogRecord[] = prev.filter((item) => {
+          if (String(item.id) === strId) return false;
+          if (isCard) {
+            if (
+              rNo &&
+              (item.receiptNumber === rNo ||
+                item.id === rNo ||
+                item.id === `rcpt-${rNo}`)
+            ) {
+              return false;
+            }
+            if (mId && item.memberId === mId && isCardRecord(item)) {
+              return false;
+            }
+          }
+          return true;
+        });
         sessionStorage.setItem(
           `logbook_sanitized_${dateStr}`,
           JSON.stringify(updated)
@@ -1676,9 +1875,20 @@ export const LogbookPage: React.FC = () => {
     }
   }, [location.state, dateStr, fetchAttendanceFromSupabase]);
 
-  const handleDragEnd = (_event: any, info: any, log: LogRecord) => {
+  const handleDragEnd = (
+    _event: any,
+    info: any,
+    log: LogRecord,
+    isClosedSession: boolean = false
+  ) => {
     const swipeThreshold = 70;
     if (info.offset.x > swipeThreshold) {
+      if (isClosedSession && role === 'staff') {
+        toast.warning(
+          'Receipt is locked: Closed session records are read-only for staff.'
+        );
+        return;
+      }
       setSelectedReceiptLog(log);
       setIsReceiptModalOpen(true);
     } else if (info.offset.x < -swipeThreshold) {
@@ -1974,10 +2184,14 @@ export const LogbookPage: React.FC = () => {
                   }
                 });
 
-                const renderTimelineCard = (log: LogRecord) => {
+                const renderTimelineCard = (
+                  log: LogRecord,
+                  isClosedSession: boolean = false
+                ) => {
                   const strId = String(log.id);
                   const isNew = strId === newlyAddedId;
                   const isDeleting = deletingIds.includes(strId);
+                  const isStaffReadOnlyClosed = isClosedSession && role === 'staff';
 
                   return (
                     <motion.div
@@ -2047,8 +2261,20 @@ export const LogbookPage: React.FC = () => {
                         mode="attendance"
                         data={log}
                         canDelete={isLogDeletable(log) && !isDeleting}
+                        canPrint={!isStaffReadOnlyClosed}
+                        printDisabledReason={
+                          isStaffReadOnlyClosed
+                            ? 'Receipt viewing is restricted for closed session records.'
+                            : undefined
+                        }
                         deleteDisabledReason={getLogDeleteDisabledReason(log)}
                         onSelectReceipt={(rec) => {
+                          if (isStaffReadOnlyClosed) {
+                            toast.warning(
+                              'Receipt is locked: Closed session records are read-only for staff.'
+                            );
+                            return;
+                          }
                           setSelectedReceiptLog(rec);
                           setIsReceiptModalOpen(true);
                         }}
@@ -2071,7 +2297,9 @@ export const LogbookPage: React.FC = () => {
                           }
                           handleTriggerUndoPayment(record);
                         }}
-                        onDragEnd={handleDragEnd}
+                        onDragEnd={(e, info, record) =>
+                          handleDragEnd(e, info, record, isClosedSession)
+                        }
                       />
                     </motion.div>
                   );
@@ -2094,7 +2322,9 @@ export const LogbookPage: React.FC = () => {
 
                         <div className="space-y-2.5">
                           <AnimatePresence mode="popLayout" initial={false}>
-                            {group.records.map(renderTimelineCard)}
+                            {group.records.map((record) =>
+                              renderTimelineCard(record, false)
+                            )}
                           </AnimatePresence>
                         </div>
                       </div>
@@ -2131,7 +2361,9 @@ export const LogbookPage: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.records.length}
                         >
-                          {group.records.map(renderTimelineCard)}
+                          {group.records.map((record) =>
+                            renderTimelineCard(record, true)
+                          )}
                         </ClosedSessionGroup>
                       );
                     })}
