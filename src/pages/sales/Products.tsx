@@ -21,7 +21,6 @@ import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useNotificationStore } from '../../stores/useNotificationStore';
-import { isCapacitorApp } from '../../lib/platform';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';

@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
 import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
-import { isCapacitorApp } from '../../lib/platform';
 
 import type {
   Member,

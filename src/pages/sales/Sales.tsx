@@ -35,13 +35,12 @@ import { createPortal } from 'react-dom';
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
-import { getServerNow, getServerISOString } from '../../lib/serverTime';
+import { getServerNow,  } from '../../lib/serverTime';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useSessionLock } from '../../hooks/useSessionLock';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { isSuperAdmin } from '../../constants/auth';
-import { isCapacitorApp } from '../../lib/platform';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -930,16 +929,7 @@ export const Sales: React.FC = () => {
   }, [activeRevenue, activeSalesCount, activeItemsSold, revenueTrend]);
 
   const handleSaleSuccess = async (newTx: any) => {
-    // STRICT SALES VALIDATION: cannot exceed 0 on negative side or be 0
-    const salePayload = {
-      items: newTx.items,
-      product_name: newTx.productName,
-      payment_method: newTx.paymentMethod,
-      amount_received: newTx.amountReceived,
-      change_calculated: newTx.changeCalculated,
-      total_amount: newTx.totalAmount,
-    };
-    
+
     const calculatedGcashFee =
       newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
 

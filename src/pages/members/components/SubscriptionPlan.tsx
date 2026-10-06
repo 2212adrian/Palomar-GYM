@@ -61,7 +61,6 @@ import {
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
 import { SideNavTab } from '../../../components/ui/SideNavTab';
-import { isCapacitorApp } from '../../../lib/platform';
 import type {
   OnlineRegistration,
   PaymentMethod,

@@ -18,7 +18,6 @@ import { supabase } from '../../../lib/supabase/client';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useSessionLock } from '../../../hooks/useSessionLock';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
-import { isCapacitorApp } from '../../../lib/platform';
 import {
   getServerISOString,
   getServerManilaDateString,

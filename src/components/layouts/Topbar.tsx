@@ -25,9 +25,6 @@ import {
   Smartphone,
   ExternalLink,
   Loader2,
-  CloudCheck,
-  CloudOff,
-  RefreshCw,
 } from 'lucide-react';
 import {
   motion,
@@ -47,7 +44,6 @@ import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
-import { isCapacitorApp } from '../../lib/platform';
 import type { CashTransactionType } from '../../types/cash';
 
 interface TopbarProps {
@@ -306,7 +302,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   } = useCashSessionStore();
 
   const [isCashPopoverOpen, setIsCashPopoverOpen] = useState(false);
-  const [isSyncPopoverOpen, setIsSyncPopoverOpen] = useState(false);
+  const [, setIsSyncPopoverOpen] = useState(false);
   const [activeTxType, setActiveTxType] = useState<CashTransactionType | null>(
     null
   );
@@ -437,16 +433,6 @@ export const Topbar: React.FC<TopbarProps> = ({
       setNotificationOpen(false);
     }
     setIsCashPopoverOpen((prev) => !prev);
-  };
-
-  const handleToggleSyncPopover = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsKpiMobileOpen(false);
-    setIsCashPopoverOpen(false);
-    if (isNotificationOpen) {
-      setNotificationOpen(false);
-    }
-    setIsSyncPopoverOpen((prev) => !prev);
   };
 
   const handleOpenTransactionModal = (type: CashTransactionType) => {
