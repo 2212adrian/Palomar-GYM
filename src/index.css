@@ -804,44 +804,42 @@ select:focus {
 }
 
 /* ==========================================================
-   GLOBAL BATTERY SAVER / POWER SAVING MODE OPTIMIZATIONS
-   ========================================================== */
-html.battery-saver *,
-html.battery-saver *::before,
-html.battery-saver *::after {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-html.battery-saver body,
-html.battery-saver span,
-html.battery-saver p,
-html.battery-saver label,
-html.battery-saver button {
-  transition-duration: 0.1s !important;
-}
-
-html.battery-saver .animate-pulse,
-html.battery-saver .animate-ping,
-html.battery-saver .animate-bounce,
-html.battery-saver .page-slide-down,
-html.battery-saver .page-slide-up,
-html.battery-saver .animate-slide-up,
-html.battery-saver .animate-pop-in {
-  animation: none !important;
-  will-change: auto !important;
-}
-
-html.battery-saver .auth-divider-line {
-  filter: none !important;
-}
-
-/* ==========================================================
    MOBILE & CAPACITOR LOW-END HARDWARE OPTIMIZATIONS
    Strictly scoped to screens < 1024px and native Capacitor.
-   Desktop UI & styling (min-width: 1024px) remain 100% unchanged.
+   Desktop website & desktop PWA (min-width: 1024px) preserve all animations without sacrifice.
    ========================================================== */
 @media (max-width: 1023px) {
+  /* Battery Saver optimizations strictly on mobile devices */
+  html.battery-saver *,
+  html.battery-saver *::before,
+  html.battery-saver *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  html.battery-saver body,
+  html.battery-saver span,
+  html.battery-saver p,
+  html.battery-saver label,
+  html.battery-saver button {
+    transition-duration: 0.1s !important;
+  }
+
+  html.battery-saver .animate-pulse,
+  html.battery-saver .animate-ping,
+  html.battery-saver .animate-bounce,
+  html.battery-saver .page-slide-down,
+  html.battery-saver .page-slide-up,
+  html.battery-saver .animate-slide-up,
+  html.battery-saver .animate-pop-in {
+    animation: none !important;
+    will-change: auto !important;
+  }
+
+  html.battery-saver .auth-divider-line {
+    filter: none !important;
+  }
+
   /* 1. Fast touch response: eliminates 300ms tap delay and touch highlight jitter */
   a,
   button,

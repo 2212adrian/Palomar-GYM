@@ -37,6 +37,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
+import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
@@ -1828,15 +1829,21 @@ export const MembersList: React.FC<MembersListProps> = ({
                         </div>
                       )}
 
-                      {/* Mobile Cards Map */}
-                      {paginatedMobileMembers.map((member) => {
-                        const subInfo = getSubscriptionDetails(
-                          member.member_id
-                        );
-                        const cardObj = getActiveCard(member.member_id);
-                        const isSelected = selectedMemberIds.includes(
-                          member.id
-                        );
+                      {/* Mobile Cards Map with Windowing/Virtualization */}
+                      <VirtualWindowList
+                        items={paginatedMobileMembers}
+                        estimateItemHeight={140}
+                        overscan={3}
+                        className="space-y-2.5"
+                        getItemKey={(member) => member.id}
+                        renderItem={(member) => {
+                          const subInfo = getSubscriptionDetails(
+                            member.member_id
+                          );
+                          const cardObj = getActiveCard(member.member_id);
+                          const isSelected = selectedMemberIds.includes(
+                            member.id
+                          );
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
                         const isActionDisabled = !isSessionOpen || isSuspended;
@@ -2039,7 +2046,8 @@ export const MembersList: React.FC<MembersListProps> = ({
                             </div>
                           </div>
                         );
-                      })}
+                      }}
+                    />
 
                       {/* Mobile Pagination Navigation */}
                       {totalMobilePages > 1 && (

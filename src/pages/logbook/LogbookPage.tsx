@@ -63,6 +63,7 @@ import { SideNavTab } from '../../components/ui/SideNavTab';
 // Unified Official Receipt & TimelineCard
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
+import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
@@ -2321,11 +2322,14 @@ export const LogbookPage: React.FC = () => {
                         </div>
 
                         <div className="space-y-2.5">
-                          <AnimatePresence mode="popLayout" initial={false}>
-                            {group.records.map((record) =>
-                              renderTimelineCard(record, false)
-                            )}
-                          </AnimatePresence>
+                          <VirtualWindowList
+                            items={group.records}
+                            estimateItemHeight={85}
+                            overscan={3}
+                            mobileOnly={true}
+                            getItemKey={(record) => String(record.id)}
+                            renderItem={(record) => renderTimelineCard(record, false)}
+                          />
                         </div>
                       </div>
                     ))}
@@ -2361,9 +2365,14 @@ export const LogbookPage: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.records.length}
                         >
-                          {group.records.map((record) =>
-                            renderTimelineCard(record, true)
-                          )}
+                          <VirtualWindowList
+                            items={group.records}
+                            estimateItemHeight={85}
+                            overscan={3}
+                            mobileOnly={true}
+                            getItemKey={(record) => String(record.id)}
+                            renderItem={(record) => renderTimelineCard(record, true)}
+                          />
                         </ClosedSessionGroup>
                       );
                     })}

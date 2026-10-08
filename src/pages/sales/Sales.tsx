@@ -62,6 +62,7 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 
 // Unified UI TimelineCard
 import { TimelineCard } from '../../components/ui/TimelineCard';
+import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { SideNavTab } from '../../components/ui/SideNavTab';
 
 // ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
@@ -1737,11 +1738,14 @@ export const Sales: React.FC = () => {
                         </div>
 
                         <div className="space-y-2.5">
-                          <AnimatePresence mode="popLayout" initial={false}>
-                            {group.txs.map((tx) =>
-                              renderTimelineCard(tx, false)
-                            )}
-                          </AnimatePresence>
+                          <VirtualWindowList
+                            items={group.txs}
+                            estimateItemHeight={85}
+                            overscan={3}
+                            mobileOnly={true}
+                            getItemKey={(tx) => tx.id}
+                            renderItem={(tx) => renderTimelineCard(tx, false)}
+                          />
                         </div>
                       </div>
                     ))}
@@ -1775,9 +1779,14 @@ export const Sales: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.txs.length}
                         >
-                          {group.txs.map((tx) =>
-                            renderTimelineCard(tx, true)
-                          )}
+                          <VirtualWindowList
+                            items={group.txs}
+                            estimateItemHeight={85}
+                            overscan={3}
+                            mobileOnly={true}
+                            getItemKey={(tx) => tx.id}
+                            renderItem={(tx) => renderTimelineCard(tx, true)}
+                          />
                         </ClosedSessionGroup>
                       );
                     })}

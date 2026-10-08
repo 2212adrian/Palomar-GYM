@@ -12,6 +12,7 @@ import {
   User,
 } from 'lucide-react';
 import type { UnifiedActivityItem } from '../../../stores/useCashSessionStore';
+import { VirtualWindowList } from '../../../components/common/VirtualWindowList';
 
 interface CashTransactionsTableProps {
   transactions: UnifiedActivityItem[];
@@ -250,9 +251,15 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
             </table>
           </div>
 
-          {/* Mobile Card Layout */}
-          <div className="md:hidden divide-y divide-slate-100 dark:divide-white/5">
-            {filteredTransactions.map((tx) => {
+          {/* Mobile Card Layout with Windowing/Virtualization */}
+          <div className="md:hidden">
+            <VirtualWindowList
+              items={filteredTransactions}
+              estimateItemHeight={76}
+              overscan={4}
+              className="divide-y divide-slate-100 dark:divide-white/5"
+              getItemKey={(tx) => tx.id}
+              renderItem={(tx) => {
               const isOutflow = tx.type === 'cash_out';
 
               return (
@@ -324,8 +331,9 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
                   )}
                 </div>
               );
-            })}
-          </div>
+            }}
+          />
+        </div>
         </>
       )}
     </div>

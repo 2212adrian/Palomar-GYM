@@ -125,8 +125,15 @@ export function useBatterySaver() {
     };
   }, []);
 
-  // Power Saving Mode is exclusive for Capacitor App and PWA only
-  const isPlatformSupported = isAppOrPWA();
+  // Power Saving Mode applies strictly to mobile/Capacitor devices (< 1024px or mobile user agent).
+  // Desktop implementation for website and PWA retains 100% of animations in pristine condition.
+  const isMobileOrCapacitorDevice =
+    typeof window !== 'undefined'
+      ? window.innerWidth < 1024 ||
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      : false;
+
+  const isPlatformSupported = isAppOrPWA() && isMobileOrCapacitorDevice;
 
   // Auto-turn on when battery is 20% or under
   const isLowDevicePower =
