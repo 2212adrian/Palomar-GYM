@@ -835,3 +835,69 @@ html.battery-saver .animate-pop-in {
 html.battery-saver .auth-divider-line {
   filter: none !important;
 }
+
+/* ==========================================================
+   MOBILE & CAPACITOR LOW-END HARDWARE OPTIMIZATIONS
+   Strictly scoped to screens < 1024px and native Capacitor.
+   Desktop UI & styling (min-width: 1024px) remain 100% unchanged.
+   ========================================================== */
+@media (max-width: 1023px) {
+  /* 1. Fast touch response: eliminates 300ms tap delay and touch highlight jitter */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  .cursor-pointer {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 2. Strip costly backdrop-filter passes on mobile GPUs to maintain 60fps */
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* 3. Eliminate layout thrashing from universal transitions on static text and labels */
+  span,
+  p,
+  label {
+    transition: none !important;
+  }
+
+  button,
+  input,
+  select {
+    transition-duration: 0.15s !important;
+  }
+
+  /* 4. Touch momentum scrolling & overscroll containment */
+  main,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  /* 5. Simplified shadow blur radius for mobile GPU fill rates */
+  .shadow-2xl {
+    box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.28) !important;
+  }
+}
+
+/* Native Capacitor platform specific tuning */
+html.is-capacitor {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.is-capacitor input,
+html.is-capacitor textarea {
+  -webkit-user-select: auto;
+  user-select: auto;
+}

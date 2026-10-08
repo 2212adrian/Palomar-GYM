@@ -902,6 +902,8 @@ export const Login: React.FC = () => {
 
   useEffect(() => {
     if (!isAssetPreloaded || isLoggingIn) return;
+    // On mobile screens (< 1024px) or mobile devices, right panel carousel is hidden - pause timer
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) return;
     const interval = setInterval(() => {
       setActiveSlide((p) => (p + 1) % activeCarouselImages.length);
     }, 3000);

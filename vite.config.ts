@@ -163,8 +163,7 @@ export default defineConfig(({ mode }) => {
           ],
         },
         devOptions: {
-          enabled: true, // Enables service worker in development and AI Studio preview for offline testing
-          type: 'module',
+          enabled: false,
         },
       }),
     ],

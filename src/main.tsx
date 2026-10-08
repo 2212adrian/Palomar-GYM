@@ -6,8 +6,14 @@ import App from './App.tsx';
 
 // Register Service Worker with non-intrusive background updates and offline caching
 import { registerSW } from 'virtual:pwa-register';
+import { Capacitor } from '@capacitor/core';
 
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+if (
+  typeof window !== 'undefined' &&
+  'serviceWorker' in navigator &&
+  !Capacitor.isNativePlatform() &&
+  import.meta.env.PROD
+) {
   registerSW({
     immediate: true,
     onNeedReload() {

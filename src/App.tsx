@@ -168,9 +168,12 @@ export const App: React.FC = () => {
 
     window.addEventListener('focus', verifyCurrentSession);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    const isMobileOrNative =
+      Capacitor.isNativePlatform() ||
+      (typeof window !== 'undefined' && window.innerWidth < 1024);
     const intervalId = setInterval(
       verifyCurrentSession,
-      isBatterySaver ? 30000 : 10000
+      isBatterySaver || isMobileOrNative ? 30000 : 10000
     );
 
     return () => {
@@ -179,6 +182,21 @@ export const App: React.FC = () => {
       clearInterval(intervalId);
     };
   }, [user?.id, validateSession, isBatterySaver]);
+
+  // Global Platform & Theme Initialization
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      if (Capacitor.isNativePlatform()) {
+        document.documentElement.classList.add('is-capacitor');
+      }
+      if (
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        window.innerWidth < 1024
+      ) {
+        document.documentElement.classList.add('is-mobile-device');
+      }
+    }
+  }, []);
 
   // Global Theme Initialization
   useEffect(() => {

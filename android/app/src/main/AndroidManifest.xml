@@ -30,6 +30,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/wolf_palomar_round"
         android:supportsRtl="true"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
         android:theme="@style/AppTheme">
 
         <!-- Google ML Kit Barcode Scanner Model Auto-Download -->

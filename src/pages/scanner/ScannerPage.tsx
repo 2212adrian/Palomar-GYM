@@ -40,6 +40,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { toast } from 'react-toastify';
+import { Capacitor } from '@capacitor/core';
 import { useAuthStore } from '../../stores/authStore';
 import { useScannerStore } from '../../stores/useScannerStore';
 import {
@@ -538,12 +539,18 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           ? { deviceId: { exact: selectedCameraId } }
           : { facingMode };
 
+        // Dynamic low-end device optimization: mobile and Capacitor devices run at 14fps 960x540
+        // to avoid CPU throttling on budget chipsets, while desktop remains at full 1280x720 20fps.
+        const isMobileOrCapacitor =
+          Capacitor.isNativePlatform() ||
+          (typeof window !== 'undefined' && window.innerWidth < 1024);
+
         const scanConfig = {
-          fps: isBatterySaver ? 12 : 20,
+          fps: isBatterySaver ? 10 : isMobileOrCapacitor ? 14 : 20,
           videoConstraints: {
             facingMode: selectedCameraId ? undefined : facingMode,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: isMobileOrCapacitor ? 960 : 1280 },
+            height: { ideal: isMobileOrCapacitor ? 540 : 720 },
           },
         };
 
@@ -564,10 +571,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           await html5QrCode.start(
             { facingMode },
             {
-              fps: isBatterySaver ? 12 : 20,
+              fps: isBatterySaver ? 10 : isMobileOrCapacitor ? 14 : 20,
               videoConstraints: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
+                width: { ideal: isMobileOrCapacitor ? 960 : 1280 },
+                height: { ideal: isMobileOrCapacitor ? 540 : 720 },
               },
             },
             async (decodedText) => {
