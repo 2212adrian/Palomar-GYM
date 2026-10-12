@@ -53,12 +53,21 @@
             </intent-filter>
 
             <!-- Deep Linking for Google OAuth redirects -->
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.wolfpalomar.gymmanagement" android:host="login" />
                 <data android:scheme="com.wolfpalomar.gymmanagement" />
+            </intent-filter>
+
+            <!-- App Links Fallback for HTTPS Redirects -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="dev-wolfpalomar.vercel.app" android:pathPrefix="/login" />
+                <data android:scheme="https" android:host="wolfpalomar.vercel.app" android:pathPrefix="/login" />
             </intent-filter>
 
         </activity>

@@ -28,6 +28,8 @@ import { ProductFormModal } from './components/ProductFormModal';
 
 // Redesigned Spreadsheet Bulk Editor import
 import { BulkEditModal } from './components/BulkEditModal';
+import { RestockProductsModal } from './components/RestockProductsModal';
+import { StockMovementHistoryModal } from './components/StockMovementHistoryModal';
 
 // Barcode Printing Module imports
 import { BarcodePrintModal } from './components/barcode/BarcodePrintModal';
@@ -57,6 +59,7 @@ import {
   Copy,
   Check,
   Barcode as BarcodeIcon,
+  Boxes,
 } from 'lucide-react';
 
 interface Product {
@@ -151,6 +154,8 @@ export const Products: React.FC<ProductsProps> = ({
   const [showFormModal, setShowFormModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [showStockMovementModal, setShowStockMovementModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -410,6 +415,7 @@ export const Products: React.FC<ProductsProps> = ({
     setDeleteConfirmId(null);
     setShowPrintModal(false);
     setShowBulkEditModal(false);
+    setShowRestockModal(false);
     setShowBulkDeleteModal(false);
     try {
       sessionStorage.removeItem('palomar_selected_product_ids');
@@ -422,6 +428,7 @@ export const Products: React.FC<ProductsProps> = ({
     const handleNavClick = () => {
       setShowPrintModal(false);
       setShowBulkEditModal(false);
+      setShowRestockModal(false);
       setShowBulkDeleteModal(false);
       setDeleteConfirmId(null);
     };
@@ -445,6 +452,14 @@ export const Products: React.FC<ProductsProps> = ({
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
               <span>Recycle Bin</span>
+            </button>
+            <button
+              onClick={() => setShowStockMovementModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-[#161920] hover:bg-slate-200 dark:hover:bg-[#1e232d] text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
+              title="View restocking and stock movement audit log"
+            >
+              <Boxes className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Stock Movements</span>
             </button>
             <button
               onClick={() => setShowPrintModal(true)}
@@ -965,6 +980,7 @@ export const Products: React.FC<ProductsProps> = ({
     if (selectedStatusFilter === 'all') return true;
     if (selectedStatusFilter === 'active') return p.status === 'Active';
     if (selectedStatusFilter === 'inactive') return p.status === 'Inactive';
+    if (selectedStatusFilter === 'limited') return p.has_stock_limit;
     if (selectedStatusFilter === 'low_stock') {
       return (
         p.has_stock_limit &&
@@ -1093,7 +1109,7 @@ export const Products: React.FC<ProductsProps> = ({
 
           {item.manufacturer_barcode && (
             <span className="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-mono block">
-              MFG: {item.manufacturer_barcode}
+              EXT: {item.manufacturer_barcode}
             </span>
           )}
 
@@ -1357,6 +1373,20 @@ export const Products: React.FC<ProductsProps> = ({
             className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Quick Restock Button (Limited items only) */}
+            {item.has_stock_limit && (
+              <button
+                onClick={() => {
+                  setSelectedProductIds([item.id]);
+                  setShowRestockModal(true);
+                }}
+                className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 shrink-0 bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 dark:hover:bg-emerald-600 dark:hover:text-white"
+                title="Restock Product"
+              >
+                <Boxes className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Edit Button */}
             <button
               onClick={() => handleEditClick(item)}
@@ -1391,19 +1421,21 @@ export const Products: React.FC<ProductsProps> = ({
     selling_price: p.selling_price,
   }));
 
-  const selectedProductsForBulkEdit = products
-    .filter((p) => selectedProductIds.includes(p.id))
-    .map((p) => ({
-      id: p.id,
-      barcode_id: p.barcode_id,
-      product_name: p.product_name,
-      selling_price: p.selling_price,
-      has_stock_limit: p.has_stock_limit,
-      stock_quantity: p.stock_quantity,
-      low_stock_alert: p.low_stock_alert,
-      status: p.status,
-      image_url: p.image_url,
-    }));
+  const selectedProductsForBulkEdit = (
+    selectedProductIds.length > 0
+      ? products.filter((p) => selectedProductIds.includes(p.id))
+      : products
+  ).map((p) => ({
+    id: p.id,
+    barcode_id: p.barcode_id,
+    product_name: p.product_name,
+    selling_price: p.selling_price,
+    has_stock_limit: p.has_stock_limit,
+    stock_quantity: p.stock_quantity,
+    low_stock_alert: p.low_stock_alert,
+    status: p.status,
+    image_url: p.image_url,
+  }));
 
   return (
     <div
@@ -1411,6 +1443,19 @@ export const Products: React.FC<ProductsProps> = ({
         selectedProductIds.length > 0 ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
       }`}
     >
+      {/* Action shortcut: Stock Movements */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+        <button
+          type="button"
+          onClick={() => setShowStockMovementModal(true)}
+          className="flex items-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30 text-xs font-heading font-extrabold tracking-wider uppercase rounded-xl transition-all cursor-pointer shrink-0 shadow-xs active:scale-95"
+          title="View all stock movements & inventory ledger"
+        >
+          <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <span>Stock Movements</span>
+        </button>
+      </div>
+
       {/* Search and Status Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
@@ -1419,7 +1464,7 @@ export const Products: React.FC<ProductsProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search items by name, barcode, or manufacturer barcode..."
+            placeholder="Search items by name, internal barcode (PR-XXXX), or external barcode..."
             className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-input) text-xs text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#123c73] dark:focus:border-[#bf0202] transition-all font-medium"
           />
           {searchQuery && (
@@ -1444,22 +1489,24 @@ export const Products: React.FC<ProductsProps> = ({
             <option value="all">ALL ITEMS</option>
             <option value="active">VISIBLE</option>
             <option value="inactive">HIDDEN</option>
+            <option value="limited">LIMITED STOCK</option>
             <option value="low_stock">LOW STOCK</option>
             <option value="unlimited">UNLIMITED STOCK</option>
           </select>
         </div>
       </div>
 
-      {/* Bulk actions sticky pin bar - only shown when more than 1 item is selected */}
+      {/* Product actions sticky pin bar - shown when one or more items are selected */}
       {location.pathname.startsWith('/sales/products') &&
         !isNavFloatingOpen &&
-        selectedProductIds.length > 1 &&
+        selectedProductIds.length >= 1 &&
         createPortal(
           <ProductBulkActions
             selectedCount={selectedProductIds.length}
             onClear={resetActionState}
             onPrint={() => setShowPrintModal(true)}
             onBulkEdit={handleBulkEditClick}
+            onRestock={() => setShowRestockModal(true)}
             onBulkDelete={() => setShowBulkDeleteModal(true)}
             isHidden={isNavFloatingOpen}
           />,
@@ -1707,7 +1754,8 @@ export const Products: React.FC<ProductsProps> = ({
                         </div>
                       </div>
 
-                      {isSelected && (
+                      {/* Only display barcode preview when exactly 1 product is selected (hide when multi-selecting) */}
+                      {isSelected && selectedProductIds.length === 1 && (
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1765,7 +1813,7 @@ export const Products: React.FC<ProductsProps> = ({
                           {product.barcode_id}
                           {product.manufacturer_barcode && (
                             <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-normal mt-1">
-                              MFG: {product.manufacturer_barcode}
+                              EXT: {product.manufacturer_barcode}
                             </span>
                           )}
                         </span>
@@ -1782,14 +1830,14 @@ export const Products: React.FC<ProductsProps> = ({
                         >
                           <button
                             onClick={() => handleEditClick(product)}
-                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
+                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             Edit Item
                           </button>
                           <button
                             onClick={() => setDeleteConfirmId(product.id)}
-                            className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+                            className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Remove
@@ -1801,7 +1849,7 @@ export const Products: React.FC<ProductsProps> = ({
                                 prev.filter((id) => id !== product.id)
                               );
                             }}
-                            className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
+                            className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
                             title="Close options"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -1980,6 +2028,30 @@ export const Products: React.FC<ProductsProps> = ({
         />
       )}
 
+      {/* Restock Products Editor Modal */}
+      {showRestockModal && (
+        <RestockProductsModal
+          isOpen={showRestockModal}
+          onClose={() => setShowRestockModal(false)}
+          products={products.filter((p) => p.has_stock_limit)}
+          allCatalogProducts={products}
+          onOpenStockMovements={() => setShowStockMovementModal(true)}
+          onRestockSuccess={() => {
+            setSelectedProductIds([]);
+            fetchProducts(true);
+          }}
+        />
+      )}
+
+      {/* Stock Movement History Modal */}
+      {showStockMovementModal && (
+        <StockMovementHistoryModal
+          isOpen={showStockMovementModal}
+          onClose={() => setShowStockMovementModal(false)}
+          onOpenRestockModal={() => setShowRestockModal(true)}
+        />
+      )}
+
       {/* Bulk Deletion Confirmation Modal */}
       {showBulkDeleteModal &&
         createPortal(
@@ -2111,7 +2183,7 @@ export const Products: React.FC<ProductsProps> = ({
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    Gym Code ({barcodeModalProduct.barcode_id})
+                    Internal Barcode ({barcodeModalProduct.barcode_id})
                   </button>
                   <button
                     type="button"
@@ -2122,7 +2194,7 @@ export const Products: React.FC<ProductsProps> = ({
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    MFG Barcode
+                    External Barcode
                   </button>
                 </div>
               )}
@@ -2146,8 +2218,8 @@ export const Products: React.FC<ProductsProps> = ({
                 <span className="text-[10px] font-mono font-black text-slate-700 uppercase tracking-widest mt-1">
                   {activeBarcodeTab === 'mfg' &&
                   barcodeModalProduct.manufacturer_barcode
-                    ? `MFG: ${barcodeModalProduct.manufacturer_barcode}`
-                    : barcodeModalProduct.barcode_id}
+                    ? `EXT: ${barcodeModalProduct.manufacturer_barcode}`
+                    : `INT: ${barcodeModalProduct.barcode_id}`}
                 </span>
               </div>
 

@@ -149,7 +149,7 @@ export const SalesScannerView: React.FC<SalesScannerViewProps> = ({
               <span className="font-mono text-xs text-slate-400">
                 {productData.barcodeId}
                 {productData.manufacturerBarcode &&
-                  ` (MFG: ${productData.manufacturerBarcode})`}
+                  ` (EXT: ${productData.manufacturerBarcode})`}
               </span>
             </div>
 

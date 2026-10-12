@@ -390,7 +390,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
       if (isCartMode && (result.type !== 'product' || !result.product)) {
         toast.error(
-          'Cart mode active: only product barcodes (PR-XXXX / MFG) are allowed.',
+          'Cart mode active: only product barcodes (PR-XXXX / External Barcode) are allowed.',
           { toastId: 'cart-only-products' }
         );
         return;
@@ -1433,7 +1433,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                       </h2>
                       <p className="text-[10px] text-slate-400 font-medium truncate max-w-50 sm:max-w-70">
                         {isCartMode
-                          ? `Cart Active (${productCart.reduce((s, i) => s + i.quantity, 0)} Items) • PR-XXXX & MFG`
+                          ? `Cart Active (${productCart.reduce((s, i) => s + i.quantity, 0)} Items) • PR-XXXX & External Barcode`
                           : scanMode === 'barcode'
                             ? 'Target 1D product barcodes in rectangular box'
                             : 'Target Member QR or Pre-Reg in square box'}
@@ -1814,9 +1814,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                       onChange={(e) => setManualCode(e.target.value)}
                       placeholder={
                         isCartMode
-                          ? 'ENTER PRODUCT BARCODE (PR-XXXX / MFG)...'
+                          ? 'ENTER PRODUCT BARCODE (PR-XXXX / EXTERNAL)...'
                           : scanMode === 'barcode'
-                            ? 'ENTER PRODUCT BARCODE / MFG ID...'
+                            ? 'ENTER PRODUCT BARCODE / EXTERNAL ID...'
                             : 'ENTER REG-ID, MEMBER ID, OR PHONE...'
                       }
                       className="w-full pl-10 pr-24 py-2.5 bg-zinc-900/90 backdrop-blur-xl border border-zinc-700/80 rounded-2xl text-[11px] sm:text-xs font-bold uppercase transition-all outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 text-white placeholder-zinc-400 shadow-xl"

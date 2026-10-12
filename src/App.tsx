@@ -387,7 +387,21 @@ export const App: React.FC = () => {
       window.location.hash.includes('refresh_token=');
 
     if (code || hasHashTokens) {
-      window.location.href = `com.wolfpalomar.gymmanagement://login${window.location.search}${window.location.hash}`;
+      const searchAndHash = `${window.location.search}${window.location.hash}`;
+      const customUrl = `com.wolfpalomar.gymmanagement://login${searchAndHash}`;
+      const intentUrl = `intent://login${searchAndHash}#Intent;scheme=com.wolfpalomar.gymmanagement;package=com.wolfpalomar.gymmanagement;end`;
+
+      // Try custom scheme first
+      window.location.href = customUrl;
+
+      // Fallback intent scheme for Android Chrome if custom scheme without gesture is blocked
+      const timer = setTimeout(() => {
+        try {
+          window.location.href = intentUrl;
+        } catch {}
+      }, 300);
+
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -396,6 +410,16 @@ export const App: React.FC = () => {
     if (!Capacitor.isNativePlatform()) return;
 
     let activeListener: any;
+    let browserCloseListener: any;
+
+    // Listen for in-app browser closing to re-verify session state immediately
+    Browser.addListener('browserFinished', async () => {
+      try {
+        await checkSession();
+      } catch {}
+    }).then((l) => {
+      browserCloseListener = l;
+    }).catch(() => {});
 
     const setupDeepLinkListener = async () => {
       activeListener = await CapApp.addListener('appUrlOpen', async (data) => {
@@ -417,7 +441,7 @@ export const App: React.FC = () => {
               const profile = useAuthStore.getState().profile;
               const target =
                 profile?.role === 'staff' ? '/sales' : '/dashboard';
-              window.location.href = target;
+              window.location.replace(target);
               return;
             }
           }
@@ -446,7 +470,7 @@ export const App: React.FC = () => {
               const profile = useAuthStore.getState().profile;
               const target =
                 profile?.role === 'staff' ? '/sales' : '/dashboard';
-              window.location.href = target;
+              window.location.replace(target);
             }
           }
         } catch (err) {
@@ -458,8 +482,11 @@ export const App: React.FC = () => {
     setupDeepLinkListener();
 
     return () => {
-      if (activeListener) {
+      if (activeListener?.remove) {
         activeListener.remove();
+      }
+      if (browserCloseListener?.remove) {
+        browserCloseListener.remove();
       }
     };
   }, [checkSession]);

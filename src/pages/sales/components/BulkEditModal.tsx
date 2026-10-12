@@ -1,5 +1,5 @@
 // src/pages/sales/components/BulkEditModal.tsx
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase/client';
 import { compressImage } from '../../../lib/imageCompressor';
@@ -14,6 +14,8 @@ import {
   Eye,
   EyeOff,
   RefreshCcw,
+  Wand2,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { logAudit } from '../../../lib/supabase/audit';
@@ -66,24 +68,27 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
     <tr
       className={`transition-colors relative ${
         modified
-          ? 'bg-blue-500/5 dark:bg-blue-500/5 border-l-2 border-blue-500'
-          : 'hover:bg-slate-100/30 dark:hover:bg-neutral-900/10'
+          ? 'bg-blue-500/10 dark:bg-blue-500/10 border-l-4 border-blue-600'
+          : 'hover:bg-slate-50 dark:hover:bg-white/5'
       }`}
     >
-      <td className="py-2.5 px-4 align-middle text-center">
+      {/* Modification Status Indicator */}
+      <td className="py-2.5 px-3 align-middle text-center w-14">
         {modified ? (
-          <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-500 font-extrabold text-[8px] uppercase tracking-wider animate-pulse">
+          <span className="inline-block px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-extrabold text-[10px] uppercase tracking-wider border border-blue-200 dark:border-blue-500/30">
             Edited
           </span>
         ) : (
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700" />
         )}
       </td>
 
-      <td className="py-2.5 px-4 align-middle text-center">
+      {/* Product Image */}
+      <td className="py-2.5 px-3 align-middle text-center w-14">
         <div
           onClick={() => rowUploadingId !== p.id && fileRef.current?.click()}
-          className="relative w-9 h-9 rounded-xl border border-(--border-color) bg-(--bg-page) flex items-center justify-center overflow-hidden cursor-pointer transition-opacity hover:opacity-85 mx-auto"
+          className="relative w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#161920] flex items-center justify-center overflow-hidden cursor-pointer transition-opacity hover:opacity-85 mx-auto"
+          title="Change image"
         >
           {rowUploadingId === p.id ? (
             <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
@@ -94,7 +99,7 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
               className="w-full h-full object-cover"
             />
           ) : (
-            <ImageIcon className="w-4 h-4 text-slate-500" />
+            <ImageIcon className="w-4 h-4 text-slate-400" />
           )}
           <input
             ref={fileRef}
@@ -109,11 +114,13 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
         </div>
       </td>
 
-      <td className="py-2.5 px-4 align-middle font-mono font-bold text-slate-500 dark:text-slate-455">
+      {/* Barcode ID */}
+      <td className="py-2.5 px-3 align-middle font-mono font-bold text-slate-600 dark:text-slate-300 w-28 text-xs">
         {p.barcode_id}
       </td>
 
-      <td className="py-2.5 px-4 align-middle">
+      {/* Product Name */}
+      <td className="py-2.5 px-3 align-middle">
         <input
           type="text"
           value={p.product_name}
@@ -126,18 +133,19 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
               )
             );
           }}
-          className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-medium"
+          className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
         />
       </td>
 
-      <td className="py-2.5 px-4 align-middle">
+      {/* Price */}
+      <td className="py-2.5 px-3 align-middle w-28">
         <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 font-semibold font-mono text-xs">
             ₱
           </span>
           <input
             type="number"
-            step="1"
+            step="0.01"
             min="0"
             value={p.selling_price}
             onChange={(e) => {
@@ -148,12 +156,13 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
-            className="w-full pl-6 pr-2 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-semibold font-mono"
+            className="w-full pl-6 pr-2 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono text-right"
           />
         </div>
       </td>
 
-      <td className="py-2.5 px-4 align-middle">
+      {/* Stock Type */}
+      <td className="py-2.5 px-3 align-middle w-32">
         <select
           value={p.has_stock_limit ? 'Limited' : 'Unlimited'}
           onChange={(e) => {
@@ -164,14 +173,15 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
               )
             );
           }}
-          className="w-full px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-bold"
+          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#151922] border border-slate-300 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none cursor-pointer font-semibold"
         >
           <option value="Unlimited">Unlimited</option>
           <option value="Limited">Limited</option>
         </select>
       </td>
 
-      <td className="py-2.5 px-4 align-middle">
+      {/* Stock Quantity */}
+      <td className="py-2.5 px-3 align-middle w-28 text-center">
         {p.has_stock_limit ? (
           <input
             type="number"
@@ -185,16 +195,15 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
-            className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
+            className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono text-center"
           />
         ) : (
-          <span className="text-[10px] font-bold text-slate-455 tracking-wider uppercase ml-1 block select-none">
-            Unlimited
-          </span>
+          <span className="text-slate-400 font-mono text-xs font-semibold">—</span>
         )}
       </td>
 
-      <td className="py-2.5 px-4 align-middle">
+      {/* Low Alert Threshold */}
+      <td className="py-2.5 px-3 align-middle w-28 text-center">
         {p.has_stock_limit ? (
           <input
             type="number"
@@ -209,69 +218,72 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
-            className="w-full px-3 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
+            className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-mono text-center"
           />
         ) : (
-          <span className="text-[10px] font-bold text-slate-455 tracking-wider uppercase ml-1 block select-none">
-            Disabled
-          </span>
+          <span className="text-slate-400 font-mono text-xs font-semibold">—</span>
         )}
       </td>
 
-      <td className="py-2.5 px-4 align-middle text-center">
+      {/* Visibility Status */}
+      <td className="py-2.5 px-3 align-middle text-center w-28">
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            const nextStatus: 'Active' | 'Inactive' =
-              p.status === 'Active' ? 'Inactive' : 'Active';
+          onClick={() => {
+            const next = p.status === 'Active' ? 'Inactive' : 'Active';
             setEditedProducts((prev) =>
               prev.map((item) =>
-                item.id === p.id ? { ...item, status: nextStatus } : item
+                item.id === p.id ? { ...item, status: next } : item
               )
             );
           }}
-          className={`relative z-10 px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1.5 select-none active:scale-95 ${
+          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border cursor-pointer transition-colors flex items-center justify-center gap-1.5 mx-auto w-24 ${
             p.status === 'Active'
-              ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/25'
-              : 'bg-slate-500/15 text-slate-400 border-slate-500/30 hover:bg-slate-500/25'
+              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
           }`}
-          title={
-            p.status === 'Active'
-              ? 'Status: Visible (Click to Hide)'
-              : 'Status: Hidden (Click to Show)'
-          }
         >
           {p.status === 'Active' ? (
             <>
-              <Eye className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Visible</span>
             </>
           ) : (
             <>
-              <EyeOff className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <EyeOff className="w-3.5 h-3.5 text-slate-500" />
               <span>Hidden</span>
             </>
           )}
         </button>
       </td>
 
-      <td className="py-2.5 px-4 align-middle text-center">
+      {/* Reset Row */}
+      <td className="py-2.5 px-3 align-middle text-center w-14">
         <button
           type="button"
           onClick={() => handleResetRow(p.id)}
           disabled={!modified}
-          className="p-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer inline-flex items-center justify-center"
+          className="p-1.5 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-[#151922] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 disabled:pointer-events-none transition-colors cursor-pointer"
+          title="Reset item changes"
         >
-          <RefreshCcw className="w-3.5 h-3.5" />
+          <RefreshCcw className="w-4 h-4" />
         </button>
       </td>
     </tr>
   );
 };
 
-// 2. MOBILE VIEW COMPONENT: Highly polished, fully aligned, vertical form cards
-const BulkEditCard: React.FC<BulkEditRowProps> = ({
+// 2. MOBILE CARD VIEW COMPONENT
+interface BulkEditCardProps {
+  p: EditState;
+  modified: boolean;
+  rowUploadingId: string | null;
+  onRowImageUpload: (id: string, file: File) => void;
+  setEditedProducts: React.Dispatch<React.SetStateAction<EditState[]>>;
+  handleResetRow: (id: string) => void;
+}
+
+const BulkEditCard: React.FC<BulkEditCardProps> = ({
   p,
   modified,
   rowUploadingId,
@@ -283,42 +295,28 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
 
   return (
     <div
-      className={`p-4 border rounded-2xl flex flex-col gap-4 transition-all duration-150 text-left bg-[var(--bg-card)] shrink-0 ${
+      className={`p-4 rounded-2xl border transition-all space-y-3.5 ${
         modified
-          ? 'border-blue-500 bg-blue-500/5 dark:bg-blue-500/5 shadow-xs'
-          : 'border-(--border-color)'
+          ? 'bg-blue-50/70 border-blue-300 dark:bg-blue-500/10 dark:border-blue-500/40 shadow-xs'
+          : 'bg-white dark:bg-[#151922] border-slate-200 dark:border-white/10'
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          {modified ? (
-            <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-500 font-extrabold text-[8px] uppercase tracking-wider animate-pulse">
-              Edited
-            </span>
-          ) : (
-            <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-[8px] uppercase tracking-wider">
-              Unchanged
-            </span>
-          )}
-          <span className="font-mono font-bold text-slate-500 dark:text-slate-400 text-xs">
-            {p.barcode_id}
-          </span>
-        </div>
-
+      {/* Top Header: Image + Name + Barcode + Modified badge */}
+      <div className="flex items-start gap-3">
         <div
           onClick={() => rowUploadingId !== p.id && fileRef.current?.click()}
-          className="relative w-10 h-10 rounded-xl border border-(--border-color) bg-(--bg-page) flex items-center justify-center overflow-hidden cursor-pointer"
+          className="relative w-12 h-12 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#1b202c] flex items-center justify-center overflow-hidden cursor-pointer shrink-0"
         >
           {rowUploadingId === p.id ? (
             <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
           ) : p.image_url ? (
             <img
               src={p.image_url}
-              alt="Cover"
+              alt="Thumbnail"
               className="w-full h-full object-cover"
             />
           ) : (
-            <ImageIcon className="w-4 h-4 text-slate-500" />
+            <ImageIcon className="w-5 h-5 text-slate-400" />
           )}
           <input
             ref={fileRef}
@@ -331,40 +329,48 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
             className="hidden"
           />
         </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-xs text-slate-600 dark:text-slate-300 font-bold truncate">
+              {p.barcode_id}
+            </span>
+            {modified && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 font-extrabold text-[10px] uppercase tracking-wider shrink-0 border border-blue-200 dark:border-blue-500/30">
+                Edited
+              </span>
+            )}
+          </div>
+          <input
+            type="text"
+            value={p.product_name}
+            maxLength={100}
+            onChange={(e) => {
+              const val = e.target.value;
+              setEditedProducts((prev) =>
+                prev.map((item) =>
+                  item.id === p.id ? { ...item, product_name: val } : item
+                )
+              );
+            }}
+            className="w-full mt-1.5 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
+          />
+        </div>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Product Name *
-        </label>
-        <input
-          type="text"
-          value={p.product_name}
-          maxLength={100}
-          onChange={(e) => {
-            const val = e.target.value;
-            setEditedProducts((prev) =>
-              prev.map((item) =>
-                item.id === p.id ? { ...item, product_name: val } : item
-              )
-            );
-          }}
-          className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-medium"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
+      {/* Row 1: Price and Visibility */}
+      <div className="grid grid-cols-2 gap-2.5">
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Price *
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            Selling Price
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold font-mono">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 font-semibold font-mono text-xs">
               ₱
             </span>
             <input
               type="number"
-              step="1"
+              step="0.01"
               min="0"
               value={p.selling_price}
               onChange={(e) => {
@@ -375,39 +381,39 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
                   )
                 );
               }}
-              className="w-full pl-6 pr-2 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-semibold font-mono"
+              className="w-full pl-7 pr-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono"
             />
           </div>
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Cashier Show
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            Visibility
           </label>
           <button
             type="button"
             onClick={() => {
-              const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
+              const next = p.status === 'Active' ? 'Inactive' : 'Active';
               setEditedProducts((prev) =>
                 prev.map((item) =>
-                  item.id === p.id ? { ...item, status: nextStatus } : item
+                  item.id === p.id ? { ...item, status: next } : item
                 )
               );
             }}
-            className={`w-full py-2 border rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
+            className={`w-full py-2 px-3 rounded-xl text-xs font-bold uppercase tracking-wider border cursor-pointer transition-colors flex items-center justify-center gap-1.5 min-h-[38px] ${
               p.status === 'Active'
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
             }`}
           >
             {p.status === 'Active' ? (
               <>
-                <Eye className="w-3.5 h-3.5 animate-pulse" />
+                <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Visible</span>
               </>
             ) : (
               <>
-                <EyeOff className="w-3.5 h-3.5" />
+                <EyeOff className="w-3.5 h-3.5 text-slate-500" />
                 <span>Hidden</span>
               </>
             )}
@@ -415,9 +421,10 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
         </div>
       </div>
 
+      {/* Row 2: Stock Type */}
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Stock Type
+        <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          Stock Limits
         </label>
         <select
           value={p.has_stock_limit ? 'Limited' : 'Unlimited'}
@@ -429,17 +436,18 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
               )
             );
           }}
-          className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-bold"
+          className="w-full px-3 py-2 bg-slate-50 dark:bg-[#12161f] border border-slate-300 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none cursor-pointer font-bold min-h-[38px]"
         >
-          <option value="Unlimited">Unlimited</option>
-          <option value="Limited">Limited</option>
+          <option value="Unlimited">Unlimited Stock</option>
+          <option value="Limited">Limited Stock (Track Units)</option>
         </select>
       </div>
 
+      {/* Row 3 (Conditional): Stock Count and Low Alert */}
       {p.has_stock_limit && (
-        <div className="grid grid-cols-2 gap-3 animate-slide-up">
+        <div className="grid grid-cols-2 gap-2.5">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               Stock Count
             </label>
             <input
@@ -454,13 +462,13 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
                   )
                 );
               }}
-              className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Low Warn Mark
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Low Alert
             </label>
             <input
               type="number"
@@ -475,21 +483,22 @@ const BulkEditCard: React.FC<BulkEditRowProps> = ({
                   )
                 );
               }}
-              className="w-full px-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-bold font-mono"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-mono"
             />
           </div>
         </div>
       )}
 
+      {/* Card Footer: Reset */}
       <div className="flex justify-end pt-1">
         <button
           type="button"
           onClick={() => handleResetRow(p.id)}
           disabled={!modified}
-          className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+          className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-[#12161f] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 disabled:pointer-events-none text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
         >
           <RefreshCcw className="w-3.5 h-3.5" />
-          <span>Reset Item</span>
+          <span>Reset</span>
         </button>
       </div>
     </div>
@@ -536,41 +545,71 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<
-    'all' | 'edited' | 'visible' | 'hidden'
+    'all' | 'edited' | 'limited' | 'unlimited' | 'visible' | 'hidden'
   >('all');
   const [saving, setSaving] = useState(false);
   const [rowUploadingId, setRowUploadingId] = useState<string | null>(null);
 
+  // Contained Batch Actions menu state
+  const [batchMenuOpen, setBatchMenuOpen] = useState(false);
+  const [batchTab, setBatchTab] = useState<'price' | 'stock' | 'visibility'>(
+    'price'
+  );
+  const batchMenuRef = useRef<HTMLDivElement>(null);
+
+  // Contained tool states
   const [quickVisibility, setQuickVisibility] = useState<'Active' | 'Inactive'>(
     'Active'
   );
-  const [quickStockType, setQuickHasStockLimit] = useState(false);
-
+  const [quickStockType, setQuickStockType] = useState<boolean>(true);
   const [priceAdjType, setPriceAdjType] = useState<
     'pct_inc' | 'pct_dec' | 'flat_inc' | 'flat_dec' | 'fixed'
   >('pct_inc');
   const [priceAdjValue, setPriceAdjValue] = useState('');
 
-  const isRowModified = (current: EditState) => {
-    const original = originalMap.get(current.id);
-    if (!original) return false;
+  // Close batch popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        batchMenuRef.current &&
+        !batchMenuRef.current.contains(e.target as Node)
+      ) {
+        setBatchMenuOpen(false);
+      }
+    };
+    if (batchMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [batchMenuOpen]);
 
-    const originalAlert = original.low_stock_alert?.toString() || '';
-    return (
-      current.product_name !== original.product_name ||
-      parseFloat(current.selling_price) !== original.selling_price ||
-      current.has_stock_limit !== original.has_stock_limit ||
-      (current.has_stock_limit &&
-        parseInt(current.stock_quantity) !== original.stock_quantity) ||
-      (current.has_stock_limit && current.low_stock_alert !== originalAlert) ||
-      current.status !== original.status ||
-      current.image_url !== original.image_url
-    );
-  };
+  const isRowModified = useCallback(
+    (current: EditState) => {
+      const original = originalMap.get(current.id);
+      if (!original) return false;
+
+      const originalAlert = original.low_stock_alert?.toString() || '';
+
+      return (
+        current.product_name !== original.product_name ||
+        parseFloat(current.selling_price) !== original.selling_price ||
+        current.has_stock_limit !== original.has_stock_limit ||
+        (current.has_stock_limit &&
+          parseInt(current.stock_quantity) !== original.stock_quantity) ||
+        (current.has_stock_limit &&
+          current.low_stock_alert !== originalAlert) ||
+        current.status !== original.status ||
+        current.image_url !== original.image_url
+      );
+    },
+    [originalMap]
+  );
 
   const modifiedCount = useMemo(() => {
     return editedProducts.filter(isRowModified).length;
-  }, [editedProducts]);
+  }, [editedProducts, isRowModified]);
 
   const handleResetRow = (id: string) => {
     const original = originalMap.get(id);
@@ -608,24 +647,28 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         image_url: p.image_url,
       }))
     );
+    toast.info('Reset all product edits.');
   };
 
+  // Contained batch actions handlers
   const handleApplyQuickVisibility = () => {
     setEditedProducts((prev) =>
       prev.map((p) => ({ ...p, status: quickVisibility }))
     );
-    toast.info(
-      `Updated visibility status to ${quickVisibility === 'Active' ? 'Visible' : 'Hidden'} for all rows.`
+    toast.success(
+      `Set visibility to ${quickVisibility === 'Active' ? 'Visible' : 'Hidden'} for all rows.`
     );
+    setBatchMenuOpen(false);
   };
 
   const handleApplyQuickStockType = () => {
     setEditedProducts((prev) =>
       prev.map((p) => ({ ...p, has_stock_limit: quickStockType }))
     );
-    toast.info(
-      `Updated stock tracking parameter to ${quickStockType ? 'Limited' : 'Unlimited'} for all rows.`
+    toast.success(
+      `Set stock tracking to ${quickStockType ? 'Limited' : 'Unlimited'} for all rows.`
     );
+    setBatchMenuOpen(false);
   };
 
   const handleApplyPriceAdjustment = () => {
@@ -662,8 +705,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       })
     );
 
-    toast.info('Applied price adjustments to selected items.');
+    toast.success('Applied batch price adjustments.');
     setPriceAdjValue('');
+    setBatchMenuOpen(false);
   };
 
   const handleRowImageUpload = async (id: string, file: File) => {
@@ -696,7 +740,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       toast.success('Image uploaded successfully.');
     } catch {
-      toast.error('Could not upload row cover image.');
+      toast.error('Could not upload image.');
     } finally {
       setRowUploadingId(null);
     }
@@ -713,11 +757,13 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       if (activeFilter === 'all') return true;
       if (activeFilter === 'edited') return isRowModified(p);
+      if (activeFilter === 'limited') return p.has_stock_limit;
+      if (activeFilter === 'unlimited') return !p.has_stock_limit;
       if (activeFilter === 'visible') return p.status === 'Active';
       if (activeFilter === 'hidden') return p.status === 'Inactive';
       return true;
     });
-  }, [editedProducts, searchQuery, activeFilter]);
+  }, [editedProducts, searchQuery, activeFilter, isRowModified]);
 
   const validationError = useMemo(() => {
     for (const p of editedProducts) {
@@ -736,7 +782,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         if (p.low_stock_alert.trim() !== '') {
           const alert = parseInt(p.low_stock_alert);
           if (isNaN(alert) || alert < 0)
-            return `Product "${p.product_name}" alert mark cannot be negative.`;
+            return `Product "${p.product_name}" alert threshold cannot be negative.`;
         }
       }
     }
@@ -757,50 +803,32 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
     try {
       setSaving(true);
-
       const auditDetails = modifiedItems
         .map((p) => {
           const original = originalMap.get(p.id);
           if (!original) return `"${p.product_name.trim()}"`;
 
           const changes: string[] = [];
-
           if (p.product_name.trim() !== original.product_name) {
-            changes.push(
-              `Name: "${original.product_name}" -> "${p.product_name.trim()}"`
-            );
+            changes.push(`Name: "${original.product_name}" -> "${p.product_name.trim()}"`);
           }
-
           const priceNum = parseFloat(p.selling_price);
           if (priceNum !== original.selling_price) {
-            changes.push(
-              `Price: ₱${original.selling_price.toFixed(2)} -> ₱${priceNum.toFixed(2)}`
-            );
+            changes.push(`Price: ₱${original.selling_price.toFixed(2)} -> ₱${priceNum.toFixed(2)}`);
           }
-
           if (p.status !== original.status) {
             changes.push(`Visibility: ${original.status} -> ${p.status}`);
           }
-
           if (p.has_stock_limit !== original.has_stock_limit) {
             changes.push(
               `Stock Type: ${original.has_stock_limit ? 'Limited' : 'Unlimited'} -> ${p.has_stock_limit ? 'Limited' : 'Unlimited'}`
             );
           } else if (p.has_stock_limit) {
-            const qtyNum = parseInt(p.stock_quantity) || 0;
-            if (qtyNum !== original.stock_quantity) {
-              changes.push(
-                `Stock Count: ${original.stock_quantity} -> ${qtyNum}`
-              );
-            }
-            const lowAlertOriginal = original.low_stock_alert?.toString() || '';
-            if (p.low_stock_alert !== lowAlertOriginal) {
-              changes.push(
-                `Low Alert Warning: ${lowAlertOriginal || 'None'} -> ${p.low_stock_alert || 'None'}`
-              );
+            const enteredStock = parseInt(p.stock_quantity) || 0;
+            if (enteredStock !== original.stock_quantity) {
+              changes.push(`Stock Count: ${original.stock_quantity} -> ${enteredStock}`);
             }
           }
-
           return `"${original.product_name}" [${changes.join(', ')}]`;
         })
         .join('; ');
@@ -810,9 +838,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
           product_name: p.product_name.trim(),
           selling_price: parseFloat(p.selling_price),
           has_stock_limit: p.has_stock_limit,
-          stock_quantity: p.has_stock_limit
-            ? parseInt(p.stock_quantity) || 0
-            : 0,
+          stock_quantity: p.has_stock_limit ? parseInt(p.stock_quantity) || 0 : 0,
           low_stock_alert:
             p.has_stock_limit && p.low_stock_alert.trim() !== ''
               ? parseInt(p.low_stock_alert)
@@ -826,20 +852,18 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       const results = await Promise.all(updatePromises);
       const errors = results.filter((r) => r.error);
-
       if (errors.length > 0) throw new Error('Bulk update failed');
-
-      toast.success(`Successfully saved ${modifiedItems.length} products.`);
 
       try {
         await logAudit(
           'BULK_PRODUCTS_UPDATED',
           `Updated ${modifiedItems.length} products via spreadsheet editor: ${auditDetails}`
         );
-      } catch (auditError) {
-        console.warn('Background audit logging failed silently:', auditError);
+      } catch (auditErr) {
+        console.warn('Audit logging skipped:', auditErr);
       }
 
+      toast.success(`Successfully saved ${modifiedItems.length} products.`);
       onSaveSuccess();
       onClose();
     } catch {
@@ -851,215 +875,321 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Uses React Portals to guarantee this modal mounts at the body root (z-index safe)
   return createPortal(
-    <div className="fixed inset-0 z-[16000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-xs text-(--color-text)">
-      <div className="bg-(--bg-card) border border-(--border-color) rounded-3xl w-[95vw] max-w-[1400px] h-[92vh] max-h-[95vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
-        {/* MODAL HEADER */}
-        <div className="px-6 py-4 border-b border-(--border-color) flex items-center justify-between shrink-0 bg-[var(--bg-card)]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20">
-              <SlidersHorizontal className="w-5 h-5 animate-pulse" />
+    <div className="fixed inset-0 z-[16000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-0 sm:p-4 text-xs text-(--color-text) animate-fade-in">
+      <div className="bg-(--bg-card) border border-(--border-color) rounded-none sm:rounded-3xl w-full max-w-7xl h-full sm:h-[94vh] max-h-[100vh] sm:max-h-[96vh] md:h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
+        {/* MODAL HEADER: Clean, unbothered, distinct Blue theme */}
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-(--border-color) flex items-center justify-between shrink-0 bg-white dark:bg-[#141820]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 flex items-center justify-center shadow-xs shrink-0">
+              <SlidersHorizontal className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-heading tracking-widest uppercase">
-                Spreadsheet Bulk Editor
-              </h2>
-              <span className="text-[10px] text-slate-455 font-bold block mt-0.5">
-                Quickly edit name, price, stock limits, and display settings for
-                selected items.
-              </span>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-heading font-extrabold tracking-wider uppercase text-slate-900 dark:text-white">
+                  Spreadsheet Bulk Editor
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300 font-mono text-[10px] font-bold border border-blue-200 dark:border-blue-500/30 hidden xs:inline-block">
+                  CATALOG EDITOR
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 font-normal mt-0.5">
+                Edit product names, pricing, stock tracking limits, and visibility in bulk.
+              </p>
             </div>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 bg-slate-100/5 hover:bg-slate-100/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer border border-white/5"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer active:scale-95 border border-slate-200 dark:border-white/10"
+            title="Close Editor"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* MODAL CONTENT WORKSPACE */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 flex flex-col min-h-0 bg-(--bg-page)">
-          {/* TOP TOOLBAR */}
-          <div className="hidden xl:grid grid-cols-1 xl:grid-cols-12 gap-4 shrink-0 bg-(--bg-card) border border-(--border-color) p-4 rounded-2xl shadow-sm">
-            <div className="xl:col-span-4 space-y-2.5">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        {/* WORKSPACE CONTENT */}
+        <div className="flex-1 flex flex-col min-h-0 p-3 sm:p-5 gap-3 bg-(--bg-page) overflow-hidden">
+          {/* RESPONSIVE TOP TOOLBAR: Clean and contained outside! */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 shrink-0">
+            {/* Search Input + Contained Batch Tools */}
+            <div className="flex items-center gap-2 flex-1">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search items by name or scan code..."
-                  className="w-full pl-9 pr-3 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 transition-all font-medium"
+                  placeholder="Search name or barcode..."
+                  className="w-full pl-9 pr-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium shadow-xs"
                 />
               </div>
 
-              <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                {(['all', 'edited', 'visible', 'hidden'] as const).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setActiveFilter(f)}
-                    className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer bg-slate-100 dark:bg-[#1e232d] text-slate-400 dark:text-slate-455 hover:bg-slate-200"
-                  >
-                    {f === 'all'
-                      ? 'All Selected'
-                      : f === 'edited'
-                        ? 'Edited Only'
-                        : f === 'visible'
-                          ? 'Visible'
-                          : 'Hidden'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Actions Panel */}
-            <div className="xl:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-3.5 border-t xl:border-t-0 xl:border-l border-(--border-color) pt-4 xl:pt-0 xl:pl-4">
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                  Set Visibility
-                </span>
-                <div className="flex gap-1.5">
-                  <select
-                    value={quickVisibility}
-                    onChange={(e) => setQuickVisibility(e.target.value as any)}
-                    className="flex-1 px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-semibold"
-                  >
-                    <option value="Active">Visible</option>
-                    <option value="Inactive">Hidden</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleApplyQuickVisibility}
-                    className="p-2 bg-blue-500 hover:bg-blue-600 rounded-xl text-white cursor-pointer transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                  Set Stock limits
-                </span>
-                <div className="flex gap-1.5">
-                  <select
-                    value={quickStockType ? 'Limited' : 'Unlimited'}
-                    onChange={(e) =>
-                      setQuickHasStockLimit(e.target.value === 'Limited')
-                    }
-                    className="flex-1 px-3 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none cursor-pointer font-semibold"
-                  >
-                    <option value="Unlimited">Unlimited</option>
-                    <option value="Limited">Limited</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleApplyQuickStockType}
-                    className="p-2 bg-blue-500 hover:bg-blue-600 rounded-xl text-white cursor-pointer transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                  Batch Price Adjuster
-                </span>
-                <div className="flex gap-1">
-                  <select
-                    value={priceAdjType}
-                    onChange={(e) => setPriceAdjType(e.target.value as any)}
-                    className="px-2 py-1.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-[10px] text-(--color-text) outline-none cursor-pointer font-bold w-24 shrink-0"
-                  >
-                    <option value="pct_inc">% Raise</option>
-                    <option value="pct_dec">% Lower</option>
-                    <option value="flat_inc">₱ Add</option>
-                    <option value="flat_dec">₱ Deduct</option>
-                    <option value="fixed">Set Fixed</option>
-                  </select>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Value"
-                    value={priceAdjValue}
-                    onChange={(e) => setPriceAdjValue(e.target.value)}
-                    className="flex-1 min-w-[50px] px-2 py-1.5 border border-(--border-color) rounded-xl bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-slate-400 font-semibold font-mono"
+              {/* CONTAINED BATCH TOOLS BUTTON & POPOVER */}
+              <div className="relative shrink-0" ref={batchMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setBatchMenuOpen(!batchMenuOpen)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border transition-all text-xs font-bold uppercase tracking-wider cursor-pointer shadow-xs ${
+                    batchMenuOpen
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white dark:bg-[#151922] border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Open batch modification tools"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Batch Tools</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform ${
+                      batchMenuOpen ? 'rotate-180' : ''
+                    }`}
                   />
-                  <button
-                    type="button"
-                    onClick={handleApplyPriceAdjustment}
-                    className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1 shrink-0"
-                  >
-                    Apply
-                  </button>
-                </div>
+                </button>
+
+                {/* Contained Popover Container */}
+                {batchMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-96 p-4 rounded-2xl bg-white dark:bg-[#151922] border border-slate-300 dark:border-white/10 shadow-2xl animate-scale-up text-xs">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-white/10 mb-3">
+                      <span className="font-heading font-extrabold uppercase tracking-wider text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Wand2 className="w-4 h-4 text-blue-500" />
+                        Contained Batch Tools
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBatchMenuOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Tabs: Price, Stock Limits, Visibility */}
+                    <div className="flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#10141c] border border-slate-200 dark:border-white/10 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setBatchTab('price')}
+                        className={`flex-1 py-1.5 text-xs font-bold uppercase rounded-lg transition-all ${
+                          batchTab === 'price'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Pricing
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBatchTab('stock')}
+                        className={`flex-1 py-1.5 text-xs font-bold uppercase rounded-lg transition-all ${
+                          batchTab === 'stock'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Stock Limits
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBatchTab('visibility')}
+                        className={`flex-1 py-1.5 text-xs font-bold uppercase rounded-lg transition-all ${
+                          batchTab === 'visibility'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Visibility
+                      </button>
+                    </div>
+
+                    {/* Tab 1: Price Adjuster */}
+                    {batchTab === 'price' && (
+                      <div className="space-y-2.5 animate-fade-in">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                          Adjust selling prices across all displayed product rows.
+                        </p>
+                        <div className="flex gap-1.5">
+                          <select
+                            value={priceAdjType}
+                            onChange={(e) => setPriceAdjType(e.target.value as any)}
+                            className="px-2.5 py-1.5 bg-slate-50 dark:bg-[#12161f] border border-slate-300 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white outline-none font-bold"
+                          >
+                            <option value="pct_inc">% Raise</option>
+                            <option value="pct_dec">% Lower</option>
+                            <option value="flat_inc">₱ Add</option>
+                            <option value="flat_dec">₱ Deduct</option>
+                            <option value="fixed">Set Fixed</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Amount / %"
+                            value={priceAdjValue}
+                            onChange={(e) => setPriceAdjValue(e.target.value)}
+                            className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs font-mono font-bold outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleApplyPriceAdjustment}
+                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                        >
+                          Apply Price Adjustment
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Tab 2: Stock Tracking Limit */}
+                    {batchTab === 'stock' && (
+                      <div className="space-y-2.5 animate-fade-in">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                          Toggle stock quantity tracking limits for all rows.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setQuickStockType(true)}
+                            className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                              quickStockType
+                                ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/20 dark:border-blue-500 dark:text-blue-400'
+                                : 'bg-slate-50 dark:bg-[#12161f] border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            Limited Stock
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickStockType(false)}
+                            className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                              !quickStockType
+                                ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/20 dark:border-blue-500 dark:text-blue-400'
+                                : 'bg-slate-50 dark:bg-[#12161f] border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            Unlimited Stock
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleApplyQuickStockType}
+                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                        >
+                          Set Stock Limits for All Rows
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Tab 3: Catalog Visibility */}
+                    {batchTab === 'visibility' && (
+                      <div className="space-y-2.5 animate-fade-in">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                          Set catalog visibility status for all rows at once.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setQuickVisibility('Active')}
+                            className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                              quickVisibility === 'Active'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500 dark:text-emerald-400'
+                                : 'bg-slate-50 dark:bg-[#12161f] border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            Visible (Active)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickVisibility('Inactive')}
+                            className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer transition-all ${
+                              quickVisibility === 'Inactive'
+                                ? 'bg-slate-200 text-slate-800 border-slate-400 dark:bg-slate-700 dark:border-slate-500 dark:text-slate-200'
+                                : 'bg-slate-50 dark:bg-[#12161f] border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            Hidden (Inactive)
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleApplyQuickVisibility}
+                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                        >
+                          Set Visibility for All Rows
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Horizontal Scroll Filter Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 py-0.5">
+              {(
+                [
+                  { id: 'all', label: 'All' },
+                  { id: 'edited', label: `Edited (${modifiedCount})` },
+                  { id: 'limited', label: 'Limited' },
+                  { id: 'unlimited', label: 'Unlimited' },
+                  { id: 'visible', label: 'Visible' },
+                  { id: 'hidden', label: 'Hidden' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setActiveFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
+                    activeFilter === f.id
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white dark:bg-[#151922] border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* MOBILE/TABLET VIEW */}
-          <div className="md:hidden flex flex-col gap-4 overflow-y-auto no-scrollbar pb-[100px] flex-1">
-            {displayedProducts.map((p) => {
-              const modified = isRowModified(p);
-              return (
-                <BulkEditCard
-                  key={p.id}
-                  p={p}
-                  modified={modified}
-                  rowUploadingId={rowUploadingId}
-                  onRowImageUpload={handleRowImageUpload}
-                  setEditedProducts={setEditedProducts}
-                  handleResetRow={handleResetRow}
-                />
-              );
-            })}
-          </div>
-
-          {/* DESKTOP VIEW */}
-          <div className="hidden md:flex flex-col flex-1 border border-(--border-color) rounded-2xl overflow-hidden bg-(--bg-card) min-h-0">
+          {/* DESKTOP SPREADSHEET TABLE (md and above) */}
+          <div className="hidden md:flex flex-col flex-1 border border-(--border-color) rounded-2xl overflow-hidden bg-white dark:bg-[#141820] min-h-0 shadow-xs">
             <div className="flex-1 overflow-auto no-scrollbar">
-              <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
-                <thead className="sticky top-0 z-30 bg-slate-100 dark:bg-[#13161a] border-b border-(--border-color)">
+              <table className="w-full text-left text-xs border-collapse min-w-[950px]">
+                <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#1a1f2c] border-b border-slate-200 dark:border-white/10">
                   <tr>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-14 text-center">
                       Status
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-14 text-center">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-14 text-center">
                       Image
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-28">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-28">
                       Barcode ID
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300">
                       Product Name *
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-blue-700 dark:text-blue-400 w-28 text-right">
                       Price *
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-36">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-32">
                       Stock Type
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-28 text-center">
                       Quantity
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-32">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-28 text-center">
                       Low Alert
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-28 text-center">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-28 text-center">
                       Visibility
                     </th>
-                    <th className="py-3 px-4 text-slate-400 uppercase font-bold tracking-wider w-16 text-center">
+                    <th className="py-3 px-3 uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 w-14 text-center">
                       Reset
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-(--border-color)">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {displayedProducts.map((p) => {
                     const modified = isRowModified(p);
                     return (
@@ -1078,41 +1208,68 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               </table>
             </div>
           </div>
+
+          {/* MOBILE CARDS VIEW (below md) */}
+          <div className="md:hidden flex-1 overflow-y-auto no-scrollbar space-y-3 pb-4">
+            {displayedProducts.map((p) => {
+              const modified = isRowModified(p);
+              return (
+                <BulkEditCard
+                  key={p.id}
+                  p={p}
+                  modified={modified}
+                  rowUploadingId={rowUploadingId}
+                  onRowImageUpload={handleRowImageUpload}
+                  setEditedProducts={setEditedProducts}
+                  handleResetRow={handleResetRow}
+                />
+              );
+            })}
+          </div>
         </div>
 
         {/* MODAL FOOTER */}
-        <div className="px-6 py-4 border-t border-(--border-color) flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 bg-[var(--bg-card)]">
-          <div className="flex items-center gap-1.5 justify-center md:justify-start w-full md:w-auto">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-t border-(--border-color) flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 bg-slate-50 dark:bg-[#12161f]">
+          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 text-xs uppercase font-bold tracking-wider">
             <Info className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="text-[10px] text-slate-500 dark:text-slate-405 font-semibold uppercase tracking-wider">
-              {editedProducts.length} Selected • {modifiedCount} Changed
+            <span>
+              {editedProducts.length} items total • {modifiedCount} modified
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:flex md:items-center gap-2.5 w-full md:w-auto">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 border border-(--border-color) text-slate-500 dark:text-slate-400 bg-(--bg-card) hover:opacity-90 rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer text-center"
-            >
-              Cancel
-            </button>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
               type="button"
               onClick={handleResetAll}
               disabled={modifiedCount === 0}
-              className="px-4 py-2.5 border border-slate-200 dark:border-white/10 text-slate-500 bg-slate-200/5 hover:opacity-90 disabled:opacity-30 disabled:pointer-events-none rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer text-center"
+              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#1a1f2c] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none text-xs font-bold uppercase tracking-wider cursor-pointer"
             >
               Reset All
             </button>
             <button
               type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#1a1f2c] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 text-xs font-bold uppercase tracking-wider cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
               onClick={handleSaveAll}
               disabled={saving || modifiedCount === 0}
-              className="col-span-2 md:col-span-1 px-5 py-2.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-30 disabled:pointer-events-none text-white rounded-xl text-[10px] font-heading tracking-wider uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 font-bold text-center"
+              className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-30 disabled:pointer-events-none text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95"
             >
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Save Changes
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving Changes...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Save Changes ({modifiedCount})</span>
+                </>
+              )}
             </button>
           </div>
         </div>

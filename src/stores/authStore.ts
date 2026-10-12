@@ -694,7 +694,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         if (error) throw error;
         if (data?.url) {
-          await Browser.open({ url: data.url, windowName: '_system' });
+          await Browser.open({ url: data.url });
         }
       } else {
         const { error } = await supabase.auth.signInWithOAuth({

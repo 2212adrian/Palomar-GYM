@@ -1,6 +1,6 @@
 // src/pages/sales/components/ProductBulkActions.tsx
 import React from 'react';
-import { X, Pencil, Trash2, Printer } from 'lucide-react';
+import { X, Pencil, Trash2, Printer, Boxes } from 'lucide-react';
 import { useNavbarStore } from '../../../stores/useNavbarStore';
 
 interface ProductBulkActionsProps {
@@ -8,6 +8,7 @@ interface ProductBulkActionsProps {
   onClear: () => void;
   onPrint: () => void;
   onBulkEdit: () => void;
+  onRestock?: () => void;
   onBulkDelete: () => void;
   isHidden?: boolean;
 }
@@ -17,13 +18,14 @@ export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
   onClear,
   onPrint,
   onBulkEdit,
+  onRestock,
   onBulkDelete,
   isHidden = false,
 }) => {
   const isNavFloatingOpen =
     Boolean(useNavbarStore((s) => s.activeFloating)) || isHidden;
 
-  if (selectedCount <= 1) {
+  if (selectedCount < 1) {
     return null;
   }
 
@@ -58,10 +60,22 @@ export const ProductBulkActions: React.FC<ProductBulkActionsProps> = ({
           <span className="text-[10px] font-bold">Print</span>
         </button>
 
+        {onRestock && (
+          <button
+            type="button"
+            onClick={onRestock}
+            className="hidden md:flex px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer items-center gap-1 transition-colors border border-emerald-500/20 active:scale-95"
+            title="Restock Selected Limited Products"
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-bold">Restock</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onBulkEdit}
-          className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors border border-emerald-500/20 active:scale-95"
+          className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors border border-(--border-color) active:scale-95"
           title="Edit Items"
         >
           <Pencil className="w-3.5 h-3.5" />

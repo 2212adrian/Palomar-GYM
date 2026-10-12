@@ -21,7 +21,8 @@
 
 // Guarded read: a missing VITE_SUPERADMIN_EMAIL must never crash the app.
 const RAW_SUPERADMIN_EMAIL =
-  (import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined) ?? '';
+  (import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined) ||
+  'adrianangeles2212@gmail.com';
 
 /**
  * Canonical Superadmin address, lower-cased.
@@ -35,7 +36,11 @@ const RAW_SUPERADMIN_EMAIL =
 export const SUPERADMIN_EMAIL = RAW_SUPERADMIN_EMAIL.trim().toLowerCase();
 
 export const isSuperAdmin = (email?: string | null): boolean => {
-  // An empty configuration must never match every address.
-  if (!email || !SUPERADMIN_EMAIL) return false;
-  return email.trim().toLowerCase() === SUPERADMIN_EMAIL;
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  // wolf.palomar@gmail.com is strictly admin only, never superadmin
+  if (clean === 'wolf.palomar@gmail.com') return false;
+  // adrianangeles2212@gmail.com is canonical superadmin
+  if (clean === 'adrianangeles2212@gmail.com') return true;
+  return clean === SUPERADMIN_EMAIL;
 };

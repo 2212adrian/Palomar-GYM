@@ -34,16 +34,45 @@ export const UserManagement: React.FC = () => {
   const { user, profile } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
 
-  // ─── Superadmin identity resolution (Pure ENV / Constant fallback) ──────
-  const superAdminEmail = (
-    import.meta.env.VITE_SUPERADMIN_EMAIL || SUPERADMIN_EMAIL
+  // ─── Superadmin identity resolution (Dynamic ENV, Constant, & DB config) ──
+  const [dbSuperAdminEmail, setDbSuperAdminEmail] = useState<string>('');
+
+  useEffect(() => {
+    supabase
+      .from('system_config')
+      .select('value')
+      .eq('key', 'superadmin_email')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          const clean = String(data.value).replace(/^"|"$/g, '').trim().toLowerCase();
+          if (clean) setDbSuperAdminEmail(clean);
+        }
+      });
+  }, []);
+
+  const envSuperAdminEmail = (
+    import.meta.env.VITE_SUPERADMIN_EMAIL || SUPERADMIN_EMAIL || 'adrianangeles2212@gmail.com'
   )
     .trim()
     .toLowerCase();
 
+  const isEmailSuperAdmin = (emailCandidate?: string | null) => {
+    if (!emailCandidate) return false;
+    const clean = emailCandidate.trim().toLowerCase();
+    // wolf.palomar@gmail.com is admin only, never superadmin
+    if (clean === 'wolf.palomar@gmail.com') return false;
+    // adrianangeles2212@gmail.com is always superadmin
+    if (clean === 'adrianangeles2212@gmail.com') return true;
+    if (envSuperAdminEmail && envSuperAdminEmail !== 'wolf.palomar@gmail.com' && clean === envSuperAdminEmail) return true;
+    if (dbSuperAdminEmail && dbSuperAdminEmail !== 'wolf.palomar@gmail.com' && clean === dbSuperAdminEmail) return true;
+    if (SUPERADMIN_EMAIL && SUPERADMIN_EMAIL !== 'wolf.palomar@gmail.com' && clean === SUPERADMIN_EMAIL) return true;
+    return false;
+  };
+
   const viewerEmail = (user?.email || '').trim().toLowerCase();
   const viewerIsSuperAdmin = Boolean(
-    viewerEmail && viewerEmail === superAdminEmail
+    viewerEmail && isEmailSuperAdmin(viewerEmail)
   );
 
   const isAdmin = userRole === 'admin' || viewerIsSuperAdmin;
@@ -697,25 +726,53 @@ export const UserManagement: React.FC = () => {
     });
   };
 
+  const isSuperAdminAccount = (account?: any) => {
+    if (!account) return false;
+    const emailCandidate = (account.id === user?.id ? user?.email : account.email) || account.email;
+    const cleanEmail = (emailCandidate || '').trim().toLowerCase();
+    if (cleanEmail === 'wolf.palomar@gmail.com') return false;
+    if (cleanEmail === 'adrianangeles2212@gmail.com') return true;
+    if (isEmailSuperAdmin(cleanEmail)) return true;
+    if (typeof account.username === 'string' && account.username.trim().toUpperCase().includes('SUPERADMIN')) return true;
+    if (typeof account.role === 'string' && account.role.trim().toUpperCase().includes('SUPERADMIN')) return true;
+    return false;
+  };
+
   const isSuperAdminRow = (rowEmail?: string | null) =>
-    Boolean(rowEmail && rowEmail.trim().toLowerCase() === superAdminEmail);
+    isEmailSuperAdmin(rowEmail);
 
   const systemUsers = usersList.filter((u) => {
-    if (viewerIsSuperAdmin) return true;
-    const rowEmail = u.id === user?.id ? user?.email : u.email;
-    return !isSuperAdminRow(rowEmail);
+    // If account has SUPERADMIN role or is Superadmin (including adrianangeles2212@gmail.com), DO NOT BE VISIBLE!
+    const email = (u.email || '').trim().toLowerCase();
+    if (email === 'adrianangeles2212@gmail.com') return false;
+    if (isEmailSuperAdmin(email)) return false;
+    if (isSuperAdminAccount(u)) return false;
+    const roleStr = String(u.role || '').toUpperCase();
+    if (roleStr.includes('SUPERADMIN')) return false;
+    const usernameStr = String(u.username || '').toUpperCase();
+    if (usernameStr.includes('SUPERADMIN')) return false;
+    return true;
   });
 
   const currentUserIncluded = systemUsers.some((u) => u.id === user?.id);
   if (!currentUserIncluded && profile) {
-    systemUsers.unshift({
-      id: user?.id,
-      username: profile.username || 'Current User',
-      role: profile.role,
-      avatar_url: profile.avatar_url,
-      email: user?.email,
-      is_self: true,
-    });
+    const isSelfSuperAdmin =
+      isSuperAdminAccount({ id: user?.id, email: user?.email, role: profile.role, username: profile.username }) ||
+      (user?.email || '').trim().toLowerCase() === 'adrianangeles2212@gmail.com' ||
+      String(profile.role || '').toUpperCase().includes('SUPERADMIN') ||
+      String(profile.username || '').toUpperCase().includes('SUPERADMIN');
+
+    // Only include self if self is NOT superadmin
+    if (!isSelfSuperAdmin) {
+      systemUsers.unshift({
+        id: user?.id,
+        username: profile.username || 'Current User',
+        role: profile.role,
+        avatar_url: profile.avatar_url,
+        email: user?.email,
+        is_self: true,
+      });
+    }
   }
 
   const columns: Column<any>[] = [
@@ -777,8 +834,10 @@ export const UserManagement: React.FC = () => {
       render: (u) => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
+        const cleanEmail = displayEmail.trim().toLowerCase();
 
-        if (isSuperAdminRow(displayEmail)) {
+        // wolf.palomar@gmail.com is strictly admin, never superadmin
+        if (cleanEmail !== 'wolf.palomar@gmail.com' && isSuperAdminRow(displayEmail)) {
           return (
             <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
               superadmin
@@ -789,35 +848,49 @@ export const UserManagement: React.FC = () => {
         const draft = drafts[u.id];
         const isModified =
           draft && draft.role !== undefined && draft.role !== u.role;
-        const currentRole = draft?.role || u.role || 'staff';
+        const rawRole = u.role || 'staff';
+        // Ensure wolf.palomar is tagged as admin even if database profile was set to superadmin
+        const effectiveBaseRole =
+          cleanEmail === 'wolf.palomar@gmail.com'
+            ? 'admin'
+            : rawRole.toLowerCase() === 'superadmin'
+              ? 'admin'
+              : rawRole;
+        const currentRole = draft?.role || effectiveBaseRole;
 
-        const getRoleBadge = (role: string) => (
-          <span
-            className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
-              role === 'admin'
-                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-            }`}
-          >
-            {role}
-          </span>
-        );
+        const getRoleBadge = (role: string) => {
+          const displayRole =
+            cleanEmail === 'wolf.palomar@gmail.com' && role.toLowerCase() === 'superadmin'
+              ? 'admin'
+              : role;
+          return (
+            <span
+              className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
+                displayRole === 'admin'
+                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+              }`}
+            >
+              {displayRole}
+            </span>
+          );
+        };
 
         if (isSelfUser) {
-          return getRoleBadge(u.role || 'staff');
+          return getRoleBadge(effectiveBaseRole);
         }
 
         return (
           <button
             type="button"
-            onClick={() => handleToggleUserRole(u.id, u.role || 'staff')}
+            onClick={() => handleToggleUserRole(u.id, effectiveBaseRole as any)}
             title="Click to toggle account role draft"
             className="hover:opacity-85 cursor-pointer text-left transition-opacity"
           >
             {isModified ? (
               <div className="flex items-center gap-1.5">
                 <span className="opacity-40 line-through scale-90 origin-left block">
-                  {getRoleBadge(u.role || 'staff')}
+                  {getRoleBadge(effectiveBaseRole)}
                 </span>
                 <span className="text-[10px] text-blue-500 font-bold">→</span>
                 <span className="animate-pulse block">
@@ -917,7 +990,7 @@ export const UserManagement: React.FC = () => {
           );
         }
 
-        const isTargetSuperAdmin = isSuperAdminRow(u.email);
+        const isTargetSuperAdmin = isSuperAdminAccount(u);
         const isProtectedAdmin =
           u.role === 'admin' && u.status === 'active' && !viewerIsSuperAdmin;
         const isNoEmailAccount =

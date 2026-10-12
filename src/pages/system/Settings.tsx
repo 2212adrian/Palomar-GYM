@@ -527,14 +527,18 @@ export default function Settings() {
       </div>
 
       {/* Main Split-View Area */}
-      <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-visible xl:overflow-hidden">
         {/* Mobile / Tablet Navigation List */}
         <div
+          style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
           className={`${
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
-          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-12`}
+          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-16 touch-pan-y`}
         >
-          <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
+          <nav
+            style={{ touchAction: 'pan-y' }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0 touch-pan-y"
+          >
             {visibleTabs.map((tab: TabItem) => {
               const Icon = tab.icon;
               const isActive = activeTabId === tab.id;
@@ -542,10 +546,11 @@ export default function Settings() {
                 <button
                   key={tab.id}
                   onClick={() => handleTabClick(tab.id)}
-                  className={`group flex items-center justify-between p-4 rounded-xl border transition-all duration-200 cursor-pointer active:scale-95 text-left ${
+                  style={{ touchAction: 'pan-y' }}
+                  className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left touch-pan-y ${
                     isActive
                       ? 'bg-blue-600 dark:bg-red-600 text-white border-blue-600 dark:border-red-600 shadow-md'
-                      : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-red-500 hover:bg-blue-500/5 dark:hover:bg-red-500/10'
+                      : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-red-500 hover:bg-blue-500/5 dark:hover:bg-red-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
                   }`}
                 >
                   <div className="flex items-center gap-4">
@@ -593,7 +598,8 @@ export default function Settings() {
             {/* Dynamic Theme Toggle in Mobile List */}
             <button
               onClick={toggleTheme}
-              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all duration-200 cursor-pointer text-left active:scale-95"
+              style={{ touchAction: 'pan-y' }}
+              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-colors duration-150 cursor-pointer text-left touch-pan-y"
             >
               <div className="flex items-center gap-4">
                 <div className="p-2 rounded-lg bg-white dark:bg-[#111315] border border-slate-200/50 dark:border-white/5 shadow-xs">

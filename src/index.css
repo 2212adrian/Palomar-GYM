@@ -852,6 +852,14 @@ select:focus {
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* Ensure buttons inside touch-pan-y containers allow vertical scrolling gestures */
+  .touch-pan-y,
+  .touch-pan-y button,
+  .touch-pan-y [role="button"],
+  .touch-pan-y a {
+    touch-action: pan-y !important;
+  }
+
   /* 2. Strip costly backdrop-filter passes on mobile GPUs to maintain 60fps */
   *,
   *::before,

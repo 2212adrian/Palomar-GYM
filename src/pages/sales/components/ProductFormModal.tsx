@@ -1011,12 +1011,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               )}
             </div>
 
-            {/* SECTION 3: IMAGE & BARCODE */}
+            {/* SECTION 3: IMAGE & EXTERNAL BARCODE */}
             <div className="p-3 sm:p-4 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-2.5 min-w-0">
               <div className="flex items-center justify-between gap-1 min-w-0">
                 <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/70 flex items-center gap-1.5 truncate">
                   <Barcode className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202] shrink-0" />
-                  Image & Barcode
+                  Image & External Barcode
                 </span>
                 <span className="text-[10px] text-(--color-text)/50 font-medium shrink-0">
                   Optional
@@ -1091,7 +1091,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   <div className="relative min-w-0">
                     <input
                       type="text"
-                      placeholder="Paste barcode or image URL..."
+                      placeholder="Paste external barcode or image URL..."
                       value={combinedInput}
                       onChange={(e) =>
                         handleCombinedInputChange(e.target.value)
@@ -1114,7 +1114,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <div className="flex items-center justify-between gap-2 p-2 bg-(--bg-card) border border-(--border-color) rounded-xl min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
                     <span className="text-[9px] font-bold text-(--color-text)/50 uppercase shrink-0">
-                      Barcode:
+                      External Barcode:
                     </span>
                     <span className="font-mono font-bold text-xs text-[#123c73] dark:text-[#bf0202] truncate max-w-[130px] sm:max-w-none">
                       {formManufacturerBarcode}
