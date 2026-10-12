@@ -224,7 +224,7 @@ export const OfflinePopup: React.FC = () => {
 
         {/* Offline Pulsing Indicator */}
         {!isRestored && (
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 via-rose-500 to-red-600 animate-pulse" />
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 via-rose-500 to-red-600 " />
         )}
 
         {/* Dismiss 'X' Button */}
@@ -275,7 +275,7 @@ export const OfflinePopup: React.FC = () => {
           ) : (
             <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">
               <svg
-                className="w-5 h-5 animate-pulse"
+                className="w-5 h-5 "
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"

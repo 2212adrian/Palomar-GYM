@@ -64,6 +64,7 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard } from '../../components/ui/TimelineCard';
 import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { SideNavTab } from '../../components/ui/SideNavTab';
+import { syncTableDeltas } from '../../lib/cacheUtils';
 
 // ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
 const DynamicBanknoteIcon: React.FC<{
@@ -222,7 +223,7 @@ const formatSalesToastTitle = (tx: any) => {
 
 const TransactionSkeleton: React.FC = () => {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
+    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4  select-none">
       <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
         <div className="flex flex-col items-center gap-1.5 shrink-0">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
@@ -457,7 +458,7 @@ export const Sales: React.FC = () => {
   const fetchRatesConfig = async () => {
     const cacheKey = 'palomar_rates_config_cache';
     try {
-      const cached = localStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         setRatesConfig(JSON.parse(cached));
       }
@@ -474,7 +475,7 @@ export const Sales: React.FC = () => {
       if (!error && data) {
         setRatesConfig(data);
         try {
-          localStorage.setItem(cacheKey, JSON.stringify(data));
+          sessionStorage.setItem(cacheKey, JSON.stringify(data));
         } catch {
           // ignore quota error
         }
@@ -490,7 +491,7 @@ export const Sales: React.FC = () => {
       const sessionsCacheKey = 'sales_closed_sessions_cache';
 
       if (!isBackground) {
-        const cachedClosed = localStorage.getItem(sessionsCacheKey);
+        const cachedClosed = sessionStorage.getItem(sessionsCacheKey);
         if (cachedClosed) {
           try {
             const parsedClosed = JSON.parse(cachedClosed);
@@ -502,8 +503,7 @@ export const Sales: React.FC = () => {
           }
         }
 
-        const cachedSales =
-          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+        const cachedSales = sessionStorage.getItem(cacheKey);
         if (cachedSales) {
           try {
             const parsed = JSON.parse(cachedSales);
@@ -519,28 +519,41 @@ export const Sales: React.FC = () => {
       }
 
       try {
-        try {
-          const { data: closedSessionsData } = await supabase
-            .from('cash_sessions')
-            .select(
-              'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
-            )
-            .eq('status', 'closed')
-            .order('closed_at', { ascending: false });
+        const lastFetchedSessions = Number(
+          sessionStorage.getItem('sales_closed_sessions_last_fetched') || '0'
+        );
+        const shouldFetchSessions =
+          Date.now() - lastFetchedSessions > 300000 ||
+          closedSessionsList.length === 0;
 
-          if (closedSessionsData) {
-            setClosedSessionsList(closedSessionsData);
-            try {
-              localStorage.setItem(
-                sessionsCacheKey,
-                JSON.stringify(closedSessionsData)
+        if (shouldFetchSessions) {
+          try {
+            const { data: closedSessionsData } = await supabase
+              .from('cash_sessions')
+              .select(
+                'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+              )
+              .eq('status', 'closed')
+              .order('closed_at', { ascending: false });
+
+            if (closedSessionsData) {
+              setClosedSessionsList(closedSessionsData);
+              sessionStorage.setItem(
+                'sales_closed_sessions_last_fetched',
+                String(Date.now())
               );
-            } catch {
-              // ignore storage error
+              try {
+                sessionStorage.setItem(
+                  sessionsCacheKey,
+                  JSON.stringify(closedSessionsData)
+                );
+              } catch {
+                // ignore storage error
+              }
             }
+          } catch {
+            // Offline fallback handled via cachedClosed above
           }
-        } catch {
-          // Offline fallback handled via cachedClosed above
         }
 
         let freshTransactions: any[] | null = null;
@@ -629,15 +642,13 @@ export const Sales: React.FC = () => {
         if (freshTransactions) {
           setTransactions(freshTransactions);
           const serialized = JSON.stringify(freshTransactions);
-          sessionStorage.setItem(cacheKey, serialized);
           try {
-            localStorage.setItem(cacheKey, serialized);
+            sessionStorage.setItem(cacheKey, serialized);
           } catch {
             // ignore storage quota errors
           }
         } else {
-          const offlineSales =
-            localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+          const offlineSales = sessionStorage.getItem(cacheKey);
           if (offlineSales) {
             try {
               const parsed = JSON.parse(offlineSales);
@@ -667,36 +678,27 @@ export const Sales: React.FC = () => {
   );
 
   const fetchProducts = useCallback(async () => {
-    const cacheKey = 'products_sanitized_list';
-    const cached =
-      sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          setProducts(parsed);
-        }
-      } catch {
-        // ignore parse error
-      }
-    }
-
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .is('deleted_at', null)
-        .order('product_name', { ascending: true });
-      if (error) throw error;
-      if (data) {
-        setProducts(data);
-        const serialized = JSON.stringify(data);
-        sessionStorage.setItem(cacheKey, serialized);
-        try {
-          localStorage.setItem(cacheKey, serialized);
-        } catch {
-          // ignore storage quota errors
+      const data = await syncTableDeltas<any>(
+        'products',
+        async (sinceIso) => {
+          let query = supabase.from('products').select('*');
+          if (sinceIso) {
+            query = query.gt('updated_at', sinceIso);
+          } else {
+            query = query.is('deleted_at', null);
+          }
+          return await query.order('product_name', { ascending: true });
         }
+      );
+
+      if (data) {
+        const activeProducts = data
+          .filter((p: any) => !p.deleted_at)
+          .sort((a: any, b: any) =>
+            (a.product_name || '').localeCompare(b.product_name || '')
+          );
+        setProducts(activeProducts);
       }
     } catch (err) {
       console.error('Error loading products list:', err);
@@ -710,19 +712,27 @@ export const Sales: React.FC = () => {
 
     const channelId = `sales_rt_${dateStr}_${Date.now()}`;
     let salesThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+    let productsThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
     const triggerSalesRefresh = () => {
-      if (isBatterySaver && document.hidden) return;
-      if (isBatterySaver) {
-        if (salesThrottleTimer) return;
-        salesThrottleTimer = setTimeout(() => {
-          salesThrottleTimer = null;
-          sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
-          fetchTransactions(true);
-        }, 10000);
-        return;
-      }
-      sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
-      fetchTransactions(true);
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (salesThrottleTimer) clearTimeout(salesThrottleTimer);
+      const delayMs = isBatterySaver ? 10000 : 1500;
+      salesThrottleTimer = setTimeout(() => {
+        salesThrottleTimer = null;
+        sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+        fetchTransactions(true);
+      }, delayMs);
+    };
+
+    const triggerProductsRefresh = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (productsThrottleTimer) clearTimeout(productsThrottleTimer);
+      const delayMs = isBatterySaver ? 10000 : 2000;
+      productsThrottleTimer = setTimeout(() => {
+        productsThrottleTimer = null;
+        fetchProducts();
+      }, delayMs);
     };
 
     const salesChannel = supabase
@@ -739,10 +749,7 @@ export const Sales: React.FC = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
-        () => {
-          if (isBatterySaver && document.hidden) return;
-          fetchProducts();
-        }
+        triggerProductsRefresh
       )
       .subscribe();
 
@@ -752,7 +759,7 @@ export const Sales: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cash_sessions' },
         () => {
-          if (isBatterySaver && document.hidden) return;
+          sessionStorage.removeItem('sales_closed_sessions_last_fetched');
           loadHistory();
           triggerSalesRefresh();
         }
@@ -761,6 +768,7 @@ export const Sales: React.FC = () => {
 
     return () => {
       if (salesThrottleTimer) clearTimeout(salesThrottleTimer);
+      if (productsThrottleTimer) clearTimeout(productsThrottleTimer);
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(productsChannel);
       supabase.removeChannel(sessionsChannel);
@@ -999,7 +1007,6 @@ export const Sales: React.FC = () => {
       const auditDetails = `Recorded sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${itemsList}`;
 
       logAudit('SALE_CREATED', auditDetails, insertedSale?.id || newTx.id)
-        .then(() => fetchProducts())
         .catch(console.error);
     } catch (err: any) {
       console.error('Error saving sale transaction:', err);
@@ -1444,7 +1451,7 @@ export const Sales: React.FC = () => {
                       exit={{ opacity: 0 }}
                       className="rounded-2xl border border-dashed border-(--border-color) p-12 text-center flex flex-col items-center justify-center bg-(--bg-card) shadow-xs"
                     >
-                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 ">
                         {hasFilter ? (
                           <Search className="w-8 h-8" />
                         ) : (

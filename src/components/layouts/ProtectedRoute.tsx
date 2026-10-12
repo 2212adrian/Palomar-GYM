@@ -1,12 +1,10 @@
 // src/components/layouts/ProtectedRoute.tsx
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore, hasStoredAuthSession } from '../../stores/authStore';
-import { useSecurityStore } from '../../stores/useSecurityStore';
 import { supabase } from '../../lib/supabase/client';
-import { UserX, Loader2 } from 'lucide-react';
+import { UserX } from 'lucide-react';
 import { isSuperAdmin } from '../../constants/auth';
-import { SecurityAccessBlocker } from '../security/SecurityAccessBlocker';
 
 interface ProtectedRouteProps {
   allowedRoles?: ('admin' | 'staff')[];
@@ -16,31 +14,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
 }) => {
   const { user, profile, loading, initialized } = useAuthStore() as any;
-  const { config, fetchConfig, checkResult, runVerification } =
-    useSecurityStore();
   const location = useLocation();
 
   const isSuperAdminUser = isSuperAdmin(user?.email);
   const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
-
-  useEffect(() => {
-    if (user?.id && initialized && !loading) {
-      if (!isSuperAdminUser) {
-        runVerification(effectiveRole, user?.email);
-      } else {
-        fetchConfig();
-      }
-    }
-  }, [
-    user?.id,
-    user?.email,
-    initialized,
-    loading,
-    effectiveRole,
-    isSuperAdminUser,
-    fetchConfig,
-    runVerification,
-  ]);
 
   if (!initialized || loading || (hasStoredAuthSession() && !user)) {
     return (
@@ -88,42 +65,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         </div>
       </div>
     );
-  }
-
-  const hasActiveSecurityRestrictions =
-    Boolean(config.location_restriction_enabled) ||
-    Boolean(config.wifi_restriction_enabled) ||
-    Boolean(config.ip_restriction_enabled);
-
-  const canBypass =
-    isSuperAdminUser ||
-    (location.pathname.startsWith('/settings') && effectiveRole === 'admin');
-
-  if (hasActiveSecurityRestrictions && !canBypass) {
-    if (checkResult === null) {
-      return (
-        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center select-none text-white">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-          <h3 className="text-sm font-heading font-black uppercase tracking-wider">
-            Verifying Terminal Security Access
-          </h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm">
-            Validating network interface, physical Wi-Fi authorization, and GPS perimeter.
-          </p>
-        </div>
-      );
-    }
-
-    if (!checkResult.allowed) {
-      return (
-        <SecurityAccessBlocker
-          checkResult={checkResult}
-          onRetry={async () => {
-            await runVerification(effectiveRole, user?.email);
-          }}
-        />
-      );
-    }
   }
 
   if (allowedRoles) {

@@ -401,7 +401,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 </span>
               )}
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
                 v{displayVersion}
                 {latestCloudVersion &&
                   isNewerVersion(latestCloudVersion, displayVersion) && (
@@ -616,7 +616,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       </h3>
                     )}
                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
                       v{latestCloudVersion || displayVersion}
                     </span>
                   </div>

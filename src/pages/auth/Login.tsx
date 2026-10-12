@@ -2368,7 +2368,7 @@ export const Login: React.FC = () => {
           {/* Offline Top Indicator Pill */}
           {isOffline && !isPreview && (
             <div className="absolute top-4 left-4 z-[200] flex items-center gap-2 bg-amber-500/95 dark:bg-amber-600/95 text-white border border-amber-400/40 rounded-full px-3.5 py-1.5 shadow-lg backdrop-blur-xl animate-slide-up select-none pointer-events-none">
-              <WifiOff className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+              <WifiOff className="w-3.5 h-3.5 shrink-0 " />
               <span className="text-[10px] font-heading font-black tracking-widest uppercase">
                 Offline • No Internet
               </span>
@@ -2761,7 +2761,7 @@ export const Login: React.FC = () => {
                     ) : (
                       <Moon className="w-8 h-8 text-indigo-500 dark:text-red-400" />
                     )}
-                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 animate-pulse" />
+                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 " />
                   </div>
                 </div>
 

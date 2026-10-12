@@ -1110,7 +1110,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       isSessionOpen
-                        ? 'bg-emerald-500 animate-pulse'
+                        ? 'bg-emerald-500 '
                         : 'bg-rose-500'
                     }`}
                   />

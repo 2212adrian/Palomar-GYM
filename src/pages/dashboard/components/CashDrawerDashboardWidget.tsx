@@ -70,7 +70,7 @@ export const CashDrawerDashboardWidget: React.FC = () => {
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       isSessionOpen
-                        ? 'bg-emerald-500 animate-pulse'
+                        ? 'bg-emerald-500 '
                         : 'bg-rose-500'
                     }`}
                   />
@@ -148,7 +148,7 @@ export const CashDrawerDashboardWidget: React.FC = () => {
                 })}
               </div>
               <div className="text-[10px] text-white/80 flex items-center gap-1.5 mt-1 font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 " />
                 EXPECTED IN REGISTER
               </div>
             </div>

@@ -1,6 +1,7 @@
 // src/pages/scanner/scannerService.ts
 import { supabase } from '../../lib/supabase/client';
 import { memberService, cardService } from '../members/memberService';
+import { idbGetAll } from '../../lib/cacheUtils';
 import type { Member, OnlineRegistration } from '../../types/members';
 
 export interface HybridMemberResult {
@@ -224,38 +225,57 @@ export const scannerService = {
         }
 
         const idPart = memberIdPart.trim();
-        const sanitizeVal = (val: string) => val.replace(/[,()"]/g, '').trim();
+        const sanitizeVal = (val: string) => val.replace(/[,()"]/g, '').trim().toLowerCase();
 
         const sCodeRaw = sanitizeVal(codeRaw);
         const sCleanMfg = sanitizeVal(cleanMfg);
         const sIdPart = sanitizeVal(idPart);
 
-        const { data: product } = await supabase
-          .from('products')
-          .select('*')
-          .is('deleted_at', null)
-          .or(
-            `barcode_id.ilike.${sCodeRaw},manufacturer_barcode.ilike.${sCodeRaw},barcode_id.ilike.${sCleanMfg},manufacturer_barcode.ilike.${sCleanMfg},barcode_id.ilike.${sIdPart},manufacturer_barcode.ilike.${sIdPart}`
-          )
-          .maybeSingle();
+        const localProducts = await idbGetAll<any>('products');
+        let matchedProduct = (localProducts || []).find((p) => {
+          if (p.deleted_at) return false;
+          const pBarcode = (p.barcode_id || '').toLowerCase();
+          const pMfg = (p.manufacturer_barcode || '').toLowerCase();
+          return (
+            pBarcode === sCodeRaw ||
+            pBarcode === sCleanMfg ||
+            pBarcode === sIdPart ||
+            (pMfg && (pMfg === sCodeRaw || pMfg === sCleanMfg || pMfg === sIdPart))
+          );
+        });
 
-        if (product) {
+        if (!matchedProduct) {
+          const { data: dbProduct } = await supabase
+            .from('products')
+            .select('*')
+            .is('deleted_at', null)
+            .or(
+              `barcode_id.ilike.${sCodeRaw},manufacturer_barcode.ilike.${sCodeRaw},barcode_id.ilike.${sCleanMfg},manufacturer_barcode.ilike.${sCleanMfg},barcode_id.ilike.${sIdPart},manufacturer_barcode.ilike.${sIdPart}`
+            )
+            .maybeSingle();
+
+          if (dbProduct) {
+            matchedProduct = dbProduct;
+          }
+        }
+
+        if (matchedProduct) {
           const isHidden =
-            product.status === 'Inactive' || Boolean(product.is_hidden);
+            matchedProduct.status === 'Inactive' || Boolean(matchedProduct.is_hidden);
           return {
             type: 'product',
             rawCode,
             product: {
-              id: product.id,
-              barcodeId: product.barcode_id,
-              manufacturerBarcode: product.manufacturer_barcode || null,
-              productName: product.product_name,
-              sellingPrice: Number(product.selling_price || 0),
-              stockQuantity: Number(product.stock_quantity ?? 0),
-              hasStockLimit: Boolean(product.has_stock_limit),
-              status: product.status || (isHidden ? 'Inactive' : 'Active'),
+              id: matchedProduct.id,
+              barcodeId: matchedProduct.barcode_id,
+              manufacturerBarcode: matchedProduct.manufacturer_barcode || null,
+              productName: matchedProduct.product_name,
+              sellingPrice: Number(matchedProduct.selling_price || 0),
+              stockQuantity: Number(matchedProduct.stock_quantity ?? 0),
+              hasStockLimit: Boolean(matchedProduct.has_stock_limit),
+              status: matchedProduct.status || (isHidden ? 'Inactive' : 'Active'),
               isHidden,
-              imageUrl: product.image_url || null,
+              imageUrl: matchedProduct.image_url || null,
             },
           };
         }
@@ -729,15 +749,39 @@ export const scannerService = {
       }
 
       const idPart = memberIdPart.trim();
+      const sanitizeVal = (val: string) => val.replace(/[,()"]/g, '').trim().toLowerCase();
 
-      const { data: product } = await supabase
-        .from('products')
-        .select('*')
-        .is('deleted_at', null)
-        .or(
-          `barcode_id.ilike.${codeRaw},manufacturer_barcode.ilike.${codeRaw},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg},barcode_id.ilike.${idPart},manufacturer_barcode.ilike.${idPart}`
-        )
-        .maybeSingle();
+      const sCodeRaw = sanitizeVal(codeRaw);
+      const sCleanMfg = sanitizeVal(cleanMfg);
+      const sIdPart = sanitizeVal(idPart);
+
+      const localProducts = await idbGetAll<any>('products');
+      let product = (localProducts || []).find((p) => {
+        if (p.deleted_at) return false;
+        const pBarcode = (p.barcode_id || '').toLowerCase();
+        const pMfg = (p.manufacturer_barcode || '').toLowerCase();
+        return (
+          pBarcode === sCodeRaw ||
+          pBarcode === sCleanMfg ||
+          pBarcode === sIdPart ||
+          (pMfg && (pMfg === sCodeRaw || pMfg === sCleanMfg || pMfg === sIdPart))
+        );
+      });
+
+      if (!product) {
+        const { data: dbProduct } = await supabase
+          .from('products')
+          .select('*')
+          .is('deleted_at', null)
+          .or(
+            `barcode_id.ilike.${codeRaw},manufacturer_barcode.ilike.${codeRaw},barcode_id.ilike.${cleanMfg},manufacturer_barcode.ilike.${cleanMfg},barcode_id.ilike.${idPart},manufacturer_barcode.ilike.${idPart}`
+          )
+          .maybeSingle();
+
+        if (dbProduct) {
+          product = dbProduct;
+        }
+      }
 
       if (product) {
         const isHidden =

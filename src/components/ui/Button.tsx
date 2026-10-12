@@ -50,7 +50,7 @@ export const Button: React.FC<ButtonProps> = ({
         <div className="flex flex-col items-center justify-center">
           {loadingSubtitle ? (
             <>
-              <span className="animate-pulse tracking-widest text-xs font-heading">
+              <span className=" tracking-widest text-xs font-heading">
                 {loadingLabel}
               </span>
               <span className="text-[8px] opacity-75 lowercase tracking-wider font-sans mt-0.5">

@@ -3,6 +3,11 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
 import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
+import {
+  syncTableDeltas,
+  idbBulkUpsert,
+  idbDelete,
+} from '../../lib/cacheUtils';
 
 import type {
   Member,
@@ -146,21 +151,25 @@ export const getEffectiveSubscriptionStatus = (
 // ==========================================
 export const memberService = {
   getAll: async (): Promise<Member[]> => {
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+    const cachedMembers = await syncTableDeltas<Member>(
+      'members',
+      async (sinceIso) => {
+        let query = supabase.from('members').select('*');
+        if (sinceIso) {
+          query = query.gt('updated_at', sinceIso);
+        } else {
+          query = query.is('deleted_at', null);
+        }
+        return await query.order('created_at', { ascending: false });
+      }
+    );
 
-    if (error) {
-      console.error('Error fetching members from Supabase:', error);
-      throw new Error(error.message);
-    }
-
-    return (data || []).map((m) => ({
-      ...m,
-      avatar_url: m.image_url || m.avatar_url || null,
-    }));
+    return (cachedMembers || [])
+      .filter((m) => !m.deleted_at)
+      .map((m) => ({
+        ...m,
+        avatar_url: m.image_url || m.avatar_url || null,
+      }));
   },
 
   getById: async (id: string): Promise<Member | null> => {
@@ -248,6 +257,8 @@ export const memberService = {
       avatar_url: created.image_url || created.avatar_url || null,
     };
 
+    idbBulkUpsert('members', [newMember]).catch(() => {});
+
     await writeAudit(
       'MEMBER_CREATED',
       'Members',
@@ -306,6 +317,8 @@ export const memberService = {
       ...updated,
       avatar_url: updated.image_url || null,
     };
+
+    idbBulkUpsert('members', [memberObj]).catch(() => {});
 
     const changes: string[] = [];
     if (previousData) {
@@ -390,6 +403,8 @@ export const memberService = {
       throw new Error(updateErr.message);
     }
 
+    idbDelete('members', target.id).catch(() => {});
+
     await writeAudit(
       'MEMBER_ARCHIVED',
       'Members',
@@ -429,6 +444,8 @@ export const memberService = {
       avatar_url: restored.image_url || restored.avatar_url || null,
     };
 
+    idbBulkUpsert('members', [memberObj]).catch(() => {});
+
     await writeAudit(
       'MEMBER_RESTORED',
       'Members',
@@ -446,17 +463,18 @@ export const memberService = {
 // ==========================================
 export const subscriptionService = {
   getAll: async (): Promise<Subscription[]> => {
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const cachedSubs = await syncTableDeltas<Subscription>(
+      'subscriptions',
+      async (sinceIso) => {
+        let query = supabase.from('subscriptions').select('*');
+        if (sinceIso) {
+          query = query.gt('updated_at', sinceIso);
+        }
+        return await query.order('created_at', { ascending: false });
+      }
+    );
 
-    if (error) {
-      console.error('Error fetching subscriptions:', error);
-      throw new Error(error.message);
-    }
-
-    return (data || []).map((s) => {
+    return (cachedSubs || []).map((s) => {
       const effStatus = getEffectiveSubscriptionStatus(
         s.status,
         s.start_date,
@@ -887,17 +905,18 @@ export const cardService = {
   },
 
   getAll: async (): Promise<MemberCard[]> => {
-    const { data, error } = await supabase
-      .from('cards')
-      .select('*')
-      .order('issued_at', { ascending: false });
+    const cachedCards = await syncTableDeltas<any>(
+      'cards',
+      async (sinceIso) => {
+        let query = supabase.from('cards').select('*');
+        if (sinceIso) {
+          query = query.gt('updated_at', sinceIso);
+        }
+        return await query.order('issued_at', { ascending: false });
+      }
+    );
 
-    if (error) {
-      console.error('Error fetching cards from cards table:', error);
-      return [];
-    }
-
-    return (data || []).map((c) => ({
+    return (cachedCards || []).map((c: any) => ({
       id: c.id,
       member_id: c.member_id,
       card_number: c.card_number,

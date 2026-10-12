@@ -59,7 +59,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
               <QrCode className="w-4 h-4 text-white" />
             </div>
             <span className="text-[9px] bg-emerald-500 text-white font-extrabold px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
-              <span className="w-1 h-1 rounded-full bg-white animate-pulse" />
+              <span className="w-1 h-1 rounded-full bg-white " />
               Live
             </span>
           </div>

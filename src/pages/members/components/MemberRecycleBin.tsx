@@ -392,7 +392,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                 {[...Array(3)].map((_, i) => (
                   <div
                     key={i}
-                    className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl animate-pulse flex items-center justify-between gap-3"
+                    className="p-3 bg-slate-100/50 dark:bg-zinc-900/50 border border-(--border-color) rounded-xl  flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-4.5 h-4.5 bg-slate-200 dark:bg-zinc-800 rounded shrink-0" />
@@ -652,7 +652,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
               })
             ) : (
               <div className="text-center py-12 text-slate-400 border border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center space-y-3">
-                <Users className="w-8 h-8 animate-pulse text-slate-505" />
+                <Users className="w-8 h-8  text-slate-505" />
                 <div>
                   <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">
                     No deletions found

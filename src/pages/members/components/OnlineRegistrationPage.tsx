@@ -1278,7 +1278,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       {/* Top Utility Bar (Fluid Max-w-4xl) */}
       <div className="w-full max-w-4xl flex justify-between items-center mb-4 sm:mb-6 px-1 sm:px-2 select-none">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse shrink-0" />
+          <Sparkles className="w-4 h-4 text-emerald-500  shrink-0" />
           <span className="text-[10px] sm:text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">
             Self-Service Portal
           </span>
@@ -2632,7 +2632,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : step4Countdown > 0 ? (
                     <>
-                      <Clock className="w-4 h-4 animate-pulse text-amber-500 dark:text-amber-400" />
+                      <Clock className="w-4 h-4  text-amber-500 dark:text-amber-400" />
                       <span>Review Rules ({step4Countdown}s)</span>
                     </>
                   ) : (

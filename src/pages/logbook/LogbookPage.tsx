@@ -318,7 +318,7 @@ const PAYMENT_FILTERS = [
 
 const TransactionSkeleton: React.FC = () => {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-pulse select-none">
+    <div className="relative overflow-hidden rounded-2xl bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4  select-none">
       <div className="flex items-center gap-4 w-full md:w-auto min-w-0 flex-1">
         <div className="flex flex-col items-center gap-1.5 shrink-0">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 border border-(--border-color)" />
@@ -412,8 +412,8 @@ export const LogbookPage: React.FC = () => {
     const sessionsCacheKey = 'logbook_closed_sessions_cache';
     try {
       const cached =
-        localStorage.getItem(sessionsCacheKey) ||
-        localStorage.getItem('sales_closed_sessions_cache');
+        sessionStorage.getItem(sessionsCacheKey) ||
+        sessionStorage.getItem('sales_closed_sessions_cache');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
@@ -597,8 +597,8 @@ export const LogbookPage: React.FC = () => {
 
       if (!isBackground) {
         const cachedClosed =
-          localStorage.getItem(sessionsCacheKey) ||
-          localStorage.getItem('sales_closed_sessions_cache');
+          sessionStorage.getItem(sessionsCacheKey) ||
+          sessionStorage.getItem('sales_closed_sessions_cache');
         if (cachedClosed) {
           try {
             const parsedClosed = JSON.parse(cachedClosed);
@@ -610,8 +610,7 @@ export const LogbookPage: React.FC = () => {
           }
         }
 
-        const cachedSession =
-          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+        const cachedSession = sessionStorage.getItem(cacheKey);
         if (cachedSession) {
           try {
             const parsed = JSON.parse(cachedSession);
@@ -627,29 +626,41 @@ export const LogbookPage: React.FC = () => {
       }
 
       try {
-        // Fetch closed sessions list from Supabase
-        try {
-          const { data: closedSessionsData } = await supabase
-            .from('cash_sessions')
-            .select(
-              'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
-            )
-            .eq('status', 'closed')
-            .order('closed_at', { ascending: false });
+        const lastFetchedSessions = Number(
+          sessionStorage.getItem('logbook_closed_sessions_last_fetched') || '0'
+        );
+        const shouldFetchSessions =
+          Date.now() - lastFetchedSessions > 300000 ||
+          closedSessionsList.length === 0;
 
-          if (closedSessionsData) {
-            setClosedSessionsList(closedSessionsData);
-            try {
-              localStorage.setItem(
-                sessionsCacheKey,
-                JSON.stringify(closedSessionsData)
+        if (shouldFetchSessions) {
+          try {
+            const { data: closedSessionsData } = await supabase
+              .from('cash_sessions')
+              .select(
+                'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+              )
+              .eq('status', 'closed')
+              .order('closed_at', { ascending: false });
+
+            if (closedSessionsData) {
+              setClosedSessionsList(closedSessionsData);
+              sessionStorage.setItem(
+                'logbook_closed_sessions_last_fetched',
+                String(Date.now())
               );
-            } catch {
-              // ignore storage error
+              try {
+                sessionStorage.setItem(
+                  sessionsCacheKey,
+                  JSON.stringify(closedSessionsData)
+                );
+              } catch {
+                // ignore storage error
+              }
             }
+          } catch {
+            // ignore offline error for closed sessions
           }
-        } catch {
-          // ignore offline error for closed sessions
         }
 
         let mappedLogs: LogRecord[] | null = null;
@@ -829,9 +840,8 @@ export const LogbookPage: React.FC = () => {
           const consolidatedLogs = deduplicateBatchCards(mappedLogs);
           setLogs(consolidatedLogs);
           const serialized = JSON.stringify(consolidatedLogs);
-          sessionStorage.setItem(cacheKey, serialized);
           try {
-            localStorage.setItem(cacheKey, serialized);
+            sessionStorage.setItem(cacheKey, serialized);
           } catch {
             // ignore quota error
           }
@@ -855,15 +865,12 @@ export const LogbookPage: React.FC = () => {
 
     const triggerRealtimeSync = (includeHistory = false) => {
       sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-      if (!isBatterySaver) {
-        if (includeHistory) loadHistory();
-        fetchAttendanceFromSupabase(true);
-        return;
+      if (includeHistory) {
+        sessionStorage.removeItem('logbook_closed_sessions_last_fetched');
       }
-
-      // In Battery Saver mode, throttle realtime re-fetches to at most once every 30s
+      const minIntervalMs = isBatterySaver ? 30000 : 1500;
       const elapsed = Date.now() - lastRealtimeFetchMs;
-      const minIntervalMs = 30000;
+
       if (elapsed >= minIntervalMs) {
         lastRealtimeFetchMs = Date.now();
         if (includeHistory) loadHistory();
@@ -900,21 +907,23 @@ export const LogbookPage: React.FC = () => {
 
     const handleBatchUpdated = () => {
       sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-      fetchAttendanceFromSupabase(true);
+      triggerRealtimeSync(false);
     };
     window.addEventListener('palomar_logbook_updated', handleBatchUpdated);
 
-    // Background polling interval: 45s normal vs 180s (3 min) in Battery Saver mode
-    const pollIntervalMs = isBatterySaver ? 180000 : 45000;
-    const pollTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+    const handleWindowFocus = () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      fetchAttendanceFromSupabase(true);
-    }, pollIntervalMs);
+      const elapsed = Date.now() - lastRealtimeFetchMs;
+      if (elapsed > 180000) {
+        lastRealtimeFetchMs = Date.now();
+        fetchAttendanceFromSupabase(true);
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       if (throttleTimer) clearTimeout(throttleTimer);
-      clearInterval(pollTimer);
+      window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('palomar_logbook_updated', handleBatchUpdated);
       supabase.removeChannel(channel);
     };
@@ -2011,7 +2020,7 @@ export const LogbookPage: React.FC = () => {
                     >
                       <div
                         className={`w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center text-slate-400 mb-4 ${
-                          isBatterySaver ? '' : 'animate-pulse'
+                          isBatterySaver ? '' : ''
                         }`}
                       >
                         {hasFilter ? (

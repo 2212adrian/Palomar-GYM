@@ -2111,7 +2111,7 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
                         <div className="flex items-center gap-2">
                           {activeContract ? (
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 " />
                           ) : (
                             <Clock className="w-4 h-4 text-rose-500 shrink-0" />
                           )}

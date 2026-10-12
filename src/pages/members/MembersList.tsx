@@ -270,8 +270,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     const cacheKey = 'members_sanitized_cache';
 
     if (!silent) {
-      const cached =
-        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
@@ -289,11 +288,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       }
     }
 
-    if (
-      !silent &&
-      !sessionStorage.getItem(cacheKey) &&
-      !localStorage.getItem(cacheKey)
-    ) {
+    if (!silent && !sessionStorage.getItem(cacheKey)) {
       setLoading(true);
     }
     try {
@@ -312,26 +307,22 @@ export const MembersList: React.FC<MembersListProps> = ({
         settings: settingsData || DEFAULT_SETTINGS,
       };
 
-      const cachedRaw =
-        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+      const cachedRaw = sessionStorage.getItem(cacheKey);
       if (cachedRaw !== JSON.stringify(newPayload)) {
         setMembers(membersData);
         setSubscriptions(subsData);
         setCards(cardsData);
         if (settingsData) setSettings(settingsData);
         const payloadStr = JSON.stringify(newPayload);
-        sessionStorage.setItem(cacheKey, payloadStr);
         try {
-          localStorage.setItem(cacheKey, payloadStr);
+          sessionStorage.setItem(cacheKey, payloadStr);
         } catch {
           // quota or private mode fallback
         }
       }
     } catch (err: any) {
       console.error('Error fetching members data:', err);
-      // Attempt to load from persistent offline cache
-      const offlineCached =
-        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      const offlineCached = sessionStorage.getItem(cacheKey);
       if (offlineCached) {
         try {
           const parsed = JSON.parse(offlineCached);
@@ -378,27 +369,18 @@ export const MembersList: React.FC<MembersListProps> = ({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const invalidateAndRefresh = () => {
-      if (isBatterySaver && document.hidden) return;
-      if (isBatterySaver) {
-        if (debounceTimer) return;
-        debounceTimer = setTimeout(() => {
-          debounceTimer = null;
-          sessionStorage.removeItem(cacheKey);
-          fetchMembers(true);
-        }, 10000);
-        return;
-      }
-      sessionStorage.removeItem(cacheKey);
-      fetchMembers(true);
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      const delayMs = isBatterySaver ? 10000 : 1500;
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        sessionStorage.removeItem(cacheKey);
+        fetchMembers(true);
+      }, delayMs);
     };
 
     const channel = supabase
       .channel('realtime-members-list')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'receipts' },
-        invalidateAndRefresh
-      )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'subscriptions' },
@@ -422,8 +404,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       .subscribe();
 
     const handleRefresh = () => {
-      sessionStorage.removeItem(cacheKey);
-      fetchMembers(true);
+      invalidateAndRefresh();
     };
     window.addEventListener('member-refresh', handleRefresh);
 
@@ -1051,7 +1032,7 @@ export const MembersList: React.FC<MembersListProps> = ({
               </span>
               {item.status === 'Suspended' && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 " />
                   SUSPENDED
                 </span>
               )}

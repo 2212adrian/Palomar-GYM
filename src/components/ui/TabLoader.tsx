@@ -208,7 +208,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
           <span
             className={`text-xs font-mono tracking-wider transition-colors duration-300 ${
               !isOnline
-                ? 'text-amber-600 dark:text-amber-500 font-semibold animate-pulse'
+                ? 'text-amber-600 dark:text-amber-500 font-semibold '
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >

@@ -493,7 +493,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase transition-all shrink-0 cursor-pointer font-bold border shadow-xs ${
                       attendanceMeta.isPaid
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-500 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300'
-                        : 'bg-amber-400 text-slate-950 border-amber-300 hover:bg-emerald-500 hover:text-white dark:bg-amber-500 animate-pulse'
+                        : 'bg-amber-400 text-slate-950 border-amber-300 hover:bg-emerald-500 hover:text-white dark:bg-amber-500 '
                     }`}
                   >
                     {attendanceMeta.isPaid ? 'PAID' : 'COLLECT'}

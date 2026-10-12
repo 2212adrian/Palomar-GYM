@@ -1629,8 +1629,8 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                               isProcessing
                                 ? 'bg-amber-400 animate-ping'
                                 : scanMode === 'barcode'
-                                  ? 'bg-amber-400 animate-pulse'
-                                  : 'bg-cyan-400 animate-pulse'
+                                  ? 'bg-amber-400 '
+                                  : 'bg-cyan-400 '
                             }`}
                           />
                           <span>

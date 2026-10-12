@@ -1,6 +1,5 @@
-// src/pages/system/Settings.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { PersonalAccount } from './PersonalAccount';
 import { GymProfile } from './GymProfile';
@@ -10,7 +9,6 @@ import { DatabaseBackup } from './DatabaseBackup';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
-import { SecuritySettings } from './security-and-permission/SecuritySettings';
 import { PermissionsSettings } from './security-and-permission/PermissionsSettings';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { isCapacitorApp } from '../../lib/platform';
@@ -22,8 +20,6 @@ import {
   Users,
   Database,
   FileText,
-  ShieldCheck,
-  ShieldAlert,
   Camera,
   ChevronRight,
   ChevronLeft,
@@ -79,9 +75,9 @@ export const TABS: TabItem[] = [
   },
   {
     id: 'security-permissions',
-    label: 'Security & Permissions',
-    description: 'Facility access & device hardware',
-    icon: ShieldCheck,
+    label: 'Device Permissions',
+    description: 'Hardware, camera & notification access',
+    icon: Camera,
     adminOnly: false,
   },
   {
@@ -162,7 +158,6 @@ export default function Settings() {
     toggleBatterySaver,
   } = useBatterySaver();
 
-  // Reactive Network Connection State
   const [isOffline, setIsOffline] = useState<boolean>(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   );
@@ -179,9 +174,9 @@ export default function Settings() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
   const isNativeCapacitor = useMemo(() => isCapacitorApp(), []);
   const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const activeTab = useMemo<string>(() => {
@@ -196,7 +191,6 @@ export default function Settings() {
 
   const settingsScrollRef = useRef<HTMLDivElement>(null);
 
-  // ─── Synchronous Direction Calculation During Render (Matching Sidebar Transitions) ───
   const [tabTransition, setTabTransition] = useState<{
     tabId: TabID;
     direction: 'down' | 'up' | null;
@@ -213,8 +207,6 @@ export default function Settings() {
 
     let dir: 'down' | 'up' | null = null;
     if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
-      // Selected item is below current item -> slide down
-      // Selected item is above current item -> slide up
       dir = currIdx > prevIdx ? 'down' : 'up';
     }
 
@@ -225,7 +217,6 @@ export default function Settings() {
     });
   }
 
-  // Reset scroll to top on tab change
   useEffect(() => {
     if (settingsScrollRef.current) {
       settingsScrollRef.current.scrollTop = 0;
@@ -250,53 +241,9 @@ export default function Settings() {
   const isSuperAdminUser = isSuperAdmin(user?.email);
   const isAdmin = userRole === 'admin' || isSuperAdminUser;
 
-  // Super Admin sub-tab selection (Facility Access & Security vs Device Permissions)
-  const securitySubTab = useMemo<'security' | 'permissions'>(() => {
-    return searchParams.get('sub') === 'device-permissions'
-      ? 'permissions'
-      : 'security';
-  }, [searchParams]);
-
-  const handleSecuritySubTabChange = (tab: 'security' | 'permissions') => {
-    if (isChildDirty) {
-      window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
-    }
-    setTabTransition((prev) => ({
-      tabId: activeTabId,
-      direction: tab === 'permissions' ? 'down' : 'up',
-      animKey: prev.animKey + 1,
-    }));
-    setSearchParams(
-      tab === 'permissions'
-        ? { sub: 'device-permissions' }
-        : { sub: 'security' }
-    );
-  };
-
   const visibleTabs: TabItem[] = useMemo(() => {
-    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin).map(
-      (tab) => {
-        if (tab.id === 'security-permissions') {
-          if (isSuperAdminUser) {
-            return {
-              ...tab,
-              label: 'Facility Access & Security',
-              description: 'Perimeter geofence, IP & turnstiles',
-              icon: ShieldAlert,
-            };
-          } else {
-            return {
-              ...tab,
-              label: 'Device Permission',
-              description: 'Hardware, camera & location access',
-              icon: Camera,
-            };
-          }
-        }
-        return tab;
-      }
-    );
-  }, [isAdmin, isSuperAdminUser]);
+    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
+  }, [isAdmin]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
@@ -434,10 +381,7 @@ export default function Settings() {
       animKey: prev.animKey + 1,
     }));
 
-    const pathSegment =
-      tabId === 'security-permissions' && !isSuperAdminUser
-        ? 'device-permissions'
-        : TAB_URL_MAP[tabId];
+    const pathSegment = TAB_URL_MAP[tabId];
 
     if (pathSegment) {
       if (urlTabParam === pathSegment) {
@@ -530,15 +474,12 @@ export default function Settings() {
       <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-visible xl:overflow-hidden">
         {/* Mobile / Tablet Navigation List */}
         <div
-          style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+          style={{ WebkitOverflowScrolling: 'touch' }}
           className={`${
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
-          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-16 touch-pan-y`}
+          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-16 overscroll-contain`}
         >
-          <nav
-            style={{ touchAction: 'pan-y' }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0 touch-pan-y"
-          >
+          <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
             {visibleTabs.map((tab: TabItem) => {
               const Icon = tab.icon;
               const isActive = activeTabId === tab.id;
@@ -546,8 +487,7 @@ export default function Settings() {
                 <button
                   key={tab.id}
                   onClick={() => handleTabClick(tab.id)}
-                  style={{ touchAction: 'pan-y' }}
-                  className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left touch-pan-y ${
+                  className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left ${
                     isActive
                       ? 'bg-blue-600 dark:bg-red-600 text-white border-blue-600 dark:border-red-600 shadow-md'
                       : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-red-500 hover:bg-blue-500/5 dark:hover:bg-red-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
@@ -598,8 +538,7 @@ export default function Settings() {
             {/* Dynamic Theme Toggle in Mobile List */}
             <button
               onClick={toggleTheme}
-              style={{ touchAction: 'pan-y' }}
-              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-colors duration-150 cursor-pointer text-left touch-pan-y"
+              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-colors duration-150 cursor-pointer text-left"
             >
               <div className="flex items-center gap-4">
                 <div className="p-2 rounded-lg bg-white dark:bg-[#111315] border border-slate-200/50 dark:border-white/5 shadow-xs">
@@ -870,7 +809,7 @@ export default function Settings() {
         <div
           className={`${
             mobileView === 'detail' ? 'flex' : 'hidden xl:flex'
-          } flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-hidden`}
+          } flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-y-auto xl:overflow-hidden`}
         >
           {/* Back Navigation Bar */}
           {mobileView === 'detail' && (
@@ -885,10 +824,10 @@ export default function Settings() {
             </div>
           )}
 
-{/* Dynamic inner margin class applied to restore standard PC padding (xl:p-5) on Audit Logs and Info */}
           <div
             ref={settingsScrollRef}
-            className={`flex-1 h-full overflow-y-auto scroll-smooth ${
+            style={{ WebkitOverflowScrolling: 'touch' }}
+            className={`flex-1 h-full overflow-y-auto scroll-smooth overscroll-contain ${
               activeTabId === 'audit' || activeTabId === 'info'
                 ? 'px-0 py-3 xl:p-5'
                 : 'p-3 sm:p-4 md:p-5'
@@ -922,53 +861,10 @@ export default function Settings() {
             >
               {activeTab === 'personal-account' && <PersonalAccount />}
 
-              {/* SECURITY & DEVICE PERMISSIONS WORKSPACE */}
               {(activeTab === 'security-and-permissions' ||
                 activeTab === 'device-permissions') && (
-                <div className="w-full space-y-6">
-                  {/* Segmented Sub-Tab Switcher - Super Admin Only */}
-                  {isSuperAdminUser && (
-                    <div className="flex justify-center">
-                      <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-inner">
-                        <button
-                          type="button"
-                          onClick={() => handleSecuritySubTabChange('security')}
-                          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
-                            securitySubTab === 'security'
-                              ? 'bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 shadow-sm'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          <ShieldAlert className="w-4 h-4" />
-                          <span>Facility Access & Security</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleSecuritySubTabChange('permissions')
-                          }
-                          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer ${
-                            securitySubTab === 'permissions'
-                              ? 'bg-white dark:bg-zinc-800 text-purple-600 dark:text-purple-400 shadow-sm'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          <Camera className="w-4 h-4" />
-                          <span>Hardware & Device Permissions</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sub-view render: Super Admin toggles between both, Standard Admin sees PermissionsSettings directly */}
-                  <div className="w-full">
-                    {!isSuperAdminUser || securitySubTab === 'permissions' ? (
-                      <PermissionsSettings />
-                    ) : (
-                      <SecuritySettings />
-                    )}
-                  </div>
+                <div className="w-full">
+                  <PermissionsSettings />
                 </div>
               )}
 
@@ -986,7 +882,7 @@ export default function Settings() {
         </div>
       </div>
 
-{/* FLOATING ACTION BAR */}
+      {/* FLOATING ACTION BAR */}
       {isChildDirty && !isOffline && (
         <div className="fixed bottom-24 xl:bottom-10 left-1/2 -translate-x-1/2 z-200 flex items-center gap-3 animate-slide-up">
           <button
@@ -1004,7 +900,7 @@ export default function Settings() {
             {isChildSaving ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Save className="w-4 h-4 animate-pulse" />
+              <Save className="w-4 h-4 " />
             )}
             Save Changes
           </button>

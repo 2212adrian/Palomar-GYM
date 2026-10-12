@@ -605,7 +605,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       item.notificationCount !== undefined &&
                       item.notificationCount > 0 && (
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
+                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 ">
                             {formatBadgeCount(item.notificationCount)}
                           </span>
                         </div>
@@ -672,7 +672,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="flex items-center gap-2 shrink-0">
                           {item.notificationCount !== undefined &&
                             item.notificationCount > 0 && (
-                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs ">
                                 {formatBadgeCount(item.notificationCount)}
                               </span>
                             )}
@@ -747,7 +747,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               child.notificationColor ===
                                               'amber'
                                                 ? 'bg-amber-500 text-white border border-amber-400/40'
-                                                : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                                : 'bg-red-600 text-white border border-red-500/40 '
                                             }`}
                                           >
                                             {formatBadgeCount(
@@ -999,7 +999,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       >
                         <Bell className="w-4 h-4" />
                         {unreadBadgeCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
+                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] ">
                             {formatBadgeCount(unreadBadgeCount)}
                           </span>
                         )}
@@ -1086,7 +1086,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {item.notificationCount !== undefined &&
                           item.notificationCount > 0 && (
                             <div className="flex items-center gap-2">
-                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 animate-pulse">
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 ">
                                 {formatBadgeCount(item.notificationCount)}
                               </span>
                             </div>
@@ -1127,7 +1127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <div className="flex items-center gap-2">
                             {item.notificationCount !== undefined &&
                               item.notificationCount > 0 && (
-                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs animate-pulse">
+                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs ">
                                   {formatBadgeCount(item.notificationCount)}
                                 </span>
                               )}
@@ -1193,7 +1193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 child.notificationColor ===
                                                 'amber'
                                                   ? 'bg-amber-500 text-white border border-amber-400/40'
-                                                  : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
+                                                  : 'bg-red-600 text-white border border-red-500/40 '
                                               }`}
                                             >
                                               {formatBadgeCount(

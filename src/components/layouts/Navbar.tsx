@@ -241,7 +241,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <Users className="w-3.5 h-3.5 shrink-0" />
                   <span>Members</span>
                   {expiringSubsCount > 0 && (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[9px] font-heading font-black flex items-center justify-center shadow-xs ">
                       {formatBadgeCount(expiringSubsCount)}
                     </span>
                   )}

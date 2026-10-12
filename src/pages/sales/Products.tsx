@@ -20,7 +20,11 @@ import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
-import { useNotificationStore } from '../../stores/useNotificationStore';
+import {
+  syncTableDeltas,
+  idbBulkUpsert,
+  idbDelete,
+} from '../../lib/cacheUtils';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -106,7 +110,7 @@ interface ProductsProps {
 export const Products: React.FC<ProductsProps> = ({
   hideHeaderActions = false,
 }) => {
-  const { user, profile } = useAuthStore() as any;
+  const { user, } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
   const activeFloating = useNavbarStore((s) => s.activeFloating);
@@ -212,75 +216,32 @@ export const Products: React.FC<ProductsProps> = ({
 
   const { setActions } = useContext(HeaderActionsContext);
 
-  // Silent sync enabled by default for zero skeleton flicker
   const fetchProducts = async (silent = false) => {
-    const cacheKey = 'products_sanitized_list';
-
-    if (!silent) {
-      const cached =
-        sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            setProducts(parsed);
-            setLoading(false);
-          }
-        } catch {
-          // ignore cache error
-        }
-      }
-    }
-
     try {
-      if (
-        !silent &&
-        !sessionStorage.getItem(cacheKey) &&
-        !localStorage.getItem(cacheKey)
-      ) {
+      if (!silent) {
         setLoading(true);
       }
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .is('deleted_at', null)
-        .order('product_name', { ascending: true });
+      const data = await syncTableDeltas<Product>(
+        'products',
+        async (sinceIso) => {
+          let query = supabase.from('products').select('*');
+          if (sinceIso) {
+            query = query.gt('updated_at', sinceIso);
+          } else {
+            query = query.is('deleted_at', null);
+          }
+          return await query.order('product_name', { ascending: true });
+        }
+      );
 
-      if (error) throw error;
       if (isMountedRef.current && data) {
-        const payloadStr = JSON.stringify(data);
-        const cachedRaw =
-          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
-        if (cachedRaw !== payloadStr) {
-          setProducts(data);
-        }
-        sessionStorage.setItem(cacheKey, payloadStr);
-        try {
-          localStorage.setItem(cacheKey, payloadStr);
-        } catch {
-          // ignore storage quota errors
-        }
+        const activeList = data
+          .filter((p) => !p.deleted_at)
+          .sort((a, b) => a.product_name.localeCompare(b.product_name));
+        setProducts(activeList);
       }
     } catch {
       if (isMountedRef.current) {
-        const offlineCached =
-          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
-        if (offlineCached) {
-          try {
-            const parsed = JSON.parse(offlineCached);
-            if (Array.isArray(parsed)) {
-              setProducts(parsed);
-              if (!silent) {
-                toast.info(
-                  'Showing cached products list while network is offline/unstable.',
-                  { toastId: 'products-offline-cache-loaded' }
-                );
-              }
-            }
-          } catch {
-            // ignore parse error
-          }
-        }
         console.warn(
           'INTERNET_ERR: Could not load your product items. Please Check your Connection.'
         );
@@ -316,17 +277,14 @@ export const Products: React.FC<ProductsProps> = ({
     [products]
   );
 
-  // Broadcast Products Telemetry to Topbar & Sync Notifications
+  // Broadcast Products Telemetry to Topbar
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('products-kpi-update', {
         detail: stats,
       })
     );
-    useNotificationStore
-      .getState()
-      .fetchNotifications(user?.email, profile?.role, false);
-  }, [stats, user?.email, profile?.role]);
+  }, [stats]);
 
   useEffect(() => {
     const handleCreate = () => handleCreateClick();
@@ -357,9 +315,11 @@ export const Products: React.FC<ProductsProps> = ({
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
+            const newProduct = newRecord as Product;
+            idbBulkUpsert('products', [newProduct]).catch(() => {});
             setProducts((prev) => {
-              if (prev.some((p) => p.id === newRecord.id)) return prev;
-              return [...prev, newRecord as Product].sort((a, b) =>
+              if (prev.some((p) => p.id === newProduct.id)) return prev;
+              return [...prev, newProduct].sort((a, b) =>
                 a.product_name.localeCompare(b.product_name)
               );
             });
@@ -367,11 +327,13 @@ export const Products: React.FC<ProductsProps> = ({
             const updated = newRecord as Product;
 
             if (updated.deleted_at) {
+              idbDelete('products', updated.id).catch(() => {});
               setProducts((prev) => prev.filter((p) => p.id !== updated.id));
               setSelectedProductIds((prev) =>
                 prev.filter((id) => id !== updated.id)
               );
             } else {
+              idbBulkUpsert('products', [updated]).catch(() => {});
               setProducts((prev) => {
                 const updatedList = prev.some((p) => p.id === updated.id)
                   ? prev.map((p) => (p.id === updated.id ? updated : p))
@@ -383,6 +345,7 @@ export const Products: React.FC<ProductsProps> = ({
             }
           } else if (eventType === 'DELETE') {
             const targetId = oldRecord.id;
+            idbDelete('products', targetId).catch(() => {});
             setProducts((prev) => prev.filter((p) => p.id !== targetId));
             setSelectedProductIds((prev) =>
               prev.filter((id) => id !== targetId)
@@ -597,6 +560,7 @@ export const Products: React.FC<ProductsProps> = ({
 
         if (data) {
           const newProducts = data as Product[];
+          idbBulkUpsert('products', newProducts).catch(() => {});
           setProducts((prev) =>
             [...prev, ...newProducts].sort((a, b) =>
               a.product_name.localeCompare(b.product_name)
@@ -756,6 +720,13 @@ export const Products: React.FC<ProductsProps> = ({
           }
 
           if (updateSuccess) {
+            const updatedProduct = {
+              ...(targetProduct || {}),
+              ...productPayload,
+              id: selectedProductId,
+            } as Product;
+            idbBulkUpsert('products', [updatedProduct]).catch(() => {});
+
             toast.success(`Updated "${nameClean}".`, {
               autoClose: 4000,
               onClose: () => clearDiff(editedId),
@@ -799,6 +770,7 @@ export const Products: React.FC<ProductsProps> = ({
 
           if (createdProduct) {
             const newProduct = createdProduct;
+            idbBulkUpsert('products', [newProduct]).catch(() => {});
             // Prepend new product so it is immediately visible
             setProducts((prev) => [
               newProduct,
@@ -874,6 +846,7 @@ export const Products: React.FC<ProductsProps> = ({
       }
 
       if (deleteSuccess) {
+        idbDelete('products', id).catch(() => {});
         await logAudit(
           'PRODUCT_DELETED',
           `Moved product "${targetProduct?.product_name || 'Unknown Item'}" to Recycle Bin.`,
@@ -940,6 +913,10 @@ export const Products: React.FC<ProductsProps> = ({
         .in('id', idsToDelete);
 
       if (error) throw error;
+
+      for (let i = 0; i < idsToDelete.length; i++) {
+        idbDelete('products', idsToDelete[i]).catch(() => {});
+      }
 
       await logAudit(
         'BULK_PRODUCTS_DELETED',

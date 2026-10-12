@@ -1,5 +1,5 @@
 // src/routes/index.tsx
-import React, { useState, useEffect, createContext } from 'react';
+import React, { useState, createContext } from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -16,13 +16,7 @@ import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
 import { DownloadPage } from '../pages/download/DownloadPage';
 
-// Security Access Guard and Stores
-import { SecurityAccessBlocker } from '../components/security/SecurityAccessBlocker';
-import { useSecurityStore } from '../stores/useSecurityStore';
 import { useAuthStore, hasStoredAuthSession } from '../stores/authStore';
-import { checkIsSuperAdminUser } from '../lib/securityAccessService';
-import { supabase } from '../lib/supabase/client';
-import { toast } from 'react-toastify';
 
 // Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
@@ -121,59 +115,9 @@ const FallbackEntry: React.FC = () => {
   return <Navigate to="/register" replace />;
 };
 
-/**
- * Security Guard for the /login page:
- * - When Wi-Fi / location restrictions are active, unauthorized terminals and anonymous
- *   users outside the facility cannot access the staff login form.
- * - Waits for session check to complete: if already authenticated, navigates to /dashboard immediately.
- * - Subscribes to Supabase Realtime so that when an admin turns off the restriction,
- *   the blocker disappears in real-time without reloading the page.
- */
 const LoginRouteGuard: React.FC = () => {
   const { user, initialized, loading } = useAuthStore();
-  const {
-    config,
-    fetchConfig,
-    checkResult,
-    runVerification,
-    subscribeRealtime,
-  } = useSecurityStore();
 
-  useEffect(() => {
-    // Keep a live realtime connection open on /login
-    const unsubscribe = subscribeRealtime();
-
-    const verifyAccess = async () => {
-      // Handle Superadmin Google OAuth bypass return
-      const oauthBypassAttempt =
-        sessionStorage.getItem('palomar_superadmin_bypass_oauth') === 'true';
-
-      if (user?.email && oauthBypassAttempt) {
-        sessionStorage.removeItem('palomar_superadmin_bypass_oauth');
-        const isSuper = await checkIsSuperAdminUser(user.email);
-        if (!isSuper) {
-          await supabase.auth.signOut();
-          toast.error(
-            'Access Denied: Only the Superadmin account can log in while terminal security restrictions are enforced.'
-          );
-          await runVerification('anonymous', null);
-          return;
-        } else {
-          toast.success('Superadmin verified. Terminal restriction bypassed.');
-        }
-      }
-
-      await runVerification(user ? 'admin' : 'anonymous', user?.email);
-    };
-
-    verifyAccess();
-
-    return () => {
-      unsubscribe();
-    };
-  }, [fetchConfig, runVerification, subscribeRealtime, user, user?.email]);
-
-  // Wait for session check to complete before flashing login form or determining redirection
   if (!initialized || loading || (hasStoredAuthSession() && !user)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
@@ -182,33 +126,8 @@ const LoginRouteGuard: React.FC = () => {
     );
   }
 
-  // If user is already authenticated, direct them directly to dashboard
   if (user) {
     return <Navigate to="/dashboard" replace />;
-  }
-
-  const hasActiveRestrictions =
-    Boolean(config.location_restriction_enabled) ||
-    Boolean(config.wifi_restriction_enabled) ||
-    Boolean(config.ip_restriction_enabled);
-
-  const isSuperUser = false;
-
-  // If restrictions are active, user is not Superadmin, and terminal is not authorized, render the blocker modal
-  if (
-    hasActiveRestrictions &&
-    !isSuperUser &&
-    checkResult &&
-    !checkResult.allowed
-  ) {
-    return (
-      <SecurityAccessBlocker
-        checkResult={checkResult}
-        onRetry={async () => {
-          await runVerification('anonymous', null);
-        }}
-      />
-    );
   }
 
   return <Login />;

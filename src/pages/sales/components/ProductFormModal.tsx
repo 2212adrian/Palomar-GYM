@@ -581,7 +581,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           <div className="absolute inset-0 z-100 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-6 h-6 animate-pulse" />
+                <AlertTriangle className="w-6 h-6 " />
               </div>
               <div>
                 <h4 className="font-extrabold text-sm text-(--color-text) uppercase tracking-wider">
@@ -1078,7 +1078,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       onClick={() => setShowLiveScanner(!showLiveScanner)}
                       className={`py-2.5 px-3 border rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
                         showLiveScanner
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent ring-2 ring-white/30 animate-pulse'
+                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent ring-2 ring-white/30 '
                           : 'bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-[#1e232d] border-(--border-color) text-(--color-text)'
                       }`}
                     >

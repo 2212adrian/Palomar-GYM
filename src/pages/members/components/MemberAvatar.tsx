@@ -180,7 +180,7 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
         <div
           className={`absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white ${roundedClassName} backdrop-blur-xs`}
         >
-          <Camera className="w-5 h-5 text-white animate-pulse" />
+          <Camera className="w-5 h-5 text-white " />
           <span className="text-[8px] font-heading font-extrabold uppercase tracking-wider mt-0.5 text-white">
             Photo
           </span>

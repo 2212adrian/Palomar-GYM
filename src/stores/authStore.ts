@@ -7,6 +7,7 @@ import { Browser } from '@capacitor/browser';
 import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { isSuperAdmin } from '../constants/auth'; // Centralized helper
+import { clearAppCaches, purgeSensitiveLocalStorage } from '../lib/cacheUtils';
 
 export interface UserProfile {
   id: string;
@@ -248,10 +249,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const currentUserId = get().user?.id;
       clearLocalActiveSessionId(currentUserId);
 
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-        sessionStorage.removeItem('palomar_greeting_shown');
-      }
+      clearAppCaches();
+      purgeSensitiveLocalStorage();
 
       try {
         // Use scope: 'local' so the invalidated device only clears its own local tokens
@@ -712,9 +711,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentUserId = get().user?.id;
     set({ loading: true });
     clearLocalActiveSessionId(currentUserId);
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-    }
+    clearAppCaches();
+    purgeSensitiveLocalStorage();
     await supabase.auth.signOut({ scope: 'local' });
     if (activeAvatarObjectUrl) {
       URL.revokeObjectURL(activeAvatarObjectUrl);
@@ -752,9 +750,8 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       initialized: true,
     });
   } else if (event === 'SIGNED_OUT') {
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-    }
+    clearAppCaches();
+    purgeSensitiveLocalStorage();
     // Clear cached session parameters
     useAuthStore.setState({
       user: null,
@@ -806,6 +803,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         useAuthStore.setState({ user: session.user, loading: false, initialized: true });
       }
     } else if (event === 'INITIAL_SESSION' && !hasStoredAuthSession()) {
+      purgeSensitiveLocalStorage();
       useAuthStore.setState({ loading: false, initialized: true });
     }
   }

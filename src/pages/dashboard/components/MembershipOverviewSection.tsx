@@ -130,7 +130,7 @@ export const MembershipOverviewSection: React.FC<
                   <span
                     className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
                       member.daysRemaining <= 1
-                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
+                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 '
                         : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
                     }`}
                   >
