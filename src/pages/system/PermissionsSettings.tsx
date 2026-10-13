@@ -30,7 +30,7 @@ import {
   getCurrentCoordinates,
   sendNotification,
   type PermissionState,
-} from '../../../lib/permissions';
+} from '../../lib/permissions';
 
 export const PermissionsSettings: React.FC = () => {
   const [cameraStatus, setCameraStatus] = useState<PermissionState>('prompt');

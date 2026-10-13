@@ -28,6 +28,7 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
@@ -291,7 +292,7 @@ export const LogbookRecordAttendance: React.FC<
 
   const [adminOverride, setAdminOverride] = useState(false);
 
-  // Dynamic rates state: Never initialized with hardcoded values
+  // Dynamic rates state
   const [walkinRegularFee, setWalkinRegularFee] = useState<number | null>(null);
   const [walkinStudentFee, setWalkinStudentFee] = useState<number | null>(null);
   const [yearlyMemberFee, setYearlyMemberFee] = useState<number | null>(null);
@@ -369,7 +370,6 @@ export const LogbookRecordAttendance: React.FC<
         setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
         setGcashFeeRate(Number(ratesData.gcash_fee ?? 0));
       } else {
-        // Fallback to settings service from database
         const activeSettings = await settingsService.load();
         if (
           activeSettings?.regular_walkin_fee == null ||
@@ -479,7 +479,7 @@ export const LogbookRecordAttendance: React.FC<
 
         const resolvedPhoto = resolveAvatarUrl(m.image_url || m.avatar_url);
 
-      return {
+        return {
           id: m.id,
           name: m.full_name,
           memberId: m.member_id,
@@ -744,7 +744,6 @@ export const LogbookRecordAttendance: React.FC<
   useEffect(() => {
     if (isOpen) {
       const nowMs = Date.now();
-      // In Battery Saver mode, reuse member/rate data if fetched within the last 2 minutes
       const shouldSkipHeavyPoll =
         isBatterySaver &&
         dynamicMembersRef.current.length > 0 &&
@@ -795,7 +794,6 @@ export const LogbookRecordAttendance: React.FC<
     }
   }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
-  // Fetch camera list only when modal is open and the camera scanner is explicitly activated
   useEffect(() => {
     if (!isOpen || !showLiveScanner) {
       stopAllCameraTracks();
@@ -1055,6 +1053,15 @@ export const LogbookRecordAttendance: React.FC<
     gcashFeeRate,
   ]);
 
+  // Comparison figures between standard walk-in and member plan rate
+  const regularWalkInPrice = walkinRegularFee ?? 0;
+  const isMemberPlanEntry =
+    selectedEntry === 'member_entry' &&
+    Boolean(selectedClient && !selectedClient.isWalkIn);
+  const memberSavings = isMemberPlanEntry
+    ? Math.max(0, regularWalkInPrice - derivedBilling.subtotal)
+    : 0;
+
   useEffect(() => {
     if (paymentMethod === 'Cash') {
       setAmountReceived(
@@ -1190,7 +1197,6 @@ export const LogbookRecordAttendance: React.FC<
         isBatterySaver ? 600 : 1500
       );
     } catch (err: any) {
-
       console.error('Check-in error:', err);
       toast.error(err.message || 'Failed to complete check-in.');
       isSubmittingRef.current = false;
@@ -1290,7 +1296,7 @@ export const LogbookRecordAttendance: React.FC<
       </div>
 
       <AnimatePresence mode="wait">
-        {/* CASE 1: FETCHING ERROR - STRICTLY FORBID ATTENDANCE ACTION */}
+        {/* CASE 1: FETCHING ERROR */}
         {ratesError ? (
           <motion.div
             key="attendance-rates-error"
@@ -1337,7 +1343,7 @@ export const LogbookRecordAttendance: React.FC<
             </div>
           </motion.div>
         ) : isRatesLoading ? (
-          /* CASE 2: LOADING SPINNER FOR LIVE RATES */
+          /* CASE 2: LOADING SPINNER */
           <motion.div
             key="attendance-loading"
             initial={{ opacity: 0 }}
@@ -1526,7 +1532,7 @@ export const LogbookRecordAttendance: React.FC<
                           <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-[3.5px] border-r-[3.5px] border-(--color-primary) rounded-tr-xl" />
                           <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-[3.5px] border-l-[3.5px] border-(--color-primary) rounded-bl-xl" />
                           <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-[3.5px] border-r-[3.5px] border-(--color-primary) rounded-br-xl" />
-                          
+
                           <motion.div
                             animate={{ y: ['-100%', '100%'] }}
                             transition={{
@@ -2006,32 +2012,48 @@ export const LogbookRecordAttendance: React.FC<
                       </button>
                     </div>
                   ) : (
+                    /* MEMBER PLAN ENTRY - HIGHLIGHTS BEFORE VS AFTER MEMBERSHIP SAVINGS */
                     <button
                       type="button"
                       onClick={() => setSelectedEntry('member_entry')}
-                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer`}
+                      className="w-full p-2.5 sm:p-3 rounded-xl border text-left flex items-center justify-between transition-all border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/50 cursor-pointer shadow-xs hover:bg-blue-50 dark:hover:bg-blue-950/60"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                           <UserCheck className="w-4.5 h-4.5" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-900 dark:text-white uppercase">
-                            Member Plan Entry
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wide">
+                              Member Plan Entry
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-0.5">
+                              <Sparkles className="w-2.5 h-2.5 text-emerald-500" />
+                              <span>COVERED BY PLAN</span>
+                            </span>
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate">
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
                             {selectedClient.membership}
                           </div>
                         </div>
                       </div>
-                      <div className="text-right font-mono text-xs font-extrabold text-slate-900 dark:text-white shrink-0">
-                        {selectedClient.membership
-                          ?.toLowerCase()
-                          .includes('year')
-                          ? yearlyMemberFee !== null
-                            ? `₱${yearlyMemberFee.toFixed(2)}`
-                            : '...'
-                          : '₱0.00'}
+
+                      <div className="text-right font-mono shrink-0 ml-2">
+                        {/* Before vs After Strike-Through Comparison */}
+                        {regularWalkInPrice > 0 && (
+                          <div className="text-[11px] text-slate-400 dark:text-zinc-500 font-semibold line-through">
+                            ₱{regularWalkInPrice.toFixed(2)}
+                          </div>
+                        )}
+                        <div className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400">
+                          {selectedClient.membership
+                            ?.toLowerCase()
+                            .includes('year')
+                            ? yearlyMemberFee !== null
+                              ? `₱${yearlyMemberFee.toFixed(2)}`
+                              : '...'
+                            : '₱0.00'}
+                        </div>
                       </div>
                     </button>
                   )}
@@ -2045,12 +2067,25 @@ export const LogbookRecordAttendance: React.FC<
                     </span>
 
                     {derivedBilling.totalDue === 0 ? (
-                      <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl flex items-center gap-2 font-bold">
-                        <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-                        <p className="text-xs leading-tight uppercase">
-                          NO PAYMENT REQUIRED. ACTIVE SUBSCRIPTION COVERS
-                          TODAY'S ENTRY.
-                        </p>
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-xl space-y-1.5">
+                        <div className="flex items-center gap-2 font-black text-xs leading-tight uppercase">
+                          <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                          <span>
+                            NO PAYMENT REQUIRED. ACTIVE SUBSCRIPTION COVERS TODAY'S ENTRY.
+                          </span>
+                        </div>
+
+                        {regularWalkInPrice > 0 && (
+                          <div className="flex items-center gap-2 pl-6 text-[11px] font-mono flex-wrap">
+                            <span className="text-slate-500 dark:text-slate-400">Standard Walk-In:</span>
+                            <span className="line-through text-slate-400 dark:text-zinc-500 font-semibold">
+                              ₱{regularWalkInPrice.toFixed(2)}
+                            </span>
+                            <span className="font-heading font-black text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                              You Saved ₱{regularWalkInPrice.toFixed(2)} (100% OFF)
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-2.5">
@@ -2123,25 +2158,60 @@ export const LogbookRecordAttendance: React.FC<
                       </div>
                     )}
 
-                    {/* RECEIPT BREAKDOWN */}
-                    <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) space-y-1 text-xs text-(--color-text)/80 font-medium">
+                    {/* RECEIPT BREAKDOWN WITH STRIKE-THROUGH SAVINGS */}
+                    <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) space-y-1.5 text-xs text-(--color-text)/80 font-medium">
                       <div className="flex justify-between">
                         <span>Pass Type:</span>
                         <span className="font-bold text-(--color-text) truncate max-w-45 uppercase">
                           {derivedBilling.title}
                         </span>
                       </div>
-                      <div className="flex justify-between">
+
+                      {/* Display Before vs After comparison if client is utilizing member perk */}
+                      {isMemberPlanEntry && regularWalkInPrice > 0 && (
+                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                          <span>Standard Walk-In Rate:</span>
+                          <span className="line-through font-mono">
+                            ₱{regularWalkInPrice.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
+                      {isMemberPlanEntry && memberSavings > 0 && (
+                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                          <span>Member Plan Discount:</span>
+                          <span className="font-mono">
+                            -₱{memberSavings.toFixed(2)}{' '}
+                            {derivedBilling.subtotal === 0 ? '(100% OFF)' : ''}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center">
                         <span>Entry Fee:</span>
-                        <span className="font-bold text-(--color-text)">
-                          ₱{derivedBilling.subtotal.toFixed(2)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {isMemberPlanEntry && regularWalkInPrice > derivedBilling.subtotal && (
+                            <span className="line-through text-slate-400 dark:text-zinc-500 font-mono text-[11px]">
+                              ₱{regularWalkInPrice.toFixed(2)}
+                            </span>
+                          )}
+                          <span
+                            className={`font-mono font-black ${
+                              isMemberPlanEntry && derivedBilling.subtotal === 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-(--color-text)'
+                            }`}
+                          >
+                            ₱{derivedBilling.subtotal.toFixed(2)}
+                          </span>
+                        </div>
                       </div>
+
                       {paymentMethod === 'GCash' &&
                         derivedBilling.convenienceFee > 0 && (
                           <div className="flex justify-between">
                             <span>GCash Fee:</span>
-                            <span className="text-rose-500 font-bold">
+                            <span className="text-rose-500 font-bold font-mono">
                               +₱{derivedBilling.convenienceFee.toFixed(2)}
                             </span>
                           </div>
@@ -2151,18 +2221,30 @@ export const LogbookRecordAttendance: React.FC<
                         derivedBilling.totalDue > 0 && (
                           <div className="flex justify-between text-emerald-500 font-bold">
                             <span>Calculated Change:</span>
-                            <span>
+                            <span className="font-mono">
                               ₱{derivedBilling.calculatedChange.toFixed(2)}
                             </span>
                           </div>
                         )}
                     </div>
 
-                    {/* TOTAL COST BANNER */}
-                    <div className="p-3 bg-(--bg-card) border-2 border-(--color-primary) rounded-2xl space-y-0.5 text-center shadow-lg">
+                    {/* TOTAL COST BANNER WITH BEFORE & AFTER BENEFIT */}
+                    <div className="p-3 bg-(--bg-card) border-2 border-(--color-primary) rounded-2xl space-y-1 text-center shadow-lg">
                       <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/60 block">
                         TOTAL AMOUNT TO PAY
                       </span>
+
+                      {isMemberPlanEntry && memberSavings > 0 && (
+                        <div className="flex items-center justify-center gap-2 pt-0.5">
+                          <span className="line-through font-mono text-xs text-slate-400 dark:text-zinc-500">
+                            ₱{regularWalkInPrice.toFixed(2)} Standard Rate
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[9px] font-mono font-black uppercase tracking-wider border border-emerald-500/30">
+                            SAVED ₱{memberSavings.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-500">
                         ₱{derivedBilling.totalDue.toFixed(2)}
                       </div>
