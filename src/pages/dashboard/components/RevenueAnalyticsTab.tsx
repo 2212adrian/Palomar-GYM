@@ -293,7 +293,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             <span className="sm:hidden">Cash</span>
             <span className="hidden sm:inline">Cash Flow</span>
             {isSessionOpen && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
             {activeTab === 'cash' && (
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#123c73] dark:bg-blue-400 rounded-t-sm" />
@@ -1243,7 +1243,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
                         isSessionOpen
-                          ? 'bg-emerald-500 '
+                          ? 'bg-emerald-500 animate-pulse'
                           : 'bg-rose-500'
                       }`}
                     />
@@ -1302,7 +1302,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     })}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 " />
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
                       IN REGISTER NOW
                     </p>

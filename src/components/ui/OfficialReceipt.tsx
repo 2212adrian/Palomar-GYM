@@ -1328,7 +1328,7 @@ if (effectiveCardFee > 0)
     if (variant === 'inline') {
       if (isLoading || loadingConfig) {
         return (
-          <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-page)] p-4  space-y-2.5 max-w-sm mx-auto">
+          <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-page)] p-4 animate-pulse space-y-2.5 max-w-sm mx-auto">
             <div className="h-5 bg-slate-200 dark:bg-white/10 rounded w-1/2 mx-auto" />
             <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-3/4 mx-auto" />
             <div className="h-20 bg-slate-200 dark:bg-white/10 rounded" />
@@ -1358,7 +1358,7 @@ if (effectiveCardFee > 0)
 
           <div className="space-y-3 pt-1">
             {loadingConfig ? (
-              <div className="p-4 text-center  text-slate-400">
+              <div className="p-4 text-center animate-pulse text-slate-400">
                 Loading receipt details...
               </div>
             ) : (

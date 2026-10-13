@@ -20,6 +20,7 @@ import { CashFloatModal } from '../../pages/cash/components/CashFloatModal';
 import { ScannerPage } from '../../pages/scanner/ScannerPage';
 import { BackupSafetyBanner } from '../ui/BackupSafetyBanner';
 import { CashSessionClosedBanner } from '../ui/CashSessionClosedBanner';
+import { SystemGuideModal } from '../guide/SystemGuideModal';
 import { promptInitialPermissionsOnLogin } from '../../lib/permissions';
 import { getRouteVerticalIndex } from '../../constants/navigation';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
@@ -397,6 +398,9 @@ export const SystemLayout: React.FC = () => {
 
           {/* MOBILE BOTTOM NAVIGATION */}
           <Navbar isMobileDrawerOpen={mobileDrawerOpen} />
+
+          {/* GLOBAL SYSTEM GUIDE MODAL */}
+          <SystemGuideModal />
 
           {/* SEAMLESS INTRO / OUTRO FLUIDISM CURTAIN */}
           {!curtainHidden && (

@@ -250,8 +250,6 @@ export const LogbookRecordAttendance: React.FC<
 
   const dynamicMembersRef = useRef<MemberProfile[]>([]);
   const walkinRegularFeeRef = useRef<number | null>(null);
-  const todayLogsRef = useRef<any[]>([]);
-  const initialSearchAppliedRef = useRef<boolean>(false);
 
   const [memberSearch, setMemberSearch] = useState('');
   const [suggestions, setSuggestions] = useState<MemberProfile[]>([]);
@@ -345,49 +343,8 @@ export const LogbookRecordAttendance: React.FC<
   }, [selectedClient]);
 
   const loadRates = useCallback(async () => {
+    setIsRatesLoading(true);
     setRatesError(null);
-
-    const cacheKey = 'palomar_rates_config_cache';
-    const cached =
-      sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
-    let hasLoadedFromCache = false;
-
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (
-          parsed &&
-          parsed.regular_walk_in !== null &&
-          parsed.regular_walk_in !== undefined &&
-          parsed.student_walk_in !== null &&
-          parsed.student_walk_in !== undefined
-        ) {
-          const regFee = Number(parsed.regular_walk_in);
-          walkinRegularFeeRef.current = regFee;
-          setWalkinRegularFee(regFee);
-          setWalkinStudentFee(Number(parsed.student_walk_in));
-          setYearlyMemberFee(Number(parsed.yearly_walk_in ?? 0));
-          setGcashFeeRate(Number(parsed.gcash_fee ?? 0));
-          setIsRatesLoading(false);
-          hasLoadedFromCache = true;
-
-          const lastFetch = Number(
-            sessionStorage.getItem('palomar_rates_last_fetch') ||
-              localStorage.getItem('palomar_rates_last_fetch') ||
-              '0'
-          );
-          if (Date.now() - lastFetch < 3600000) {
-            return;
-          }
-        }
-      } catch {
-        // ignore parse error
-      }
-    }
-
-    if (!hasLoadedFromCache) {
-      setIsRatesLoading(true);
-    }
 
     try {
       const { data: ratesData, error } = await supabase
@@ -411,17 +368,8 @@ export const LogbookRecordAttendance: React.FC<
         setWalkinStudentFee(Number(ratesData.student_walk_in));
         setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
         setGcashFeeRate(Number(ratesData.gcash_fee ?? 0));
-
-        try {
-          sessionStorage.setItem(cacheKey, JSON.stringify(ratesData));
-          sessionStorage.setItem(
-            'palomar_rates_last_fetch',
-            String(Date.now())
-          );
-        } catch {
-          // ignore quota error
-        }
       } else {
+        // Fallback to settings service from database
         const activeSettings = await settingsService.load();
         if (
           activeSettings?.regular_walkin_fee == null ||
@@ -441,32 +389,37 @@ export const LogbookRecordAttendance: React.FC<
       }
     } catch (err: any) {
       console.error('Failed to load rates configuration:', err);
-      if (!hasLoadedFromCache) {
-        walkinRegularFeeRef.current = null;
-        setWalkinRegularFee(null);
-        setWalkinStudentFee(null);
-        setYearlyMemberFee(null);
-        setGcashFeeRate(null);
-        setRatesError(
-          'Unable to fetch live pricing from the server. Please verify your internet connection, close this window, and reopen it.'
-        );
-        toast.error('Failed to load live pricing rates from Supabase.');
-      }
+      walkinRegularFeeRef.current = null;
+      setWalkinRegularFee(null);
+      setWalkinStudentFee(null);
+      setYearlyMemberFee(null);
+      setGcashFeeRate(null);
+      setRatesError(
+        'Unable to fetch live pricing from the server. Please verify your internet connection, close this window, and reopen it.'
+      );
+      toast.error('Failed to load live pricing rates from Supabase.');
     } finally {
       setIsRatesLoading(false);
     }
   }, []);
 
-  const loadDynamicMembers = useCallback(async (currentLogs?: any[]) => {
+  const loadDynamicMembers = useCallback(async () => {
     try {
-      const [members, subscriptions, cards] = await Promise.all([
-        memberService.getAll(),
-        subscriptionService.getAll(),
-        cardService.getAll(),
-      ]);
+      const [members, subscriptions, cards, { data: dbAttendance }] =
+        await Promise.all([
+          memberService.getAll(),
+          subscriptionService.getAll(),
+          cardService.getAll(),
+          supabase
+            .from('attendance')
+            .select('id, member_id, check_in_time')
+            .is('deleted_at', null)
+            .order('check_in_time', { ascending: false })
+            .limit(2000),
+        ]);
 
+      const attendanceList = dbAttendance || [];
       const now = getServerNow();
-      const logs = currentLogs || todayLogsRef.current;
 
       const mappedProfiles: MemberProfile[] = members.map((m: Member) => {
         const activeSub = subscriptions.find(
@@ -504,13 +457,29 @@ export const LogbookRecordAttendance: React.FC<
           .filter((c: MemberCard) => c.member_id === m.member_id)
           .map((c: MemberCard) => c.card_number);
 
-        const memberTodayVisits = logs.filter(
+        const memberVisits = attendanceList.filter(
           (a: any) => a.member_id === m.member_id
-        ).length;
+        );
+        const lastVisitRecord = memberVisits[0];
+        const lastVisitStr = lastVisitRecord
+          ? new Date(lastVisitRecord.check_in_time).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' }
+            )
+          : 'First Visit';
+
+        const todayVisits = memberVisits.filter((a: any) => {
+          const d = new Date(a.check_in_time);
+          return (
+            d.getDate() === now.getDate() &&
+            d.getMonth() === now.getMonth() &&
+            d.getFullYear() === now.getFullYear()
+          );
+        }).length;
 
         const resolvedPhoto = resolveAvatarUrl(m.image_url || m.avatar_url);
 
-        return {
+      return {
           id: m.id,
           name: m.full_name,
           memberId: m.member_id,
@@ -527,8 +496,8 @@ export const LogbookRecordAttendance: React.FC<
               })
             : 'N/A',
           expDate: expDateStr,
-          lastVisit: memberTodayVisits > 0 ? 'Today' : 'Registered',
-          todayVisits: memberTodayVisits,
+          lastVisit: lastVisitStr,
+          todayVisits,
           cardNumbers: memberCards,
           avatarUrl: resolvedPhoto,
         };
@@ -550,13 +519,9 @@ export const LogbookRecordAttendance: React.FC<
         .is('deleted_at', null)
         .gte('check_in_time', `${todayStr}T00:00:00Z`);
 
-      const logs = data || [];
-      todayLogsRef.current = logs;
-      setTodayLogs(logs);
-      return logs;
+      setTodayLogs(data || []);
     } catch (e) {
       console.warn('Failed to load today logs:', e);
-      return [];
     }
   }, []);
 
@@ -778,51 +743,36 @@ export const LogbookRecordAttendance: React.FC<
 
   useEffect(() => {
     if (isOpen) {
+      const nowMs = Date.now();
+      // In Battery Saver mode, reuse member/rate data if fetched within the last 2 minutes
+      const shouldSkipHeavyPoll =
+        isBatterySaver &&
+        dynamicMembersRef.current.length > 0 &&
+        walkinRegularFeeRef.current !== null &&
+        nowMs - lastLoadedDynamicMsRef.current < 120000;
+
+      if (!shouldSkipHeavyPoll) {
+        loadRates();
+        loadDynamicMembers();
+        lastLoadedDynamicMsRef.current = nowMs;
+      }
+      loadTodayLogs();
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      initialSearchAppliedRef.current = false;
       resetForm();
-
-      const initializeModal = async () => {
-        const nowMs = Date.now();
-        const shouldSkipHeavyPoll =
-          isBatterySaver &&
-          dynamicMembersRef.current.length > 0 &&
-          walkinRegularFeeRef.current !== null &&
-          nowMs - lastLoadedDynamicMsRef.current < 120000;
-
-        if (!shouldSkipHeavyPoll) {
-          loadRates();
-          const logs = await loadTodayLogs();
-          await loadDynamicMembers(logs);
-          lastLoadedDynamicMsRef.current = nowMs;
-        } else {
-          loadTodayLogs();
-        }
-      };
-
-      initializeModal();
     } else {
       setShowLiveScanner(false);
       stopAllCameraTracks();
     }
-  }, [isOpen]);
+  }, [isOpen, isBatterySaver, loadRates, loadDynamicMembers, loadTodayLogs]);
 
   useEffect(() => {
-    if (
-      !isOpen ||
-      !initialSearch ||
-      !initialSearch.trim() ||
-      initialSearchAppliedRef.current
-    ) {
-      return;
-    }
+    if (!isOpen || !initialSearch || !initialSearch.trim()) return;
 
     const query = initialSearch.trim().toLowerCase();
     const cleanQuery = extractCleanMemberId(query).toLowerCase();
 
     if (dynamicMembers.length > 0) {
-      initialSearchAppliedRef.current = true;
       const matchedMember = dynamicMembers.find(
         (m) =>
           m.memberId.toLowerCase() === cleanQuery ||
@@ -1494,7 +1444,7 @@ export const LogbookRecordAttendance: React.FC<
                     onClick={handleStartScan}
                     className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
                       showLiveScanner
-                        ? 'bg-(--color-primary) text-white shadow-lg ring-2 ring-[var(--color-primary)]/50 '
+                        ? 'bg-(--color-primary) text-white shadow-lg ring-2 ring-[var(--color-primary)]/50 animate-pulse'
                         : 'text-(--color-text)/60 hover:text-(--color-primary) hover:bg-(--bg-card)'
                     }`}
                   >

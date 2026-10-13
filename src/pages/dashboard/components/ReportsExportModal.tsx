@@ -1644,7 +1644,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                       className={`w-4 h-4 ${isSelected ? 'text-[#123c73] dark:text-blue-400' : 'text-slate-400'}`}
                     />
                     {isSelected && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 " />
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-pulse" />
                     )}
                   </div>
                   <div>

@@ -772,7 +772,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
       {/* Main Table View */}
       {pendingQueue.length === 0 ? (
         <div className="p-12 text-center bg-(--bg-card) border border-(--border-color) rounded-3xl space-y-3 shadow-xs">
-          <Clock className="w-8 h-8 text-slate-400 mx-auto " />
+          <Clock className="w-8 h-8 text-slate-400 mx-auto animate-pulse" />
           <h4 className="font-heading text-xs uppercase tracking-wider text-slate-500">
             Queue is Clear
           </h4>

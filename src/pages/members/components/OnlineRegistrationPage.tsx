@@ -1278,7 +1278,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       {/* Top Utility Bar (Fluid Max-w-4xl) */}
       <div className="w-full max-w-4xl flex justify-between items-center mb-4 sm:mb-6 px-1 sm:px-2 select-none">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-emerald-500  shrink-0" />
+          <Sparkles className="w-4 h-4 text-emerald-500 animate-pulse shrink-0" />
           <span className="text-[10px] sm:text-[11px] font-heading tracking-widest text-slate-500 uppercase font-bold">
             Self-Service Portal
           </span>
@@ -2402,17 +2402,17 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => setAgreementDocument('agreement')}
-                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
-                      >
-                        User Agreement
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => setAgreementDocument('terms')}
                         className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
                       >
-                        Read Full Terms
+                        Terms &amp; Conditions
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAgreementDocument('privacy')}
+                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                      >
+                        Privacy Policy
                       </button>
                     </div>
                   </div>
@@ -2516,20 +2516,12 @@ export const OnlineRegistrationPage: React.FC = () => {
                             consent to the{' '}
                             <button
                               type="button"
-                              onClick={() => setAgreementDocument('agreement')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
-                            >
-                              User Agreement
-                            </button>
-                            ,{' '}
-                            <button
-                              type="button"
                               onClick={() => setAgreementDocument('terms')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
-                              Terms
+                              Terms &amp; Conditions
                             </button>{' '}
-                            &amp;{' '}
+                            and{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
@@ -2546,20 +2538,12 @@ export const OnlineRegistrationPage: React.FC = () => {
                             under the{' '}
                             <button
                               type="button"
-                              onClick={() => setAgreementDocument('agreement')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
-                            >
-                              User Agreement
-                            </button>
-                            ,{' '}
-                            <button
-                              type="button"
                               onClick={() => setAgreementDocument('terms')}
                               className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
                             >
-                              Terms
+                              Terms &amp; Conditions
                             </button>{' '}
-                            &amp;{' '}
+                            and{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
@@ -2585,7 +2569,8 @@ export const OnlineRegistrationPage: React.FC = () => {
             <AgreementDocumentViewer
               isOpen={agreementDocument !== null}
               onClose={() => setAgreementDocument(null)}
-              initialDocument={agreementDocument || 'agreement'}
+              initialDocument={agreementDocument || 'terms'}
+              hideUserAgreement={true}
               onAccept={() =>
                 setValue('agreement', true, { shouldValidate: true })
               }
@@ -2632,7 +2617,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : step4Countdown > 0 ? (
                     <>
-                      <Clock className="w-4 h-4  text-amber-500 dark:text-amber-400" />
+                      <Clock className="w-4 h-4 animate-pulse text-amber-500 dark:text-amber-400" />
                       <span>Review Rules ({step4Countdown}s)</span>
                     </>
                   ) : (

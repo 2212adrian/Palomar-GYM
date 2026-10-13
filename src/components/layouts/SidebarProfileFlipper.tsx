@@ -250,7 +250,7 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
                   }
                 >
                   <span
-                    className={`w-1 h-1 rounded-full ${isSuperAdminUser ? 'bg-purple-500 ' : 'bg-emerald-500'}`}
+                    className={`w-1 h-1 rounded-full ${isSuperAdminUser ? 'bg-purple-500 animate-pulse' : 'bg-emerald-500'}`}
                   />
                   {isSuperAdminUser ? 'SUPERADMIN' : profile?.role || 'STAFF'}
                 </span>
@@ -281,7 +281,7 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
               {user?.email || 'admin@wolfpalomar.com'}
             </span>
             <span className="text-[8.5px] font-sans font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               ONLINE
             </span>
           </div>

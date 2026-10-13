@@ -603,7 +603,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   disabled={isSubmitting}
                   className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
                     showLiveScanner
-                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 '
+                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500/50 animate-pulse'
                       : 'text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                   title="Scan Barcode / QR Code"

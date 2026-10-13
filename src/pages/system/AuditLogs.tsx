@@ -722,7 +722,7 @@ export const AuditLogs: React.FC = () => {
       <div className="hidden md:block group/kpis relative transition-all duration-500 ease-in-out border border-transparent hover:border-(--border-color)/40 rounded-3xl p-1">
         <div className="flex items-center justify-between px-4 py-2.5 bg-slate-500/5 border border-dashed border-(--border-color) rounded-2xl text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer transition-all hover:bg-slate-500/10">
           <span className="flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5 text-blue-400 " />
+            <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
             System Metrics Overview
           </span>
           <span className="text-[9px] text-slate-500 font-bold group-hover/kpis:hidden">
@@ -744,7 +744,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-(--color-text) font-mono block">
                   {summaryMetrics.total}
@@ -765,7 +765,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-red-500 font-mono block">
                   {summaryMetrics.critical}
@@ -786,7 +786,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-(--color-text) font-mono block">
                   {summaryMetrics.operators}
@@ -807,7 +807,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-emerald-450 font-mono block">
                   {summaryMetrics.today}
@@ -828,7 +828,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-amber-500 font-mono block">
                   {summaryMetrics.backups}
@@ -849,7 +849,7 @@ export const AuditLogs: React.FC = () => {
             </div>
             <div>
               {isLoading ? (
-                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md  mt-0.5" />
+                <div className="h-6 w-12 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse mt-0.5" />
               ) : (
                 <span className="text-lg font-extrabold text-(--color-text) font-mono block">
                   {summaryMetrics.auth}
@@ -966,14 +966,14 @@ export const AuditLogs: React.FC = () => {
             {[...Array(2)].map((_, groupIdx) => (
               <div key={groupIdx} className="space-y-4 relative">
                 <div className="relative z-10 -ml-1 sm:ml-0 text-left">
-                  <div className="h-6 w-28 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-full " />
+                  <div className="h-6 w-28 bg-slate-100 dark:bg-zinc-900 border border-(--border-color) rounded-full animate-pulse" />
                 </div>
 
                 <div className="space-y-3 pl-6 sm:pl-10">
                   {[...Array(groupIdx === 0 ? 2 : 1)].map((_, itemIdx) => (
                     <div
                       key={itemIdx}
-                      className="relative rounded-2xl border bg-(--bg-card) border-(--border-color) p-3.5 sm:p-5 shadow-xs overflow-hidden "
+                      className="relative rounded-2xl border bg-(--bg-card) border-(--border-color) p-3.5 sm:p-5 shadow-xs overflow-hidden animate-pulse"
                     >
                       <div className="absolute hidden sm:block sm:left-[-22px] top-5.5 w-3 h-3 rounded-full border-2 bg-(--bg-page) border-slate-700/50" />
 

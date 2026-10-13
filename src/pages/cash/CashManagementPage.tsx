@@ -341,7 +341,7 @@ const handleStartSession = async (e: React.FormEvent) => {
                     isOffline
                       ? 'bg-amber-500'
                       : isSessionOpen
-                        ? 'bg-emerald-500 '
+                        ? 'bg-emerald-500 animate-pulse'
                         : 'bg-rose-500'
                   }`}
                 />
@@ -451,7 +451,7 @@ const handleStartSession = async (e: React.FormEvent) => {
               </div>
 
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#0c0e12] border border-slate-200/80 dark:border-white/10 text-[11px] font-mono text-slate-600 dark:text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-amber-500 " />
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                 <span>Internet connection required to start session</span>
               </div>
             </div>

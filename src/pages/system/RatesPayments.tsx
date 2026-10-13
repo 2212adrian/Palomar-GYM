@@ -412,7 +412,7 @@ export const RatesPayments: React.FC = () => {
                   Monthly Plan Rate
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -440,7 +440,7 @@ export const RatesPayments: React.FC = () => {
                   Yearly Registration Fee
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -477,7 +477,7 @@ export const RatesPayments: React.FC = () => {
                   Regular Non-Member
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -505,7 +505,7 @@ export const RatesPayments: React.FC = () => {
                   Student Non-Member
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -533,7 +533,7 @@ export const RatesPayments: React.FC = () => {
                   Yearly Member Daily
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -570,7 +570,7 @@ export const RatesPayments: React.FC = () => {
                   GCash Extra Charge
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -596,7 +596,7 @@ export const RatesPayments: React.FC = () => {
                   New Card Fee
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
@@ -626,7 +626,7 @@ export const RatesPayments: React.FC = () => {
                 VAT Settings
               </h3>
               {isLoading ? (
-                <div className="h-6 w-11 bg-(--bg-page) rounded-full border border-(--border-color) " />
+                <div className="h-6 w-11 bg-(--bg-page) rounded-full border border-(--border-color) animate-pulse" />
               ) : (
                 <button
                   type="button"
@@ -652,7 +652,7 @@ export const RatesPayments: React.FC = () => {
                   VAT Percentage (%)
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) " />
+                  <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <input
                     id="vatPercentageInput"

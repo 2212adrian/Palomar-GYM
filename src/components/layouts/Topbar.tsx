@@ -25,6 +25,7 @@ import {
   Smartphone,
   ExternalLink,
   Loader2,
+  BookOpen,
 } from 'lucide-react';
 import {
   motion,
@@ -41,6 +42,7 @@ import {
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { useGuideStore, type GuideTopicId } from '../../stores/useGuideStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
@@ -382,6 +384,22 @@ export const Topbar: React.FC<TopbarProps> = ({
     setNotificationOpen,
     subscribeRealtime,
   } = useNotificationStore();
+
+  const { openGuide } = useGuideStore();
+
+  const getContextualGuideTopic = (): GuideTopicId => {
+    const path = location.pathname.toLowerCase();
+    if (path.startsWith('/sales/products')) return 'products';
+    if (path.startsWith('/sales')) return 'sales';
+    if (path.startsWith('/logbook')) return 'logbook';
+    if (path.startsWith('/members/plans')) return 'plans';
+    if (path.startsWith('/members/list')) return 'members';
+    if (path.startsWith('/reports')) return 'reports';
+    if (path.startsWith('/cash')) return 'cash';
+    if (path.startsWith('/dashboard')) return 'dashboard';
+    if (path.startsWith('/system/users')) return 'users';
+    return isAdmin ? 'members' : 'sales';
+  };
 
   useEffect(() => {
     loadActiveSession();
@@ -1110,7 +1128,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       isSessionOpen
-                        ? 'bg-emerald-500 '
+                        ? 'bg-emerald-500 animate-pulse'
                         : 'bg-rose-500'
                     }`}
                   />
@@ -1263,6 +1281,24 @@ export const Topbar: React.FC<TopbarProps> = ({
         <div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
           {currentTimeFull}
         </div>
+
+        {/* INTERACTIVE EASY SYSTEM GUIDE TRIGGER */}
+        <button
+          type="button"
+          onClick={() => openGuide(getContextualGuideTopic())}
+          className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all text-xs font-heading font-extrabold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none"
+          title={
+            isAdmin
+              ? 'Open Admin Master Operations Guide (Members, Products, Sales, Cash & More)'
+              : 'Open Staff Desk Guide (Cash Drawer, Sales, Logbook, Plans, Reports & Scanner)'
+          }
+        >
+          <BookOpen className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
+          <span className="hidden sm:inline">
+            {isAdmin ? 'Admin Guide' : 'Staff Guide'}
+          </span>
+          <span className="inline sm:hidden">Guide</span>
+        </button>
 
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (

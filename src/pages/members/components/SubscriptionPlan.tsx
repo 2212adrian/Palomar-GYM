@@ -62,6 +62,7 @@ import {
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
 import { SideNavTab } from '../../../components/ui/SideNavTab';
+import { IndicationGuideBanner } from '../../../components/guide/IndicationGuideBanner';
 import type {
   OnlineRegistration,
   PaymentMethod,
@@ -2240,7 +2241,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             Select Existing Member
                           </span>
                           {enrollmentType === 'existing' && (
-                            <span className="w-2 h-2 rounded-full bg-blue-500 " />
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                           )}
                         </div>
                         <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
@@ -2273,7 +2274,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             Create New Member
                           </span>
                           {enrollmentType === 'new' && (
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 " />
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                           )}
                         </div>
                         <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
@@ -2679,7 +2680,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             <span className="text-rose-500">*</span>
                           </span>
                           {isMissing(phone) && (
-                            <span className="text-[8px] text-rose-500 font-bold  uppercase">
+                            <span className="text-[8px] text-rose-500 font-bold animate-pulse uppercase">
                               ⚠️ Required
                             </span>
                           )}
@@ -3760,6 +3761,9 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         />
       )}
 
+      {/* STAFF & ADMIN INDICATION GUIDE */}
+      <IndicationGuideBanner topicId="plans" className="max-w-4xl mx-auto" />
+
       {/* CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>
         {(settingsError || isUsingFallback) && (
@@ -3771,7 +3775,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           >
             <div className="flex items-center gap-3 text-left">
               <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0">
-                <WifiOff className="w-5 h-5 " />
+                <WifiOff className="w-5 h-5 animate-pulse" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -3884,7 +3888,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           {[1, 2].map((idx) => (
             <div
               key={idx}
-              className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color)  flex flex-col justify-between h-64 shadow-md text-left"
+              className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color) animate-pulse flex flex-col justify-between h-64 shadow-md text-left"
             >
               <div className="space-y-3">
                 <div className="flex justify-between items-center">

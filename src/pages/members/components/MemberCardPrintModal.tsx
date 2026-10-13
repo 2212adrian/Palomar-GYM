@@ -1306,7 +1306,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
       <div className="px-6 py-4 border-b border-(--border-color) bg-[var(--bg-card)] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500 border border-blue-500/20">
-            <Printer className="w-5 h-5 " />
+            <Printer className="w-5 h-5 animate-pulse" />
           </div>
           <div className="text-left">
             <h2 className="text-sm font-heading tracking-widest uppercase text-[var(--color-text)]">

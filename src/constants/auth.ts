@@ -19,13 +19,28 @@
  *   See 20260918000000_add_superadmin_email_config.sql for the full design.
  */
 
+// Guarded read: a missing VITE_SUPERADMIN_EMAIL must never crash the app.
 const RAW_SUPERADMIN_EMAIL =
-  (import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined) || '';
+  (import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined) ||
+  'adrianangeles2212@gmail.com';
 
+/**
+ * Canonical Superadmin address, lower-cased.
+ *
+ * MIRROR OF RECORD: the database keeps the same address in
+ *   public.system_config -> key 'superadmin_email'
+ * and in the safety allow-list returned by public.get_superadmin_allowlist().
+ * public.is_superadmin() accepts either copy, so the app and the database can
+ * no longer disagree (see 20260922000000_superadmin_full_access_and_rls_repair.sql).
+ */
 export const SUPERADMIN_EMAIL = RAW_SUPERADMIN_EMAIL.trim().toLowerCase();
 
 export const isSuperAdmin = (email?: string | null): boolean => {
-  if (!email || !SUPERADMIN_EMAIL) return false;
+  if (!email) return false;
   const clean = email.trim().toLowerCase();
+  // wolf.palomar@gmail.com is strictly admin only, never superadmin
+  if (clean === 'wolf.palomar@gmail.com') return false;
+  // adrianangeles2212@gmail.com is canonical superadmin
+  if (clean === 'adrianangeles2212@gmail.com') return true;
   return clean === SUPERADMIN_EMAIL;
 };

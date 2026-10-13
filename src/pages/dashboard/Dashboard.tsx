@@ -25,7 +25,7 @@ import type {
   BirReportItem,
   SubscriptionPlanBreakdown,
 } from './types';
-import { fetchDashboardData, invalidateDashboardCache } from './dashboardService';
+import { fetchDashboardData } from './dashboardService';
 import { TopSummaryCards } from './components/TopSummaryCards';
 import { QuickActions } from './components/QuickActions';
 import { RevenueAnalyticsTab } from './components/RevenueAnalyticsTab';
@@ -136,7 +136,6 @@ export const Dashboard: React.FC = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(
         () => {
-          invalidateDashboardCache();
           loadData();
         },
         isBatterySaver ? 10000 : 1500

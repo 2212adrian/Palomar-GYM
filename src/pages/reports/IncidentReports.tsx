@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { HeaderActionsContext } from '../../routes';
 import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
 import { useNotificationStore } from '../../stores/useNotificationStore';
+import { IndicationGuideBanner } from '../../components/guide/IndicationGuideBanner';
 import {
   Activity,
   Trash2,
@@ -306,7 +307,7 @@ const openCreateModal = useCallback(() => {
           aria-label="Emergency Hub"
           className="hidden sm:inline-flex px-3.5 py-2.5 bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/20 dark:hover:bg-rose-500/30 text-rose-700 dark:text-rose-300 rounded-xl transition-all active:scale-95 cursor-pointer items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold shadow-xs"
         >
-          <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 " />
+          <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 animate-pulse" />
           <span>Emergency Hub</span>
         </button>
 
@@ -1277,11 +1278,14 @@ const handleBulkAction = async (
       {/* Main Dashboard Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 items-start w-full max-w-7xl mx-auto">
         {/* Left Column: Directory List Section */}
-<div
+        <div
           className={`transition-all duration-300 ease-in-out space-y-4 w-full ${
             selectedReport ? 'lg:w-[42%] shrink-0' : 'w-full max-w-5xl mx-auto'
           }`}
         >
+          {/* STAFF & ADMIN INDICATION GUIDE */}
+          <IndicationGuideBanner topicId="reports" />
+
           {isOffline && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs select-none">
               <div className="flex items-center gap-2">
@@ -1465,7 +1469,7 @@ const handleBulkAction = async (
               {[...Array(3)].map((_, i) => (
                 <div
                   key={i}
-                  className="p-4 bg-white/50 dark:bg-[#161920]/50 border border-slate-200 dark:border-white/5 rounded-2xl  space-y-3"
+                  className="p-4 bg-white/50 dark:bg-[#161920]/50 border border-slate-200 dark:border-white/5 rounded-2xl animate-pulse space-y-3"
                 >
                   <div className="flex justify-between">
                     <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-2/3" />
@@ -1769,7 +1773,7 @@ const handleBulkAction = async (
               <div className="px-4 sm:px-6 py-3.5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50/70 dark:bg-black/20 shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                    <ShieldAlert className="w-5 h-5 " />
+                    <ShieldAlert className="w-5 h-5 animate-pulse" />
                   </div>
                   <div>
                     <h3 className="font-heading text-xs sm:text-sm font-bold tracking-wider uppercase text-slate-900 dark:text-slate-100 leading-tight">
@@ -1919,7 +1923,7 @@ const handleBulkAction = async (
                     <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-1 shrink-0 flex items-center justify-between">
                       <span>{filteredEmergencyMembers.length} Members</span>
                       {loadingMembers && (
-                        <span className=" text-emerald-500">
+                        <span className="animate-pulse text-emerald-500">
                           Loading...
                         </span>
                       )}
@@ -2615,7 +2619,7 @@ const handleBulkAction = async (
               title="Emergency Hub (Owners & Member ICE)"
               aria-label="Emergency Hub"
             >
-              <ShieldAlert className="w-4 h-4 " />
+              <ShieldAlert className="w-4 h-4 animate-pulse" />
               <span>Emergency</span>
             </button>
 

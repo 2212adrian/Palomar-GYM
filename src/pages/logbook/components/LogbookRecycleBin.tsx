@@ -231,6 +231,89 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     return groupedStacks.slice(startIdx, startIdx + itemsPerPage);
   }, [groupedStacks, clampedPage, itemsPerPage]);
 
+  const checkDuplicateActiveAttendance = async (
+    log: LogItem
+  ): Promise<boolean> => {
+    const isCard =
+      log.customerType === 'Card' ||
+      String(log.categoryOrPlan || '')
+        .toLowerCase()
+        .includes('card');
+
+    // For Card transactions, check if the member already has an active PAID card from a DIFFERENT transaction
+    if (isCard) {
+      const targetMemberIds: string[] = [];
+      if (log.memberId) targetMemberIds.push(log.memberId);
+      if (log.memberIds && log.memberIds.length > 0) {
+        log.memberIds.forEach((id) => targetMemberIds.push(id));
+      }
+
+      if (log.receiptNumber) {
+        const { data: rcpt } = await supabase
+          .from('receipts')
+          .select('member_ids, member_id')
+          .eq('id', log.receiptNumber)
+          .maybeSingle();
+        if (rcpt) {
+          if (rcpt.member_id) targetMemberIds.push(rcpt.member_id);
+          if (Array.isArray(rcpt.member_ids)) {
+            rcpt.member_ids.forEach((id: string) => targetMemberIds.push(id));
+          }
+        }
+      }
+
+      const uniqueTargets = Array.from(new Set(targetMemberIds)).filter(
+        Boolean
+      );
+      if (uniqueTargets.length === 0) return false;
+
+      // Check cards table: ONLY a conflict if member already has another active PAID card with a DIFFERENT receipt
+      let cardQuery = supabase
+        .from('cards')
+        .select('id, status, payment_status, member_id, receipt_number')
+        .in('member_id', uniqueTargets)
+        .eq('status', 'Active')
+        .eq('payment_status', 'PAID');
+
+      if (log.receiptNumber) {
+        cardQuery = cardQuery.neq('receipt_number', log.receiptNumber);
+      }
+
+      const { data: conflictingCards } = await cardQuery;
+      return !!(conflictingCards && conflictingCards.length > 0);
+    }
+
+    // Standard attendance check
+    if (!log.timestamp) return false;
+    const dateStr = log.timestamp.split('T')[0];
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    let query = supabase
+      .from('attendance')
+      .select('id, customer_name, check_in_time')
+      .is('deleted_at', null)
+      .neq('customer_type', 'Card')
+      .not('plan_name', 'ilike', '%card%')
+      .gte('check_in_time', startOfDay)
+      .lte('check_in_time', endOfDay);
+
+    if (log.memberId) {
+      query = query.eq('member_id', log.memberId);
+    } else if (log.customerName) {
+      query = query.ilike('customer_name', log.customerName);
+    } else {
+      return false;
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error verifying active duplicate attendance:', error);
+      return false;
+    }
+    return !!(data && data.length > 0);
+  };
+
   const handleBulkRestore = async (selectedList: LogItem[]) => {
     if (selectedList.length === 0) return;
     setLoading(true);
@@ -238,135 +321,12 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       const duplicates: LogItem[] = [];
       const validToRestore: LogItem[] = [];
 
-      const cardLogs = selectedList.filter(
-        (l) =>
-          l.customerType === 'Card' ||
-          String(l.categoryOrPlan || '').toLowerCase().includes('card')
-      );
-      const attLogs = selectedList.filter(
-        (l) =>
-          l.customerType !== 'Card' &&
-          !String(l.categoryOrPlan || '').toLowerCase().includes('card')
-      );
-
-      const conflictingMemberIds = new Set<string>();
-      if (cardLogs.length > 0) {
-        const allTargetMemberIds = Array.from(
-          new Set(
-            cardLogs.flatMap((l) => [
-              ...(l.memberId ? [l.memberId] : []),
-              ...(l.memberIds || []),
-            ])
-          )
-        ).filter(Boolean);
-
-        if (allTargetMemberIds.length > 0) {
-          const { data: activeCards } = await supabase
-            .from('cards')
-            .select('member_id, receipt_number')
-            .in('member_id', allTargetMemberIds)
-            .eq('status', 'Active')
-            .eq('payment_status', 'PAID');
-
-          if (activeCards && activeCards.length > 0) {
-            activeCards.forEach((c) => {
-              const hasMatchingReceipt = cardLogs.some(
-                (l) => l.receiptNumber && l.receiptNumber === c.receipt_number
-              );
-              if (!hasMatchingReceipt && c.member_id) {
-                conflictingMemberIds.add(c.member_id);
-              }
-            });
-          }
-        }
-      }
-
-      const activeAttendanceKeys = new Set<string>();
-      if (attLogs.length > 0) {
-        const attDates = Array.from(
-          new Set(
-            attLogs
-              .map((l) => l.timestamp?.split('T')[0])
-              .filter(Boolean)
-          )
-        );
-
-        const memberIdsToCheck = Array.from(
-          new Set(attLogs.map((l) => l.memberId).filter(Boolean) as string[])
-        );
-        const namesToCheck = Array.from(
-          new Set(
-            attLogs
-              .filter((l) => !l.memberId)
-              .map((l) => l.customerName?.toLowerCase().trim())
-              .filter(Boolean)
-          )
-        );
-
-        if (attDates.length > 0 && (memberIdsToCheck.length > 0 || namesToCheck.length > 0)) {
-          const sortedDates = [...attDates].sort();
-          const minDate = sortedDates[0];
-          const maxDate = sortedDates[sortedDates.length - 1];
-
-          let attQuery = supabase
-            .from('attendance')
-            .select('id, member_id, customer_name, check_in_time')
-            .is('deleted_at', null)
-            .neq('customer_type', 'Card')
-            .not('plan_name', 'ilike', '%card%')
-            .gte('check_in_time', `${minDate}T00:00:00.000Z`)
-            .lte('check_in_time', `${maxDate}T23:59:59.999Z`);
-
-          if (memberIdsToCheck.length > 0 && namesToCheck.length > 0) {
-            attQuery = attQuery.or(
-              `member_id.in.(${memberIdsToCheck.map((id) => `"${id}"`).join(',')}),customer_name.in.(${namesToCheck.map((n) => `"${n}"`).join(',')})`
-            );
-          } else if (memberIdsToCheck.length > 0) {
-            attQuery = attQuery.in('member_id', memberIdsToCheck);
-          } else {
-            attQuery = attQuery.in('customer_name', namesToCheck);
-          }
-
-          const { data: activeAtt } = await attQuery;
-          if (activeAtt) {
-            activeAtt.forEach((a) => {
-              const d = a.check_in_time?.split('T')[0];
-              if (a.member_id) {
-                activeAttendanceKeys.add(`mid:${a.member_id}:${d}`);
-              }
-              if (a.customer_name) {
-                activeAttendanceKeys.add(`name:${a.customer_name.toLowerCase().trim()}:${d}`);
-              }
-            });
-          }
-        }
-      }
-
       for (const log of selectedList) {
-        const isCard =
-          log.customerType === 'Card' ||
-          String(log.categoryOrPlan || '').toLowerCase().includes('card');
-
-        if (isCard) {
-          const isDup =
-            (log.memberId && conflictingMemberIds.has(log.memberId)) ||
-            (log.memberIds && log.memberIds.some((id) => conflictingMemberIds.has(id)));
-          if (isDup) {
-            duplicates.push(log);
-          } else {
-            validToRestore.push(log);
-          }
+        const isDuplicate = await checkDuplicateActiveAttendance(log);
+        if (isDuplicate) {
+          duplicates.push(log);
         } else {
-          const d = log.timestamp?.split('T')[0];
-          const isDup =
-            (log.memberId && activeAttendanceKeys.has(`mid:${log.memberId}:${d}`)) ||
-            (log.customerName &&
-              activeAttendanceKeys.has(`name:${log.customerName.toLowerCase().trim()}:${d}`));
-          if (isDup) {
-            duplicates.push(log);
-          } else {
-            validToRestore.push(log);
-          }
+          validToRestore.push(log);
         }
       }
 
@@ -874,7 +834,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
             })
           ) : (
             <div className="text-center py-12 text-slate-400 border border-dashed border-(--border-color) rounded-2xl flex flex-col items-center justify-center space-y-3">
-              <ClipboardList className="w-8 h-8  text-slate-500" />
+              <ClipboardList className="w-8 h-8 animate-pulse text-slate-500" />
               <div>
                 <h4 className="font-heading text-sm uppercase tracking-widest text-(--color-text)">
                   No deletions found

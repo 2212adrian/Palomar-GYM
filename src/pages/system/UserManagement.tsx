@@ -23,26 +23,11 @@ import {
   User,
   Mail,
   UserCheck,
-  Eye,
-  EyeOff,
-  Copy,
-  Check,
-  Save,
-  RotateCcw,
-  Sparkles,
 } from 'lucide-react';
 
 interface DraftChange {
   role?: 'admin' | 'staff';
   status?: 'active' | 'inactive';
-}
-
-interface CreatedAccountInfo {
-  name: string;
-  loginId: string;
-  password?: string;
-  role: string;
-  isLocal: boolean;
 }
 
 export const UserManagement: React.FC = () => {
@@ -67,7 +52,7 @@ export const UserManagement: React.FC = () => {
   }, []);
 
   const envSuperAdminEmail = (
-    import.meta.env.VITE_SUPERADMIN_EMAIL || SUPERADMIN_EMAIL || ''
+    import.meta.env.VITE_SUPERADMIN_EMAIL || SUPERADMIN_EMAIL || 'adrianangeles2212@gmail.com'
   )
     .trim()
     .toLowerCase();
@@ -75,9 +60,13 @@ export const UserManagement: React.FC = () => {
   const isEmailSuperAdmin = (emailCandidate?: string | null) => {
     if (!emailCandidate) return false;
     const clean = emailCandidate.trim().toLowerCase();
-    if (envSuperAdminEmail && clean === envSuperAdminEmail) return true;
-    if (dbSuperAdminEmail && clean === dbSuperAdminEmail) return true;
-    if (SUPERADMIN_EMAIL && clean === SUPERADMIN_EMAIL) return true;
+    // wolf.palomar@gmail.com is admin only, never superadmin
+    if (clean === 'wolf.palomar@gmail.com') return false;
+    // adrianangeles2212@gmail.com is always superadmin
+    if (clean === 'adrianangeles2212@gmail.com') return true;
+    if (envSuperAdminEmail && envSuperAdminEmail !== 'wolf.palomar@gmail.com' && clean === envSuperAdminEmail) return true;
+    if (dbSuperAdminEmail && dbSuperAdminEmail !== 'wolf.palomar@gmail.com' && clean === dbSuperAdminEmail) return true;
+    if (SUPERADMIN_EMAIL && SUPERADMIN_EMAIL !== 'wolf.palomar@gmail.com' && clean === SUPERADMIN_EMAIL) return true;
     return false;
   };
 
@@ -114,18 +103,10 @@ export const UserManagement: React.FC = () => {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [newUserRole, setNewUserRole] = useState<'admin' | 'staff'>('staff');
   const [newUserAvatar, setNewUserAvatar] = useState<File | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Quick filter state
-  const [activeFilter, setActiveFilter] = useState<'all' | 'admin' | 'staff' | 'active' | 'pending' | 'inactive'>('all');
-
-  // Credential Handover Modal state
-  const [createdAccount, setCreatedAccount] = useState<CreatedAccountInfo | null>(null);
-  const [hasCopiedCredentials, setHasCopiedCredentials] = useState(false);
 
   // Deletion Modal fields
   const [isDeleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
@@ -394,19 +375,10 @@ export const UserManagement: React.FC = () => {
         }
       }
 
-      setCreatedAccount({
-        name: cleanName,
-        loginId: finalEmail,
-        password: accountType === 'noemail' ? finalPassword : undefined,
-        role: newUserRole,
-        isLocal: accountType === 'noemail',
-      });
-
       setIsCreateModalOpen(false);
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPassword('');
-      setShowPassword(false);
       setNewUserRole('staff');
       setNewUserAvatar(null);
 
@@ -521,9 +493,6 @@ export const UserManagement: React.FC = () => {
   };
 
   const handleOpenEditProfile = (targetUser: any) => {
-    if (avatarPreviewUrl) {
-      URL.revokeObjectURL(avatarPreviewUrl);
-    }
     setEditTargetUser(targetUser);
     setEditUsername(targetUser.username || '');
     setEditAvatarFile(null);
@@ -538,9 +507,6 @@ export const UserManagement: React.FC = () => {
     if (file.size > 8 * 1024 * 1024) {
       toast.error('File exceeds the 8MB limit.');
       return;
-    }
-    if (avatarPreviewUrl) {
-      URL.revokeObjectURL(avatarPreviewUrl);
     }
     setEditAvatarFile(file);
     setRemoveExistingAvatar(false);
@@ -760,37 +726,12 @@ export const UserManagement: React.FC = () => {
     });
   };
 
-  const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
-    let generated = '';
-    for (let i = 0; i < 10; i++) {
-      generated += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setNewUserPassword(generated);
-    setShowPassword(true);
-  };
-
-  const handleCopyCredentials = () => {
-    if (!createdAccount) return;
-    const details = [
-      `Palomar Gym Account Credentials:`,
-      `Name: ${createdAccount.name}`,
-      `Login ID: ${createdAccount.loginId}`,
-      createdAccount.password ? `Initial Password: ${createdAccount.password}` : `Status: Verification link dispatched to email`,
-      `Role: ${createdAccount.role.toUpperCase()}`,
-    ].filter(Boolean).join('\n');
-
-    navigator.clipboard.writeText(details).then(() => {
-      setHasCopiedCredentials(true);
-      toast.success('Credentials copied to clipboard!');
-      setTimeout(() => setHasCopiedCredentials(false), 2500);
-    });
-  };
-
   const isSuperAdminAccount = (account?: any) => {
     if (!account) return false;
     const emailCandidate = (account.id === user?.id ? user?.email : account.email) || account.email;
     const cleanEmail = (emailCandidate || '').trim().toLowerCase();
+    if (cleanEmail === 'wolf.palomar@gmail.com') return false;
+    if (cleanEmail === 'adrianangeles2212@gmail.com') return true;
     if (isEmailSuperAdmin(cleanEmail)) return true;
     if (typeof account.username === 'string' && account.username.trim().toUpperCase().includes('SUPERADMIN')) return true;
     if (typeof account.role === 'string' && account.role.trim().toUpperCase().includes('SUPERADMIN')) return true;
@@ -801,7 +742,9 @@ export const UserManagement: React.FC = () => {
     isEmailSuperAdmin(rowEmail);
 
   const systemUsers = usersList.filter((u) => {
+    // If account has SUPERADMIN role or is Superadmin (including adrianangeles2212@gmail.com), DO NOT BE VISIBLE!
     const email = (u.email || '').trim().toLowerCase();
+    if (email === 'adrianangeles2212@gmail.com') return false;
     if (isEmailSuperAdmin(email)) return false;
     if (isSuperAdminAccount(u)) return false;
     const roleStr = String(u.role || '').toUpperCase();
@@ -815,7 +758,7 @@ export const UserManagement: React.FC = () => {
   if (!currentUserIncluded && profile) {
     const isSelfSuperAdmin =
       isSuperAdminAccount({ id: user?.id, email: user?.email, role: profile.role, username: profile.username }) ||
-      isEmailSuperAdmin(user?.email) ||
+      (user?.email || '').trim().toLowerCase() === 'adrianangeles2212@gmail.com' ||
       String(profile.role || '').toUpperCase().includes('SUPERADMIN') ||
       String(profile.username || '').toUpperCase().includes('SUPERADMIN');
 
@@ -831,19 +774,6 @@ export const UserManagement: React.FC = () => {
       });
     }
   }
-
-  const filteredUsers = systemUsers.filter((u) => {
-    const draft = drafts[u.id];
-    const effectiveRole = draft?.role || u.role || 'staff';
-    const effectiveStatus = draft?.status || u.status || 'active';
-
-    if (activeFilter === 'admin') return effectiveRole === 'admin';
-    if (activeFilter === 'staff') return effectiveRole === 'staff';
-    if (activeFilter === 'active') return effectiveStatus === 'active';
-    if (activeFilter === 'pending') return effectiveStatus === 'pending';
-    if (activeFilter === 'inactive') return effectiveStatus === 'inactive';
-    return true;
-  });
 
   const columns: Column<any>[] = [
     {
@@ -904,8 +834,10 @@ export const UserManagement: React.FC = () => {
       render: (u) => {
         const isSelfUser = u.id === user?.id;
         const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
+        const cleanEmail = displayEmail.trim().toLowerCase();
 
-        if (isSuperAdminRow(displayEmail)) {
+        // wolf.palomar@gmail.com is strictly admin, never superadmin
+        if (cleanEmail !== 'wolf.palomar@gmail.com' && isSuperAdminRow(displayEmail)) {
           return (
             <span className="text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
               superadmin
@@ -917,22 +849,29 @@ export const UserManagement: React.FC = () => {
         const isModified =
           draft && draft.role !== undefined && draft.role !== u.role;
         const rawRole = u.role || 'staff';
+        // Ensure wolf.palomar is tagged as admin even if database profile was set to superadmin
         const effectiveBaseRole =
-          rawRole.toLowerCase() === 'superadmin'
+          cleanEmail === 'wolf.palomar@gmail.com'
             ? 'admin'
-            : rawRole;
+            : rawRole.toLowerCase() === 'superadmin'
+              ? 'admin'
+              : rawRole;
         const currentRole = draft?.role || effectiveBaseRole;
 
         const getRoleBadge = (role: string) => {
+          const displayRole =
+            cleanEmail === 'wolf.palomar@gmail.com' && role.toLowerCase() === 'superadmin'
+              ? 'admin'
+              : role;
           return (
             <span
               className={`text-[9px] font-heading tracking-widest px-2 py-1 rounded-full uppercase font-bold transition-all ${
-                role === 'admin'
+                displayRole === 'admin'
                   ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                   : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
               }`}
             >
-              {role}
+              {displayRole}
             </span>
           );
         };
@@ -954,7 +893,7 @@ export const UserManagement: React.FC = () => {
                   {getRoleBadge(effectiveBaseRole)}
                 </span>
                 <span className="text-[10px] text-blue-500 font-bold">→</span>
-                <span className=" block">
+                <span className="animate-pulse block">
                   {getRoleBadge(currentRole)}
                 </span>
               </div>
@@ -988,7 +927,7 @@ export const UserManagement: React.FC = () => {
           } else if (status === 'pending') {
             return (
               <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full " />
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
                 Pending
               </span>
             );
@@ -1025,7 +964,7 @@ export const UserManagement: React.FC = () => {
                   {getStatusBadge(u.status || 'active')}
                 </span>
                 <span className="text-[10px] text-blue-500 font-bold">→</span>
-                <span className=" block">
+                <span className="animate-pulse block">
                   {getStatusBadge(currentStatus)}
                 </span>
               </div>
@@ -1133,10 +1072,8 @@ export const UserManagement: React.FC = () => {
     },
   ];
 
-  const draftCount = Object.keys(drafts).length;
-
   return (
-    <div className="space-y-6 font-body text-(--color-text)">
+    <div className="space-y-8 font-body text-(--color-text)">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
@@ -1150,54 +1087,17 @@ export const UserManagement: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
+            className="px-4 py-2.5 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer"
           >
             + Pre-Register User
           </button>
         </div>
       </div>
 
-      {/* Quick Filter Chips */}
-      <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto pb-1 text-xs">
-        {(
-          [
-            { id: 'all', label: 'All Accounts', count: systemUsers.length },
-            { id: 'admin', label: 'Admins', count: systemUsers.filter((u) => (drafts[u.id]?.role || u.role) === 'admin').length },
-            { id: 'staff', label: 'Staff', count: systemUsers.filter((u) => (drafts[u.id]?.role || u.role) === 'staff').length },
-            { id: 'active', label: 'Active', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'active').length },
-            { id: 'pending', label: 'Pending', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'pending').length },
-            { id: 'inactive', label: 'Inactive', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'inactive').length },
-          ] as const
-        ).map((filter) => {
-          const isActive = activeFilter === filter.id;
-          return (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => setActiveFilter(filter.id)}
-              className={`px-3 py-1.5 rounded-lg font-heading tracking-wider text-[10px] uppercase font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                isActive
-                  ? 'bg-(--color-primary) text-white shadow-xs'
-                  : 'bg-(--bg-card) border border-(--border-color) text-slate-400 hover:text-(--color-text)'
-              }`}
-            >
-              <span>{filter.label}</span>
-              <span
-                className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-(--bg-input) text-slate-400'
-                }`}
-              >
-                {filter.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
       {/* Table Container */}
       <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
         <Table<any>
-          data={filteredUsers}
+          data={systemUsers}
           columns={columns}
           searchKeys={['username', 'email', 'role', 'status']}
           searchPlaceholder="Search system users..."
@@ -1208,53 +1108,6 @@ export const UserManagement: React.FC = () => {
           loadingLabel="Retrieving system user profiles..."
         />
       </div>
-
-      {/* Inline Floating Save / Discard Bar for Local Draft Changes */}
-      {draftCount > 0 && (
-        <div className="sticky bottom-4 z-40 flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white border border-blue-500/40 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping" />
-            <span className="text-xs font-semibold">
-              <strong className="text-blue-300 font-bold">{draftCount}</strong> pending{' '}
-              {draftCount === 1 ? 'change' : 'changes'} to save
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setDrafts({});
-                toast.info('Changes discarded.');
-              }}
-              disabled={isSaving}
-              className="px-3 py-1.5 rounded-xl border border-white/20 hover:bg-white/10 text-white/80 hover:text-white text-[10px] font-heading uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Discard</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSaveAllDrafts(drafts)}
-              disabled={isSaving}
-              className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-heading uppercase tracking-wider font-bold transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3 h-3" />
-                  <span>Save Changes</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Edit User Profile (Photo & Username) Modal */}
       <Modal
@@ -1559,15 +1412,15 @@ export const UserManagement: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="relative field-wrap">
+              <div className="field-wrap">
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   id="newUserPassword"
                   placeholder=" "
                   required
                   value={newUserPassword}
                   onChange={(e) => setNewUserPassword(e.target.value)}
-                  className="field-input text-xs pr-18"
+                  className="field-input text-xs"
                 />
                 <label
                   htmlFor="newUserPassword"
@@ -1575,29 +1428,6 @@ export const UserManagement: React.FC = () => {
                 >
                   Initial Password (Min. 6 chars)
                 </label>
-
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
-                  <button
-                    type="button"
-                    onClick={generateRandomPassword}
-                    title="Generate secure password"
-                    className="p-1 rounded-md text-slate-400 hover:text-blue-500 cursor-pointer"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    className="p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-3.5 h-3.5" />
-                    ) : (
-                      <Eye className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                </div>
               </div>
               <p className="text-[10px] text-slate-400 font-mono">
                 Assigned system identifier:{' '}
@@ -1697,7 +1527,6 @@ export const UserManagement: React.FC = () => {
                 setNewUserName('');
                 setNewUserEmail('');
                 setNewUserPassword('');
-                setShowPassword(false);
                 setNewUserAvatar(null);
               }}
               className="flex-1 px-4 py-2.5 bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer text-center"
@@ -1726,71 +1555,6 @@ export const UserManagement: React.FC = () => {
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* Account Created / Credentials Handover Modal */}
-      <Modal
-        isOpen={Boolean(createdAccount)}
-        onClose={() => setCreatedAccount(null)}
-        title="Account Created Successfully"
-      >
-        {createdAccount && (
-          <div className="space-y-4 font-body text-left">
-            <p className="text-xs text-slate-400">
-              The user has been registered in the system. You can copy the credentials below to provide them to the staff member.
-            </p>
-
-            <div className="p-3.5 rounded-xl bg-(--bg-input) border border-(--border-color) space-y-2 font-mono text-xs">
-              <div className="flex justify-between items-center py-1 border-b border-(--border-color)/50">
-                <span className="text-slate-400 text-[11px]">Staff Name:</span>
-                <span className="font-bold text-(--color-text)">{createdAccount.name}</span>
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-(--border-color)/50">
-                <span className="text-slate-400 text-[11px]">Login Identifier:</span>
-                <span className="font-bold text-blue-500 break-all">{createdAccount.loginId}</span>
-              </div>
-              {createdAccount.password && (
-                <div className="flex justify-between items-center py-1 border-b border-(--border-color)/50">
-                  <span className="text-slate-400 text-[11px]">Initial Password:</span>
-                  <span className="font-bold text-amber-500 tracking-wider">{createdAccount.password}</span>
-                </div>
-              )}
-              <div className="flex justify-between items-center py-1">
-                <span className="text-slate-400 text-[11px]">Assigned Role:</span>
-                <span className="font-bold uppercase text-[10px] px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  {createdAccount.role}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleCopyCredentials}
-                className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-heading tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-bold"
-              >
-                {hasCopiedCredentials ? (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy Credentials</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreatedAccount(null)}
-                className="px-5 py-2.5 bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase rounded-xl hover:opacity-90 transition-all cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        )}
       </Modal>
     </div>
   );

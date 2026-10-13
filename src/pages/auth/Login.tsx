@@ -39,6 +39,7 @@ import { supabase } from '../../lib/supabase/client';
 import { useAuthStore, markPendingNewLogin } from '../../stores/authStore';
 import { logAudit } from '../../lib/supabase/audit';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { isSuperAdmin } from '../../constants/auth';
 
 // Capacitor core import
 import { Capacitor } from '@capacitor/core';
@@ -270,6 +271,7 @@ export const Login: React.FC = () => {
     claimActiveSession,
     setLoginInProgress,
     user,
+    profile,
     initialized,
     error: storeError,
     setError,
@@ -292,15 +294,22 @@ export const Login: React.FC = () => {
 
   const from = (location.state as any)?.from?.pathname || '/dashboard';
   const safeFrom = from === '/login' ? '/dashboard' : from;
+  const isPreview =
+    new URLSearchParams(location.search).get('preview') === 'true';
+
+  const isAdmin =
+    profile?.role === 'admin' ||
+    user?.app_metadata?.role === 'admin' ||
+    isSuperAdmin(user?.email);
 
   useEffect(() => {
     if (user) {
-      navigate(safeFrom, { replace: true });
+      if (!isPreview || !isAdmin) {
+        navigate(safeFrom, { replace: true });
+      }
     }
-  }, [user, navigate, safeFrom]);
+  }, [user, navigate, safeFrom, isPreview, isAdmin]);
 
-  const isPreview =
-    new URLSearchParams(location.search).get('preview') === 'true';
   const [gymConfig, setGymConfig] = useState<any>(null);
 
   const activeGymAddress =
@@ -880,7 +889,11 @@ export const Login: React.FC = () => {
     if (hasLoggedOut) {
       sessionStorage.removeItem('loginIntroPlayed');
       sessionStorage.removeItem('palomar_greeting_shown');
-      navigate(location.pathname, { replace: true, state: {} });
+      if (isPreview) {
+        navigate('/login?preview=true', { replace: true, state: {} });
+      } else {
+        navigate(location.pathname, { replace: true, state: {} });
+      }
       return;
     }
 
@@ -2357,8 +2370,16 @@ export const Login: React.FC = () => {
                 ✨ Live Brand Preview Mode (Form Inputs &amp; Actions Disabled)
               </span>
               <button
-                onClick={() => window.close()}
-                className="px-2 py-0.5 bg-white/15 hover:bg-white/25 rounded text-[9px] font-bold cursor-pointer transition-colors pointer-events-auto"
+                onClick={() => {
+                  if (isAdmin) {
+                    navigate('/settings/gym-profile');
+                  } else if (user) {
+                    navigate('/dashboard');
+                  } else {
+                    navigate('/login', { replace: true });
+                  }
+                }}
+                className="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded text-[9px] font-bold cursor-pointer transition-colors pointer-events-auto shadow-sm"
               >
                 Close Preview
               </button>
@@ -2368,7 +2389,7 @@ export const Login: React.FC = () => {
           {/* Offline Top Indicator Pill */}
           {isOffline && !isPreview && (
             <div className="absolute top-4 left-4 z-[200] flex items-center gap-2 bg-amber-500/95 dark:bg-amber-600/95 text-white border border-amber-400/40 rounded-full px-3.5 py-1.5 shadow-lg backdrop-blur-xl animate-slide-up select-none pointer-events-none">
-              <WifiOff className="w-3.5 h-3.5 shrink-0 " />
+              <WifiOff className="w-3.5 h-3.5 shrink-0 animate-pulse" />
               <span className="text-[10px] font-heading font-black tracking-widest uppercase">
                 Offline • No Internet
               </span>
@@ -2761,7 +2782,7 @@ export const Login: React.FC = () => {
                     ) : (
                       <Moon className="w-8 h-8 text-indigo-500 dark:text-red-400" />
                     )}
-                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 " />
+                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 animate-pulse" />
                   </div>
                 </div>
 

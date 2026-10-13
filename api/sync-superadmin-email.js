@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-    const rawEmail = body.email || process.env.VITE_SUPERADMIN_EMAIL;
+    const rawEmail = body.email || process.env.SUPERADMIN_EMAIL;
 
     if (!rawEmail) {
       return res.status(400).json({

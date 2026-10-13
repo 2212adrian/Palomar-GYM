@@ -42,6 +42,7 @@ import { supabase } from '../../../lib/supabase/client';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNotificationStore } from '../../../stores/useNotificationStore';
+import { useSecurityStore } from '../../../stores/useSecurityStore';
 import { usePWAInstall } from '../../../hooks/usePWAInstall';
 
 export const SystemInformation: React.FC = () => {
@@ -289,6 +290,7 @@ export const SystemInformation: React.FC = () => {
             authState.profile?.role,
             false
           ),
+        useSecurityStore.getState().fetchConfig(),
       ]);
       toast.success('Application core and release telemetry refreshed.', {
         toastId: 'reload-core-success',
@@ -338,7 +340,7 @@ export const SystemInformation: React.FC = () => {
               <span
                 className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
                   isUpdateAvailable
-                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30 '
+                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30 animate-pulse'
                     : 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
                 }`}
               >

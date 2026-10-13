@@ -14,6 +14,7 @@ import {
   Loader2,
   Wallet,
   Bell,
+  BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -23,6 +24,7 @@ import {
   useNotificationStore,
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
+import { useGuideStore } from '../../stores/useGuideStore';
 import { SIDEBAR_NAV_STRUCTURE } from '../../constants/navigation';
 
 // Package version retrieval matching Login.tsx reference
@@ -148,6 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { user, profile } = useAuthStore() as any;
 
   const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
+  const { openGuide } = useGuideStore();
 
   // Real-time Notification Store
   const {
@@ -605,7 +608,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       item.notificationCount !== undefined &&
                       item.notificationCount > 0 && (
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 ">
+                          <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black tracking-tight flex items-center justify-center shadow-xs shrink-0 border border-white/20 animate-pulse">
                             {formatBadgeCount(item.notificationCount)}
                           </span>
                         </div>
@@ -672,7 +675,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="flex items-center gap-2 shrink-0">
                           {item.notificationCount !== undefined &&
                             item.notificationCount > 0 && (
-                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs ">
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-heading font-black flex items-center justify-center shadow-xs animate-pulse">
                                 {formatBadgeCount(item.notificationCount)}
                               </span>
                             )}
@@ -747,7 +750,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               child.notificationColor ===
                                               'amber'
                                                 ? 'bg-amber-500 text-white border border-amber-400/40'
-                                                : 'bg-red-600 text-white border border-red-500/40 '
+                                                : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
                                             }`}
                                           >
                                             {formatBadgeCount(
@@ -999,7 +1002,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       >
                         <Bell className="w-4 h-4" />
                         {unreadBadgeCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] ">
+                          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-red-600 text-white text-[8px] font-heading font-black flex items-center justify-center shadow-md border-2 border-white dark:border-[#161920] animate-pulse">
                             {formatBadgeCount(unreadBadgeCount)}
                           </span>
                         )}
@@ -1086,7 +1089,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {item.notificationCount !== undefined &&
                           item.notificationCount > 0 && (
                             <div className="flex items-center gap-2">
-                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 ">
+                              <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[9.5px] font-black tracking-tight flex items-center justify-center shadow-xs border border-white/20 animate-pulse">
                                 {formatBadgeCount(item.notificationCount)}
                               </span>
                             </div>
@@ -1127,7 +1130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <div className="flex items-center gap-2">
                             {item.notificationCount !== undefined &&
                               item.notificationCount > 0 && (
-                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs ">
+                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs animate-pulse">
                                   {formatBadgeCount(item.notificationCount)}
                                 </span>
                               )}
@@ -1193,7 +1196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 child.notificationColor ===
                                                 'amber'
                                                   ? 'bg-amber-500 text-white border border-amber-400/40'
-                                                  : 'bg-red-600 text-white border border-red-500/40 '
+                                                  : 'bg-red-600 text-white border border-red-500/40 animate-pulse'
                                               }`}
                                             >
                                               {formatBadgeCount(
@@ -1263,31 +1266,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <Link
-                    to="/settings"
-                    onClick={() => setMobileOpen(false)}
-                    className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
-                      isSettingsActive
-                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
-                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
-                    }`}
-                  >
-                    <Settings
-                      className={`w-4 h-4 ${
-                        isSettingsActive ? 'text-white' : 'text-slate-400'
-                      }`}
-                    />
-                    <span>SETTINGS</span>
-                  </Link>
-
+                <div className="space-y-2.5">
                   <button
-                    onClick={triggerMobileConfirm}
-                    className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      openGuide();
+                    }}
+                    className="w-full h-[46px] rounded-[16px] bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black uppercase shadow-xs cursor-pointer active:scale-95 transition-all"
                   >
-                    <LogOut className="w-4 h-4" />
-                    <span>LOGOUT</span>
+                    <BookOpen className="w-4 h-4 text-blue-500" />
+                    <span>{isAdmin ? 'ADMIN MASTER GUIDE' : 'STAFF DESK GUIDE'}</span>
                   </button>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Link
+                      to="/settings"
+                      onClick={() => setMobileOpen(false)}
+                      className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                        isSettingsActive
+                          ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                          : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
+                      }`}
+                    >
+                      <Settings
+                        className={`w-4 h-4 ${
+                          isSettingsActive ? 'text-white' : 'text-slate-400'
+                        }`}
+                      />
+                      <span>SETTINGS</span>
+                    </Link>
+
+                    <button
+                      onClick={triggerMobileConfirm}
+                      className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>LOGOUT</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

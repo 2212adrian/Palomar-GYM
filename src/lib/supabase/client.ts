@@ -28,17 +28,11 @@ function getRawCookie(name: string): string | null {
 }
 
 function setRawCookie(name: string, value: string, maxAge: number): void {
-  const isSecure =
-    typeof window !== 'undefined' && window.location.protocol === 'https:';
-  const secureSuffix = isSecure ? '; Secure' : '';
-  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax${secureSuffix}`;
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`;
 }
 
 function clearCookie(name: string): void {
-  const isSecure =
-    typeof window !== 'undefined' && window.location.protocol === 'https:';
-  const secureSuffix = isSecure ? '; Secure' : '';
-  document.cookie = `${encodeURIComponent(name)}=; path=/; max-age=0; SameSite=Lax${secureSuffix}`;
+  document.cookie = `${encodeURIComponent(name)}=; path=/; max-age=0; SameSite=Lax; Secure`;
 }
 
 const cookieStorage = {
@@ -98,21 +92,41 @@ const cookieStorage = {
   },
 };
 
-// Automatically purge any previously leaked Supabase auth tokens from localStorage
-if (typeof window !== 'undefined' && window.localStorage) {
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) {
-        keysToRemove.push(k);
+const appStorage = {
+  getItem(key: string): string | null {
+    if (typeof window !== 'undefined') {
+      try {
+        const localVal = window.localStorage.getItem(key);
+        if (localVal) return localVal;
+      } catch (e) {
+        // localStorage might be unavailable or restricted
       }
     }
-    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
-  } catch (e) {
-    // ignore storage restriction
-  }
-}
+    return cookieStorage.getItem(key);
+  },
+
+  setItem(key: string, value: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch (e) {
+        // localStorage might be unavailable or restricted
+      }
+    }
+    cookieStorage.setItem(key, value);
+  },
+
+  removeItem(key: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(key);
+      } catch (e) {
+        // localStorage might be unavailable or restricted
+      }
+    }
+    cookieStorage.removeItem(key);
+  },
+};
 
 // WebSocket Proxy to intercept connection attempts while offline
 const SafeWebSocket =
@@ -164,7 +178,7 @@ export const supabase = createClient(
   supabaseAnonKey || 'placeholder-anon-key',
   {
     auth: {
-      storage: cookieStorage,
+      storage: appStorage,
       persistSession: true,
       autoRefreshToken: true,
     },

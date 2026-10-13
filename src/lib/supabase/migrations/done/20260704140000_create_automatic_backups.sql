@@ -1,9 +1,9 @@
 -- ==============================================================================
--- Migration: 7-Day Automated Backup Retention & 12:00 AM Manila (16:00 UTC) Cron
+-- Migration: 3-Day Automated Backup Retention & 12:00 AM Manila (16:00 UTC) Cron
 -- Description:
 --   1. Configures public.database_backups with payload support.
---   2. Enforces a strict 7-day retention limit on 'auto' backups.
---   3. Automatically prunes old automated files when limit exceeds 7.
+--   2. Enforces a strict 3-day retention limit on 'auto' backups.
+--   3. Automatically prunes old automated files when limit exceeds 3.
 --   4. Schedules daily pg_cron at 16:00 UTC (12:00 AM Manila Time / PHT / UTC+8).
 -- ==============================================================================
 
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.database_backups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     filename TEXT NOT NULL UNIQUE,
     notes TEXT DEFAULT '',
-    type TEXT NOT NULL CHECK (type IN ('manual', 'auto', 'safety')),
+    type TEXT NOT NULL CHECK (type IN ('manual', 'auto', 'archived', 'safety')),
     size_bytes BIGINT DEFAULT 0,
     payload JSONB DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -42,20 +42,6 @@ CREATE TABLE IF NOT EXISTS public.database_backups (
 );
 
 ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT NULL;
-
--- Migrate any existing archived backups to manual before updating constraint
-UPDATE public.database_backups
-SET type = 'manual', notes = COALESCE(notes, '') || ' (Migrated from archive)'
-WHERE type = 'archived';
-
--- Ensure check constraint matches manual, auto, and safety
-DO $$
-BEGIN
-    ALTER TABLE public.database_backups DROP CONSTRAINT IF EXISTS database_backups_type_check;
-    ALTER TABLE public.database_backups ADD CONSTRAINT database_backups_type_check CHECK (type IN ('manual', 'auto', 'safety'));
-EXCEPTION WHEN OTHERS THEN
-    NULL;
-END $$;
 
 CREATE INDEX IF NOT EXISTS idx_database_backups_type ON public.database_backups(type);
 CREATE INDEX IF NOT EXISTS idx_database_backups_created_at ON public.database_backups(created_at DESC);
@@ -311,7 +297,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ==============================================================================
--- 6. SCHEDULED 7-DAY ROTATION BACKUP FUNCTION & PG_CRON
+-- 6. SCHEDULED 3-DAY ROTATION BACKUP FUNCTION & PG_CRON
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.trigger_scheduled_storage_backup()
 RETURNS jsonb AS $$
@@ -336,8 +322,8 @@ BEGIN
         RETURN jsonb_build_object('status', 'skipped', 'message', 'Daily backup for Manila date already exists.');
     END IF;
 
-    -- 2. Maintain strict 7-DAY retention policy:
-    -- If there are >= 7 backups, delete the oldest so the new backup makes exactly 7.
+    -- 2. Maintain strict 3-DAY retention policy:
+    -- If there are >= 3 backups, delete the oldest so the new backup makes exactly 3.
     SELECT array_agg(id), array_agg(filename)
     INTO v_old_ids, v_old_filenames
     FROM (
@@ -345,7 +331,7 @@ BEGIN
         FROM public.database_backups
         WHERE type = 'auto'
         ORDER BY created_at ASC
-        LIMIT GREATEST(0, (SELECT count(*) FROM public.database_backups WHERE type = 'auto') - 6)
+        LIMIT GREATEST(0, (SELECT count(*) FROM public.database_backups WHERE type = 'auto') - 2)
     ) old_backups;
 
     IF v_old_ids IS NOT NULL AND array_length(v_old_ids, 1) > 0 THEN

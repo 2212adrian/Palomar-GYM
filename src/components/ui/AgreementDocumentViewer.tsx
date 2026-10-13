@@ -21,6 +21,7 @@ interface AgreementDocumentViewerProps {
   isOpen: boolean;
   onClose: () => void;
   initialDocument?: AgreementDocument;
+  hideUserAgreement?: boolean;
   onAccept?: () => void;
 }
 
@@ -69,17 +70,33 @@ const Highlight: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 export const AgreementDocumentViewer: React.FC<
   AgreementDocumentViewerProps
-> = ({ isOpen, onClose, initialDocument = 'agreement', onAccept }) => {
+> = ({
+  isOpen,
+  onClose,
+  initialDocument = 'agreement',
+  hideUserAgreement = false,
+  onAccept,
+}) => {
+  const resolvedInitial =
+    hideUserAgreement && initialDocument === 'agreement'
+      ? 'terms'
+      : initialDocument;
   const [activeDocument, setActiveDocument] =
-    useState<AgreementDocument>(initialDocument);
+    useState<AgreementDocument>(resolvedInitial);
   const [isMounted, setIsMounted] = useState(false);
   const [gymProfile, setGymProfile] = useState<LiveGymLegalProfile>(
     DEFAULT_LEGAL_PROFILE
   );
 
   useEffect(() => {
-    if (isOpen) setActiveDocument(initialDocument);
-  }, [isOpen, initialDocument]);
+    if (isOpen) {
+      const target =
+        hideUserAgreement && initialDocument === 'agreement'
+          ? 'terms'
+          : initialDocument;
+      setActiveDocument(target);
+    }
+  }, [isOpen, initialDocument, hideUserAgreement]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -203,7 +220,13 @@ export const AgreementDocumentViewer: React.FC<
                 {gymProfile.gymName}
               </p>
               <h3 className="font-heading text-lg uppercase tracking-wider text-slate-900 dark:text-white">
-                Legal &amp; User Agreement
+                {activeDocument === 'terms'
+                  ? 'Terms & Conditions'
+                  : activeDocument === 'privacy'
+                  ? 'Privacy Policy'
+                  : hideUserAgreement
+                  ? 'Terms & Conditions'
+                  : 'Legal & User Agreement'}
               </h3>
             </div>
 
@@ -226,20 +249,22 @@ export const AgreementDocumentViewer: React.FC<
           <div
             className="flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none"
             role="tablist"
-            aria-label="User Agreement sections"
+            aria-label="Legal document sections"
           >
-            <button
-              type="button"
-              onClick={() => setActiveDocument('agreement')}
-              className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                activeDocument === 'agreement'
-                  ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span>User Agreement</span>
-            </button>
+            {!hideUserAgreement && (
+              <button
+                type="button"
+                onClick={() => setActiveDocument('agreement')}
+                className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  activeDocument === 'agreement'
+                    ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 shrink-0" />
+                <span>User Agreement</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveDocument('terms')}
@@ -269,20 +294,23 @@ export const AgreementDocumentViewer: React.FC<
 
         {/* Scrollable Document Body */}
         <main className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
-          {activeDocument === 'agreement' ? (
-            <UserAgreementContent profile={gymProfile} />
-          ) : activeDocument === 'terms' ? (
+          {activeDocument === 'terms' ? (
+            <TermsContent profile={gymProfile} />
+          ) : activeDocument === 'privacy' ? (
+            <PrivacyContent profile={gymProfile} />
+          ) : hideUserAgreement ? (
             <TermsContent profile={gymProfile} />
           ) : (
-            <PrivacyContent profile={gymProfile} />
+            <UserAgreementContent profile={gymProfile} />
           )}
         </main>
 
         {/* Footer Bar */}
         <footer className="sticky bottom-0 flex items-center justify-between gap-3 bg-slate-100/90 dark:bg-[#12141a] border-t border-slate-200 dark:border-white/10 p-4 sm:px-6 shrink-0">
           <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block">
-            By clicking Accept, you acknowledge the User Agreement, Terms &amp;
-            Conditions, and Privacy Policy.
+            {hideUserAgreement
+              ? 'By clicking Accept, you acknowledge the Terms & Conditions and Privacy Policy.'
+              : 'By clicking Accept, you acknowledge the User Agreement, Terms & Conditions, and Privacy Policy.'}
           </p>
           <button
             type="button"

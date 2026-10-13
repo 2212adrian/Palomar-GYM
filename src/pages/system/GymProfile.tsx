@@ -368,7 +368,14 @@ export const GymProfile: React.FC = () => {
   };
 
   const handleOpenLivePreview = () => {
-    window.open('/login?preview=true', '_blank');
+    try {
+      const win = window.open('/login?preview=true', '_blank');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        window.location.href = '/login?preview=true';
+      }
+    } catch {
+      window.location.href = '/login?preview=true';
+    }
   };
 
   return (
@@ -401,7 +408,7 @@ export const GymProfile: React.FC = () => {
                   Gym Name
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
                   <input
                     id="gymNameInput"
@@ -424,7 +431,7 @@ export const GymProfile: React.FC = () => {
                   Gym Description
                 </label>
                 {isLoading ? (
-                  <div className="h-20 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                  <div className="h-20 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
                   <textarea
                     id="gymDescriptionInput"
@@ -447,7 +454,7 @@ export const GymProfile: React.FC = () => {
                   Physical Address
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
                   <input
                     id="gymAddressInput"
@@ -472,7 +479,7 @@ export const GymProfile: React.FC = () => {
                     Contact Name 1
                   </label>
                   {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
                     <input
                       id="contactName1Input"
@@ -495,7 +502,7 @@ export const GymProfile: React.FC = () => {
                     Contact Number 1
                   </label>
                   {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
                     <input
                       id="contactNumber1Input"
@@ -518,7 +525,7 @@ export const GymProfile: React.FC = () => {
                     Contact Name 2
                   </label>
                   {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
                     <input
                       id="contactName2Input"
@@ -541,7 +548,7 @@ export const GymProfile: React.FC = () => {
                     Contact Number 2
                   </label>
                   {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                   ) : (
                     <input
                       id="contactNumber2Input"
@@ -565,7 +572,7 @@ export const GymProfile: React.FC = () => {
                   Business Email Address
                 </label>
                 {isLoading ? (
-                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 " />
+                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
                 ) : (
                   <input
                     id="emailAddressInput"
@@ -593,7 +600,7 @@ export const GymProfile: React.FC = () => {
             <div className="flex flex-col sm:flex-row items-center gap-5 p-4 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
               <div className="w-16 h-16 rounded-xl border border-slate-200 dark:border-white/10 flex items-center justify-center shrink-0 bg-white dark:bg-[#13161a] overflow-hidden">
                 {isLoading ? (
-                  <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] " />
+                  <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] animate-pulse" />
                 ) : gymLogo ? (
                   <img
                     src={gymLogo}
@@ -671,7 +678,7 @@ export const GymProfile: React.FC = () => {
                   {[...Array(3)].map((_, idx) => (
                     <div
                       key={idx}
-                      className="aspect-video bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 "
+                      className="aspect-video bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 animate-pulse"
                     />
                   ))}
                 </div>

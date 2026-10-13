@@ -401,7 +401,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 </span>
               )}
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 v{displayVersion}
                 {latestCloudVersion &&
                   isNewerVersion(latestCloudVersion, displayVersion) && (
@@ -616,7 +616,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       </h3>
                     )}
                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 " />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       v{latestCloudVersion || displayVersion}
                     </span>
                   </div>
@@ -828,26 +828,28 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setAgreementDoc('agreement')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
-                      <span className="truncate">User Agreement</span>
-                    </span>
-                    {isAgreementAccepted ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        Accepted
+                  {!isRegister && (
+                    <button
+                      type="button"
+                      onClick={() => setAgreementDoc('agreement')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                        <span className="truncate">User Agreement</span>
                       </span>
-                    ) : (
-                      <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
-                        Review
-                      </span>
-                    )}
-                  </button>
+                      {isAgreementAccepted ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase shrink-0">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          Accepted
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-heading font-black uppercase tracking-wider underline shrink-0">
+                          Review
+                        </span>
+                      )}
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -905,7 +907,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
       <AgreementDocumentViewer
         isOpen={agreementDoc !== null}
         onClose={() => setAgreementDoc(null)}
-        initialDocument={agreementDoc || 'agreement'}
+        initialDocument={agreementDoc || (isRegister ? 'terms' : 'agreement')}
+        hideUserAgreement={isRegister}
         onAccept={handleAcceptFromModal}
       />
 
