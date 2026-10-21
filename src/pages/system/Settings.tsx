@@ -221,6 +221,10 @@ export default function Settings() {
     if (settingsScrollRef.current) {
       settingsScrollRef.current.scrollTop = 0;
     }
+    // Also reset document scroll when switching sub-tabs on mobile
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }, [activeTabId]);
 
   const [mobileView, setMobileView] = useState<'menu' | 'detail'>(() => {
@@ -472,12 +476,11 @@ export default function Settings() {
 
       {/* Main Split-View Area */}
       <div className="flex flex-col xl:flex-row gap-8 flex-1 min-h-0 overflow-visible xl:overflow-hidden">
-        {/* Mobile / Tablet Navigation List */}
+        {/* Mobile / Tablet Navigation List (Clean flow, no overscroll-contain trapping) */}
         <div
-          style={{ WebkitOverflowScrolling: 'touch' }}
           className={`${
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
-          } xl:hidden w-full shrink-0 overflow-y-auto h-full scrollbar-none pb-16 overscroll-contain`}
+          } xl:hidden w-full shrink-0 pb-16`}
         >
           <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
             {visibleTabs.map((tab: TabItem) => {
@@ -805,11 +808,11 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Conditional Workspace Frame */}
+        {/* Conditional Workspace Frame (h-auto on mobile, h-full on desktop) */}
         <div
           className={`${
             mobileView === 'detail' ? 'flex' : 'hidden xl:flex'
-          } flex-1 min-h-0 h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-y-auto xl:overflow-hidden`}
+          } flex-1 min-h-0 h-auto xl:h-full xl:bg-white xl:dark:bg-[#111317] xl:rounded-xl xl:border xl:border-slate-200 xl:dark:border-white/5 xl:shadow-sm flex-col overflow-visible xl:overflow-hidden`}
         >
           {/* Back Navigation Bar */}
           {mobileView === 'detail' && (
@@ -824,10 +827,10 @@ export default function Settings() {
             </div>
           )}
 
+          {/* Detail Scroll Pane (Natural document flow on mobile; Internal scroll container on desktop) */}
           <div
             ref={settingsScrollRef}
-            style={{ WebkitOverflowScrolling: 'touch' }}
-            className={`flex-1 h-full overflow-y-auto scroll-smooth overscroll-contain ${
+            className={`w-full flex-1 h-auto xl:h-full overflow-visible xl:overflow-y-auto xl:scroll-smooth xl:overscroll-contain ${
               activeTabId === 'audit' || activeTabId === 'info'
                 ? 'px-0 py-3 xl:p-5'
                 : 'p-3 sm:p-4 md:p-5'
@@ -847,7 +850,7 @@ export default function Settings() {
 
             <div
               key={tabTransition.animKey}
-              className={`w-full min-h-full flex flex-col ${
+              className={`w-full h-auto xl:min-h-full flex flex-col ${
                 isOffline ? 'pointer-events-none select-none opacity-85' : ''
               } ${
                 isBatterySaver

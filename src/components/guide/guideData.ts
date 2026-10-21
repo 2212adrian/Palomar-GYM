@@ -307,7 +307,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
   {
     id: 'plans',
     title: 'Subscription Plans & Renewals',
-    shortLabel: 'Plans Guide',
+    shortLabel: 'Subscription Plans Guide',
     icon: Award,
     targetRole: 'staff_and_admin',
     priorityOrder: 4,
@@ -798,9 +798,9 @@ export const GUIDE_TOPICS: GuideTopic[] = [
       },
       {
         number: 3,
-        title: 'Terminal Security & Location Lock',
+        title: 'Send Password Reset or Force Sign-Out',
         description:
-          'In System Settings, you can configure IP, Wi-Fi, or location restrictions so staff can only log in while physically present at the gym counter.',
+          'If a staff member forgets their password, an Administrator can trigger a secure password reset. If a terminal is lost or compromised, Admins can force sign-out to revoke access immediately.',
         badge: 'Protection',
       },
     ],

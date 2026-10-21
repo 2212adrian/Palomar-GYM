@@ -1224,7 +1224,7 @@ export const DatabaseBackup: React.FC = () => {
               <ShieldAlert className="w-5 h-5 text-red-500" />
               <div>
                 <h3 className="font-heading font-black text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-                  SUPERADMIN MASTER TERMINAL
+                  SUPERADMIN TERMINAL
                 </h3>
                 <p className="text-[10px] text-slate-400">
                   Full CRUD database control with multi-product &amp; batch

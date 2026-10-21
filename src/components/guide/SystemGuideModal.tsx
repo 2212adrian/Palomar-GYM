@@ -1,5 +1,5 @@
 // src/components/guide/SystemGuideModal.tsx
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -11,6 +11,8 @@ import {
   HelpCircle,
   Clock,
   ShieldAlert,
+  ChevronRight,
+  ArrowLeft,
 } from 'lucide-react';
 import { useGuideStore } from '../../stores/useGuideStore';
 import { GUIDE_TOPICS } from './guideData';
@@ -22,21 +24,28 @@ export const SystemGuideModal: React.FC = () => {
     useGuideStore();
   const { user, profile } = useAuthStore();
 
+  // Mobile navigation state: 'list' (module selection) vs 'detail' (reading the guide)
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
+
+  // Reset to list view whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setMobileView('list');
+    }
+  }, [isOpen]);
+
   const isAdmin =
     isSuperAdmin(user?.email) ||
     profile?.role?.toLowerCase() === 'admin' ||
     user?.app_metadata?.role?.toLowerCase() === 'admin';
 
   // Role-based topic filtration:
-  // Staff will have an indication guide for sales, logbook, subscription plan and incident report only.
-  // Admin will have all guides as possible with member management and product list.
   const availableTopics = useMemo(() => {
     return GUIDE_TOPICS.filter((topic) => {
       if (isAdmin) return true;
       return topic.targetRole === 'staff_and_admin';
     }).sort((a, b) => {
       if (isAdmin) {
-        // For admin, prioritize member management and product catalog
         if (a.id === 'members') return -1;
         if (b.id === 'members') return 1;
         if (a.id === 'products') return -1;
@@ -69,50 +78,76 @@ export const SystemGuideModal: React.FC = () => {
     );
   }, [availableTopics, searchQuery]);
 
+const handleSelectTopic = (id: Parameters<typeof setTopic>[0]) => {
+  setTopic(id);
+  setMobileView('detail');
+};
+
+  const handleBackToList = () => {
+    setMobileView('list');
+  };
+
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden">
+      <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 overflow-hidden">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={closeGuide}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm"
         />
 
-        {/* Modal Window */}
+        {/* Modal Window (Bottom sheet on mobile, centered modal on desktop) */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 16 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative w-full max-w-5xl max-h-[92vh] sm:max-h-[88vh] bg-white dark:bg-[#0f1115] border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col z-10 font-body text-(--color-text)"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 40 }}
+          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-full max-w-5xl h-[94dvh] sm:h-auto sm:max-h-[88vh] bg-white dark:bg-[#0f1115] border-t sm:border border-slate-200 dark:border-white/10 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col z-10 font-body text-slate-800 dark:text-slate-200"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
-                <BookOpen className="w-5 h-5" />
+          {/* Universal Header */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.02] shrink-0">
+            <div className="flex items-center gap-2.5">
+              {/* Show Back Button on Mobile Detail view */}
+              {mobileView === 'detail' && (
+                <button
+                  type="button"
+                  onClick={handleBackToList}
+                  className="md:hidden p-2 -ml-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors flex items-center gap-1 text-xs font-bold"
+                  aria-label="Back to topic list"
+                >
+                  <ArrowLeft className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </button>
+              )}
+
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+                <BookOpen className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="font-heading font-black text-sm sm:text-base tracking-wider uppercase text-slate-900 dark:text-white">
-                    {isAdmin ? 'Admin Master Operations Guide' : 'Staff Desk Guide'}
+                  <h3 className="font-heading font-black text-xs sm:text-base tracking-wider uppercase text-slate-900 dark:text-white line-clamp-1">
+                    {mobileView === 'detail' && (
+                      <span className="md:hidden">{activeTopic?.shortLabel || 'Guide'}</span>
+                    )}
+                    <span className={mobileView === 'detail' ? 'hidden md:inline' : 'inline'}>
+                      {isAdmin ? 'Admin Instruction Guide' : 'Staff Desk Guide'}
+                    </span>
                   </h3>
                   <span
-                    className={`text-[9px] font-heading font-black tracking-widest uppercase px-2 py-0.5 rounded-full ${
+                    className={`text-[9px] font-heading font-black tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 ${
                       isAdmin
                         ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                         : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                     }`}
                   >
-                    {isAdmin ? 'Admin View' : 'Staff View'}
+                    {isAdmin ? 'Admin' : 'Staff'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
                   Simple, non-technical instructions for everyday gym operations.
                 </p>
               </div>
@@ -128,123 +163,158 @@ export const SystemGuideModal: React.FC = () => {
             </button>
           </div>
 
-          {/* Search bar */}
-          <div className="p-3 sm:p-4 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#12151a]">
-            <div className="relative w-full">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search topics (e.g., barcode, cash change, renew plan, QR code, check in, walk in, restock)..."
-                className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-all font-medium"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Body: Split into topics navigation and content */}
-          <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-0">
-            {/* Left Column: Topics Sidebar */}
-            <div className="md:col-span-4 lg:col-span-3 border-r border-slate-100 dark:border-white/5 overflow-y-auto p-2 sm:p-3 space-y-1 bg-slate-50/30 dark:bg-black/20">
-              <div className="px-2 py-1.5 text-[10px] font-heading font-black tracking-widest uppercase text-slate-400">
-                {isAdmin ? 'Admin Master Modules' : `Staff Desk Modules (${availableTopics.length})`}
+          {/* Main Layout Area */}
+          <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-0 relative">
+            {/* ----------------- LEFT PANE / MODULE SELECTION ----------------- */}
+            <div
+              className={`md:col-span-4 lg:col-span-3 border-r border-slate-100 dark:border-white/5 flex flex-col bg-slate-50/40 dark:bg-black/20 ${
+                mobileView === 'detail' ? 'hidden md:flex' : 'flex'
+              } h-full overflow-hidden`}
+            >
+              {/* Search Bar */}
+              <div className="p-3 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#12151a]">
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search topics (e.g., barcode, cash)..."
+                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 outline-none focus:border-blue-500 transition-all font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {filteredTopics.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400">
-                  No matching topics found.
+              {/* Module List */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+                <div className="px-2 py-1 text-[10px] font-heading font-black tracking-widest uppercase text-slate-400 flex items-center justify-between">
+                  <span>{isAdmin ? 'Admin Guide Modules' : 'Staff Guide Modules'}</span>
+                  <span>{filteredTopics.length}</span>
                 </div>
-              ) : (
-                filteredTopics.map((topic) => {
-                  const Icon = topic.icon;
-                  const isActive = activeTopic?.id === topic.id;
-                  const isAdminExclusive = topic.targetRole === 'admin_only';
 
-                  return (
-                    <button
-                      key={topic.id}
-                      type="button"
-                      onClick={() => setTopic(topic.id)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-500/20'
-                          : 'hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                {filteredTopics.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    No matching topics found.
+                  </div>
+                ) : (
+                  filteredTopics.map((topic) => {
+                    const Icon = topic.icon;
+                    const isActive = activeTopic?.id === topic.id;
+                    const isAdminExclusive = topic.targetRole === 'admin_only';
+
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => handleSelectTopic(topic.id)}
+                        className={`w-full flex items-center justify-between p-3 rounded-2xl text-left transition-all cursor-pointer border ${
                           isActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-200/80 dark:bg-white/5 text-slate-600 dark:text-slate-400'
+                            ? 'md:bg-blue-600 md:text-white md:border-blue-600 md:shadow-md md:shadow-blue-500/20 bg-blue-50/70 border-blue-200 text-blue-900 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-white'
+                            : 'bg-white dark:bg-white/[0.03] border-slate-100 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15 text-slate-800 dark:text-slate-200 shadow-xs'
                         }`}
                       >
-                        <Icon className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-heading tracking-wide uppercase truncate">
-                            {topic.shortLabel}
-                          </span>
-                          {isAdminExclusive && (
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isActive
+                                ? 'md:bg-white/20 md:text-white bg-blue-600 text-white shadow-sm'
+                                : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-heading font-bold tracking-wide uppercase truncate">
+                                {topic.shortLabel}
+                              </span>
+                              {isAdminExclusive && (
+                                <span
+                                  className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                    isActive
+                                      ? 'md:bg-white/20 md:text-white bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                  }`}
+                                >
+                                  Admin
+                                </span>
+                              )}
+                            </div>
                             <span
-                              className={`text-[8px] font-black uppercase px-1.5 py-0.2 rounded ${
+                              className={`text-[10px] block mt-0.5 ${
                                 isActive
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                  ? 'md:text-white/80 text-blue-600 dark:text-blue-400 font-medium'
+                                  : 'text-slate-400 dark:text-slate-500'
                               }`}
                             >
-                              Admin
+                              {topic.timeEstimate}
                             </span>
-                          )}
+                          </div>
                         </div>
-                        <span
-                          className={`text-[10px] block truncate ${
+
+                        {/* Chevron right indicating mobile tap navigation */}
+                        <ChevronRight
+                          className={`w-4 h-4 shrink-0 transition-transform ${
                             isActive
-                              ? 'text-white/80'
-                              : 'text-slate-400 dark:text-slate-500'
+                              ? 'md:text-white/70 text-blue-600 dark:text-blue-400'
+                              : 'text-slate-400 dark:text-slate-600'
                           }`}
-                        >
-                          {topic.timeEstimate}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
+                        />
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Mobile bottom dismiss */}
+              <div className="p-3 border-t border-slate-100 dark:border-white/5 md:hidden bg-white dark:bg-[#12151a]">
+                <button
+                  type="button"
+                  onClick={closeGuide}
+                  className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 text-xs font-heading font-bold uppercase tracking-wider"
+                >
+                  Close Guide
+                </button>
+              </div>
             </div>
 
-            {/* Right Column: Detailed Topic Content */}
-            <div className="md:col-span-8 lg:col-span-9 overflow-y-auto p-4 sm:p-6 space-y-6 bg-white dark:bg-[#0f1115]">
+            {/* ----------------- RIGHT PANE / DETAIL CONTENT ----------------- */}
+            <div
+              className={`md:col-span-8 lg:col-span-9 overflow-y-auto p-4 sm:p-6 space-y-5 bg-white dark:bg-[#0f1115] ${
+                mobileView === 'list' ? 'hidden md:block' : 'block'
+              } h-full`}
+            >
+
               {activeTopic ? (
                 <>
                   {/* Topic Title Card */}
                   <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent border border-blue-500/20 dark:border-blue-500/30">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg">
+                      <div className="flex items-start sm:items-center gap-3">
+                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shrink-0">
                           <activeTopic.icon className="w-5 h-5" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="text-base sm:text-lg font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="text-sm sm:text-lg font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white">
                               {activeTopic.title}
                             </h2>
                             {activeTopic.targetRole === 'admin_only' ? (
                               <span className="text-[9px] font-heading font-black tracking-widest uppercase px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400">
-                                Administrator Exclusive
+                                Admin Exclusive
                               </span>
                             ) : (
                               <span className="text-[9px] font-heading font-black tracking-widest uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                                Daily Staff Operation
+                                Staff Operation
                               </span>
                             )}
                           </div>
@@ -254,7 +324,7 @@ export const SystemGuideModal: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0 text-slate-400 text-xs">
+                      <div className="flex items-center gap-1.5 text-slate-400 text-xs shrink-0 self-start sm:self-center">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{activeTopic.timeEstimate}</span>
                       </div>
@@ -308,18 +378,18 @@ export const SystemGuideModal: React.FC = () => {
                       <span>Step-by-Step Instructions</span>
                     </div>
 
-                    <div className="grid gap-3">
+                    <div className="grid gap-2.5">
                       {activeTopic.steps.map((step) => (
                         <div
                           key={step.number}
-                          className="p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] space-y-2 hover:border-blue-500/30 transition-colors"
+                          className="p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] space-y-1.5"
                         >
                           <div className="flex items-start gap-3">
-                            <div className="w-7 h-7 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-heading font-black text-xs shrink-0 mt-0.5">
+                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-heading font-black text-xs shrink-0 mt-0.5">
                               {step.number}
                             </div>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1 space-y-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <h4 className="text-xs sm:text-sm font-heading font-bold text-slate-900 dark:text-white uppercase tracking-wide">
                                   {step.title}
                                 </h4>
@@ -333,7 +403,7 @@ export const SystemGuideModal: React.FC = () => {
                                 {step.description}
                               </p>
                               {step.tip && (
-                                <div className="mt-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
+                                <div className="mt-2 p-2 sm:p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
                                   <span className="font-bold shrink-0">💡 Pro Tip:</span>
                                   <span>{step.tip}</span>
                                 </div>
@@ -349,7 +419,7 @@ export const SystemGuideModal: React.FC = () => {
                   {activeTopic.rules.length > 0 && (
                     <div className="p-4 rounded-2xl border border-amber-500/20 bg-amber-50/40 dark:bg-amber-950/15 space-y-2">
                       <div className="flex items-center gap-2 text-xs font-heading font-black tracking-wider uppercase text-amber-800 dark:text-amber-400">
-                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>Key Rules &amp; Best Practices</span>
                       </div>
                       <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
@@ -367,11 +437,11 @@ export const SystemGuideModal: React.FC = () => {
                   {activeTopic.faqs.length > 0 && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-xs font-heading font-black tracking-wider uppercase text-slate-800 dark:text-slate-200">
-                        <HelpCircle className="w-4 h-4 text-blue-500" />
+                        <HelpCircle className="w-4 h-4 text-blue-500 shrink-0" />
                         <span>Frequently Asked Questions</span>
                       </div>
 
-                      <div className="grid gap-2.5">
+                      <div className="grid gap-2">
                         {activeTopic.faqs.map((faq, idx) => (
                           <div
                             key={idx}
@@ -388,19 +458,38 @@ export const SystemGuideModal: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* Mobile Actions at bottom of guide */}
+                  <div className="pt-4 border-t border-slate-100 dark:border-white/5 flex flex-col sm:flex-row gap-2.5 md:hidden">
+                    <button
+                      type="button"
+                      onClick={handleBackToList}
+                      className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Back to Modules
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeGuide}
+                      className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-xs font-heading font-bold uppercase tracking-wider shadow-md"
+                    >
+                      Got it, back to work
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div className="py-16 text-center text-slate-400 text-xs">
-                  Select a topic on the left to read instructions.
+                  Select a topic to read instructions.
                 </div>
               )}
             </div>
           </div>
 
-          {/* Footer Bar */}
-          <div className="p-3 sm:p-4 border-t border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-white/[0.02] flex items-center justify-between">
+          {/* Desktop-only Footer Bar */}
+          <div className="hidden md:flex p-3 sm:p-4 border-t border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-white/[0.02] items-center justify-between shrink-0">
             <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
               <span>Questions? Ask your gym administrator or superadmin.</span>
             </div>
 

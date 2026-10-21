@@ -666,19 +666,25 @@ export const Topbar: React.FC<TopbarProps> = ({
 
     return segments.map((segment, index) => {
       const isFirst = index === 0;
+      const isLast = index === segments.length - 1;
+
       return (
         <React.Fragment key={index}>
           {index > 0 && (
-            <span className="text-slate-400 dark:text-slate-600 mx-1 select-none">
+            <span className="hidden sm:inline text-slate-400 dark:text-slate-600 mx-1 select-none shrink-0">
               /
             </span>
           )}
           <span
-            className={
-              isFirst
+            className={`truncate ${
+              isFirst && isLast
                 ? 'text-(--color-primary) font-bold'
-                : 'text-[var(--color-text)] font-semibold'
-            }
+                : isFirst
+                  ? 'hidden sm:inline text-(--color-primary) font-bold shrink-0'
+                  : isLast
+                    ? 'text-[var(--color-text)] font-semibold'
+                    : 'hidden sm:inline text-[var(--color-text)] font-semibold shrink-0'
+            }`}
           >
             {segment}
           </span>
@@ -698,7 +704,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       className={`w-full h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md relative flex items-center justify-between px-3 sm:px-4 md:px-6 z-30 select-none shrink-0 ${className}`}
     >
       {/* 1. LEFT TITLE & DESKTOP TELEMETRY */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 mr-2 sm:mr-3 overflow-hidden">
         {subTab && (
           <button
             type="button"
@@ -713,9 +719,11 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
 
         {/* BREADCRUMB TITLE */}
-        <div className="flex items-center font-heading text-[10px] xs:text-[11px] sm:text-xs lg:text-sm tracking-[0.5px] sm:tracking-[1.2px] uppercase whitespace-nowrap min-w-0">
+        <div className="flex items-center font-heading text-[11px] sm:text-xs lg:text-sm tracking-wide sm:tracking-[1.2px] uppercase whitespace-nowrap min-w-0 overflow-hidden">
           {getSectionIcon()}
-          <span>{renderStyledBreadcrumbs()}</span>
+          <span className="truncate flex items-center min-w-0">
+            {renderStyledBreadcrumbs()}
+          </span>
         </div>
 
         {/* TELEMETRY CAPSULE - HIDDEN ON MOBILE PORTRAIT (`hidden md:flex`) */}
@@ -1090,15 +1098,15 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
       </div>
 
-      {/* 2. RIGHT SECTION: OFFLINE SYNC INDICATOR, CASH PILL & CONTROLS */}
+      {/* 2. RIGHT SECTION: CASH PILL, GUIDE TRIGGER, NOTIFICATIONS & HAMBURGER */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
 
         {/* LIVE CASH DRAWER CAPSULE */}
-        <div ref={cashContainerRef} className="relative">
+        <div ref={cashContainerRef} className="relative shrink-0">
           <button
             type="button"
             onClick={handleToggleCashPopover}
-            className={`flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none shrink-0 ${
               isCashChecking
                 ? 'border-slate-200 dark:border-zinc-700/80 bg-slate-100/80 dark:bg-zinc-800/80 text-slate-500'
                 : isSessionOpen
@@ -1118,7 +1126,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                 }`}
               />
             )}
-            <div className="flex items-center gap-1.5 font-mono font-bold">
+            <div className="flex items-center gap-1 sm:gap-1.5 font-mono font-bold">
               {isCashChecking ? (
                 <span className="text-[10px] text-slate-500 tracking-wider">
                   LOADING...
@@ -1135,7 +1143,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <span
                     className={
                       isSessionOpen
-                        ? 'text-emerald-700 dark:text-emerald-300 font-extrabold'
+                        ? 'text-emerald-700 dark:text-emerald-300 font-extrabold text-[11px] sm:text-xs'
                         : 'text-rose-600 dark:text-rose-400 text-[10px]'
                     }
                   >
@@ -1282,27 +1290,27 @@ export const Topbar: React.FC<TopbarProps> = ({
           {currentTimeFull}
         </div>
 
-        {/* INTERACTIVE EASY SYSTEM GUIDE TRIGGER */}
+        {/* INTERACTIVE EASY SYSTEM GUIDE TRIGGER - Hidden on mobile viewports */}
         <button
           type="button"
           onClick={() => openGuide(getContextualGuideTopic())}
-          className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all text-xs font-heading font-extrabold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none"
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all text-xs font-heading font-extrabold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none shrink-0"
           title={
             isAdmin
-              ? 'Open Admin Master Operations Guide (Members, Products, Sales, Cash & More)'
+              ? 'Open Admin Instruction Guide (Members, Products, Sales, Cash & More)'
               : 'Open Staff Desk Guide (Cash Drawer, Sales, Logbook, Plans, Reports & Scanner)'
           }
         >
           <BookOpen className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
-          <span className="hidden sm:inline">
+          <span className="hidden md:inline">
             {isAdmin ? 'Admin Guide' : 'Staff Guide'}
           </span>
-          <span className="inline sm:hidden">Guide</span>
+          <span className="inline md:hidden">Guide</span>
         </button>
 
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (
-          <div className="relative hidden md:flex">
+          <div className="relative hidden md:flex shrink-0">
             <button
               type="button"
               id="btn-topbar-notifications"
@@ -1341,7 +1349,7 @@ export const Topbar: React.FC<TopbarProps> = ({
           onClick={onMenuClick}
           aria-label="Open Navigation Drawer"
           title="Open Navigation"
-          className="block lg:hidden text-slate-600 dark:text-slate-400 cursor-pointer p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+          className="block lg:hidden text-slate-600 dark:text-slate-400 cursor-pointer p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors shrink-0"
         >
           <Menu className="w-5 h-5" />
         </button>

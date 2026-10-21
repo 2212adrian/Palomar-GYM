@@ -1225,22 +1225,20 @@ export const AuditLogs: React.FC = () => {
         )}
       </div>
 
-      {/* Safety Policy Info Box */}
-      <div className="flex items-start gap-4 p-4 sm:p-5 bg-blue-500/5 border border-blue-500/20 rounded-2xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-full">
-        <Shield className="w-5 h-5 shrink-0 mt-0.5" />
-        <div className="space-y-1.5 text-left">
-          <p className="font-heading tracking-wider uppercase text-xs">
-            System Retention Policy (pgAudit Aligned)
-          </p>
-          <p className="text-[11px] font-semibold text-slate-400 opacity-90 leading-relaxed">
-            Audit logging operations are protected under secure write-only
-            database constraints. Manual record updates or deletions are
-            restricted at the database catalog layer. Logs are retained for
-            exactly one year and pruned daily via an automated database cron job
-            at midnight Manila time.
-          </p>
-        </div>
-      </div>
+     {/* Security & Accountability Info Box */}
+<div className="flex items-start gap-3.5 p-4 sm:p-5 bg-blue-500/5 border border-blue-500/20 rounded-2xl text-xs text-blue-700 dark:text-blue-300 leading-normal max-w-full">
+  <Shield className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
+  <div className="space-y-1 text-left">
+    <p className="font-heading tracking-wider uppercase text-xs font-bold text-slate-800 dark:text-slate-100">
+      Tamper-Proof Activity Records
+    </p>
+    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+      To protect gym operations and maintain staff accountability, all recorded
+      activities are permanent and cannot be modified or deleted by anyone.
+      Activity history is automatically kept for 1 year.
+    </p>
+  </div>
+</div>
     </div>
   );
 };

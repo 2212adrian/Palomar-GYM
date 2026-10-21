@@ -14,7 +14,7 @@ import {
   Loader2,
   Wallet,
   Bell,
-  BookOpen,
+  HelpCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -428,6 +428,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     user?.email?.[0]?.toUpperCase() ||
     'W';
 
+  const guideTitle = isAdmin ? 'Admin Guide' : 'Staff Guide';
+
   return (
     <>
       {/* ─── DESKTOP SIDEBAR ─── */}
@@ -799,7 +801,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           {collapsed ? (
-            <div className="space-y-3 relative">
+            <div className="space-y-2.5 relative">
               <Link
                 to="/settings"
                 className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
@@ -817,6 +819,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
                 />
               </Link>
+
+              <button
+                type="button"
+                onClick={() => openGuide()}
+                title={guideTitle}
+                aria-label={guideTitle}
+                className="w-11 h-11 mx-auto flex items-center justify-center rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 transition-all cursor-pointer shadow-xs active:scale-95"
+              >
+                <HelpCircle className="w-4 h-4 shrink-0" />
+              </button>
 
               <div className="relative">
                 <button
@@ -892,10 +904,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2">
                   <Link
                     to="/settings"
-                    className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                    className={`flex-1 h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
                         ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
                         : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
@@ -910,8 +922,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </Link>
 
                   <button
+                    type="button"
+                    onClick={() => openGuide()}
+                    aria-label={guideTitle}
+                    title={guideTitle}
+                    className="w-[50px] h-[50px] shrink-0 rounded-[16px] bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <HelpCircle className="w-4 h-4 shrink-0" />
+                  </button>
+
+                  <button
                     onClick={triggerDesktopConfirm}
-                    className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 shrink-0" />
                     <span>LOGOUT</span>
@@ -1266,45 +1288,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <Link
+                    to="/settings"
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex-1 h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                      isSettingsActive
+                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                        : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
+                    }`}
+                  >
+                    <Settings
+                      className={`w-4 h-4 ${
+                        isSettingsActive ? 'text-white' : 'text-slate-400'
+                      }`}
+                    />
+                    <span>SETTINGS</span>
+                  </Link>
+
                   <button
                     type="button"
                     onClick={() => {
                       setMobileOpen(false);
                       openGuide();
                     }}
-                    className="w-full h-[46px] rounded-[16px] bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black uppercase shadow-xs cursor-pointer active:scale-95 transition-all"
+                    aria-label={guideTitle}
+                    title={guideTitle}
+                    className="w-[50px] h-[50px] shrink-0 rounded-[16px] bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center shadow-xs cursor-pointer active:scale-95 transition-all"
                   >
-                    <BookOpen className="w-4 h-4 text-blue-500" />
-                    <span>{isAdmin ? 'ADMIN MASTER GUIDE' : 'STAFF DESK GUIDE'}</span>
+                    <HelpCircle className="w-4 h-4" />
                   </button>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <Link
-                      to="/settings"
-                      onClick={() => setMobileOpen(false)}
-                      className={`h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
-                        isSettingsActive
-                          ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
-                          : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
-                      }`}
-                    >
-                      <Settings
-                        className={`w-4 h-4 ${
-                          isSettingsActive ? 'text-white' : 'text-slate-400'
-                        }`}
-                      />
-                      <span>SETTINGS</span>
-                    </Link>
-
-                    <button
-                      onClick={triggerMobileConfirm}
-                      className="h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-2 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      <span>LOGOUT</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={triggerMobileConfirm}
+                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>LOGOUT</span>
+                  </button>
                 </div>
               )}
             </div>
