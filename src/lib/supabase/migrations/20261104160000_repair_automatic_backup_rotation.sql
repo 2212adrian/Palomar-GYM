@@ -8,6 +8,25 @@
 --   Also performs an immediate prune on any existing excess automated backups.
 -- ==============================================================================
 
+ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'database_backups' 
+      AND column_name = 'backup_data'
+  ) THEN
+    ALTER TABLE public.database_backups ALTER COLUMN backup_data DROP NOT NULL;
+    ALTER TABLE public.database_backups ALTER COLUMN backup_data SET DEFAULT NULL;
+    UPDATE public.database_backups 
+    SET payload = backup_data 
+    WHERE payload IS NULL AND backup_data IS NOT NULL;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.trigger_scheduled_storage_backup()
 RETURNS jsonb AS $$
 DECLARE

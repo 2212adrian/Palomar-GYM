@@ -454,7 +454,8 @@ export const DatabaseBackup: React.FC = () => {
         .from('backups')
         .upload(filename, jsonBlob, { contentType: 'application/json' });
 
-      const { error: insertError } = await supabase
+      let insertError = null;
+      const primaryInsert = await supabase
         .from('database_backups')
         .insert({
           filename,
@@ -462,7 +463,22 @@ export const DatabaseBackup: React.FC = () => {
           type: 'manual',
           size_bytes: jsonBlob.size,
           payload: dumpPayload,
+          backup_data: dumpPayload,
         });
+
+      if (primaryInsert.error) {
+        const fallbackInsert = await supabase
+          .from('database_backups')
+          .insert({
+            filename,
+            notes: customNoteText,
+            type: 'manual',
+            size_bytes: jsonBlob.size,
+            payload: dumpPayload,
+          });
+        insertError = fallbackInsert.error;
+      }
+
       if (insertError) throw insertError;
 
       await logAudit(
@@ -629,7 +645,8 @@ export const DatabaseBackup: React.FC = () => {
         });
       if (safetyUploadError) throw safetyUploadError;
 
-      const { error: safetyInsertError } = await supabase
+      let safetyInsertError = null;
+      const primarySafetyInsert = await supabase
         .from('database_backups')
         .insert({
           filename: safetyFilename,
@@ -637,18 +654,33 @@ export const DatabaseBackup: React.FC = () => {
           type: 'safety',
           size_bytes: safetyBlob.size,
           payload: currentDump,
+          backup_data: currentDump,
         });
+
+      if (primarySafetyInsert.error) {
+        const fallbackSafetyInsert = await supabase
+          .from('database_backups')
+          .insert({
+            filename: safetyFilename,
+            notes: 'Pre-Restore Backup (Auto-Safety)',
+            type: 'safety',
+            size_bytes: safetyBlob.size,
+            payload: currentDump,
+          });
+        safetyInsertError = fallbackSafetyInsert.error;
+      }
+
       if (safetyInsertError) throw safetyInsertError;
 
       let backupJson: any = null;
       const { data: fullRecord } = await supabase
         .from('database_backups')
-        .select('payload')
+        .select('*')
         .eq('id', restoreTarget.id)
         .single();
 
-      if (fullRecord?.payload) {
-        backupJson = fullRecord.payload;
+      if (fullRecord?.payload || (fullRecord as any)?.backup_data) {
+        backupJson = fullRecord?.payload || (fullRecord as any)?.backup_data;
       } else {
         toast.info('Downloading backup file from storage...');
         const { data: fileBlob, error: downloadError } = await supabase.storage
